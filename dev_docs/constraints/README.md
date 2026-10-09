@@ -640,6 +640,24 @@ constraints and do not restate it.
   10,000 edges with 12 undecided is 9.4 times slower; a candidate with one
   propagator per edge, disabled once its edge is decided or entailed, is as fast as
   the decomposition or slightly faster, with fewer calls (#1311).
+- [`tree.md`](tree.md) — `Tree` and `DTree`, MiniZinc's `tree` and `dtree`, and
+  through the standard library's wrappers `steiner`, `dsteiner` and both
+  `weighted_spanning_tree` spellings: a delegating family that posts a
+  `Reachable` child and a `LinearEquality` count under its own ID, and only
+  `DTree` adds rows of its own, an at-most-one per node over its entering arcs,
+  through the `graph_rules` helper it shares with `Path`. Its cost is the
+  reachability child's: on an 8 × 8 grid `Tree` owns 2 of the OPB's 37,208 rows.
+  Not GAC, and the brute-force sweep says where: undirected, every missing
+  removal at up to four nodes is an edge closing a cycle, and posting one row
+  per cycle made `Tree` GAC on every sampled instance up to six nodes (#1315);
+  directed, most of the rest is that nothing may enter the root, which `DPath`
+  says of its start and for which `DTree` has no rule (#1314). Neither
+  strengthening is a RUP against the encoding in general. A fixed cycle can
+  leave the root fixpoint standing with no solution. 1,930 random instances (and
+  a fact-check re-run that also catches solver errors) agree across both
+  MiniZinc versions, both index conventions, the `.scp` reader and Gecode; the
+  empty graph is a solver error through MiniZinc where the standard library says
+  unsatisfiable (#1305).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871

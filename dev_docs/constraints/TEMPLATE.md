@@ -1028,7 +1028,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `sort.md` | `sort/` | **written**. `Sort`, `ArgSort`; `sortedness.md` stays as the long note |
 | `subgraph.md` | `subgraph/` | **written**. One class, `Subgraph`. Not merged with `reachable` or `dag`: they carry copies of its two rows and its two rules under their own IDs and hints, and none of them calls it |
 | `table.md` | `table/`, `extensional_utils.{hh,cc}` | **written**. `Table`, `NegativeTable`, and the extensional propagator that `AutoTable` and the tabulated constraints also run. Not merged with `smart_table`; see its row |
-| `tree.md` | `tree/` | |
+| `tree.md` | `tree/` | **written**. `Tree` and `DTree`; a `Reachable` child, a `LinearEquality` count and, for `DTree`, in-degree rows through `innards/graph_rules`, shared with `path`. Not merged with `reachable` (own `.scp` term, count, rows and hint) or `path` (shares only `graph_rules`); no shared code with `dag` or `circuit` (`dag` copies the two subgraph rows per edge; its unfolding is its own). `connectivity-proofs.md` stays as the long note |
 | `value_precede.md` | `value_precede/` | **written**. `ValuePrecede`, for a pair or a chain; `seq_precede_chain` installs it |
 
 Not families, and getting no document: `gcs/constraints/innards/` (shared
