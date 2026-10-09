@@ -637,7 +637,10 @@ merged: its edge-finding row ran without the overload check, which
 skipping a task whose start was fixed (#1243). At `0a5b4ec6`, #1260's
 re-audit of the same `ft06` runs gives edge-finding, now with the overload
 check, 222,313 lines and 13.7 MB, and the set-based rule, whose tree is now
-17,195 recursions rather than 58,579, 1,366,208 lines and 98.3 MB.
+17,195 recursions rather than 58,579, 1,366,208 lines and 98.3 MB. Not all
+of that drop is the smaller tree: at identical search, #1283's narrower
+reasons alone took the set-based arm's proof from 276 MB to 256 MB
+(#1283's body).
 
 ### The crossover, and the measurement it invalidated
 
@@ -1009,8 +1012,10 @@ fixture that makes its mutations bite.
 **Measured when this section was written** (f3c5d90f, 2026-08-18), and not
 re-taken since. Like `edge_finding`, `not_first_not_last` has turned the
 overload check on since #1275, so every arm below but `off` would now run it.
-The verdict is about the window-energy detection; the published one has
-been a different matter since #1289 (see "Which Θ: every one", below).
+The verdict is about the window-energy detection. #1289 found the
+published one, over every `Θ`, closing far more, but that too was before
+#1275; re-run since, the two close the same instances (see "Which Θ: every
+one", below).
 
 The same generated RCPSP as edge-finding's table above, and deliberately the
 same 68 instances and the same 60 s timeout, so the two are read together. Six
@@ -1078,8 +1083,10 @@ is that detection, over the same sweep, the same contained sets and the
 same thresholds — the condition is the only thing that differs, which is
 what makes the two comparable. (That was true when this section was
 measured. Since #1247 and #1249 the published detection asks about every
-`Θ` it can use, over sweeps of its own, and its verdict below no longer
-holds. See "Which Θ: every one", below.)
+`Θ` it can use, over sweeps of its own. #1289 measured that overturning the
+verdict below, before #1275 turned the overload check on; re-run since, the
+published detection is again worth only about 1.6% over the window-energy
+one. See "Which Θ: every one", below.)
 
 **Ours is a subset of it, and not by luck.** The window-energy figure
 over `[a, b)` at `s_j = lb(s_j)` is at most `ect_j − a`, so
@@ -1293,7 +1300,9 @@ on the other 19 and 16, as it was on 19 and 15 before.
     root;
   - `la03` at 597 and `ft06` at 55.
 
-**What it buys in search.**
+**What it buys in search,** as #1289 measured it. That was before #1275
+merged, so neither detection turned the overload check on; the re-run
+after the table is the current picture.
 - **ft06,** `--disjunctive-not-first-not-last-published`: 504,670
   recursions on main, 320,059 with #1247's change alone, and **180,821**
   with both.
@@ -1321,10 +1330,21 @@ The optimal makespans agree wherever two arms both close. In prove mode,
 all 64 of `dj-nfnlpub`'s optimality proofs verify, the largest at 2.4 GB
 and 1,056 s of VeriPB.
 
-So #757's verdict, above, was about the sets rather than the condition.
-Over windows' whole contents the published condition was worth 0.6%.
-Over every set it can use it is the strongest rule this constraint has.
-It is still off by default, because `not_first_not_last` is.
+**Re-run after #1275**, at `0a5b4ec6`, by PR #1301's fact-check: the same
+69 instances and 60 s, 30 runs at a time on cores 96-127 (only one close
+took over 40 s). `dj-off` closes 27, `dj-nfnl` 64, `dj-nfnlpub` 64 and
+`dj-ef` 65; the two detections close exactly the same instances. Over the
+49 both close in at least a hundred recursions, `dj-nfnlpub` against
+`dj-nfnl` is 0.984x summed, 1.000x median and 0.988x geomean, better on 11.
+How much of either detection's gain over `dj-off` is the overload check it
+now turns on was not separated, and the `ef+` arms were not re-run.
+
+So #757's verdict, above, was about the sets rather than the condition,
+as far as #1289 measured: over windows' whole contents the published
+condition was worth 0.6%, and over every set it closed 64 against 27. Once
+the window-energy detection has the overload check beside it, the gap is
+back to about 1.6%. It is still off by default, because
+`not_first_not_last` is.
 
 **What it costs.** These are ft06 `instructions:u` counts against #1247's
 build, with identical search in each pair.
@@ -2156,23 +2176,28 @@ When this section was written (1be0a34b), the cells that differ were: the
 enumeration's 40,297 / 34.7 MB pairwise and 10,513 recursions in every
 other arm, at 751 MB, 546 MB, 62.3 MB and 43.2 MB; and on 6×6, route B's
 64.6 MB, route A's 37.9 MB, and the projection's 265 / 10.4 MB by default
-and 29 / 8.4 MB with every rule. Since then #1276 has changed the pairwise
-rule every arm runs, and the scheduling merges have changed `Cumulative`'s
-rules; which change moved which cell has not been separated.
+and 29 / 8.4 MB with every rule. #1261's re-audit traces the enumeration's
+recursions (40,297 to 40,189 pairwise, 10,513 to 10,485 elsewhere), the
+default projection's 265 to 225 and route B's proofs (751 to 630 MB, 64.6
+to 35.7 MB) to #1276's wider pairwise test, which an audit prototype of it
+reproduced. The full projection's 29 to 13 on 6×6 is #1292's: built just
+before and just after it (039c0715 and ae6569f2), the full projection
+gives 29 and 13, and the published rung below 225 and 57, with every other
+rung unchanged. The remaining size changes were not separated.
 
 Two things stand out. The projection's proofs are much smaller wherever
 the relaxation fires a lot. Its rows are cached at Top and cited by
-every rule, where route B derives a certificate per firing: 545 MB
-against 49 MB on the enumeration. And with every rule on, the 6×6
+every rule, where route B derives a certificate per firing: 630 MB
+against 49 MB on the enumeration (route A writes 545 MB). And with every rule on, the 6×6
 instance's tree drops from 225 to 13. That is the first search the
 energetic ladder has bought on this family, and most of it is the
 **knapsack rung (KAOC)**: time-tabling and (OC)/(TTOC) give 225, adding
 KAOC alone gives 29, adding the published not-first / not-last alone
 gives 57, and elastic overload, edge-finding, TTEF, energetic
 edge-finding and the window-energy not-first / not-last each give 225.
-(When this section was written, before #1292 made the published detection
-ask about every Ω, the default gave 265, KAOC 29, and every other rung
-241–265.) Edge-finding and TTEF alone bought none (above).
+(When this section was written the default gave 265, KAOC 29, and every
+other rung 241–265; the published rung's 57 arrived with #1292, which made
+it ask about every Ω.) Edge-finding and TTEF alone bought none (above).
 
 Tested by:
 - **Fixtures.** `sharp` by time-tabling alone, `area` by the overload
