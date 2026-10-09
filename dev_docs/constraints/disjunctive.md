@@ -3,8 +3,10 @@
 > **Maturity** production ·
 > **Audited** 2026-10-04 at `7e1c4178`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1243 to #1249 ·
-> **Open issues** filed by this audit: none is still open; more to file from
-> [Next steps](#next-steps). **Closed since the audit**: all seven it filed.
+> **Open issues** filed by this audit: none is still open; filed since, from
+> the re-audit: #1299 (what #1248 left: the overload reason, reasons built
+> with proofs off, holes); more to file from [Next steps](#next-steps).
+> **Closed since the audit**: all seven it filed.
 > #1243 and #1244, two strength bugs that made the fixpoint depend on rule
 > order, by #1275. #1245 (time-tabling's scan) by #1279, #1246 (the folds) by
 > #1287 and #1248 (the reasons) by #1283. #1247 and #1249, the two
@@ -127,8 +129,8 @@ Five things to know before touching it.
   name every task's start and variable duration, now built once at install.
   The overload check names every start and its window's variable durations,
   built at each firing as before. Every reason still states holes
-  (`generic_reason`). #1283's body measured VeriPB's `instructions:u` on
-  the set rule's `ft06` proof at 32.7% fewer.
+  (`generic_reason`). Both are #1299. #1283's body measured VeriPB's
+  `instructions:u` on the set rule's `ft06` proof at 32.7% fewer.
 
 The long design note is
 [`disjunctive-proof-logging.md`](../disjunctive-proof-logging.md). It has
@@ -254,10 +256,15 @@ because on top of edge-finding it is 2.4% worse in summed recursions, at a
 median of 1.000×. That is the sweep detection. #1289's body measured the
 published detection, over every Θ, closing 64 of 69 generated unary RCPSP
 instances in 60 s against 31 with edge-finding and 27 with neither, and left
-the default alone; that was not re-measured here. The set rule is off pending
-#762. #1243 and #1244 changed the measured value of the set rule and of
-edge-finding, and #1275 has fixed both, but the design note's tables, which
-predate it, have not been re-taken.
+the default alone. Those runs predate #1275, which turns `overload` on with
+`edge_finding` or `not_first_not_last`. A re-run of #1289's sweep at
+`0a5b4ec6` (60 s, 30 jobs at once) closes 64 with either not-first /
+not-last detection, 65 with edge-finding and 27 with neither; the published
+detection's summed recursions are 0.984× the sweep detection's (median
+1.000×) over the 64 instances both close (`tmp/pr1301-factcheck/sweep/`).
+The set rule is off pending #762. #1243 and #1244 changed the measured value
+of the set rule and of edge-finding, and #1275 has fixed both, but the
+design note's tables, which predate it, have not been re-taken.
 
 The last four fields only change the proof, never the inferences.
 `overload_max_window` does change the inferences: it declines conflicts, with
@@ -527,7 +534,7 @@ the re-audit did not look for others.
 `state.bounds`, `lower_bound`, `upper_bound`, `has_single_value`. A presence
 is `{0, 1}`, so it has no interior. Every reason does state holes, through
 `generic_reason`, but that is a cost, not a sensitivity. #1283 narrowed which
-tasks a reason names and left that as it was.
+tasks a reason names and left that as it was (#1299).
 
 ### Mutable state and incrementality
 
@@ -1090,8 +1097,8 @@ Facts that hold for every rule:
   time-indexed certificate. Both certificates are ours.
 - **Reason** — every start, the window's variable durations and every
   present task's presence, built at each firing (`disjunctive.cc:2787`);
-  #1283 left it as it was. The certificate cites the contained tasks'
-  bounds. Durations are counted at their **declared** lower bound, so the
+  #1283 left it as it was (#1299). The certificate cites the contained
+  tasks' bounds. Durations are counted at their **declared** lower bound, so the
   bridge and the fold are reason-free and cacheable.
 - **Assertion** — `¬reason`, from `contradiction()`. Checked on
   `disjunctive_overload_test`'s `sharp` fixture: six literals, three tasks'
@@ -1814,9 +1821,10 @@ way.
    task set, durations and time, under `overload_cache_bridge`. #1287's body
    measured edge-finding's `ft06` proof at 29.5 to 14.3 MB, and VeriPB's
    instructions at −6.5% for edge-finding and +3.5% for the set rule.
-6. **Narrow the reasons (#1248).** Partly done by #1283, for the tasks: each
-   rule names the tasks its certificate cites, and the window rules'
-   whole-scope reason is built once at install. The other two parts are still
+6. **Narrow the reasons (#1248).** Partly done by #1283, for the tasks:
+   each rule names the tasks its certificate cites, and the window rules'
+   whole-scope reason is built once at install. The rest is filed as #1299,
+   with the overload reason as a third part. The other two parts are still
    open. Holes are still stated, and the narrow pairwise and conflict reasons
    are still built with proofs off; time-tabling's falls back to the prebuilt
    whole scope without a logger (`disjunctive.cc:1560-1561`), and the overload
