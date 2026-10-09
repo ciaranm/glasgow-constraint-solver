@@ -436,6 +436,42 @@ constraints and do not restate it.
     in 240 recursions;
   - the per-time folds are now kept (#1287), and a reason names only the
     tasks its certificate cites, except in the window rules (#1283).
+- [`disjunctive_2d.md`](disjunctive_2d.md) — `Disjunctive2D` (`diffn`): one
+  definitional encoding, a reified before flag per ordered pair and axis plus a
+  separation clause per pair (five- or six-way with optional rectangles), and every
+  inference justified against it. By default the propagation is a pairwise rule
+  by forbidden regions. Off by default and reachable only from the C++ API is
+  the cumulative relaxation, certified two ways. Route B is time-tabling with a
+  per-firing comparator-network certificate. Route A adds the overload check,
+  edge-finding and TTEF over a flagged capacity row per time point derived
+  inside the proof. There is also a projection that runs `Cumulative`'s own
+  propagator on each axis and publishes each axis as a presolver donor. No
+  capacity row is in the model. Separated from `disjunctive.md` because the
+  relaxation is as large as the 1-D family. Findings (re-audited at
+  `0a5b4ec6`, after five fixes on 2026-10-08):
+  - The pairwise rule asked for **both** rectangles' mandatory parts where its
+    certificate needs only one's compulsory part against the other's bounds.
+    #1276 widened it to forbidden regions, with no change to the proof code,
+    which takes shikaku `human --autotable` from 312 recursions to 10.
+  - Under one static branching, Gecode's `nooverlap` searches 2.6 to 22 times
+    fewer nodes than the default rule. Under the same branching, the relaxation
+    closes the refuted packings in 1 to 203 recursions, but no frontend can turn
+    it on.
+  - A size variable that is also a position gave proofs VeriPB rejected
+    (fixed by #1269), and so did route B with a variable resource-axis size
+    (fixed by #1270). Every inference is now justified.
+  - At assertion levels above `Off`, two presolvers derive nothing from a
+    projection donor, where they do with proofs off, and
+    `CumulativeStrengthening` throws wherever it would strengthen something.
+  - The projection did not wake when a presence was decided (fixed by
+    #1276).
+  - The projection inherits `Cumulative`'s per-call horizon arrays: 8.4 GB for
+    four rectangles 2²⁸ wide side by side. The large-domain audit row cannot see this, because it
+    runs default rules only.
+  - MiniZinc `diffn` with a size that can go negative gets `=====ERROR=====`,
+    by decision (#1272 documents it).
+  - Route B's 630 MB enumeration proof checks faster than the projection's
+    49 MB one, probably because cached `Top` rows slow every RUP (untested).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
