@@ -732,7 +732,8 @@ auto main(int argc, char * argv[]) -> int
                 "full-task pack: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off the capacity, not the two 8 to 6 is");
         if (proofs && stats->rows_with_a_raise == 0)
             fail("full-task pack: no row needed at-most-one reasoning, so nothing was raised in the proof");
-        println(cerr, "full-task pack: refuted at the root, {} rows raised over {} pol steps", stats->rows_with_a_raise, stats->raise_lines_emitted);
+        println(
+            cerr, "full-task pack: refuted at the root, {} rows raised over {} raise steps", stats->rows_with_a_raise, stats->raise_lines_emitted);
     }
 
     // The R1 fixture and its control, as the issue states them. Five is one
@@ -1384,10 +1385,11 @@ auto main(int argc, char * argv[]) -> int
 
     // The raise arithmetic has more cases than a fixture set reaches evenly: a
     // raise into a row with nothing else in it, one into a row everything fits
-    // alongside, one that takes several steps, and a time point whose own
-    // largest load is below the declared capacity and has to be relaxed up to
-    // it first. So the corpus gets a second turn with proofs on, where every
-    // one of them is checked by veripb rather than by inspection.
+    // alongside, one the rest of the row overshoots (the proof by
+    // contradiction, which took several steps before #1242), and a time point
+    // whose own largest load is below the declared capacity and has to be
+    // relaxed up to it first. So the corpus gets a second turn with proofs on,
+    // where every one of them is checked by veripb rather than by inspection.
     {
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(2, 4), lo_dist(0, 3), span_dist(0, 3), len_dist(1, 3), cap_dist(4, 10), tall_dist(0, 1);

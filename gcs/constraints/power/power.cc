@@ -49,9 +49,9 @@ namespace
     // Above this exponent, no base of magnitude two or more has a
     // representable power, so the constraint collapses to a case analysis on
     // base in {-1, 0, 1}. The one exception is (-2)^63 = INT64_MIN, which no
-    // declared variable can hold; a constant or view result that does makes
-    // the constraint throw IntegerOverflow rather than admit base -2 (issue
-    // #1064).
+    // result can hold: constants, declared domains and view offsets lie in
+    // the bounded range and auxiliaries in a quarter of the machine range, so
+    // nothing reaches -2^62 (dev_docs/integer-ranges.md).
     constexpr long long largest_meaningful_exponent = 62;
 
     // A corner of a product-bound computation, clamped to +-m rather than

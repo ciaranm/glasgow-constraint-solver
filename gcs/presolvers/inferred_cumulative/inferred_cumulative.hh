@@ -316,13 +316,16 @@ namespace gcs
          * is dropped uncertified.
          *
          * Built rather than kept: the frontier sweep that reduces a layer to
-         * the states worth keeping is all-pairs over the layer, so a budget
-         * counting only survivors would be checked after the cost it is there
-         * to bound.
+         * the states worth keeping tests each state against a prefix of the
+         * other half (#1255), which can still be quadratic in the layer, so a
+         * budget counting only survivors would be checked after the cost it is
+         * there to bound.
          *
-         * Nothing the published procedure produces comes close, and on the
-         * paper's own instances no programme exceeds a few hundred states, so
-         * this exists to bound a pathology rather than to make a trade. Over a
+         * On the paper's own instances no programme exceeds a few hundred
+         * states, and this was meant to bound a pathology rather than to make
+         * a trade. It does bind on PSPLib: it changed the cuts posted on 47 of
+         * the 477 J90 instances and 55 of the 562 J120 instances that finished
+         * in #1255's re-sweep (`dev_docs/inferred-cumulative.md`). Over a
          * single row a layer cannot be wider than the right-hand side plus one,
          * which is two or three; over several the frontier is a Pareto set and
          * there is no such bound to lean on, so there is a number instead.

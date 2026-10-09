@@ -181,14 +181,17 @@ namespace gcs
         /// Shares edge-finding's sweep, so turning this on turns that sweep on
         /// whether or not \ref edge_finding is set, and turns \ref overload on
         /// for the same reason \ref edge_finding does. Off by default for the same
-        /// reason, and because it is measurably not worth running: see
+        /// reason, and because, measured before it turned \ref overload on
+        /// (#1275), it was not worth running on top of edge-finding: see
         /// `dev_docs/disjunctive-proof-logging.md`.
         ///
         /// The detection is a strict weakening of the rule as published, and
         /// deliberately so --- see \ref not_first_not_last_published. Asked
         /// over the same windows, the published condition was worth 0.6% of
-        /// the summed recursions (#757); asked over every set it can use, it
-        /// closes twice as many instances (#1249).
+        /// the summed recursions (#757). Asked over every set it can use, it
+        /// closed 64 of 69 generated instances against this detection's 27
+        /// (#1289), but that was before #1275: re-run since, both close the
+        /// same 64.
         bool not_first_not_last = false;
 
         /// The two halves of \ref not_first_not_last, separately switchable, as
@@ -250,18 +253,23 @@ namespace gcs
         /// What it is worth depends on which sets it asks about. Over the
         /// sweep's windows, as #757 measured it, **1.6-1.7x the detection was
         /// worth 0.6% of the summed recursions and nothing at the median**.
-        /// Over every set (#1249) it is the strongest rule this constraint
-        /// has: on generated unary RCPSP it closes 64 of 69 instances in 60 s,
-        /// against 31 for \ref edge_finding and 27 with neither, at a hundredth
-        /// of the window-energy detection's recursions. See
+        /// Over every set (#1249), on generated unary RCPSP, it closed 64 of
+        /// 69 instances in 60 s against 31 for \ref edge_finding and 27 for
+        /// the window-energy detection, as #1289 measured it before #1275
+        /// made both of those turn \ref overload on. Re-run since (at
+        /// 0a5b4ec6), the window-energy detection closes the same 64,
+        /// edge-finding 65 and no rules 27, and over the instances both
+        /// detections close the published one takes 0.984x the summed
+        /// recursions (median 1.000x). See
         /// `dev_docs/disjunctive-proof-logging.md`. Off by default only
         /// because \ref not_first_not_last is.
         ///
         /// The #757 measurement is what the switch was built for, and it
         /// priced, on the encoding where the gap is cleanest, what #746 asks:
         /// how much certifying a weaker detection than the literature states
-        /// costs. The answer turned out to depend less on the detection than
-        /// on the sets it was asked about.
+        /// costs. Before #1275 the answer seemed to depend less on the
+        /// detection than on the sets it was asked about; with the overload
+        /// check on, neither moves the search much on those instances.
         bool not_first_not_last_published = false;
 
         /// Refuse an overload conflict whose smallest window holds more than

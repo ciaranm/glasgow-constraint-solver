@@ -652,8 +652,10 @@ namespace
         // One edge, one pol: the edge row plus the definition row of the
         // predecessor's bound literal cancels BinEnc(source) and leaves
         // BinEnc(v) >= source_bound - d, which is exactly what the closing
-        // RUP needs. This is justify_linear_bounds for a two-term linear,
-        // and it is the shape verified by hand in boundpush_hand.pbp.
+        // RUP needs. This is the pol justify_linear_bounds writes for a
+        // two-term linear, except that that one leaves out a bound the bits
+        // already imply (#1035), and it is the shape verified by hand in
+        // boundpush_hand.pbp.
         // Citing the predecessor's own bound is already the paper's
         // "lifted" explanation: the weakest antecedent for v >= L - d
         // across this edge *is* source >= L, so the pol's degree comes out

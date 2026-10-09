@@ -216,11 +216,13 @@ and the framework's closing reason-wrapped RUP then derives
 `[x >= L] → [y >= L - d]`. Upper bounds are the mirror image, citing the
 definition row of `[y < U + 1]` and concluding `[x < U + d + 1]`.
 
-This is `justify_linear_bounds` for a two-term linear, which is no accident: a
-single difference edge *is* a two-term linear, and the global propagator's only
-extra power is that it chains the pushes. It is also the shape verified by hand
-in `boundpush_hand.pbp` (see the survey directory) before any of this was
-written.
+This is the `pol` `justify_linear_bounds` writes for a two-term linear, which is
+no accident: a single difference edge *is* a two-term linear, and the global
+propagator's only extra power is that it chains the pushes. One difference:
+since #1055, `justify_linear_bounds` leaves out a bound the term's own bits
+already imply (issue #1035), where this `pol` always adds the predecessor's
+definition row. It is also the shape verified by hand in `boundpush_hand.pbp`
+(see the survey directory) before any of this was written.
 
 Real output, from the four-variable chain in
 `gcs/constraints/difference/difference_constraints_test.cc`:
