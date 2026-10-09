@@ -601,11 +601,12 @@ namespace
     }
 
     // Cumulative's energy reasoning works in Integer, so a capacity times a
-    // window's width, a task's length times its height, or the mandatory load
-    // summed over time can leave the machine range on in-range inputs. That is
-    // an IntegerOverflow saying which quantities are to blame, and never a
-    // wrong answer (#1235, #1223); each case has a twin just inside the limit,
-    // which must solve. Every count is by hand, in the comments.
+    // window's width, a task's length times its height, the mandatory load
+    // summed over time, or the bound the published not-first / not-last sweep
+    // checks can leave the machine range on in-range inputs. That is an
+    // IntegerOverflow saying which quantities are to blame, and never a wrong
+    // answer (#1235, #1223); each case has a twin just inside the limit, which
+    // must solve. Every count is by hand, in the comments.
     auto run_cumulative_energy_test(bool proofs) -> void
     {
         struct Case
@@ -615,15 +616,22 @@ namespace
             optional<long long> expected;
         };
 
-        auto tasks = [](Problem & p, const vector<pair<Integer, Integer>> & starts, Integer length, Integer height, Integer capacity) {
+        auto tasks = [](Problem & p, const vector<pair<Integer, Integer>> & starts, Integer length, Integer height, Integer capacity,
+                         CumulativeRules rules = CumulativeRules{}) {
             vector<IntegerVariableID> s, l, h;
             for (auto [lo, hi] : starts) {
                 s.push_back(p.create_integer_variable(lo, hi));
                 l.push_back(constant_variable(length));
                 h.push_back(constant_variable(height));
             }
-            p.post(Cumulative{s, l, h, constant_variable(capacity)});
+            p.post(Cumulative{s, l, h, constant_variable(capacity)}.with_rules(rules));
         };
+
+        // The published not-first / not-last detection (#1292) on top of the
+        // default rules, and as its control the window-energy one in its place.
+        CumulativeRules published, window_energy;
+        published.not_first_not_last = published.not_first_not_last_published = true;
+        window_energy.not_first_not_last = true;
 
         vector<Case> cases{// The overload check's supply, capacity times nine slots: two unit
             // tasks at the full capacity B take two different slots of 0..8.
@@ -661,7 +669,21 @@ namespace
                         starts.emplace_back(Integer{i}, Integer{i});
                     tasks(p, starts, 1_i, B, B);
                 },
-                2}};
+                2},
+            // The published not-first / not-last sweep checks its energy plus
+            // twice the capacity times the horizon once, up front, so that it can
+            // work in plain arithmetic. Two unit tasks of height B in 0..3: 2B +
+            // 2 * 4B = 10B, though no window's supply is more than 4B.
+            {"Cumulative published not-first/not-last sweep past Integer",
+                [&](Problem & p) { tasks(p, {{0_i, 3_i}, {0_i, 3_i}}, 1_i, B, B, published); }, nullopt},
+            // The same shape without the published detection: 4 * 3 = 12 ordered
+            // pairs of different slots. So it is that sweep's check which throws.
+            {"Cumulative published not-first/not-last sweep's control",
+                [&](Problem & p) { tasks(p, {{0_i, 3_i}, {0_i, 3_i}}, 1_i, B, B, window_energy); }, 12},
+            // In 0..2, 2B + 2 * 3B = 8B, and Integer's maximum is 8B + 7, so a
+            // horizon of three is the widest that fits: 3 * 2 = 6 ordered pairs.
+            {"Cumulative published not-first/not-last sweep inside Integer",
+                [&](Problem & p) { tasks(p, {{0_i, 2_i}, {0_i, 2_i}}, 1_i, B, B, published); }, 6}};
 
         for (const auto & [name, post, expected] : cases) {
             println(cerr, "integer ranges: {}{}: expecting {}", name, proofs ? " with proofs" : "",

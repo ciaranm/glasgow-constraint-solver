@@ -1980,7 +1980,10 @@ task is constant time. That is `O(H·n³)` for `H` distinct heights. Details:
   overfilling what the resource leaves beside `j`. Asked once at the tallest
   task in play, this rules a whole step out for everyone.
 - **Arithmetic.** The sweep works in plain arithmetic, with times taken from
-  the earliest `est`, under a bound checked once in `Integer`.
+  the earliest `est`, under a bound checked once in `Integer`: the total energy
+  plus twice the capacity times the horizon. A model past it throws
+  `IntegerOverflow`, at a narrower limit than the other rules'
+  ([`integer-ranges.md`](integer-ranges.md); `integer_ranges_test` pins it).
 - **Not-last** is the same code run on the tasks reflected in time
   (`est' = −lct`, `ect' = −lst`), where its condition reads as not-first's
   does.

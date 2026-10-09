@@ -151,8 +151,12 @@ Its energy reasoning multiplies the capacity by a window's width and a task's
 length by its height, and sums the mandatory load over each time point and over
 the horizon, all in `Integer`. A capacity or heights near the top of `S` leave
 room for only a handful of slots: two unit tasks of height `max_bounded_value()`
-at that capacity throw once their starts span nine slots, and solve at eight. It
-throws from the first such product or sum, including a whole-horizon load sum
+at that capacity throw once their starts span nine slots, and solve at eight. The
+published not-first / not-last detection (`not_first_not_last_published`, off by
+default) narrows that further: its sweep checks the total energy plus twice the
+capacity times the horizon once, up front, so that it can work in plain
+arithmetic, and the same two tasks then throw at four slots and solve at three.
+It throws from the first such product or sum, including a whole-horizon load sum
 that no single window needs, rather than doing the sweep in 128 bits, which
 nothing has needed so far. The `IntegerOverflow` says which quantities are to
 blame and keeps the operation that overflowed, and `integer_ranges_test` pins
