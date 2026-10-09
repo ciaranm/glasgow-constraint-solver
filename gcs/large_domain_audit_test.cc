@@ -29,7 +29,8 @@
  *                      (the node and edge selectors of the graph family must
  *                      be declared 0 or 1), or reads the variable as the one
  *                      literal v != 0 however wide it is (And, Or, ParityOdd).
- *                      Probed at its widest legal domain and required to be
+ *                      Probed at the audit's width where the declaration is
+ *                      accepted, at {0,1} where it is not, and required to be
  *                      clean, but a pass here is a weaker statement than a
  *                      Clean, and the label records that so a reader does not
  *                      mistake structural immunity for a fallback that works.
@@ -469,7 +470,7 @@ namespace
 
         // --- Logical and parity. These read each variable as the one literal
         // v != 0, so a wide declaration is accepted and means nothing more than
-        // a {0,1} one: probed wide, because that is the widest legal domain.
+        // a {0,1} one. Probed at the audit's width rather than at {0,1}.
         add("And", Expect::NoWidePosition, [](Problem & p) {
             auto v = wide(p, 3);
             p.post(And{v});

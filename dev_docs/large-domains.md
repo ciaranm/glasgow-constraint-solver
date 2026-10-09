@@ -794,7 +794,7 @@ snapshot for orientation.
 |---|---|
 | **KnownTrip** (20) | `Plus/many-intervals-gac` (the exact interval arm over two operands of 400 intervals, which `Dynamic` exists to cap), `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
 | **Clean** (102) | the arithmetic family (with five rows of its own for `Abs`, four for its interior holes, two of them view-wrapped, and one for a constant `v2` (#1080); one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands; `Plus/many-intervals` under `Auto`; and four `wide-product` rows, for `Multiply`, `Divide`, `Modulus` and `Power`, whose bound products would overflow without #1079's saturation), comparison, equality, linear, `AllDifferent` under `VC` and under `BC`, `AllDifferentExcept` with a variable posted twice (#1004), `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods`; and every index-valued position, declared wide (below) |
-| **NoWidePosition** (5) | `And`, `Or`, `ParityOdd`, `Subgraph` and `Dag`: Booleans only |
+| **NoWidePosition** (5) | `Subgraph` and `Dag`, whose node and edge selectors must be declared `0..1`; `And`, `Or` and `ParityOdd`, probed at `0..10^9` but reading each variable as the one literal `v != 0` |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
 and `Element` started as `KnownTrip` and are now `Clean`, by the interval
@@ -812,8 +812,9 @@ rather than being covered by association.
 **An index-valued position is `Clean`, not `NoWidePosition`.** A successor, a
 graph root or endpoint, an `Element` index, and an entry of `Inverse`,
 `SymmetricAllDifferent` or `ArgSort` can only ever take an array's worth of
-values, so these rows used to be `NoWidePosition` and probed over the index
-range itself. But a model may declare such a position wide, and the constraint
+values. So the graph and permutation rows used to be `NoWidePosition`, and every
+row, `Element`'s and `ArgSort`'s `Clean` ones included, probed such a position
+over the index range itself. But a model may declare such a position wide, and the constraint
 then `define_bound()`s it down — which installs an initialiser, so the bound
 lands when the root is propagated and everything `prepare()` and installation
 read off the variable is still the declared width. Each of these is now probed
@@ -823,7 +824,9 @@ range `±(2^60 − 1)`, and over `0..10^9` with a hole inside the index range.
 `Tree`, `DTree`, `Path`, `DPath`, `Reachable` and `DReachable` moved over, and
 `Element`, `ArgSort` and `MinDistance` gained `wide-index` rows; `SeqPrecedeChain`
 is not index-valued but is bounded the same way, and is probed the same way. All
-of them survive. What remains `NoWidePosition` is genuinely so: the graph
+of them survive the guard, which sees work done at the root without proofs; it
+does not cover what a proof written during search costs, and `SubCircuit` has a
+known per-value cost there (below). What remains `NoWidePosition` is genuinely so: the graph
 family's node and edge selectors are refused at `prepare()` if declared wider
 than `0..1` (which leaves `Subgraph` and `Dag` nothing else to declare), and
 `And`, `Or` and `ParityOdd` read a variable as one literal, `v != 0`, however
@@ -1167,9 +1170,17 @@ the line) and the wide case is flat. **A rewrite that is asymptotically better c
 still be worse everywhere anyone actually is**, and the only way to find that out
 is to measure the narrow case as well as the wide one.
 
-`subcircuit` deliberately keeps the per-value form: its pigeonhole needs every
-value named, and a successor's definition range *is* the node set, so there is no
-width there to spend on values the counting does not use.
+`subcircuit` deliberately keeps the per-value form, because its pigeonhole needs
+every value named. That rested on a successor's definition range being the node
+set, which is true only when the model declares it so. A successor may be declared
+wide (see the index-valued rows in the audit lane), and `prepare()` then
+`define_bound()`s it, but the at-least-one still spans the declared range: one term
+per declared value. This is a **known open problem**. With `SubCircuit` over five
+nodes, under SCC with a required node and two nodes unreachable, enumerating with
+proofs (four solutions) writes 5,257, 50,257 and 500,257 proof lines at declared
+widths of 100, 1,000 and 10,000. The audit lane cannot see this, because it is
+proof-only work done during search, and the proof-scaling survey cannot either,
+because it stops at the root.
 
 Each caller names only the values **its variable can still take**, not its whole
 value set. The two are different whenever the value set is a Hall set, a cover or
