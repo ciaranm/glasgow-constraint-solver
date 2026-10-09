@@ -35,13 +35,15 @@ Four things to know before touching it.
   holey roots, found no unsupported value and no missed failure. With the
   forcing off, every value that loses support is an `ns = 0` or `es = 0`:
   the removals alone are GAC on the 1-values and the root.
-- **The price is the encoding: `O(nodes × edges)` rows.** 136,395 rows and
-  14.0 MB for an 11-by-11 grid, against which every proof line is checked,
-  this family's or not. That is what limits the family's proofs on large
-  graphs. The undirected propagator's detection is linear in the graph per
-  call, plus `O(n)` per unreachable region for rule 6 and `O(n + |A|)` per
-  piece holding a candidate for each forcing's reason: a bridge has at most two
-  such pieces, a cut vertex up to its degree.
+- **The price is the encoding: `Θ(nodes × (nodes + edges))` rows.** Every
+  node is carried at every level, edges or not: 136,395 rows and 14.0 MB for
+  an 11-by-11 grid, and 80,402 of the family's rows for 200 nodes and no
+  edges. Every proof line is checked against them, this family's or not.
+  That is what limits the family's proofs on large graphs. The undirected
+  propagator's detection is linear in the graph per call, plus `O(n)` per
+  unreachable region for rule 6 and `O(n + |A|)` per piece holding a candidate
+  for each forcing's reason: a bridge has at most two such pieces, a cut
+  vertex up to its degree.
 - **A forcing made while the root is open costs a line per candidate root.**
   With the root fixed, a cut vertex or a bridge is one RUP; with it open, unit
   propagation cannot case-split over the root, so the proof pins one lemma per
@@ -281,11 +283,39 @@ proof concludes something from "the root is *somewhere*" whatever the root's
 own encoding is; it is a consequence of the flag definitions, kept because the
 open-root forcing's closing step needs it as a row.
 
-**Size, measured** (`gridprobe.cc` on a `k × k` grid, all variables free, the
-`.opb` of a one-solution run): about `(n − 1)(2|A| + 2n)` rows, plus `O(n + |E|)`
-for the family's other rows (`2|E| + 4n + 2`: `sgf` and `sgt`, `rootin`, the
-two reifying rows of each root flag, `reached`, and `root1le` / `root1ge`), and
-half as many flags as rows.
+**Size.** Counted from `define_proof_model` (`reachable.cc:131–198`), the rows
+labelled with the constraint's ID number exactly
+
+```
+2|E| + 4n + 2 + 2(n − 1)(|A| + n)
+```
+
+`2|E|` for `sgf` and `sgt`; `4n + 2` for the two reifying rows of each root
+flag, `rootin`, `reached`, and `root1le` / `root1ge`; and per level, two
+reifying rows per arc flag and per reach flag. The flags are about half as
+many as the rows. The level term has a node part as well as an arc part,
+because every node gets a reach flag at every level whether or not an edge
+touches it. So the encoding is `Θ(n(n + |E|))`, which is `Θ(n · |E|)` only when
+the graph has at least about `n` edges, as any connected one does. The formula
+matches the `.opb` exactly at every point measured (`size.cc`: distinct free
+`ns` and `es`, the root over `0..n − 1`, stopped at the first solution; each
+root proof verifies):
+
+| graph | nodes | edges | spelling | family rows | whole `.opb` rows | bytes |
+|---|--:|--:|---|--:|--:|--:|
+| no edges | 10 | 0 | either | 222 | 276 | 19 KB |
+| no edges | 50 | 0 | undirected | 5,102 | 5,356 | 398 KB |
+| no edges | 100 | 0 | undirected | 20,202 | 20,706 | 1.5 MB |
+| no edges | 200 | 0 | undirected | 80,402 | 81,406 | 6.3 MB |
+| path | 100 | 99 | undirected | 59,604 | 60,207 | 5.7 MB |
+| path | 100 | 99 | directed | 40,002 | 40,605 | 3.6 MB |
+| complete | 30 | 435 | undirected | 53,192 | 53,781 | 5.6 MB |
+| complete, one arc per pair | 30 | 435 | directed | 27,962 | 28,551 | 2.9 MB |
+
+*Release build of `86caad24`, fataepyc-10, 2026-10-09
+(`tmp/fd-graph/codex/reachable/size/`).* With no edges the family's rows are
+`2n² + 2n + 2`, where `n · |E|` is zero. On grids (`gridprobe.cc` on a `k × k`
+grid, all variables free, the `.opb` of a one-solution run):
 
 | grid | nodes | edges | spelling | rows | bytes |
 |---|--:|--:|---|--:|--:|
@@ -302,9 +332,9 @@ level rows are `120 × (880 + 242) = 134,640`, plus 926 other family rows, which
 is 135,566 rows labelled with the constraint's ID; the remaining 829 are the
 variables' own encodings. Rows here are constraint rows: the `.opb`'s
 `preserved:` header line is not counted, as in [`tree.md`](tree.md).
-`O(n · |E|)`, so `O(k⁴)` in a grid's side and `O(n³)` on a dense graph. The
-unfolding is independent of domain width; the root's own encoding is not. It
-is a bit sum logarithmic in the root's *declared* width, and `define_bound`
+`Θ(n(n + |E|))`, so `Θ(k⁴)` in a grid's side, `Θ(n³)` on a dense graph, and
+`Θ(n²)` however few the edges. The unfolding is independent of domain width;
+the root's own encoding is not. It is a bit sum logarithmic in the root's *declared* width, and `define_bound`
 adds two clamp rows rather than re-encoding it: on a three-node path the `.opb`
 is 67 rows and 4,674 bytes with the root over `0..2`, and 69 rows with
 6,620 bytes at `±10³`, 12,028 at `±10⁹` and 22,840 at `±(2⁶⁰ − 1)`
@@ -354,9 +384,9 @@ one that makes the inferences RUP.
 nothing else. `install_propagators` builds the arc list and an adjacency index
 (arcs leaving and entering each node), `O(n + |E|)`, once, and captures them in
 the propagator. There is no initialiser of the family's own; the root's
-`define_bound` installs one. `define_proof_model` writes the `O(n · |E|)` rows,
-with proofs on. With proofs off too, installing the propagator is quadratic in
-its trigger count, `n + |E| + 1`: `Propagators::install_returning_id` builds the
+`define_bound` installs one. `define_proof_model` writes the `Θ(n(n + |E|))`
+rows, with proofs on. With proofs off too, installing the propagator is
+quadratic in its trigger count, `n + |E| + 1`: `Propagators::install_returning_id` builds the
 scope with a linear `contains` per trigger (`propagators.cc:724–748`), and then
 unions it into the constraint's scope with another linear `contains` per scope
 variable (`765–769`), so fixing the first loop alone leaves it quadratic. The
@@ -491,7 +521,7 @@ is cut to the node numbers before any of this runs.
    width or by kind. The one width effect is in the OPB: the root's bit-sum
    encoding is logarithmic in its declared width (see [OPB
    encoding](#opb-encoding)). What a line *costs to check* is proportional to the
-   encoding, `O(n · |E|)` rows, which is the family's real proof cost; see
+   encoding, `Θ(n(n + |E|))` rows, which is the family's real proof cost; see
    [Proof performance](#proof-performance).
 4. **The audit lane.** Two rows, `Reachable` and `DReachable`, pinned
    `NoWidePosition`: a path of three nodes, `ns` and `es` `0..1`, and a root over
@@ -556,8 +586,8 @@ that the last literal of one rule 6 reason on its fixture is needed.
 
 **Checking a RUP walks the unfolding.** A rule 5, 6 or forcing line is one line,
 but VeriPB's propagation reaches up to all `n − 1` levels of the region it is
-about, `O(n · |A|)` rows. That is why proof size and checking time move apart
-here; see [Proof performance](#proof-performance).
+about, `O(n · (n + |A|))` rows at worst. That is why proof size and checking
+time move apart here; see [Proof performance](#proof-performance).
 
 ### Rule: edge-selects-endpoints
 
@@ -795,7 +825,12 @@ here; see [Proof performance](#proof-performance).
 - **Reason** — for each piece reached from a candidate without `v` (one per
   piece undirected), its border literals and `ns[m] = 1` for one selected node
   outside it; plus `root = ρ` when the root is fixed, or `root ≠ σ` for every
-  non-candidate node when it is open. Not minimal.
+  non-candidate node when it is open. Not minimal, and not deduplicated
+  across pieces: `border_reason` deduplicates within one border, but an edge
+  fixed out between two pieces is named by both (`reachable.cc:452–472`).
+  Its length is at most `|A|` border literals, since each arc leaves at most
+  one piece, plus one `ns[m] = 1` per piece and at most `n − 1` root literals:
+  `O(n + |E|)`, not `O(n)`.
 - **Assertion** — `ns[v] = 1 ∨ ¬reason`, in both forms. Measured: root fixed to
   0 on a path `0–1–2`, `ns[2]` selected (case `cutfixed`):
   ```
@@ -813,24 +848,80 @@ here; see [Proof performance](#proof-performance).
   del range -3 -1;
   ```
 - **Hint** — `hints::Reachable`. The same for both forms.
-- **Offline reconstructibility** — root fixed, `offline`. Root open, `search`:
-  the clause alone is not RUP, and a sufficient derivation is the case split
-  over the root's values, each a RUP, closed against `root1ge`, all in the
-  baseline context (the root flags `x[id][v][root]` and that row are labelled).
-  Nothing in the assertion or the hint says to try it rather than plain RUP;
-  every assertion carries the constraint ID, so that does not count as the hint
-  naming the row. The search: try RUP, and on failure split over the `n` root
-  values; cost up to `n` RUPs, each over the unfolding. A subhint would make it
-  `hinted`. As [`circuit.md`](circuit.md) grades its analogous rerun-the-walk
-  case.
-- **Proof size** — root fixed, one line. Root open, `c + 1` lines and a
-  `del range`, `c` the
-  number of candidates other than `v`, shrinking as search narrows the root.
-  Every lemma repeats the whole reason, so a forcing writes `O(c · |reason|)`
-  literals, `O(n²)` at worst, where each lemma needs only its own piece's
-  border (#1312). On `hitori` `h5-1`, 18 forcings write 364 pinned lemmas, 19
-  to 22 apiece; on `h11-1`, 2,396 forcings write 212,458, about 89 apiece at 152
-  literals each ([Proof performance](#proof-performance)).
+- **Offline reconstructibility** — `offline`, in both forms. Root fixed, the
+  clause is RUP. Root open, it often is not, but one procedure, fixed by the
+  family and needing nothing chosen, always derives it from the baseline
+  context: for every node `u`, derive `C ∨ ¬x[id][u][root]` by RUP, where `C` is
+  the asserted clause; then derive `C` by RUP against `root1ge`. The flags and
+  the row are in the `.opb`, under the constraint ID the hint carries. The
+  procedure needs no knowledge of the root's domain, of the pieces, or of which
+  rule fired.
+
+  Each per-root RUP is guaranteed, from the rows and what the reason contains.
+  Assume `¬C`, so the reason holds and `ns[v] = 0`. A node no longer in the
+  root's domain has `root ≠ u` in the reason (`reachable.cc:488–490`), which
+  falsifies `x[id][u][root]` through its reifying row. For `u = v`,
+  `rootin<v>` does. For a candidate `ρ`, `root1le` falsifies every other root
+  flag. The reason holds the border of the piece `ρ` reaches without `v`, and
+  `ns[m] = 1` for a selected `m` outside it: the code adds both for every
+  candidate's piece (`reachable.cc:452–472`). Such an `m` exists because the
+  forcing fires only when no candidate's piece holds every selected node,
+  which is also what makes it sound. `ns[v] = 0` falsifies every edge at `v`
+  through `sgf` and `sgt`. So every arc leaving the piece is false at every
+  level, and no node outside it is ever reached. `reached<m>` then conflicts.
+  That per-root RUP is the solver's own pinned lemma `C ∨ root ≠ ρ`, with the
+  flag in place of the value literal. Once every flag is false, `root1ge`
+  conflicts, which gives the closing step.
+
+  Checked by replay (`tmp/fd-graph/codex/reachable/replay/`). 2,300 random
+  models, up to eight nodes, both spellings, holey open roots and forcing on,
+  were enumerated at `Off`, up to 300 solutions each. In 635 of them the
+  solver's proof holds open-root forcings: 5,856 in all, 254 of rule 7, 4,556
+  of rule 8, 157 of rule 9 and 889 of rule 10, 68 of them with a single
+  pinned lemma. Each was replaced by this procedure in a proof that keeps only
+  the `.opb` and the proof's own literal definitions (its `red` lines), with
+  each forcing's lines deleted before the next. All 635 proofs verify. As a
+  control, the closing RUP alone is refused in 253 of the 635. A fact-check's
+  adversarial replay (`tmp/fd-graph/codex/fc/adv/`) adds 8,000 models with
+  aliased, constant and negated-view `ns` and `es`, offset and negated root
+  views, self loops and parallel edges. Its 9,507 open-root forcings, in 775
+  models, all verify the same way. The `n` per-root lines are sufficient, not
+  minimal. The closing step needs no line for the candidates of one piece,
+  because nothing outside a sealed piece is reached whichever of its nodes is
+  the root. On the third forcing of the replay's fixture `t1off`, with pieces
+  `{0, 1}` and `{3, 4}`, dropping the lines for nodes 0 and 3 is refused
+  (`t1off.mut_block3_drop0and3.pbp`).
+
+  The cost is `n` RUP lines of `|C| + 1` literals and a closing line of `|C|`,
+  and each check propagates over up to `O(n(n + |A|))` rows. The solver's own
+  derivation is `c + 1` lines. The same procedure also succeeds on rules 1 to
+  6 and the fixed-root forms, because adding a hypothesis to a RUP leaves it
+  RUP. A subhint saying "plain RUP" or "split" would only save lines; it adds
+  no information.
+- **Proof size** — root fixed, one line of `O(n + |E|)` literals. Root open,
+  `c + 1` lines and a `del range`, `c` the number of candidates other than `v`,
+  shrinking as search narrows the root. Every lemma repeats the whole reason,
+  so a forcing writes `(c + 1)(|reason| + 2)` literal occurrences at most,
+  where each lemma needs only its own piece's border (#1312). That is
+  `O(c · (n + |E|))`, and so cubic in the nodes on a dense graph with `c`
+  near `n`. One family shows it. Take odd `n`: a centre adjacent to every
+  node, between two cliques of `(n − 1)/2`. Keep the complete graph's edge
+  list, with every cross-clique edge a singleton variable fixed to 0. Select
+  one node in each clique and leave the root open over every node. The root
+  propagation forces the centre with `c = n − 1` lemmas, and each clique's
+  border is the `((n − 1)/2)²` cross edges, named once per piece:
+
+  | `n` | lemmas | closing clause literals (distinct) | occurrences, lemmas and closing |
+  |--:|--:|--:|--:|
+  | 9 | 8 | 35 (19) | 323 |
+  | 17 | 16 | 131 (67) | 2,243 |
+  | 33 | 32 | 515 (259) | 17,027 |
+
+  *`86caad24`, fataepyc-10, 2026-10-09 (`tmp/fd-graph/codex/reachable/family/`;
+  each proof verifies).* The occurrences grow 7.6 times per doubling at the
+  top, close to cubic. On `hitori` `h5-1`, 18 forcings write 364 pinned
+  lemmas, 19 to 22 apiece; on `h11-1`, 2,396 forcings write 212,458, about 89
+  apiece at 152 literals each ([Proof performance](#proof-performance)).
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.` No lane corrupts a forcing; the `border` lane's
   corruption applies here too, but VeriPB stops at an earlier rule 6 line.
@@ -853,15 +944,25 @@ here; see [Proof performance](#proof-performance).
 - **Proof technique** — as rule 7, both forms, with `es[e] = 0` as the
   hypothesis: it falsifies the arc flags directly. No candidate is exempted from
   the pinned lemmas, since removing an edge rules out no root.
-- **Reason** — as rule 7.
+- **Reason** — as rule 7, with at most two pieces, one per side of the
+  bridge. `e` itself is never named: the arc an undecided hypothesis stops is
+  left to the negated goal (`reachable.cc:324–337`).
 - **Assertion** — `es[e] = 1 ∨ ¬reason`. Measured (case `cutfixed`):
   ```
   a 1 i[e1][b0] 1 ~i[n2][eq1] 1 ~i[root][eq0] >= 1::reachable:((constraint_id _1));
   ```
 - **Hint** — `hints::Reachable`.
-- **Offline reconstructibility** — as rule 7: `offline` with the root fixed,
-  `search` with it open.
-- **Proof size** — as rule 7, with `c` the number of candidates.
+- **Offline reconstructibility** — `offline`, in both forms, by rule 7's
+  procedure, checked separately for this rule. The per-root argument changes in
+  two places. There is no `v`, so every node is either a candidate or a
+  non-candidate. `es[e] = 0`, from `¬C`, falsifies `e`'s arc flags directly.
+  A candidate's piece is its side of the bridge, sealed by its border and by
+  `e`. In the replay above, all 4,556 open-root bridge forcings verify.
+- **Proof size** — root fixed, one line of `O(n + |E|)` literals. Root open,
+  as rule 7, with `c` counting every candidate, since none is exempted. There
+  are at most two pieces, so the reason has at most `|A|` border literals, two
+  `ns[m] = 1`, and `n − c` root literals. A forcing writes `O(c · (n + |E|))`
+  literal occurrences.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -899,9 +1000,14 @@ here; see [Proof performance](#proof-performance).
   different parts of it.
 - **Reason** — per candidate, the border of what it reaches without `v` and
   `ns[m] = 1` for one selected node it misses; plus the root literals as in
-  rule 7. **Duplicated literals:** two candidates missing the same `m` both push
-  `ns[m] = 1`, and nothing deduplicates. Measured (case `dforce`, below), where
-  `~i[n2][eq1]` appears twice. Harmless to the checker.
+  rule 7. **Duplicated literals.** Each candidate's border is appended whole,
+  with no sharing between candidates in the directed spelling
+  (`reachable.cc:452–472`). So a literal is named once for every candidate
+  whose reached set it seals, and two candidates missing the same `m` both
+  push `ns[m] = 1`. Nothing deduplicates. Measured (case `dforce`, below),
+  where `~i[n2][eq1]` appears twice. The checker accepts the duplicates, but
+  they are what makes the reason long: at most `c(|E| + 1) + n` literals for
+  `c` candidates, where its distinct literals number `O(n + |E|)`.
 - **Assertion** — `ns[v] = 1 ∨ ¬reason`. Measured: arcs `0→1`, `1→2`, `3→1`,
   root over `{0, 3}`, `ns[2]` selected:
   ```
@@ -909,8 +1015,29 @@ here; see [Proof performance](#proof-performance).
   ```
   (`_1` is the `In` that gives the root its holey domain.)
 - **Hint** — `hints::Reachable`.
-- **Offline reconstructibility** — as rule 7.
-- **Proof size** — as rule 7.
+- **Offline reconstructibility** — `offline`, in both forms, by rule 7's
+  procedure, checked separately for this rule. The per-root argument for a
+  candidate `ρ` uses `ρ`'s own border and the `m` it misses, which the reason
+  carries for every candidate. `ns[v] = 0` seals `v` as in rule 7. In the
+  replay above, all 157 open-root directed node forcings verify.
+- **Proof size** — root fixed, one line, with one candidate's border:
+  `O(n + |E|)` literals. Root open, `c + 1` lines, each carrying the whole
+  reason, so `(c + 1)(|reason| + 2)` literal occurrences, which is
+  `O(c² · (|E| + 1) + c · n)`. That is quartic in the nodes on a dense digraph
+  with `c` near `n`. In rule 7's family with both orientations of every edge,
+  each candidate's border is the `((n − 1)/2)²` arcs into the other clique:
+
+  | `n` | lemmas | closing clause literals (distinct) | occurrences, lemmas and closing |
+  |--:|--:|--:|--:|
+  | 9 | 8 | 137 (35) | 1,241 |
+  | 17 | 16 | 1,041 (131) | 17,713 |
+  | 33 | 32 | 8,225 (515) | 271,457 |
+
+  *Same build and probe; each proof verifies.* The occurrences grow 15.3 times
+  per doubling at the top, close to quartic. Two changes would each remove one
+  factor of `c`. Deduplicating the reason makes it `O(n + |E|)`. Narrowing
+  each lemma to its own candidate's border, which #1312 tracks, makes a lemma
+  `O(n + |E|)` long.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -932,8 +1059,12 @@ here; see [Proof performance](#proof-performance).
   a 1 i[e1][b0] 1 ~i[n2][eq1] 1 ~i[n2][eq1] 1 i[root][eq1] 1 i[root][eq2] >= 1::reachable:((constraint_id _2));
   ```
 - **Hint** — `hints::Reachable`.
-- **Offline reconstructibility** — as rule 7.
-- **Proof size** — as rule 7.
+- **Offline reconstructibility** — `offline`, in both forms, by rule 7's
+  procedure, checked separately for this rule. As rule 9, with `es[e] = 0`
+  falsifying `e`'s arc flag in place of `ns[v] = 0`. There is no `v`, so every
+  node is a candidate or a non-candidate. In the replay above, all 889
+  open-root directed edge forcings verify.
+- **Proof size** — as rule 9, with `c` counting every candidate.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -1037,7 +1168,7 @@ one does.
 - **For proof verification:** `hitori` `h5-1`, which verifies in 0.14 s.
   `h11-1` writes 673 MB with the forcing and verifies in 23 to 31 minutes;
   nothing larger was run with proofs in this audit, and since the encoding
-  grows as `O(n · |E|)` and the lemma count with the search, larger instances
+  grows as `Θ(n(n + |E|))` and the lemma count with the search, larger instances
   should not be run with proofs uncapped. `--connectivity none` at `h11-1`
   writes 9.65 GB (the design note's figure; not re-run).
 
@@ -1253,7 +1384,7 @@ switch is the caller's, not the proof logger's.
 
 The one proof-side defect is a cost, not a gap: the open-root forcing's pinned
 lemmas, a line per candidate root, each carrying the whole reason (#1312), on
-a database of `O(n · |E|)` rows. It is a label-groups candidate in
+a database of `Θ(n(n + |E|))` rows. It is a label-groups candidate in
 [`proof-benchmarks.md`](../proof-benchmarks.md).
 
 The SCC propagator's bare unit assertions at the assertion levels, which the
@@ -1263,8 +1394,8 @@ counterpart here: every `reachable` assertion carries its reason.
 ### Known limitations
 
 - **Its proofs are slow to check on large graphs**, because every proof line is
-  checked against an encoding of `O(nodes × edges)` rows: 136,395 rows for an
-  11-by-11 grid.
+  checked against an encoding of `Θ(nodes × (nodes + edges))` rows: 136,395
+  rows for an 11-by-11 grid.
 - **A forcing made before search has decided the root costs a proof line per
   candidate root.** `connected` leaves the root open; on `hitori` that makes the
   default proof several times the size of the no-cuts one.
@@ -1294,7 +1425,13 @@ counterpart here: every `reachable` assertion carries its reason.
    was tried. It does not change the number of lines, and the lemmas stay 95%
    of `h11-1`'s bytes, since most of each is its own piece's border. It buys
    disk; no check-time saving was measurable (2% slower in both of two pairs
-   of runs, within their noise). Filed as #1312.
+   of runs, within their noise). The directed forcing has more to gain. Its
+   reason repeats a border per candidate, so a forcing writes
+   `O(c² · (|E| + 1) + c · n)` literal occurrences, quartic on a dense digraph
+   (see [rule 9](#rule-directed-node-forcing)). Narrowing each lemma to its own
+   candidate's border removes one factor of `c`. Filed as #1312, which covers
+   the narrowing only. Deduplicating the reason would also shorten the
+   closing line; that is not part of #1312, and is not filed (item 7).
 3. **One dominator tree per candidate root for the directed forcing.** Exact,
    and near-linear per candidate: `O(|candidates| · (n + |E|))` per call (up to
    a factor `α`) instead of `O((n + |E|)² · |candidates|)`. With the root fixed
@@ -1329,6 +1466,10 @@ counterpart here: every `reachable` assertion carries its reason.
      directed spelling"; it switches rules 9 and 10 (see [Options](#options)).
    - `reachable_test.cc:180` says the mutation fixture is "six free nodes"; it
      has seven (`208–217`).
+   - The comment at `reachable.cc:154–155` and `connectivity-proofs.md`'s
+     statements of the size (lines 14, 234, 315, 378 and 625) give it as
+     `O(nodes × edges)`, which drops the `n²` term (see [OPB
+     encoding](#opb-encoding)); [`tree.md`](tree.md) lists the same lines.
 5. **The audit lane's pin.** A wide root, plain or as an offset view,
    enumerates without tripping the guard (see [Interval
    efficiency](#interval-efficiency)). PR #1302 (open) re-pins this family's
@@ -1336,7 +1477,7 @@ counterpart here: every `reachable` assertion carries its reason.
    wide-declaration rows, as the safer choice until data argue otherwise; its
    guarded run trips nothing. The lane still runs only with the guard on
    (#920).
-6. **The checking cost itself** is the encoding's, `O(n · |E|)` rows taxing
+6. **The checking cost itself** is the encoding's, `Θ(n(n + |E|))` rows taxing
    every line. VeriPB's label groups are the route `proof-benchmarks.md`
    records, and `hitori-propagator-no-cuts` is the control to measure them
    against. Nothing to do in this family until then: the alternative encodings
@@ -1344,11 +1485,14 @@ counterpart here: every `reachable` assertion carries its reason.
    encoding).
 7. **Not worth an issue now:** passing MiniZinc's root offset as a view instead
    of a shifted variable, which would save one variable and one `Equals` and
-   nothing else (the `Equals` already carries holes);
-   deduplicating the directed forcing's reason literals; a mutation lane for
+   nothing else (the `Equals` already carries holes); deduplicating the
+   forcing's reason literals, which matters most for the directed spelling
+   (see [rule 9](#rule-directed-node-forcing)); a mutation lane for
    the forcing rules (wanted only when their derivation next changes); a
-   subhint for the open-root forcing, which a justifier would show whether it
-   needs.
+   subhint for the open-root forcing. Reconstruction does not need the
+   subhint: rules 7 to 10 are `offline` by a fixed split over the root flags
+   (see [rule 7](#rule-cut-vertex)). It would only save the per-root lines
+   where one RUP would do, which is a cost for the justifier to show.
 
 ## Prior art
 
@@ -1368,15 +1512,56 @@ the forcing over the residual graph, against "every selected node and a
 candidate root", is exactly the rest of GAC — which the design note states and
 this audit checked by brute force rather than proved.
 
+**The unfolding is not new as an encoding.** Layered reachability, over
+transitions that are themselves chosen by variables, is a SAT encoding from
+planning under partial observability. Chatterjee, Chmelík and Davies (*A
+symbolic SAT-based algorithm for almost-sure reachability with small
+strategies in POMDPs*, AAAI 2016, §3.1 of arXiv:1511.08456) define "there is a
+path to the goal of length at most `j`" by an equivalence over layer `j − 1`,
+with `|S|` layers enough. Their clause that a state the strategy reaches must
+reach the goal plays the part of the `reached` rows here. Pandey and Rintanen
+(*Planning for partial observability by SAT and graph constraints*, ICAPS
+2018, p. 194, equations (8) to (10)) write the recurrence with the previous
+layer as a disjunct, as `reach[v][k]` has it. They give its size as
+proportional to the product of nodes and arcs (true when the arcs are at
+least about as many as the nodes; their recurrence also carries every node at
+every layer, see [OPB encoding](#opb-encoding)), and present it as Chatterjee
+et al.'s baseline, which their linear-size encodings replace. Feyzbakhsh
+Rankooh and Rintanen (*Propositional encodings of acyclicity and reachability
+by using vertex elimination*, AAAI 2022, the Background section; §3 of
+arXiv:2105.12908) survey a one-sided form with `|V| − 1` levels. They set it
+beside reachability by acyclicity and GraphSAT's propagators, and add
+encodings over vertex elimination graphs. All of these count distance to a
+fixed goal or target, and hand the formula to a SAT solver. The adaptation to
+this constraint is this solver's. The source is a variable root, one-hot as
+`reach[v][0]` whatever the root's own encoding. Nodes and edges are picked by
+the constraint's own 0/1 variables, tied together by the subgraph rows. The
+undirected spelling gives each edge one arc per direction. [`tree.md`](tree.md)
+and [`path.md`](path.md) inherit the unfolding through this family, and
+[`dag.md`](dag.md) writes a rootless variant of it.
+
 On the proof side, certified connectivity was first done in the Glasgow
 Subgraph Solver for maximum common connected subgraph (Gocht, McBride,
 McCreesh, Nordström, Prosser and Trimble, *Certifying solvers for clique and
-maximum common (connected) subgraph problems*, CP 2020), whose connectivity
+maximum common (connected) subgraph problems*, CP 2020). Its connectivity
 inference is a bare RUP against a pairwise walk encoding built by repeated
-squaring, `O(n³ log n)`. The breadth-first unfolding here keeps the bare RUP at
-`O(n · |E|)`, and the open-root case split is the standard extended-reason
-pinning; as far as this audit knows, neither the unfolding as a proof encoding
-for connectivity nor its use for an existentially quantified root is published.
+squaring, `O(n³ log n)`. Later certified reachability arguments use other
+encodings. `Circuit`'s (McIlree, McCreesh and Nordström, *Proof logging for
+the circuit constraint*, CPAIOR 2024) shows a reachable set too small against
+its position labelling (see [`circuit.md`](circuit.md)). Feng et al. (*DRAT
+proofs of unsatisfiability for SAT modulo monotonic theories*, TACAS 2024)
+check graph-reachability theory lemmas in DRAT. Their reachability
+definition is one-sided and `O(|E|)`, and each unreachability lemma is checked
+against a bound built for that lemma from the solver's record of which
+vertices it reached. The breadth-first unfolding here keeps each inference a
+bare RUP against `Θ(n(n + |E|))` rows, and the open-root case split is the
+standard extended-reason pinning. What is claimed is the certification, not the
+encoding. Every inference is a RUP against the unfolding, the open-root
+forcings after the split over candidate roots. As far as this audit knows,
+neither the unfolding as a proof encoding for connectivity nor its use for an
+existentially quantified root is published. The SAT papers above do not show
+their encodings supporting a propagator's inferences, or a proof's solution
+steps.
 
 ## Further reading
 

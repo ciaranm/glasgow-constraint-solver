@@ -596,7 +596,7 @@ constraints and do not restate it.
   in both spellings with its cut-vertex and bridge forcing on (no unsupported
   value in 12,000 random root states per spelling); with it off, only the
   0-values lose support. The costs are on the proof side and in one algorithm:
-  the encoding is `O(nodes × edges)` rows, 136,395 for an 11-by-11 grid, and it
+  the encoding is `Θ(nodes × (nodes + edges))` rows, 136,395 for an 11-by-11 grid, and it
   taxes every proof line, this family's or not; a forcing made while the root
   is open pins a lemma per candidate root, 96.5% of `hitori` `h11-1`'s 673 MB
   proof, mostly each lemma's own piece's border (narrowing each lemma to its
