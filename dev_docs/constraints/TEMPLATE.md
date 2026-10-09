@@ -861,6 +861,16 @@ the entry. A derivation that exists but is expensive to find, even one whose
 only known route is to re-run the solver's own search, is `search`, with that
 cost named. Hard-to-find is `search`; impossible-without-help is `solver-side`.
 
+**A fixed case split is not a search.** Sometimes the clause alone is not RUP,
+but a case split whose cases the model itself fixes always derives it: one RUP
+`C ∨ ¬x[u]` per value flag of a one-hot variable, then `C` by RUP against its
+at-least-one row, with every case guaranteed to succeed. That rule is
+`offline`, even though the procedure can take more lines than the solver's own
+derivation and plain RUP sometimes suffices. `search` is for derivations that
+need something found, not enumerated: a licensing row, a witness, a combination
+of rows. [`reachable.md`](reachable.md)'s open-root forcings (rules 7 to 10)
+are the example; their entries argue the guarantee.
+
 The `solver-side` rules are exactly the list of things the external tool cannot
 rebuild, and therefore exactly what a hints-only GCS mode has to carry. The
 `search` rules are the list of places where a hint would save work, and are
