@@ -471,11 +471,13 @@ auto main(int argc, char * argv[]) -> int
             ("disjunctive-not-first-not-last-published",
                 "Detect not-first / not-last by the published unary condition rather than by the " //
                 "guarded window-energy one: the published rule argues over a narrower window "     //
-                "whose left edge the negated conclusion derives, and fires 1.6-1.7x as often. "    //
+                "whose left edge the negated conclusion derives, and asks about every set of "     //
+                "tasks that can fire it rather than only the sweep's windows (#1247, #1249). "     //
                 "Implies --disjunctive-not-first-not-last. Certified over that derived window, "   //
                 "by the same mechanism --disjunctive-detectable-precedences-set uses. Off by "     //
-                "default because the measurement is made: that detection is worth 0.6% of the "    //
-                "summed recursions and nothing at the median (#757)")                              //
+                "default only because --disjunctive-not-first-not-last is: on generated unary "    //
+                "RCPSP it closes 64 of 69 instances in 60 s, against 27 for the window-energy "    //
+                "detection (#1289)")                                                               //
             ("disjunctive-detectable-precedences-set",
                 "Push a detectable precedence to the set's earliest completion time rather than " //
                 "to the latest single predecessor's earliest end, and the mirror --- Vilim's "    //
