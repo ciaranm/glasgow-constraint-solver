@@ -1011,7 +1011,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `nogoods.md` | `nogoods/` | search machinery rather than a posted constraint; notes `restarts-nogoods-weighting.md`, `refined-triggers.md` |
 | `parity.md` | `parity/` | **written**. `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
 | `path.md` | `path/` | |
-| `reachable.md` | `reachable/` | |
+| `reachable.md` | `reachable/` | **written**. `Reachable` and `DReachable`, which `connected` / `dconnected` reach through the stdlib and `Tree` / `Path` post as a child; owns the unfolding encoding, the propagator and its forcing. `connectivity-proofs.md` stays, shared with `dag`; `Reachable`, `Subgraph` and `Dag` each carry their own copy of the subgraph rows and rules, and each document records its own; filed #1305, #1312, #1316 |
 | `regular.md` | `regular/` | existing note `regular.md` |
 | `seq_precede_chain.md` | `seq_precede_chain/` | **written**. Delegates to `value_precede` after a clamp; this document covers the clamp and the delegation |
 | `smart_table.md` | `smart_table/` | **written**. `SmartTable`, and the engine under `LexSmartTable` and `AtMostOneSmartTable`. The candidate merge with `table`, settled: separate. No shared code, and a flag per row and per entry against `Table`'s proof-only selector |
