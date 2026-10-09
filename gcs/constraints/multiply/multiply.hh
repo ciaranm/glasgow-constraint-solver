@@ -49,8 +49,8 @@ namespace gcs
      * bit-product grid must fit in an Integer, which allows the operands'
      * magnitudes 62 bits between them (31 + 31 or 32 + 30), and 63
      * (32 + 31) only when the result's own range is small beside their
-     * product; past that, posting with proofs enabled throws an
-     * IntegerOverflow.
+     * product; past that, solving with proofs enabled throws an
+     * IntegerOverflow when the proof model is built.
      *
      * \ingroup Constraints
      * \sa LinearEquality
