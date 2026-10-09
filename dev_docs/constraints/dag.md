@@ -232,6 +232,29 @@ subgraph half of the meaning, and `nowalk` is the acyclic half restated as "no
 long walk". `lev[v][0]` is a flag equivalent to the literal `ns[v] = 1`; it
 could be the literal itself, saving two rows per node.
 
+**On a solution the levels are a longest-path length.** Because every flag is
+fully reified, the rows fix every flag once `ns` and `es` are fixed, and
+`lev[v][·]` is monotone in `k`, since the last `k` edges of a walk are a walk.
+On an acyclic selection every walk is a path, so `lev[v][k]` holds exactly when
+`v` is selected and the longest selected path inside `C` that ends at `v` has
+at least `k` edges. Edges from outside `C` do not count. That makes `lev[v][·]`
+an order encoding of that length, although the ladder `lev[v][k+1] ⇒
+lev[v][k]` follows from the rows rather than being one of them. Checked by unit
+propagation over the rows `Dag` writes
+(`tmp/fd-graph/codex/dag/levels/check.py`), on 9,755,394 assignments to `ns`
+and `es` in all. These were every assignment
+over every digraph of one to three nodes, self loops allowed, up to
+isomorphism. At four nodes they were every assignment for the 1,814 of the
+3,044 digraphs up to isomorphism with at most eight edges, and 4,096 sampled
+for the rest. At five and six nodes, 3,000 sampled for each of 300 random
+digraphs. Unit propagation fails exactly when a selected edge has an
+unselected endpoint or the selection has a cycle. Otherwise it fixes every
+variable in the OPB, and all 25,701,113 level values checked equal the
+longest-path test. With the `nowalk` rows left out, it fixes every flag on
+every selection whose edges have both ends selected, cyclic ones included, to
+the walk meaning above. *Release build of `86caad24`, fataepyc-10,
+2026-10-09.*
+
 **Size**, in rows: `2|E|` for the subgraph, plus, per component,
 `2|V_C|²` (`|V_C|` levels of `|V_C|` two-row flags), `2|E_C|(|V_C| − 1)` (the
 arc flags) and `|E_C|` (`nowalk`). The rows are clauses or short reified
@@ -957,22 +980,54 @@ holds in every solution.
 Acyclicity as a constraint has a long history outside proof logging. Dooms,
 Deville and Dupont's CP(Graph) (CP 2005) gives graph variables with
 constraints over them. Gebser, Janhunen and Rintanen (*SAT Modulo Graphs:
-Acyclicity*, JELIA 2014) build acyclicity into a SAT solver and compare that
-with encoding it. Chuffed ships a native `dag`, which
+Acyclicity*, JELIA 2014) build acyclicity into a SAT solver. Their §5 compares
+that with the clausal encodings, by size and by two unit-propagation
+properties: whether a cycle is found once all its arcs are enabled, and whether
+the arc that would close an enabled path is disabled. Transitive closure
+(Rintanen, Heljanko and Niemelä, JELIA 2004; Cussens, UAI 2008) is
+`O(N · M)` for `N` nodes and `M` arcs, `O(N³)` on a complete graph, and has
+both properties. Topological indices are compact and have neither. Tree
+reduction (Corander, Janhunen, Rintanen, Nyman and Pensar, NIPS 2013) gives
+each node the length of its longest path to a leaf, up to `N − 1`, and
+Gebser, Janhunen and Rintanen's own experiments use it order-encoded. It is
+also `O(N · M)`, and has the first property but not the second. Feyzbakhsh Rankooh and Rintanen (*Propositional
+encodings of acyclicity and reachability by using vertex elimination*, AAAI
+2022) survey these again, with a matrix-multiplication encoding besides, and
+give new encodings over vertex elimination graphs. All of these are formulas handed to a
+SAT solver. Chuffed ships a native `dag`, which
 also requires weak connectivity, as measured above. The propagation here is
 the textbook one: an edge goes when the selected edges already reach its tail
 from its head. Generalised arc consistency follows from downward closure,
 which this audit argues and checks by brute force rather than citing.
 
 As far as this audit knows, no published work certifies acyclicity in a
-pseudo-Boolean proof system. The encoding is this solver's (#791): it spreads
-the walk length over a flag per level, as `Reachable`'s unfolding spreads a
-distance, so that every inference is one RUP. Restricting it to the input's
-strongly connected components is also this solver's. The nearest published
-relative is the transitive-closure-by-squaring encoding that the Glasgow
-Subgraph Solver uses to certify connected maximum common subgraph (Gocht,
-McBride, McCreesh, Nordström, Prosser and Trimble, CP 2020), which
-`connectivity-proofs.md` discusses.
+pseudo-Boolean or DRAT proof system. Feng et al.'s DRAT proofs for SAT modulo
+monotonic theories (TACAS 2024) certify graph reachability lemmas, but not
+acyclicity. The level encoding is a relative of tree reduction, not new in
+kind. It spreads a path length over a flag per level, as `Reachable`'s
+unfolding spreads a distance. Its `Θ(|V_C| · (|V_C| + |E_C|))` rows per
+component are the same order as the `O(N · M)` above, because a strongly
+connected component has at least as many edges as nodes. On a solution,
+`lev[v][k]` says that the longest selected path inside the component into `v`
+has at least `k` edges, where tree reduction measures out to a leaf (see
+[OPB encoding](#opb-encoding), where this audit checks it by enumeration). The
+unfolding itself has a published antecedent in layered SAT reachability
+encodings, traced in [`reachable.md`](reachable.md#prior-art). Its form here is
+this solver's (#791): the walk starts at every selected node at once, nodes are
+chosen by `ns` and tied to the edges by the subgraph rows, `nowalk` states the
+bound, and the levels are restricted to the input's strongly connected
+components, each with its own bound. Its use as the proof encoding, against
+which every inference is one RUP, is also this solver's. That RUP does not by
+itself set the encoding apart. Rules 3 to 5 are RUPs that see a whole cycle
+enabled, rules 3 and 4 after assuming the edge they remove, so they need only
+the first of Gebser, Janhunen and Rintanen's two properties, which tree
+reduction and transitive closure also have. That is this audit's reasoning:
+neither has been tried here as the proof encoding. The nearest published
+*certified* relative is the transitive-closure-by-squaring encoding that the
+Glasgow Subgraph Solver uses to certify connected maximum common subgraph
+(Gocht, McBride, McCreesh, Nordström, Prosser and Trimble, CP 2020), which
+`connectivity-proofs.md` discusses. As encodings, tree reduction and the
+`O(N · M)` transitive closure above are nearer.
 
 ## Further reading
 
