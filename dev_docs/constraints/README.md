@@ -708,6 +708,34 @@ constraints and do not restate it.
   node counts), and a stale entry per declared value makes every node cost
   time linear in the declared width (#1339); the regex form's value-by-value
   alphabet is a comment on #1227.
+- [`mdd.md`](mdd.md) — `MDD`, MiniZinc's and XCSP3's `mdd`: a sequence of
+  variables spells a root to accepting path through a deterministic layered
+  diagram. One class, one propagator and one rule, `unsupported-value`, made
+  by the first call's forward-backward sweep and by the in- and out-degree
+  cascade after it, on McIlree's thesis's `Regular` encoding with a flag per
+  node. The proof is the "upfront" strategy of
+  `decision-diagram-proof-strategies.md`: backward chains at the root, then a
+  `¬state` lemma per node as it dies and each removal by RUP, the
+  lemma-then-RUP derivation Demirović, McCreesh, McIlree et al. (CP 2024)
+  describe for the knapsack diagram; the root chains and per-branch lemma
+  cache around it are the upfront arrangement `regular.md`'s Prior art
+  assesses for all four families. Generalised arc consistent on distinct
+  variables, views included, at every one of 73,723 brute-forced search nodes;
+  every proof but the first finding's is accepted at whichever level it was
+  run at, `Off` or one of the three assertion levels, since a deterministic
+  diagram leaves no flag unassigned on a solution. The audit found a wrong
+  answer through the C++ API and the `.scp` reader: a diagram over no
+  variables with an empty accepting list reports solutions, and VeriPB rejects
+  the proof (#1329). Node indices are not validated (a crash, #1333), and
+  MiniZinc's binding errors on six kinds of valid shape, including nodes at
+  levels outside `1..L+1`, and reads past two vectors whenever N = 0 (#1336).
+  It is 75 to 94 times Gecode's instructions on nonograms at equal node and
+  solution counts, because its graph of hash containers is deep-copied at
+  every search node, as `Regular`'s is (#1338); and two `operator[]` lookups
+  leave an empty map entry per declared domain value for the rest of the
+  search, so twelve variables over `0..10⁵` take 66.5 s where `0..1` takes
+  0.023 s at the same node counts (#1339). No code is shared with `regular`:
+  `mdd.cc` has its own copy of the graph.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871

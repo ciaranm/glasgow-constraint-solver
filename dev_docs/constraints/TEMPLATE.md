@@ -1015,7 +1015,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `lex.md` | `lex/`, `lex_smart_table.hh` | **written**. The twelve named `Lex*` forms over `LexCompareGreaterThanOrMaybeEqual`, and `LexSmartTable`, whose engine is `smart_table`'s |
 | `linear.md` | `linear/` | **written**. Note `linear-slack-waking.md` is cross-referenced and due to be folded in; `subset-sum-strengthening.md` is not this family's (an `innards/proofs` helper for `knapsack` and `cumulative`) |
 | `logical.md` | `logical/` | **written**. `And`, `Or`, `AndIf`, `OrIf` over one propagator |
-| `mdd.md` | `mdd/` | `decision-diagram-proof-strategies.md` |
+| `mdd.md` | `mdd/` | **written**. One class, `MDD`. Not merged with `regular`: `mdd.cc` carries its own copy of `Regular`'s graph code (`MDDGraph`, `DeadCache`, the degree cascade) with per-layer node sets, and shares no helper, hint or encoding row with it; #200 is the unification. `decision-diagram-proof-strategies.md` stays as the long note shared with `regular` and `knapsack`; this document describes only `MDD`'s upfront use of it |
 | `min_distance.md` | `min_distance/` | **written**. `MinDistance` and its five propagation modes; `min-distance-proofs.md` stays as the long note |
 | `min_max.md` | `min_max/` | **written**. `ArrayMin`, `ArrayMax`, `Min` and `Max` over one `ArrayMinMax`; `Min` and `Max` are its two-entry case |
 | `nogoods.md` | `nogoods/` | search machinery rather than a posted constraint; notes `restarts-nogoods-weighting.md`, `refined-triggers.md` |
