@@ -682,6 +682,32 @@ constraints and do not restate it.
   left unfiled by decision, as in `smart_table`. Three of `Circuit`'s setters
   do nothing (#1318). A successor declared wide makes `SubCircuit`'s `SCC`
   proofs grow with the declared width (#1326).
+- [`regular.md`](regular.md) — `Regular`, a sequence spelling a word an
+  automaton accepts, deterministic, non-deterministic or from a MiniZinc-syntax
+  regular expression, over Pesant's layered-graph algorithm (one copy per
+  strategy) with three proof strategies: `Upfront` (the default: root backward
+  chains and per-state dead lines), `PerCall` (McIlree's per-edge
+  justifications) and `Bacchus` (a transition-variable encoding derived at the
+  root, no per-call proof), plus #1266's canonical run for ambiguous automata.
+  Generalised arc consistent on distinct variables under every strategy
+  (brute-forced at the root over 12,000 random automata with holes, and per
+  node over about 6,000). The audit found two wrong answers and three shapes of
+  rejected proof: through MiniZinc a start state other than 1 builds a
+  different automaton (#1328; enum-typed models, and reified ones on 2.10.1,
+  reach it); `Bacchus` accepts an empty sequence whose start is not final
+  (#1329), and its proofs are rejected because its scaffold leaves out three
+  kinds of published unit clause (#1331); above `Off` the default strategy
+  omits the static dead lines an unambiguous NFA's solution lines need
+  (#1332); and the scaffolding `Regular` writes at every level is rejected at
+  `Inferences` and `Backtracking` for a variable declared as a range whose
+  bounds unit propagation cannot recover, such as `-1..2`, or a view whose own
+  range is one, because the tracker omits the boundary pins above `Links`
+  (#1330). Also: an out-of-range state number crashes (#1333), the `.scp`
+  reader refuses NFAs (#1335), the graph is deep-copied at every search node
+  (#1338; 49 to 264 times Gecode's instructions on nonograms with the same
+  node counts), and a stale entry per declared value makes every node cost
+  time linear in the declared width (#1339); the regex form's value-by-value
+  alphabet is a comment on #1227.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
