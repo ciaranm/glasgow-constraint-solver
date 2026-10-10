@@ -736,6 +736,34 @@ constraints and do not restate it.
   search, so twelve variables over `0..10⁵` take 66.5 s where `0..1` takes
   0.023 s at the same node counts (#1339). No code is shared with `regular`:
   `mdd.cc` has its own copy of the graph.
+- [`knapsack.md`](knapsack.md) — `Knapsack`, `k` non-negative weighted sums of
+  one item list each equal to a total, which MiniZinc's `knapsack` and XCSP3's
+  `<knapsack>` post as two rows. One propagator, Trick's dynamic programme
+  rebuilt on every call, under two proof strategies over the same OPB (the `k`
+  equalities): `PerCall`, the default, re-derives the diagram as proof flags
+  on every call (Demirović et al., CP 2024 §3.3), and the opt-in `Upfront`
+  writes a diagram over the initial domains once at `Top`, with phantom states
+  and per-subtree dead-state lemmas; the `k`-dimensional diagram and its
+  joint-only phantom closing case are this family's own (`BinPacking`'s `k =
+  1` copy keeps the phantoms; the upfront arrangement itself is claimed once,
+  in `regular.md`). Both are GAC on items and totals over distinct variables,
+  holes included (4,000 random instances brute-forced at the root under each
+  strategy), give equal node and solution counts, and verified 1,600 random
+  proofs, views and constants among the items; `PerCall` passes the cake chain
+  cases, and `Upfront`, which has no chain case, chain-verifies by hand. The
+  audit found no wrong answer and no rejected proof. What it found is cost and
+  reach: the work is pseudo-polynomial on every call, so the two MiniZinc
+  Challenge `multi-knapsack` models spend 43 to 125 s and up to 25 GB in the
+  root with proofs off and wrote over 40 GB of proof with them on (#1341); the
+  interior-value pass is quadratic in a wide item (#1340); a negative item
+  value or total errors from MiniZinc (whose own definition constrains them
+  non-negative), and a negative item value, weight or profit aborts XCSP3
+  (#1337); `PerCall` silently drops excess coefficients (#1334); and #1229's
+  constant-total crash with proofs at `AssertionLevel::Off` is reachable from
+  a MiniZinc fixed capacity under `--prove` (commented on #1229). `Upfront`'s
+  proofs are 3.0 to 5.9 times smaller in bytes but take 1.10 to 5.9 times
+  longer to check (timed solo), and with proofs off it is the slower strategy.
+  `dev_docs/knapsack.md` stays as the long note.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
