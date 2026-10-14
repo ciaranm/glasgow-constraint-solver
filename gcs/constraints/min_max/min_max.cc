@@ -353,13 +353,10 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                 for (auto r : result_before.each()) {
                                     if (min ? r >= v : r <= v)
                                         continue;
-                                    // if var_i = v and result = r, no var can equal result, breaking al1
-                                    for (std::size_t k = 0; k < vars.size(); ++k)
-                                        logger->emit_rup_proof_line_under_reason(reason,
-                                            WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) + 1_i * (! selectors.at(k)) >= 1_i,
-                                            ProofLevel::Temporary);
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason, WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) >= 1_i, ProofLevel::Temporary);
+                                    // if var_i = v and result = r, no var can equal result, so
+                                    // every selector is ruled out, breaking al1
+                                    logger->emit_cases_proof_line_under_reason(
+                                        reason, WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) >= 1_i, selectors, ProofLevel::Temporary);
                                 }
                             };
                             inference.infer_not_equal(
