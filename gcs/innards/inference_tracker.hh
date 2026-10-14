@@ -166,6 +166,28 @@ namespace gcs::innards
         auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why,
             const SnapshottedReason & reason, const std::optional<AssertionAnnotation> & fallback, bool do_throw = true) -> void
         {
+            track_justified(logger, inf, lit, reason, do_throw,
+                [&](ProofLogger & l, const ReasonLiterals & r) { infer_explicitly(l, lit, why.emit, why.then_rup, r, why.hint, fallback); });
+        }
+
+        // The JustifyUsingCases counterpart: the same bookkeeping, with the one
+        // `cases` line as the justification (see infer_by_cases).
+        template <typename Hint_, typename CaseVariable_>
+        auto track_cases(ProofLogger * const logger, const Inference inf, const Literal & lit, const JustifyUsingCases<Hint_, CaseVariable_> & why,
+            const SnapshottedReason & reason, const std::optional<AssertionAnnotation> & fallback, bool do_throw = true) -> void
+        {
+            track_justified(logger, inf, lit, reason, do_throw,
+                [&](ProofLogger & l, const ReasonLiterals & r) { infer_by_cases(l, lit, why.case_variables, r, why.hint, fallback); });
+        }
+
+        // What track_explicit and track_cases share: \c justify writes the proof
+        // for the inference, and runs only when there is a logger and the
+        // tracker materialises reasons, so the proofs-off tracker never builds
+        // what it would need.
+        template <typename Justify_>
+        auto track_justified(ProofLogger * const logger, const Inference inf, const Literal & lit, const SnapshottedReason & reason, bool do_throw,
+            const Justify_ & justify) -> void
+        {
             switch (inf) {
             case Inference::NoChange: break;
 
@@ -175,7 +197,7 @@ namespace gcs::innards
                 if constexpr (Actual_::materialises_reasons)
                     if (logger) {
                         ReasonLiterals scratch;
-                        infer_explicitly(*logger, lit, why.emit, why.then_rup, reason.materialised(_state, scratch), why.hint, fallback);
+                        justify(*logger, reason.materialised(_state, scratch));
                     }
                 record_firing_inference(inf, lit);
                 break;
@@ -185,7 +207,7 @@ namespace gcs::innards
                 if constexpr (Actual_::materialises_reasons)
                     if (logger) {
                         ReasonLiterals scratch;
-                        infer_explicitly(*logger, lit, why.emit, why.then_rup, reason.materialised(_state, scratch), why.hint, fallback);
+                        justify(*logger, reason.materialised(_state, scratch));
                     }
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _made_progress_since_last_check = true;
@@ -306,37 +328,34 @@ namespace gcs::innards
             track_explicit(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
         }
 
-        // A JustifyUsingCases inference is justified by VeriPB's `cases` rule: the
-        // inferred literal is derived directly by case analysis over the given
-        // proof flags. Each overload builds the one-line emitter and reuses the
-        // JustifyExplicitly path (ThenRUP::No, since the cases line concludes the
-        // inference itself), so state changes and proofs-off behaviour are shared.
-        // There is deliberately no general-literal overload: the emitter names its
-        // conclusion, so it must not be handed a range literal that the logger
-        // might split into one line per value.
-        template <IntegerVariableIDLike VarType_, typename Hint_>
-        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingCases<Hint_> & why,
-            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
-        {
-            infer_not_equal(logger, var, value,
-                JustifyExplicitly{[logger, var, value, flags = why.case_flags](const ReasonLiterals & r) {
-                                      logger->emit_cases_proof_line_under_reason(
-                                          r, WPBSum{} + 1_i * (var != value) >= 1_i, flags, ProofLevel::Current);
-                                  },
-                    ThenRUP::No, why.hint},
-                reason, fallback);
-        }
-
-        template <typename Hint_>
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyUsingCases<Hint_> & why, const Reason & reason,
+        // A JustifyUsingCases inference is concluded by one `cases` line at the
+        // current level (infer_by_cases), like a JustifyUsingRUP, so these mirror
+        // the JustifyExplicitly overloads above but go through track_cases.
+        template <typename Hint_, typename CaseVariable_>
+        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyUsingCases<Hint_, CaseVariable_> & why, const Reason & reason,
             const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
-            contradiction(logger,
-                JustifyExplicitly{[logger, flags = why.case_flags](const ReasonLiterals & r) {
-                                      logger->emit_cases_proof_line_under_reason(r, WPBSum{} >= 1_i, flags, ProofLevel::Current);
-                                  },
-                    ThenRUP::No, why.hint},
-                reason, fallback);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_cases(logger, _state.infer(lit), lit, why, snapshotted, fallback);
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_, typename CaseVariable_>
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingCases<Hint_, CaseVariable_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_cases(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
+        }
+
+        template <typename Hint_, typename CaseVariable_>
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyUsingCases<Hint_, CaseVariable_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            _last_contradiction_reason = reason;
+            if constexpr (Actual_::materialises_reasons)
+                if (logger)
+                    infer_by_cases(*logger, FalseLiteral{}, why.case_variables, materialise(reason, _state), why.hint, fallback);
+            throw TrackedPropagationFailed{};
         }
 
         // A JustifyUsingRUP carrying a typed hint is a RUP inference (no explicit

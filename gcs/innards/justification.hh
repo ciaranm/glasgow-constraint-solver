@@ -58,42 +58,45 @@ namespace gcs::innards
     JustifyUsingRUP(Hint_) -> JustifyUsingRUP<Hint_>;
 
     /**
-     * \brief Specify that an inference is justified by case analysis over a set
-     * of proof flags, using VeriPB's `cases` rule.
+     * \brief Specify that an inference is justified by case analysis, using
+     * VeriPB's `cases` rule.
      *
      * The mirror of JustifyUsingRUP for selector-style reasoning: the inferred
-     * literal follows because, under each assignment to the \c case_flags, it is
-     * automatically provable (trivial, in the database, RUP, or implied by a
-     * database constraint) -- typically because under any single selector it is
-     * RUP, and with every selector false the model's at-least-one over them
-     * fails. The inference-tracker overloads turn this into a single
-     * `emit_cases_proof_line_under_reason` for the inferred literal (so it is a
-     * direct derivation, not temporary steps plus a RUP), optionally carrying a
-     * typed assertion hint exactly as JustifyUsingRUP does. In Off proof mode
-     * nothing is emitted.
+     * literal follows because, under each assignment to the \c case_variables,
+     * it is automatically provable (trivial, in the database, RUP, or implied by
+     * a database constraint) -- typically because under any single selector it
+     * is RUP, and with every selector false the model's at-least-one over them
+     * fails. The inference is concluded by one `cases` line at the current
+     * level, exactly where JustifyUsingRUP would put its RUP line: there are no
+     * temporary steps, so unlike JustifyExplicitly it never forgets the caller's
+     * temporary lines. It carries an optional typed assertion hint exactly as
+     * JustifyUsingRUP does, and in Off proof mode nothing is emitted.
      *
-     * The flags are borrowed, not copied: the justification is consumed during
-     * the infer call it is passed to, so the span only has to outlive that call.
-     * Selector vectors are usually proof-model-only, so a call site that has no
-     * logger may pass an empty span.
+     * The case variables are proof flags. They are borrowed, not copied: the
+     * justification is consumed during the infer call it is passed to, so the
+     * span only has to outlive that call. Selector vectors are usually
+     * proof-model-only, so a call site that has no logger may pass an empty
+     * span.
      *
-     * This suits "exactly one of these flags holds" reasoning, not cross-variable
-     * cutting-planes case splits (use JustifyExplicitly there).
+     * This suits "exactly one of these holds" reasoning, not cross-variable
+     * cutting-planes case splits (use JustifyExplicitly there). A split that
+     * needs lemmas first is a JustifyExplicitly whose steps end with
+     * ProofLogger::emit_cases_proof_line_under_reason.
      *
      * \ingroup Innards
      * \sa JustifyUsingRUP, ProofLogger::emit_cases_proof_line_under_reason
      */
-    template <typename Hint_ = NoHint>
+    template <typename Hint_ = NoHint, typename CaseVariable_ = ProofFlag>
     struct JustifyUsingCases
     {
-        std::span<const ProofFlag> case_flags;
+        std::span<const CaseVariable_> case_variables;
         [[no_unique_address]] Hint_ hint{};
     };
 
-    JustifyUsingCases(std::span<const ProofFlag>) -> JustifyUsingCases<NoHint>;
+    JustifyUsingCases(std::span<const ProofFlag>) -> JustifyUsingCases<NoHint, ProofFlag>;
 
     template <typename Hint_>
-    JustifyUsingCases(std::span<const ProofFlag>, Hint_) -> JustifyUsingCases<Hint_>;
+    JustifyUsingCases(std::span<const ProofFlag>, Hint_) -> JustifyUsingCases<Hint_, ProofFlag>;
 
     /**
      * \brief Specify that an inference will be asserted rather than justified.

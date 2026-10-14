@@ -725,7 +725,7 @@ auto ProofLogger::emit_rup_proof_line_under_reason(
 }
 
 auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    span<const ProofFlag> case_flags, ProofLevel level) -> ProofLine
+    span<const ProofFlag> case_variables, ProofLevel level) -> ProofLine
 {
     log_stacktrace();
 
@@ -743,7 +743,7 @@ auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reas
     // The case list is bare variables, not literals: a split over ~f is the
     // same split as over f, and VeriPB's grammar rejects the negation.
     rule_line += " :";
-    for (const auto & flag : case_flags) {
+    for (const auto & flag : case_variables) {
         rule_line += ' ';
         rule_line += names_and_ids_tracker().pb_file_string_for(flag.positive ? flag : ! flag);
     }
