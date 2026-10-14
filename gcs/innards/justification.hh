@@ -5,8 +5,10 @@
 #include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/reason.hh>
 
+#include <span>
 #include <utility>
 #include <variant>
 
@@ -54,6 +56,44 @@ namespace gcs::innards
 
     template <typename Hint_>
     JustifyUsingRUP(Hint_) -> JustifyUsingRUP<Hint_>;
+
+    /**
+     * \brief Specify that an inference is justified by case analysis over a set
+     * of proof flags, using VeriPB's `cases` rule.
+     *
+     * The mirror of JustifyUsingRUP for selector-style reasoning: the inferred
+     * literal follows because, under each assignment to the \c case_flags, it is
+     * automatically provable (trivial, in the database, RUP, or implied by a
+     * database constraint) -- typically because under any single selector it is
+     * RUP, and with every selector false the model's at-least-one over them
+     * fails. The inference-tracker overloads turn this into a single
+     * `emit_cases_proof_line_under_reason` for the inferred literal (so it is a
+     * direct derivation, not temporary steps plus a RUP), optionally carrying a
+     * typed assertion hint exactly as JustifyUsingRUP does. In Off proof mode
+     * nothing is emitted.
+     *
+     * The flags are borrowed, not copied: the justification is consumed during
+     * the infer call it is passed to, so the span only has to outlive that call.
+     * Selector vectors are usually proof-model-only, so a call site that has no
+     * logger may pass an empty span.
+     *
+     * This suits "exactly one of these flags holds" reasoning, not cross-variable
+     * cutting-planes case splits (use JustifyExplicitly there).
+     *
+     * \ingroup Innards
+     * \sa JustifyUsingRUP, ProofLogger::emit_cases_proof_line_under_reason
+     */
+    template <typename Hint_ = NoHint>
+    struct JustifyUsingCases
+    {
+        std::span<const ProofFlag> case_flags;
+        [[no_unique_address]] Hint_ hint{};
+    };
+
+    JustifyUsingCases(std::span<const ProofFlag>) -> JustifyUsingCases<NoHint>;
+
+    template <typename Hint_>
+    JustifyUsingCases(std::span<const ProofFlag>, Hint_) -> JustifyUsingCases<Hint_>;
 
     /**
      * \brief Specify that an inference will be asserted rather than justified.

@@ -306,6 +306,39 @@ namespace gcs::innards
             track_explicit(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
         }
 
+        // A JustifyUsingCases inference is justified by VeriPB's `cases` rule: the
+        // inferred literal is derived directly by case analysis over the given
+        // proof flags. Each overload builds the one-line emitter and reuses the
+        // JustifyExplicitly path (ThenRUP::No, since the cases line concludes the
+        // inference itself), so state changes and proofs-off behaviour are shared.
+        // There is deliberately no general-literal overload: the emitter names its
+        // conclusion, so it must not be handed a range literal that the logger
+        // might split into one line per value.
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingCases<Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer_not_equal(logger, var, value,
+                JustifyExplicitly{[logger, var, value, flags = why.case_flags](const ReasonLiterals & r) {
+                                      logger->emit_cases_proof_line_under_reason(
+                                          r, WPBSum{} + 1_i * (var != value) >= 1_i, flags, ProofLevel::Current);
+                                  },
+                    ThenRUP::No, why.hint},
+                reason, fallback);
+        }
+
+        template <typename Hint_>
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyUsingCases<Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            contradiction(logger,
+                JustifyExplicitly{[logger, flags = why.case_flags](const ReasonLiterals & r) {
+                                      logger->emit_cases_proof_line_under_reason(r, WPBSum{} >= 1_i, flags, ProofLevel::Current);
+                                  },
+                    ThenRUP::No, why.hint},
+                reason, fallback);
+        }
+
         // A JustifyUsingRUP carrying a typed hint is a RUP inference (no explicit
         // steps) that wants a typed assertion hint. Each overload below turns the
         // hint into an annotation (only when something will be asserted — Off mode

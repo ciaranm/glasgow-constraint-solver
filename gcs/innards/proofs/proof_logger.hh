@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -316,6 +317,23 @@ namespace gcs::innards
          */
         auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level)
             -> ProofLine;
+
+        /**
+         * Emit a `cases` proof step deriving the specified expression by case
+         * analysis over `case_flags`, subject to a given reason. VeriPB checks
+         * that, for every assignment to the case flags, the (reason-reified)
+         * conclusion is trivial, in the database, RUP, or implied by a database
+         * constraint, and expands the step to plain lines during elaboration.
+         * Each branch must be automatically provable, so this suits
+         * selector-style "exactly one of these flags holds" reasoning, not
+         * cross-variable cutting-planes case splits.
+         *
+         * The case list names variables, not literals, so each flag is written
+         * in its positive polarity; the flags must name distinct variables,
+         * which VeriPB requires.
+         */
+        auto emit_cases_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
+            std::span<const ProofFlag> case_flags, ProofLevel level) -> ProofLine;
 
         /**
          * Like `emit_rup_proof_line_under_reason`, but returns the deview-form

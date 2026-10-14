@@ -21,6 +21,7 @@
 #include <deque>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <type_traits>
 
@@ -51,6 +52,7 @@ using std::map;
 using std::optional;
 using std::ostream;
 using std::pair;
+using std::span;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -720,6 +722,34 @@ auto ProofLogger::emit_rup_proof_line_under_reason(
     const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     return emit_under_reason(RUPProofRule{}, ineq, level, reason);
+}
+
+auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    span<const ProofFlag> case_flags, ProofLevel level) -> ProofLine
+{
+    log_stacktrace();
+
+    LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
+    auto & rule_line = lease.buffer();
+
+    rule_line += "cases ";
+
+    // EnsureNames::Yes: see emit() above.
+    if (! reason.empty())
+        emit_reified_inequality_to(names_and_ids_tracker(), ineq, reason, rule_line, EnsureNames::Yes);
+    else
+        emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
+
+    // The case list is bare variables, not literals: a split over ~f is the
+    // same split as over f, and VeriPB's grammar rejects the negation.
+    rule_line += " :";
+    for (const auto & flag : case_flags) {
+        rule_line += ' ';
+        rule_line += names_and_ids_tracker().pb_file_string_for(flag.positive ? flag : ! flag);
+    }
+    rule_line += " ;";
+
+    return emit_proof_line(rule_line, level);
 }
 
 auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(
