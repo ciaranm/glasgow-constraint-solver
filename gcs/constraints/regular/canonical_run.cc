@@ -259,20 +259,19 @@ auto gcs::innards::emit_regular_canonical_run(ProofLogger & logger, const vector
         }
     }
 
-    // The state flags' run follows b: st[i][q] -> b[i][q], per value and then
-    // over the values, backwards from the last layer.
+    // The state flags' run follows b: st[i][q] -> b[i][q], by cases on the
+    // value x_i takes, backwards from the last layer.
     logger.emit_proof_comment("Regular: canonical run, the chosen run is co-reachable");
-    for (auto i = n; i-- > 0;)
+    for (auto i = n; i-- > 0;) {
+        vector<ProofLiteralOrFlag> x_values;
+        for (auto val : layers.values[i])
+            x_values.push_back(x_is(i, val));
         for (auto q : live[i]) {
-            for (auto val : layers.values[i]) {
-                WPBSum lemma = WPBSum{} + 1_i * ! st[i][q] + 1_i * (vars[i] != val);
-                add_term_to(lemma, 1_i, *b[i][q]);
-                rup(move(lemma), ProofLevel::Temporary);
-            }
             WPBSum lemma = WPBSum{} + 1_i * ! st[i][q];
             add_term_to(lemma, 1_i, *b[i][q]);
-            rup(move(lemma), ProofLevel::Temporary);
+            logger.emit_cases_proof_line_under_reason({}, move(lemma) >= 1_i, x_values, ProofLevel::Temporary);
         }
+    }
 
     // The OPB's rows hold for c, reading every dead state flag as false.
     logger.emit_proof_comment("Regular: canonical run, the rows hold for it");
