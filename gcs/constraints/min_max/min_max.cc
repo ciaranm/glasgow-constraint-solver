@@ -169,8 +169,12 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                 // the unconditional row and does not. For max the model is
                                 // result >= var_i always and result <= var_i under f_i, so
                                 // it is the lower lemma that needs f_i; for min it is the
-                                // upper one. With both in the database the selector clause
-                                // and the conclusion are plain propagation.
+                                // upper one. With both in the database the conclusion is
+                                // plain propagation: under the reason and result in
+                                // [lo, hi], each pair of lemmas propagates ~f_i, and al1
+                                // then fails. The `cases` line below states that split
+                                // over the selectors explicitly, but RUP alone would
+                                // also accept the conclusion here.
                                 for (const auto & [idx, var] : enumerate(vars)) {
                                     auto lower = WPBSum{} + 1_i * (result < lo) + 1_i * (var >= lo);
                                     auto upper = WPBSum{} + 1_i * (var < hi + 1_i) + 1_i * (result >= hi + 1_i);
@@ -181,11 +185,9 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
 
                                     logger->emit_rup_proof_line_under_reason(reason, move(lower) >= 1_i, ProofLevel::Temporary);
                                     logger->emit_rup_proof_line_under_reason(reason, move(upper) >= 1_i, ProofLevel::Temporary);
-                                    logger->emit_rup_proof_line_under_reason(reason,
-                                        WPBSum{} + 1_i * ! selectors.at(idx) + 1_i * not_in_range(result, lo, hi) + 1_i * in_range(var, lo, hi) >=
-                                            1_i,
-                                        ProofLevel::Temporary);
                                 }
+                                logger->emit_cases_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * not_in_range(result, lo, hi) >= 1_i, selectors, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::MinMax{owner}},
                         ExplicitReason{reason});
