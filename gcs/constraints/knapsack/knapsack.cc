@@ -344,29 +344,28 @@ namespace
                 return false;
             });
 
+            vector<ProofFlag> layer_flags;
             if constexpr (doing_proof_) {
                 // we must select at least one of the feasible states from the layer we've just built
                 logger->emit_proof_comment("select from feasible choices for layer");
                 WPBSum must_pick_one;
-                for (auto & [_, data] : growing_layer_nodes)
+                for (auto & [_, data] : growing_layer_nodes) {
                     must_pick_one += 1_i * *data->reif_flag;
+                    layer_flags.push_back(*data->reif_flag);
+                }
                 logger->emit_rup_proof_line_under_reason(
                     eager_reason(generic_reason(reason_variables), state), must_pick_one >= 1_i, ProofLevel::Temporary);
             }
 
-            // we might have some values that never allowed a state to be created
+            // we might have some values that never allowed a state to be created: no state in
+            // the layer is reachable on that value, and the layer's at-least-one above rules
+            // out picking none of them, so the removal is a case analysis over its states
             for (auto val : state.each_value_mutable(vars_including_assigned.at(var_idx))) {
                 if (! supported_values.contains(val)) {
-                    if constexpr (doing_proof_) {
+                    if constexpr (doing_proof_)
                         logger->emit_proof_comment("unsupported value on forward pass");
-                        for (auto & [_, data] : growing_layer_nodes) {
-                            logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                                WPBSum{} + 1_i * ! *data->reif_flag + 1_i * (vars_including_assigned.at(var_idx) != val) >= 1_i,
-                                ProofLevel::Temporary);
-                        }
-                    }
-                    inference.infer(logger, vars_including_assigned.at(var_idx) != val, JustifyUsingRUP{hints::Knapsack{owner}},
-                        eager_reason(generic_reason(reason_variables), state));
+                    inference.infer_not_equal(logger, vars_including_assigned.at(var_idx), val,
+                        JustifyUsingCases{layer_flags, hints::Knapsack{owner}}, eager_reason(generic_reason(reason_variables), state));
                 }
             }
 
