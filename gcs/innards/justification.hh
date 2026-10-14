@@ -72,9 +72,12 @@ namespace gcs::innards
      * temporary lines. It carries an optional typed assertion hint exactly as
      * JustifyUsingRUP does, and in Off proof mode nothing is emitted.
      *
-     * The case variables are proof flags. They are borrowed, not copied: the
-     * justification is consumed during the infer call it is passed to, so the
-     * span only has to outlive that call. Selector vectors are usually
+     * The case variables are either proof flags, the common case, or
+     * ProofLiteralOrFlag, whose literals name the atoms to split on (say a
+     * variable's equality atoms; see case_variables.hh). Only the variable a
+     * literal names matters, not its polarity. They are borrowed, not copied:
+     * the justification is consumed during the infer call it is passed to, so
+     * the span only has to outlive that call. Selector vectors are usually
      * proof-model-only, so a call site that has no logger may pass an empty
      * span.
      *
@@ -97,6 +100,11 @@ namespace gcs::innards
 
     template <typename Hint_>
     JustifyUsingCases(std::span<const ProofFlag>, Hint_) -> JustifyUsingCases<Hint_, ProofFlag>;
+
+    JustifyUsingCases(std::span<const ProofLiteralOrFlag>) -> JustifyUsingCases<NoHint, ProofLiteralOrFlag>;
+
+    template <typename Hint_>
+    JustifyUsingCases(std::span<const ProofLiteralOrFlag>, Hint_) -> JustifyUsingCases<Hint_, ProofLiteralOrFlag>;
 
     /**
      * \brief Specify that an inference will be asserted rather than justified.

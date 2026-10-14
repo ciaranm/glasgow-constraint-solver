@@ -21,6 +21,7 @@
 #include <deque>
 #include <fstream>
 #include <optional>
+#include <set>
 #include <span>
 #include <sstream>
 #include <type_traits>
@@ -49,9 +50,11 @@ using std::ios;
 using std::ios_base;
 using std::make_unique;
 using std::map;
+using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
+using std::set;
 using std::span;
 using std::string;
 using std::stringstream;
@@ -727,6 +730,13 @@ auto ProofLogger::emit_rup_proof_line_under_reason(
 auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     span<const ProofFlag> case_variables, ProofLevel level) -> ProofLine
 {
+    vector<ProofLiteralOrFlag> as_general{case_variables.begin(), case_variables.end()};
+    return emit_cases_proof_line_under_reason(reason, ineq, span<const ProofLiteralOrFlag>{as_general}, level);
+}
+
+auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    span<const ProofLiteralOrFlag> case_variables, ProofLevel level) -> ProofLine
+{
     log_stacktrace();
 
     LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
@@ -740,12 +750,33 @@ auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reas
     else
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
 
-    // The case list is bare variables, not literals: a split over ~f is the
-    // same split as over f, and VeriPB's grammar rejects the negation.
+    // The case list is bare variables, not literals: a split over ~x is the
+    // same split as over x, and VeriPB's grammar rejects the negation, so each
+    // entry is written as the variable it names. VeriPB also requires them to be
+    // distinct, and two entries can name one variable (x == v and x != v, or a
+    // flag and its negation), so repeats are dropped. A literal that folds to a
+    // constant names no variable and splits nothing, so it is dropped too.
+    auto & tracker = names_and_ids_tracker();
+    set<long long> seen;
     rule_line += " :";
-    for (const auto & flag : case_variables) {
+    for (const auto & case_variable : case_variables) {
+        auto xlit = overloaded{
+            [&](const ProofLiteral & lit) -> optional<XLiteral> {
+                return overloaded{
+                    [&](const TrueLiteral &) -> optional<XLiteral> { return nullopt; },
+                    [&](const FalseLiteral &) -> optional<XLiteral> { return nullopt; },
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) -> optional<XLiteral> { return tracker.xliteral_for_ensuring(cond); } //
+                }
+                    .visit(simplify_literal(tracker, lit));
+            },
+            [&](const ProofFlag & flag) -> optional<XLiteral> { return tracker.xliteral_for(flag); },       //
+            [&](const ProofBitVariable & bit) -> optional<XLiteral> { return tracker.get_bit(bit).second; } //
+        }
+                        .visit(case_variable);
+        if (! xlit || ! seen.insert(xlit->id).second)
+            continue;
         rule_line += ' ';
-        rule_line += names_and_ids_tracker().pb_file_string_for(flag.positive ? flag : ! flag);
+        rule_line += tracker.pb_file_string_for(XLiteral{.id = xlit->id, .negated = false});
     }
     rule_line += " ;";
 
