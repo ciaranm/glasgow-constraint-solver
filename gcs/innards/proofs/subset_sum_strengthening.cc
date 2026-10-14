@@ -306,16 +306,18 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
 
     // Every state of the last layer is at most the strengthened bound --- that
     // is what makes it the strengthened bound --- so whichever one holds, the
-    // sum is under it.
+    // sum is under it: by cases on the last layer's states, each closed by its
+    // dominated line, with the layer's at-least-one ruling out none.
     auto [under, under_forward, under_reverse] = logger.create_proof_flag_reifying(total <= claimed, "ssunder", level);
+    vector<ProofFlag> last_states;
     for (const auto & [value, state] : layers.back()) {
         PolBuilder dominated;
         dominated.add(state.at_most_forward).add(under_reverse).saturate();
         dominated.emit(logger, level);
-        logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! state.exactly + 1_i * under >= 1_i, level);
+        last_states.push_back(state.exactly);
     }
 
-    auto under_holds = logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * under >= 1_i, level);
+    auto under_holds = logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * under >= 1_i, last_states, level);
 
     // Discharge the flag: its forward half is the strengthened line, weakened
     // by the reification coefficient, and the unit above pays exactly that
