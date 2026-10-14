@@ -5,6 +5,7 @@
 #include <gcs/constraints/innards/no_overlap_walk.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -95,6 +96,31 @@ namespace
         for (const auto & vv : v) {
             check_array_dimensions(vv, v.at(0).size());
         }
+    }
+
+    // Show that `conclusion` holds whichever entry the indices pick, under the
+    // reason: by cases on one index at a time, innermost first. Under each value
+    // of the last index the entry it picks cannot support the conclusion, by
+    // unit propagation; under each value of an outer index, the conclusion is
+    // the line just derived for that value. Every line is Temporary, and the
+    // outermost one is `conclusion` itself.
+    template <typename IndexVars_, typename Term_>
+    auto justify_for_every_index_choice(ProofLogger & logger, const State & state, const ReasonLiterals & reason, const IndexVars_ & index_vars,
+        const Weighted<Term_> & conclusion) -> void
+    {
+        WPBSum prefix;
+        auto rule_out = [&](auto && self, size_t d) -> void {
+            if (d + 1 < index_vars.size())
+                state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
+                    auto saved = prefix;
+                    prefix += 1_i * (index_vars.at(d) != v);
+                    self(self, d + 1);
+                    prefix = std::move(saved);
+                });
+            logger.emit_cases_proof_line_under_reason(reason, prefix + conclusion >= 1_i,
+                case_variables_over_values(index_vars.at(d), state.each_value_immutable(index_vars.at(d))), ProofLevel::Temporary);
+        };
+        rule_out(rule_out, 0);
     }
 }
 
@@ -650,25 +676,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         JustifyExplicitly{//
                             [&](const ReasonLiterals & reason) {
                                 // show that it doesn't work for any feasible choice of indices
-                                WPBSum sum_so_far;
-                                auto rule_out = [&](auto && self, unsigned d) -> void {
-                                    state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
-                                        if (d + 1 == dimensions_)
-                                            logger->emit_rup_proof_line_under_reason(reason,
-                                                sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i, ProofLevel::Temporary);
-                                        else {
-                                            auto save_sum_so_far = sum_so_far;
-                                            sum_so_far += 1_i * (index_vars.at(d) != v);
-                                            self(self, d + 1);
-                                            sum_so_far = save_sum_so_far;
-                                        }
-                                    });
-                                    if (! sum_so_far.terms.empty()) {
-                                        logger->emit_rup_proof_line_under_reason(
-                                            reason, sum_so_far + 1_i * lit_to_infer >= 1_i, ProofLevel::Temporary);
-                                    }
-                                };
-                                rule_out(rule_out, 0);
+                                justify_for_every_index_choice(*logger, state, reason, index_vars, 1_i * lit_to_infer);
                             },
                             ThenRUP::Yes, hints::Element{owner}},
                         reason);
@@ -871,26 +879,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         JustifyExplicitly{//
                             [&](const ReasonLiterals & reason) {
                                 // show that it doesn't work for any feasible choice of indices
-                                WPBSum sum_so_far;
-                                auto rule_out = [&](auto && self, unsigned d) -> void {
-                                    state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
-                                        if (d + 1 == dimensions_)
-                                            logger->emit_rup_proof_line_under_reason(reason,
-                                                sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,
-                                                ProofLevel::Temporary);
-                                        else {
-                                            auto save_sum_so_far = sum_so_far;
-                                            sum_so_far += 1_i * (index_vars.at(d) != v);
-                                            self(self, d + 1);
-                                            sum_so_far = save_sum_so_far;
-                                        }
-                                    });
-                                    if (! sum_so_far.terms.empty()) {
-                                        logger->emit_rup_proof_line_under_reason(
-                                            reason, sum_so_far + 1_i * (result_var != value) >= 1_i, ProofLevel::Temporary);
-                                    }
-                                };
-                                rule_out(rule_out, 0);
+                                justify_for_every_index_choice(*logger, state, reason, index_vars, 1_i * (result_var != value));
                             },
                             ThenRUP::Yes, hints::Element{owner}},
                         reason);
