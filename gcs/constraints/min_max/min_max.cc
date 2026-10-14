@@ -4,6 +4,7 @@
 #include <gcs/constraints/min_max/min_max.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -254,14 +255,16 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 // lemmas the bridge below still needs. A value an earlier interval's
                 // removal took out of result is harmless here, since its var != val
                 // literal is still in the reason.
+                //
+                // Each is a `cases` on the value result takes from result_set: under
+                // each, var's selector would make var that value, which the reason
+                // says it lacks.
                 auto rule_out_other_selectors = [&](const ReasonLiterals & reason) {
+                    auto result_values = case_variables_over_values(result, result_set.each());
                     for (const auto & [idx, var] : enumerate(vars))
-                        if (var != *support_1) {
-                            for (const auto & rval : result_set.each())
-                                logger->emit_rup_proof_line_under_reason(
-                                    reason, WPBSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != rval)) >= 1_i, ProofLevel::Temporary);
-                            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
-                        }
+                        if (var != *support_1)
+                            logger->emit_cases_proof_line_under_reason(
+                                reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, result_values, ProofLevel::Temporary);
                 };
 
                 // Each contiguous removed interval is a single ~[support_1 in lo..hi]
