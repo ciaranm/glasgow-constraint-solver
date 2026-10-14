@@ -258,15 +258,15 @@ auto In::install_propagators(Propagators & propagators) -> void
                                         // var >= hi + 1 -- so the two ge-layer lemmas are
                                         // all that is owed here.
                                         justify_not_in_range_across_equality(*logger, reason, var, lo, hi, V, lo, hi, selectors[j]);
-                                        // Which makes this RUP, and this is what makes the
-                                        // conclusion RUP: under the reason it unit
-                                        // propagates ~sel_j, and with every selector out
-                                        // and every permitted constant outside [lo, hi],
-                                        // the at-least-one row has nothing left.
-                                        logger->emit_rup_proof_line_under_reason(reason,
-                                            WPBSum{} + 1_i * ! selectors[j] + 1_i * not_in_range(var, lo, hi) + 1_i * in_range(V, lo, hi) >= 1_i,
-                                            ProofLevel::Temporary);
                                     }
+                                    // With the lemmas in, the conclusion follows by
+                                    // case analysis over the selectors: under sel_j
+                                    // the lemmas carry var's range onto V_j, which the
+                                    // reason excludes, and with every selector out and
+                                    // every permitted constant outside [lo, hi], the
+                                    // at-least-one row has nothing left.
+                                    logger->emit_cases_proof_line_under_reason(
+                                        reason, WPBSum{} + 1_i * not_in_range(var, lo, hi) >= 1_i, selectors, ProofLevel::Temporary);
                                 },
                                 ThenRUP::Yes, hints::InNotInRange{{owner}}},
                             reason);
@@ -288,15 +288,11 @@ auto In::install_propagators(Propagators & propagators) -> void
                             reason = ExplicitReason{std::move(lits)};
                         }
 
-                        inference.infer_not_equal(logger, var, run_lo,
-                            JustifyExplicitly{//
-                                [logger, var, v = run_lo, &selectors](const ReasonLiterals & reason) {
-                                    for (const auto & sel : selectors)
-                                        logger->emit_rup_proof_line_under_reason(
-                                            reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
-                                },
-                                ThenRUP::Yes, hints::In{owner}},
-                            reason);
+                        // var != run_lo by case analysis over the source
+                        // selectors: each selector makes var take its source's
+                        // value (none of which is run_lo here), and the model's
+                        // at-least-one rules out the all-false case.
+                        inference.infer_not_equal(logger, var, run_lo, JustifyUsingCases{selectors, hints::In{owner}}, reason);
                     }
                 }
             }
