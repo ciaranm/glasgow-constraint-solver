@@ -567,7 +567,7 @@ The optional task is #1039's. The network takes each pair's separation
 clause as the model states it, and an optional pair's carries both
 presences. They reach the comparators' case splits as a term the halves
 carry and the goal does not, which is the split `assume` exists to
-avoid, and VeriPB rejects the subproof. `ComparatorNetwork` has optional
+avoid, and VeriPB rejects the split. `ComparatorNetwork` has optional
 tasks of its own (`add_optional_task`, which 2D's relaxation uses), but
 they park an absent task at the top of a window the model fixes, which a
 propagator's reason-guarded window is not.
@@ -1628,11 +1628,12 @@ Four things are worth carrying away:
   1D's they carry the reason. That is what
   `ComparatorNetwork::assume_with_guarded_separations` is for (#982):
   the guard rides a **clause at coefficient one** and a **row at
-  `big()`**, and a clause must carry the *whole* guard, since every
-  goal the network derives offers the whole of it. Each pair's
-  refutations bring in only that pair's literals, so the rest are
-  weakened in with literal axioms, which add a term without moving the
-  degree.
+  `big()`**. Each pair's refutations bring in only that pair's
+  literals, and every goal the network derives offers the whole guard.
+  That used to mean weakening the rest in with literal axioms, since the
+  network's case splits cancelled each half against the negated goal;
+  now that they are `cases` steps, a half carrying fewer guard literals
+  is just a stronger line, and the clause is left as it is.
 - **State both time-axis bounds tightly**, at `t − size + 1` and `t`,
   rather than at the rectangle's own bounds. Not only is that a better
   nogood: it is what makes each refutation cancel to degree exactly

@@ -31,13 +31,7 @@ ComparatorNetwork::ComparatorNetwork(
     // exactly one; and at least the window's end, so that a model row's own
     // guard coefficient can be raised to it. Larger would still be sound and
     // would make that division land short.
-    _big(max(2_i * ((Integer{1LL << width}) - 1_i), window_hi)),
-    // Every case split divides by this, which is generous enough for the
-    // largest guard coefficient any lemma below accumulates (the gap lemma's
-    // `big + 3 * span`). Generous is safe because the negated goal cancels
-    // every record term exactly, so dividing can only touch the surviving guard
-    // literal.
-    _div(4_i * _big + 4_i * _span)
+    _big(max(2_i * ((Integer{1LL << width}) - 1_i), window_hi))
 {
 }
 
@@ -50,11 +44,11 @@ auto ComparatorNetwork::fits_optional_tasks(int width, Integer window_lo, Intege
     if (window_hi.raw_value > span)
         return false;
 
-    // The constructor's divisor, `4 * big + 4 * span`, which is `12 * span`
-    // with the window ending inside the span; and the parking divisor, `(1 +
-    // K) * span`. Every other constant the mode computes is at most one of
-    // these: `K * duration + span` because a duration is at most `span`, and
-    // `K * 2^t` because `2^t` is.
+    // `12 * span`, past the largest guard coefficient a lemma accumulates (the
+    // gap lemma's `big + 3 * span`, with `big` at most `2 * span` when the
+    // window ends inside the span); and `(1 + K) * span`. Every other constant
+    // the mode computes is at most one of these: `K * duration + span` because
+    // a duration is at most `span`, and `K * 2^t` because `2^t` is.
     long long divisor, one_plus_k, parking;
     return ! mul_overflows(12LL, span, &divisor) && ! add_overflows(1LL, (window_hi - window_lo).raw_value, &one_plus_k) &&
         ! mul_overflows(one_plus_k, span, &parking);
@@ -218,13 +212,14 @@ auto ComparatorNetwork::add_optional_task(const ProofLiteralOrFlag & active, con
     WPBSum fits;
     add_terms(fits, position, -1_i);
     add_terms(fits, d, -1_i);
-    _upper.insert_or_assign(position.id, case_split(move(fits) >= -_window_hi, {active_upper.emit(_logger, _level), le_parked}));
+    active_upper.emit(_logger, _level);
+    _upper.insert_or_assign(position.id, case_split(move(fits) >= -_window_hi, active));
 
     auto start_lower = _logger.emit_rup_proof_line(terms(start, 1_i) >= _window_lo, _level);
     PolBuilder active_lower_builder;
     active_lower_builder.add(task.ge_start).add(start_lower);
     auto active_lower = active_lower_builder.emit(_logger, _level);
-    _lower.insert_or_assign(position.id, case_split(terms(position, 1_i) >= _window_lo, {active_lower, task.ge_parked}));
+    _lower.insert_or_assign(position.id, case_split(terms(position, 1_i) >= _window_lo, active));
 
     // Parking: `position + K * duration >= window_hi`, K the window's width,
     // by the same cases. Active, the position is at least `window_lo` and the
@@ -237,11 +232,11 @@ auto ComparatorNetwork::add_optional_task(const ProofLiteralOrFlag & active, con
     WPBSum inactive_park;
     add_terms(inactive_park, position, 1_i);
     add_term_to(inactive_park, k * duration + _span, active);
-    auto inactive = _logger.emit_rup_proof_line(move(inactive_park) >= _window_hi, _level);
+    _logger.emit_rup_proof_line(move(inactive_park) >= _window_hi, _level);
     WPBSum park;
     add_terms(park, position, 1_i);
     add_terms(park, d, k);
-    _parking.emplace(position.id, case_split(move(park) >= _window_hi, {active_lower, inactive}, (1_i + k) * _span));
+    _parking.emplace(position.id, case_split(move(park) >= _window_hi, active));
 
     _optional_tasks.emplace(position.id, move(task));
     return position;
@@ -286,7 +281,7 @@ auto ComparatorNetwork::add_optional_separation(
     goal += 1_i * flags.x_first;
     goal += 1_i * flags.y_first;
     auto separated = _logger.emit_rup_proof_line(move(goal) >= 1_i, _level);
-    record_separation(x, flags.x_first_row, y, flags.y_first_row, separated);
+    record_separation(x, flags.x_first_row, flags.x_first, y, flags.y_first_row, flags.y_first, separated);
 }
 
 auto ComparatorNetwork::assume(const WPBSum & guard) -> void
@@ -344,14 +339,15 @@ auto ComparatorNetwork::add_separation(
         return raised.emit(_logger, _level);
     };
 
-    record_separation(x, adopt(x, x_first), y, adopt(y, y_first), clause);
+    record_separation(x, adopt(x, x_first), x_first.flag, y, adopt(y, y_first), y_first.flag, clause);
 }
 
-auto ComparatorNetwork::record_separation(
-    const ProofWire & x, ProofLine when_first, const ProofWire & y, ProofLine when_other_first, ProofLine clause) -> void
+auto ComparatorNetwork::record_separation(const ProofWire & x, ProofLine when_first, ProofFlag x_first_flag, const ProofWire & y,
+    ProofLine when_other_first, ProofFlag y_first_flag, ProofLine clause) -> void
 {
     auto key = pair{std::min(x.id, y.id), std::max(x.id, y.id)};
-    _separations.insert_or_assign(key, Separation{.first = {{x.id, when_first}, {y.id, when_other_first}}, .clause = clause});
+    _separations.insert_or_assign(key,
+        Separation{.first = {{x.id, when_first}, {y.id, when_other_first}}, .flag = {{x.id, x_first_flag}, {y.id, y_first_flag}}, .clause = clause});
 }
 
 auto ComparatorNetwork::separation_between(const ProofWire & x, const ProofWire & y) const -> const Separation &
@@ -467,53 +463,32 @@ auto ComparatorNetwork::compare(const ProofWire & a, const ProofWire & b, const 
     return c;
 }
 
-auto ComparatorNetwork::case_split(const WPBSumLE & goal, const vector<ProofLine> & guarded_halves) -> ProofLine
+auto ComparatorNetwork::case_split(const WPBSumLE & goal, const ProofLiteralOrFlag & selector) -> ProofLine
 {
-    return case_split(goal, guarded_halves, _div);
+    // The goal holds under each polarity of a selector, so it holds. Each
+    // polarity has a guarded half in the database, the goal plus a guard on the
+    // other polarity, which under its own polarity says the goal outright.
+    const ProofLiteralOrFlag cases[] = {selector};
+    return _logger.emit_cases_proof_line_under_reason({}, goal, cases, _level);
 }
 
-auto ComparatorNetwork::case_split(const WPBSumLE & goal, const vector<ProofLine> & guarded_halves, Integer divisor) -> ProofLine
-{
-    // The goal holds under each polarity of a selector, so it holds. Each half
-    // is the goal plus a guard: adding the negated goal cancels every record
-    // term and leaves the guard alone, and the two guards then sum past one.
-    map<ProofGoal, Subproof> subproofs;
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
-        // The negated goal is the last line added when the subproof opens.
-        auto negation = sub_logger.get_current_proof_line();
-        vector<ProofLine> guards;
-        for (const auto & half : guarded_halves) {
-            PolBuilder builder;
-            builder.add(half).add(negation).divide_by(divisor);
-            guards.push_back(builder.emit(sub_logger, ProofLevel::Temporary));
-        }
-        PolBuilder builder;
-        for (const auto & guard : guards)
-            builder.add(guard);
-        builder.emit(sub_logger, ProofLevel::Temporary);
-    }});
-
-    return _logger.emit_red_proof_line(goal, {}, _level, subproofs);
-}
-
-auto ComparatorNetwork::derive_positivity(const ProofWire & out, const vector<pair<ProofLine, ProofWire>> & halves) -> void
+auto ComparatorNetwork::derive_positivity(const Comparator & c, const ProofWire & out, const vector<pair<ProofLine, ProofWire>> & halves) -> void
 {
     // `d_out >= 1`, carried through the mux, and needed by the *next*
     // comparator's gap lemma, which is where the degree has to come from. Each
     // guarded `d_out >= d_in` row is paired with THAT input's positivity:
     // pairing them the other way round leaves the two durations in the sum
     // instead of cancelling, which still derives something, just not the goal.
-    vector<ProofLine> rows;
     for (const auto & [record, source] : halves) {
         PolBuilder builder;
         builder.add(record).add(_positivity.at(source.id));
-        rows.push_back(builder.emit(_logger, _level));
+        builder.emit(_logger, _level);
     }
 
     auto goal = terms(out, 1_i) >= 1_i;
     _positivity.emplace(out.id,
         holds_alternative<comparator_network_mutation::RupPositivity>(_mutation) ? _logger.emit_rup_proof_line(goal, _level)
-                                                                                 : case_split(goal, rows));
+                                                                                 : case_split(goal, c.selector));
 }
 
 auto ComparatorNetwork::derive_parking(
@@ -522,9 +497,7 @@ auto ComparatorNetwork::derive_parking(
     // `out + K * d_out >= window_hi`, carried through the mux from the inputs'
     // --- positivity's replacement once a duration can be zero. Each half is
     // an input's parking row with the output's records rewriting it: the
-    // position record at one and the duration record at K. The guard that
-    // leaves is `(1 + K) * span`, past the default divisor, hence the explicit
-    // one.
+    // position record at one and the duration record at K.
     auto k = _window_hi - _window_lo;
     PolBuilder from_a;
     from_a.add(ge_a).add(d_ge_a, k).add(_parking.at(c.a.id));
@@ -534,7 +507,9 @@ auto ComparatorNetwork::derive_parking(
     WPBSum goal;
     add_terms(goal, out, 1_i);
     add_terms(goal, d_out, k);
-    _parking.emplace(out.id, case_split(move(goal) >= _window_hi, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)}, (1_i + k) * _span));
+    from_a.emit(_logger, _level);
+    from_b.emit(_logger, _level);
+    _parking.emplace(out.id, case_split(move(goal) >= _window_hi, c.selector));
 }
 
 auto ComparatorNetwork::derive_preservation(const Comparator & c) -> ProofLine
@@ -556,7 +531,9 @@ auto ComparatorNetwork::derive_preservation(const Comparator & c) -> ProofLine
 
     if (holds_alternative<comparator_network_mutation::RupPreservation>(_mutation))
         return _logger.emit_rup_proof_line(move(goal) >= 0_i, _level);
-    return case_split(move(goal) >= 0_i, {selected.emit(_logger, _level), not_selected.emit(_logger, _level)});
+    selected.emit(_logger, _level);
+    not_selected.emit(_logger, _level);
+    return case_split(move(goal) >= 0_i, c.selector);
 }
 
 auto ComparatorNetwork::derive_gap(const Comparator & c) -> ProofLine
@@ -602,8 +579,8 @@ auto ComparatorNetwork::derive_gap(const Comparator & c) -> ProofLine
     };
 
     auto swapped = holds_alternative<comparator_network_mutation::SwapDurations>(_mutation);
-    auto when_a_is_later = half(a_first, b_first, c.reverse, c.d_a, c.hi_ge_a, c.lo_le_b, swapped ? c.d_lo_le_a : c.d_lo_le_b);
-    auto when_b_is_later = half(b_first, a_first, c.forward, c.d_b, c.hi_ge_b, c.lo_le_a, swapped ? c.d_lo_le_b : c.d_lo_le_a);
+    half(a_first, b_first, c.reverse, c.d_a, c.hi_ge_a, c.lo_le_b, swapped ? c.d_lo_le_a : c.d_lo_le_b);
+    half(b_first, a_first, c.forward, c.d_b, c.hi_ge_b, c.lo_le_a, swapped ? c.d_lo_le_b : c.d_lo_le_a);
 
     WPBSum goal;
     add_terms(goal, c.hi, 1_i);
@@ -617,7 +594,7 @@ auto ComparatorNetwork::derive_gap(const Comparator & c) -> ProofLine
 
     if (holds_alternative<comparator_network_mutation::RupGap>(_mutation))
         return _logger.emit_rup_proof_line(move(goal) >= 0_i, _level);
-    return case_split(move(goal) >= 0_i, {when_a_is_later, when_b_is_later});
+    return case_split(move(goal) >= 0_i, c.selector);
 }
 
 auto ComparatorNetwork::derive_gap_allowing_zero(const Comparator & c) -> ProofLine
@@ -657,44 +634,22 @@ auto ComparatorNetwork::derive_gap_allowing_zero(const Comparator & c) -> ProofL
     };
 
     // Selector true: lo is a, hi is b.
-    auto sel_a_first = agreeing(a_first, c.hi_ge_b, c.lo_le_a, c.d_lo_le_a);
-    auto sel_b_first = disagreeing(b_first, c.forward, c.b, c.a, c.hi_ge_b, c.lo_le_a, c.d_lo_le_a);
+    agreeing(a_first, c.hi_ge_b, c.lo_le_a, c.d_lo_le_a);
+    disagreeing(b_first, c.forward, c.b, c.a, c.hi_ge_b, c.lo_le_a, c.d_lo_le_a);
     // Selector false: lo is b, hi is a.
-    auto nsel_b_first = agreeing(b_first, c.hi_ge_a, c.lo_le_b, c.d_lo_le_b);
-    auto nsel_a_first = disagreeing(a_first, c.reverse, c.a, c.b, c.hi_ge_a, c.lo_le_b, c.d_lo_le_b);
+    agreeing(b_first, c.hi_ge_a, c.lo_le_b, c.d_lo_le_b);
+    disagreeing(a_first, c.reverse, c.a, c.b, c.hi_ge_a, c.lo_le_b, c.d_lo_le_b);
 
     WPBSum goal;
     add_terms(goal, c.hi, 1_i);
     add_terms(goal, c.lo, -1_i);
     add_terms(goal, c.d_lo, -1_i);
 
-    map<ProofGoal, Subproof> subproofs;
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
-        auto negation = sub_logger.get_current_proof_line();
-        // Each half against the negated goal leaves only its guard, a clause
-        // over the selector and one separation flag once saturated. The strict
-        // disagreeing half's degree is K + 1, hence the division.
-        auto to_clause = [&](ProofLine half) {
-            PolBuilder builder;
-            builder.add(half).add(negation).saturate().divide_by(k + 1_i);
-            return builder.emit(sub_logger, ProofLevel::Temporary);
-        };
-        // The two halves naming a flag differ only in the selector's polarity,
-        // so their sum refutes the flag, and the separation clause then refutes
-        // the pair of refutations.
-        auto refute = [&](ProofLine one, ProofLine other) {
-            PolBuilder builder;
-            builder.add(to_clause(one)).add(to_clause(other)).divide_by(2_i);
-            return builder.emit(sub_logger, ProofLevel::Temporary);
-        };
-        auto not_a_first = refute(sel_a_first, nsel_a_first);
-        auto not_b_first = refute(sel_b_first, nsel_b_first);
-        PolBuilder builder;
-        builder.add(not_a_first).add(not_b_first).add(separation.clause);
-        builder.emit(sub_logger, ProofLevel::Temporary);
-    }});
-
-    return _logger.emit_red_proof_line(move(goal) >= 0_i, {}, _level, subproofs);
+    // By cases on the selector and the separation's two flags: each pairing of
+    // a selector polarity with a flag has its half, and with neither flag the
+    // separation clause is falsified.
+    const ProofLiteralOrFlag cases[] = {c.selector, separation.flag.at(c.a.id), separation.flag.at(c.b.id)};
+    return _logger.emit_cases_proof_line_under_reason({}, move(goal) >= 0_i, cases, _level);
 }
 
 auto ComparatorNetwork::derive_dominance(const Comparator & c) -> ProofLine
@@ -706,7 +661,8 @@ auto ComparatorNetwork::derive_dominance(const Comparator & c) -> ProofLine
     WPBSum goal;
     add_terms(goal, c.hi, 1_i);
     add_terms(goal, c.a, -1_i);
-    return case_split(move(goal) >= 0_i, {selected.emit(_logger, _level), c.hi_ge_a});
+    selected.emit(_logger, _level);
+    return case_split(move(goal) >= 0_i, c.selector);
 }
 
 auto ComparatorNetwork::derive_bound(const Comparator & c, const ProofWire & out, const ProofWire & d_out, ProofLine le_a, ProofLine le_b,
@@ -729,7 +685,9 @@ auto ComparatorNetwork::derive_bound(const Comparator & c, const ProofWire & out
     add_terms(goal, d_out, -1_i);
     for (const auto & term : _guard.terms)
         goal += term;
-    return case_split(move(goal) >= -_window_hi, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
+    from_a.emit(_logger, _level);
+    from_b.emit(_logger, _level);
+    return case_split(move(goal) >= -_window_hi, c.selector);
 }
 
 auto ComparatorNetwork::derive_lower_bound(const Comparator & c, const ProofWire & out, ProofLine ge_a, ProofLine ge_b) -> ProofLine
@@ -747,7 +705,9 @@ auto ComparatorNetwork::derive_lower_bound(const Comparator & c, const ProofWire
     auto goal = terms(out, 1_i);
     for (const auto & term : _guard.terms)
         goal += term;
-    return case_split(move(goal) >= _window_lo, {from_a.emit(_logger, _level), from_b.emit(_logger, _level)});
+    from_a.emit(_logger, _level);
+    from_b.emit(_logger, _level);
+    return case_split(move(goal) >= _window_lo, c.selector);
 }
 
 auto ComparatorNetwork::reify_separation(const ProofWire & x, const ProofWire & y, const string & stem) -> SeparationFlags
@@ -806,7 +766,7 @@ auto ComparatorNetwork::separate_from_gap(const ProofWire & x, const ProofWire &
         .add(gap)
         .divide_by(_big)
         .add(_logger.names_and_ids_tracker().xliteral_for(flags.y_first), _logger.names_and_ids_tracker());
-    record_separation(x, flags.x_first_row, y, flags.y_first_row, builder.emit(_logger, _level));
+    record_separation(x, flags.x_first_row, flags.x_first, y, flags.y_first_row, flags.y_first, builder.emit(_logger, _level));
 }
 
 auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other, const Comparator & c, ProofLine le_a, ProofLine ge_a, ProofLine le_b,
@@ -898,7 +858,7 @@ auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other,
     }});
 
     auto clause = _logger.emit_red_proof_line(move(goal) >= 1_i, {}, _level, subproofs);
-    record_separation(out, flags.x_first_row, other, flags.y_first_row, clause);
+    record_separation(out, flags.x_first_row, flags.x_first, other, flags.y_first_row, flags.y_first, clause);
 }
 
 auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
@@ -933,8 +893,8 @@ auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
                 derive_parking(c, c.hi, c.d_hi, c.hi_ge_a, c.hi_ge_b, c.d_hi_ge_a, c.d_hi_ge_b);
             }
             else {
-                derive_positivity(c.d_lo, {{c.d_lo_ge_a, c.d_a}, {c.d_lo_ge_b, c.d_b}});
-                derive_positivity(c.d_hi, {{c.d_hi_ge_b, c.d_b}, {c.d_hi_ge_a, c.d_a}});
+                derive_positivity(c, c.d_lo, {{c.d_lo_ge_a, c.d_a}, {c.d_lo_ge_b, c.d_b}});
+                derive_positivity(c, c.d_hi, {{c.d_hi_ge_b, c.d_b}, {c.d_hi_ge_a, c.d_a}});
             }
             result.preserved.push_back(derive_preservation(c));
             auto gap = _optional ? derive_gap_allowing_zero(c) : derive_gap(c);
@@ -979,7 +939,9 @@ auto ComparatorNetwork::sort(const vector<ProofWire> & tasks) -> SortedTasks
                 if (_clauses_guarded)
                     for (const auto & term : _guard.terms)
                         goal += term;
-                carried = case_split(move(goal) >= 0_i, {selected.emit(_logger, _level), not_selected.emit(_logger, _level)});
+                selected.emit(_logger, _level);
+                not_selected.emit(_logger, _level);
+                carried = case_split(move(goal) >= 0_i, c.selector);
             }
 
             // `hi` takes `b` under the selector and `lo` takes `a`, so each

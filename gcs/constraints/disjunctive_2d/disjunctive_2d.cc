@@ -418,11 +418,12 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
             // to be a plain variable reading as an unsigned magnitude.
             if (! std::holds_alternative<SimpleIntegerVariableID>(res_pos[i]))
                 continue;
-            // The certificate weakens each pair's derived clause up to the
-            // whole guard by naming the literals it is short of, so every
-            // literal in the guard has to be one that can be named --- which
-            // rules out a view, whose conditions reach the proof through their
-            // defining rows instead.
+            // The time-axis position has to be a plain variable too. That was
+            // for the certificate's guard weakening, which named each guard
+            // literal by its atom and so could not take a view's, whose
+            // conditions reach the proof through their defining rows instead.
+            // With the network's goals concluded by cases the weakening is
+            // gone; whether a view would now do is untested.
             if (! std::holds_alternative<SimpleIntegerVariableID>(time_pos[i]))
                 continue;
             if (! is_constant_variable(time_size[i]) && ! std::holds_alternative<SimpleIntegerVariableID>(time_size[i]))
@@ -1551,36 +1552,14 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 // time-axis disjuncts are gone: the pair is
                                 // separated on the resource axis, under this
                                 // pair's share of the guard. The network's goals
-                                // offer the *whole* guard, so weaken up to it
-                                // with literal axioms, which add a term without
-                                // moving the degree.
+                                // offer the whole guard, but each is concluded by
+                                // cases, so a clause carrying less of it is just
+                                // a stronger line.
                                 PolBuilder clause;
                                 clause.add(clause_lines.at(make_pair(min(i, j), max(i, j))));
                                 clause.add(refute(facts[a], facts[b]));
                                 if (! std::holds_alternative<disjunctive_2d_proof_mutation::SkipOneRefutation>(mutation))
                                     clause.add(refute(facts[b], facts[a]));
-                                for (size_t k = 0;
-                                    k < facts.size() && ! std::holds_alternative<disjunctive_2d_proof_mutation::SkipGuardWeakening>(mutation); ++k) {
-                                    const auto & f = facts[k];
-                                    if (k != a && k != b) {
-                                        clause.add(! tracker.xliteral_for_ensuring(f.t_lo), 1_i, tracker);
-                                        clause.add(! tracker.xliteral_for_ensuring(f.t_hi), 1_i, tracker);
-                                        if (f.t_size)
-                                            clause.add(! tracker.xliteral_for_ensuring(*f.t_size), 1_i, tracker);
-                                        if (f.escape)
-                                            clause.add(*f.escape, 1_i, tracker);
-                                        // The pair's own presences are in its
-                                        // clause already, as its `present = 0`
-                                        // disjuncts.
-                                        if (f.present)
-                                            clause.add(! tracker.xliteral_for_ensuring(*f.present), 1_i, tracker);
-                                    }
-                                    // No refutation mentions a resource-axis
-                                    // bound, so every member's pair of them has
-                                    // to be weakened in.
-                                    clause.add(! tracker.xliteral_for_ensuring(f.r_lo), 1_i, tracker);
-                                    clause.add(! tracker.xliteral_for_ensuring(f.r_hi), 1_i, tracker);
-                                }
                                 // The pair's own resource-axis escapes, which
                                 // are in its clause and in no guard: each is
                                 // false by its size's declared floor, a Top
