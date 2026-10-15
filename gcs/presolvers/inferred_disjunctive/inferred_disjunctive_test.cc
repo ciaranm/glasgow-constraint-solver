@@ -1227,10 +1227,15 @@ auto main(int argc, char * argv[]) -> int
         auto camouflage = [](Problem & p, const Setup & setup) {
             vector<IntegerVariableID> starts;
             for (int i = 0; i < 4; ++i)
-                starts.push_back(p.create_integer_variable(0_i, 3_i, "s" + to_string(i)));
+                starts.push_back(p.create_integer_variable(0_i, 4_i, "s" + to_string(i)));
 
             const vector<Integer> lengths(4, 2_i);
-            // The three-task cross-resource family, over the first three.
+            // The three-task cross-resource family, over the first three, with
+            // just room for all three to run in turn. An unsatisfiable fixture
+            // would make every claim about it true, so a mutation could then
+            // only be caught by something syntactic: ClaimRhsZero's "no member
+            // ever runs" was, with starts in [0, 3], rejected by the fold's pin
+            // and by nothing else.
             p.post(Cumulative{starts, lengths, vector<Integer>{0_i, 1_i, 1_i, 0_i}, 1_i});
             p.post(Cumulative{starts, lengths, vector<Integer>{1_i, 1_i, 0_i, 0_i}, 1_i});
             p.post(Cumulative{starts, lengths, vector<Integer>{1_i, 0_i, 1_i, 0_i}, 1_i});
