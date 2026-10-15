@@ -217,11 +217,10 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     // (Expensive) initialiser and before search, giving both propagators y's bounds
     // just as a normal variable's bound lines would.
     //
-    // For each y[j] and direction: for every value offset+k, the value channel gives
-    // (p[j] = offset+k) -> y[j] <compares> x[k], with x[k] within [lo, hi], so
-    // ~[p[j] = offset+k] v (y[j] within bound) is RUP; p[j] takes some value in range,
-    // so at least one [p[j] = offset+k] holds; resolving them yields the bound. Only
-    // the two final bounds persist -- the per-value case lemmas are forgotten.
+    // For each y[j] and direction, by cases on p[j]: for every value offset+k, the
+    // value channel gives (p[j] = offset+k) -> y[j] <compares> x[k], with x[k]
+    // within [lo, hi], and p[j] takes some value in range (from its range and eq
+    // ladder), which closes the case where it takes none of them.
     propagators.install_initialiser(
         [p = _p, y = y_ids, offset = _offset, lo = _lowest_x, hi = _highest_x, n](const State &, auto &, ProofLogger * const logger) -> void {
             // Only in full-justification (Off) mode: in assertion modes the propagator's
@@ -230,26 +229,12 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
             // these vars).
             if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
-            auto scratch = logger->temporary_proof_level();
             for (size_t j = 0; j < n; ++j) {
-                // p[j] takes at least one value offset+k (from its range + eq ladder).
-                WPBSum takes_a_value;
+                vector<ProofLiteralOrFlag> values;
                 for (size_t k = 0; k < n; ++k)
-                    takes_a_value += 1_i * (p[j] == offset + Integer(static_cast<long long>(k)));
-                logger->emit_rup_proof_line(move(takes_a_value) >= 1_i, ProofLevel::Temporary);
-
-                // For each k: (p[j]=offset+k) -> y[j] <= x[k] <= hi, and >= x[k] >= lo.
-                for (size_t k = 0; k < n; ++k) {
-                    auto not_pk = 1_i * (p[j] != offset + Integer(static_cast<long long>(k)));
-                    logger->emit_rup_proof_line(WPBSum{} + not_pk + 1_i * (y[j] < hi + 1_i) >= 1_i, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line(WPBSum{} + not_pk + 1_i * (y[j] >= lo) >= 1_i, ProofLevel::Temporary);
-                }
-
-                // The two bounds persist (depth 0); the per-value case lemmas above are
-                // only scaffolding, so forget them once the bounds are derived.
-                logger->emit_rup_proof_line(WPBSum{} + 1_i * (y[j] < hi + 1_i) >= 1_i, ProofLevel::Top);
-                logger->emit_rup_proof_line(WPBSum{} + 1_i * (y[j] >= lo) >= 1_i, ProofLevel::Top);
-                logger->forget_proof_level(scratch);
+                    values.emplace_back(p[j] == offset + Integer(static_cast<long long>(k)));
+                logger->emit_cases_proof_line_under_reason({}, WPBSum{} + 1_i * (y[j] < hi + 1_i) >= 1_i, values, ProofLevel::Top);
+                logger->emit_cases_proof_line_under_reason({}, WPBSum{} + 1_i * (y[j] >= lo) >= 1_i, values, ProofLevel::Top);
             }
         },
         InitialiserPriority::SimpleDefinition);
