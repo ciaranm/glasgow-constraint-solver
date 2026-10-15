@@ -462,27 +462,25 @@ namespace
                 }
 
                 if constexpr (doing_proof_) {
+                    // Each feasible terminal state's total bounds the total from
+                    // that side, so the overall bounds are by cases on which
+                    // terminal state is reached.
                     logger->emit_proof_comment("select from feasible terminal states");
+                    vector<ProofFlag> ge_flags, le_flags;
                     for (auto & [_, data] : completed_layers.back()) {
                         if (! data.has_value())
                             continue;
-
-                        auto no_support_ge = WPBSum{} + 1_i * ! data->ges.at(x).reif_flag;
                         PolBuilder{}.add(opb_lines->at(x).first).add(data->ges.at(x).forward_reif_line).emit(*logger, ProofLevel::Temporary);
-                        logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i, ProofLevel::Temporary);
-
-                        auto no_support_le = WPBSum{} + 1_i * ! data->les.at(x).reif_flag;
                         PolBuilder{}.add(opb_lines->at(x).second).add(data->les.at(x).forward_reif_line).emit(*logger, ProofLevel::Temporary);
-                        logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            no_support_le + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i, ProofLevel::Temporary);
+                        ge_flags.push_back(data->ges.at(x).reif_flag);
+                        le_flags.push_back(data->les.at(x).reif_flag);
                     }
 
                     logger->emit_proof_comment("deduce overall conclusions");
-                    logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                        WPBSum{} + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                        WPBSum{} + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i, ProofLevel::Temporary);
+                    logger->emit_cases_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
+                        WPBSum{} + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i, ge_flags, ProofLevel::Temporary);
+                    logger->emit_cases_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
+                        WPBSum{} + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i, le_flags, ProofLevel::Temporary);
                 }
             }
 
