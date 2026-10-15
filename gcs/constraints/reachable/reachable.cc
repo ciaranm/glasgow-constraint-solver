@@ -2,6 +2,7 @@
 #include <gcs/constraints/reachable/reachable.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -30,6 +32,7 @@ using std::min;
 using std::move;
 using std::pair;
 using std::size_t;
+using std::span;
 using std::string;
 using std::to_string;
 using std::unique_ptr;
@@ -489,12 +492,15 @@ auto ReachableBase::install_propagators(Propagators & propagators) -> void
                     if (! state.in_domain(root, Integer{sigma}))
                         lits.push_back(root != Integer{sigma});
 
-                auto emit = [&, goal, to_rule_out](const ReasonLiterals & reason_lits) {
-                    for (const auto & rho : to_rule_out)
-                        logger->emit_rup_proof_line_under_reason(
-                            reason_lits, WPBSum{} + 1_i * goal + 1_i * (root != rho) >= 1_i, ProofLevel::Temporary);
-                };
-                inference.infer(logger, goal, JustifyExplicitly{emit, ThenRUP::Yes, hints::Reachable{owner}}, ExplicitReason{move(lits)});
+                // By cases on which candidate the root is. Where it is none of
+                // them the reason leaves only hyp_node, and taking goal out
+                // there is refuted by propagation, as the per-candidate
+                // branches are.
+                vector<ProofLiteralOrFlag> root_cases;
+                if (logger)
+                    root_cases = case_variables_over_values(root, to_rule_out);
+                inference.infer(
+                    logger, goal, JustifyUsingCases{span<const ProofLiteralOrFlag>{root_cases}, hints::Reachable{owner}}, ExplicitReason{move(lits)});
             };
 
             if (directed) {

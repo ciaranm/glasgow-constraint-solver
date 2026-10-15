@@ -463,8 +463,6 @@ auto main(int argc, char * argv[]) -> int
             mutation = disjunctive_2d_proof_mutation::EmitNothing{};
         else if (arg == "--mutate=skip_refutation")
             mutation = disjunctive_2d_proof_mutation::SkipOneRefutation{};
-        else if (arg == "--mutate=skip_guard_weakening")
-            mutation = disjunctive_2d_proof_mutation::SkipGuardWeakening{};
         else if (arg == "--mutate=skip_escape_pins")
             mutation = disjunctive_2d_proof_mutation::SkipEscapePins{};
         else if (arg == "--mutate=overload_emit_nothing") {

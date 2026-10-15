@@ -67,7 +67,7 @@ namespace gcs::innards
         /// propagation gets from the mux clauses to `d_out >= 1` on its own, so
         /// the case split below is buying predictable cost rather than reach
         /// --- an unhinted RUP is priced against the whole database, and the
-        /// split is four lines. The day durations become variables the pins go
+        /// split is one `cases` line over the selector. The day durations become variables the pins go
         /// and this stops passing, which is the other reason to keep it
         /// runnable.
         struct RupPositivity
@@ -255,13 +255,15 @@ namespace gcs::innards
     {
     private:
         /// A separation as the lemmas want it: which row holds when each wire
-        /// goes first, and the clause saying one of them does. Both rows carry
-        /// \ref big as their guard coefficient, whatever they were derived
-        /// from --- which is what \ref add_separation raises a model row to,
-        /// and what lets a transfer lemma divide by a constant it knows.
+        /// goes first, the flag saying it does, and the clause saying one of
+        /// them does. Both rows carry \ref big as their guard coefficient,
+        /// whatever they were derived from --- which is what
+        /// \ref add_separation raises a model row to, and what lets a transfer
+        /// lemma divide by a constant it knows.
         struct Separation
         {
             std::map<int, ProofLine> first;
+            std::map<int, ProofFlag> flag;
             ProofLine clause;
         };
 
@@ -270,7 +272,7 @@ namespace gcs::innards
         Integer _window_lo, _window_hi;
         ProofLevel _level;
         ComparatorNetworkMutation _mutation;
-        Integer _span, _big, _div;
+        Integer _span, _big;
         long long _counter = 0;
         int _next_wire_id = 0;
 
@@ -316,7 +318,8 @@ namespace gcs::innards
 
         [[nodiscard]] auto separation_between(const ProofWire &, const ProofWire &) const -> const Separation &;
 
-        auto record_separation(const ProofWire &, ProofLine when_first, const ProofWire &, ProofLine when_other_first, ProofLine clause) -> void;
+        auto record_separation(const ProofWire &, ProofLine when_first, ProofFlag first_flag, const ProofWire &, ProofLine when_other_first,
+            ProofFlag other_first_flag, ProofLine clause) -> void;
 
         /// The four `red`s reifying "x runs before y" and "y runs before x" on
         /// a pair of fresh flags, returning the two forward rows and the two
@@ -329,16 +332,16 @@ namespace gcs::innards
 
         [[nodiscard]] auto reify_separation(const ProofWire & x, const ProofWire & y, const std::string & stem) -> SeparationFlags;
 
-        [[nodiscard]] auto case_split(const WPBSumLE & goal, const std::vector<ProofLine> & guarded_halves) -> ProofLine;
-
-        [[nodiscard]] auto case_split(const WPBSumLE & goal, const std::vector<ProofLine> & guarded_halves, Integer divisor) -> ProofLine;
+        /// The goal by cases on a selector, from a guarded half for each of
+        /// its polarities, which must already be in the database.
+        [[nodiscard]] auto case_split(const WPBSumLE & goal, const ProofLiteralOrFlag & selector) -> ProofLine;
 
         auto derive_parking(const Comparator &, const ProofWire & out, const ProofWire & d_out, ProofLine ge_a, ProofLine ge_b, ProofLine d_ge_a,
             ProofLine d_ge_b) -> void;
 
         [[nodiscard]] auto derive_gap_allowing_zero(const Comparator &) -> ProofLine;
 
-        auto derive_positivity(const ProofWire & out, const std::vector<std::pair<ProofLine, ProofWire>> & halves) -> void;
+        auto derive_positivity(const Comparator &, const ProofWire & out, const std::vector<std::pair<ProofLine, ProofWire>> & halves) -> void;
 
         [[nodiscard]] auto derive_preservation(const Comparator &) -> ProofLine;
 
@@ -379,10 +382,9 @@ namespace gcs::innards
          *
          * Optional tasks are the one mode whose constants are *quadratic* in
          * the window: the parking rows carry the window's width `K` on every
-         * duration bit, and their case splits divide by `(1 + K) * span`,
-         * which is the largest value the mode computes (the inactive half's
-         * `K * duration + span` is at most it, a duration being at most
-         * `span`). At `window_lo = 0` that is about `2^(2 * width)`, so such a
+         * duration bit, so the largest value the mode computes is about
+         * `(1 + K) * span` (the inactive half's `K * duration + span` is at
+         * most it, a duration being at most `span`). At `window_lo = 0` that is about `2^(2 * width)`, so such a
          * window fits only up to a width of 31 bits, where a pinned-duration
          * network is linear in `span` and goes much wider. A caller whose
          * inferences must not depend on whether proofs are on decides this
@@ -487,10 +489,10 @@ namespace gcs::innards
          * A propagator's window is a fact about the search state, not about the
          * model, so the rows saying a task fits inside it have to be guarded by
          * the inference's reason. That guard cannot simply ride along: the
-         * bounds are carried across each comparator by a case split, and a case
-         * split works by adding the negated goal to each half and dividing, so
-         * a term the halves carry and the goal does not survives the division
-         * and the split lands on something sound but not closing.
+         * bounds are carried across each comparator by a case split, which
+         * concludes the goal under each polarity of the selector from that
+         * polarity's half, so a term the halves carry and the goal does not
+         * leaves each half weaker than the goal and neither branch closes.
          *
          * So the guard is declared once and the network puts it on both sides:
          * on the rows it emits for the bounds, and on every goal derived from
@@ -513,8 +515,9 @@ namespace gcs::innards
          * The discipline, which is the one the separation flags already use:
          * the guard rides a CLAUSE at coefficient one and a ROW at `big()`,
          * with `derive_gap`'s multiply and `separate_from_gap`'s divide as the
-         * only transitions. Clauses must carry the WHOLE guard, since every
-         * goal offers the whole of it.
+         * only transitions. The case-split goals offer the whole guard, but a
+         * clause need not carry all of it: each is concluded by cases, where a
+         * half carrying fewer guard literals is only a stronger line.
          */
         auto assume_with_guarded_separations(const WPBSum & guard) -> void;
 

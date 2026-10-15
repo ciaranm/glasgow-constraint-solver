@@ -319,17 +319,18 @@ namespace
             pb_sum = WPBSum{};
             PolBuilder p_line;
             for (long i = 0; i < n; i++) {
+                // If i is at j-1, something is at j: by cases on i's successor k,
+                // which the successor's channel puts at j.
                 auto next_pos_vars = WPBSum{};
+                vector<ProofLiteralOrFlag> successors;
                 for (long k = 0; k < n; k++) {
                     next_pos_vars += 1_i * (ctx.pos_var_data.at(k).var == Integer{j});
-                    ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) +
-                                1_i * ! (ctx.succ[i] == Integer{k}) + 1_i * (ctx.pos_var_data.at(k).var == Integer{j}) >=
-                            1_i,
-                        ProofLevel::Top);
+                    successors.emplace_back(ctx.succ[i] == Integer{k});
                 }
 
                 add_sat(p_line,
-                    ctx.logger.emit_rup_proof_line(next_pos_vars + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) >= 1_i, ProofLevel::Top));
+                    ctx.logger.emit_cases_proof_line_under_reason(
+                        {}, next_pos_vars + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) >= 1_i, successors, ProofLevel::Top));
             }
             ctx.logger.emit_proof_comment(format("AL1 p[i] = {}", j));
             add_sat(p_line, last_al1_line);
@@ -636,22 +637,9 @@ namespace
             ctx.logger.emit_proof_comment("Step 4");
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
-            ctx.logger.emit_proof_comment("Step 5");
-            ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * ! ctx.flag_data[ctx.root].greater_than[middle].flag + 1_i * ! ctx.flag_data[next_node].greater_than[middle].flag +
-                        1_i * ! shifted_pos_eq[middle][count].flag + 1_i * (! shifted_pos_eq[next_node][count].flag) >=
-                    1_i,
-                ProofLevel::Temporary);
-
-            ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * ! ctx.flag_data[next_node].greater_than[middle].flag + 1_i * ! shifted_pos_eq[middle][count].flag +
-                        1_i * (! shifted_pos_eq[next_node][count].flag) >=
-                    1_i,
-                ProofLevel::Temporary);
-
             add_sat(temp_p_line, leq_and_geq);
             add_sat(temp_p_line, ctx.flag_data[next_node].greater_than[middle].backwards_reif_line);
-            ctx.logger.emit_proof_comment("Step 6");
+            ctx.logger.emit_proof_comment("Step 5");
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
             add_sat(temp_p_line, geq_and_leq);
@@ -659,24 +647,18 @@ namespace
                 ctx.logger.emit_rup_proof_line(
                     WPBSum{} + -1_i * ctx.pos_var_data.at(middle).var + 1_i * ctx.pos_var_data.at(next_node).var >= Integer{-n + 1},
                     ProofLevel::Temporary));
-            ctx.logger.emit_proof_comment("Step 7");
+            ctx.logger.emit_proof_comment("Step 6");
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
-            ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * ! ctx.flag_data[ctx.root].greater_than[next_node].flag + 1_i * ctx.flag_data[next_node].greater_than[middle].flag +
-                        1_i * ! shifted_pos_eq[middle][count].flag + 1_i * (! shifted_pos_eq[next_node][count].flag) >=
-                    1_i,
-                ProofLevel::Temporary);
-
-            ctx.logger.emit_proof_comment("Step 8");
-            ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * ! ctx.flag_data[next_node].greater_than[middle].flag + 1_i * ! shifted_pos_eq[middle][count].flag +
-                        1_i * (! shifted_pos_eq[next_node][count].flag) >=
-                    1_i,
-                ProofLevel::Temporary);
-
-            succesor_implies_not_mid_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * ! shifted_pos_eq[middle][count].flag + 1_i * (! shifted_pos_eq[next_node][count].flag) >= 1_i, ProofLevel::Current);
+            // With those lemmas, split on d[next_node][middle], and then on
+            // d[root][middle] where it holds or d[root][next_node] where it
+            // does not: each leaf is RUP.
+            ctx.logger.emit_proof_comment("Step 7");
+            const ProofFlag case_variables[] = {ctx.flag_data[next_node].greater_than[middle].flag, ctx.flag_data[ctx.root].greater_than[middle].flag,
+                ctx.flag_data[ctx.root].greater_than[next_node].flag};
+            succesor_implies_not_mid_line = ctx.logger.emit_cases_proof_line_under_reason(ctx.reason,
+                WPBSum{} + 1_i * ! shifted_pos_eq[middle][count].flag + 1_i * (! shifted_pos_eq[next_node][count].flag) >= 1_i, case_variables,
+                ProofLevel::Current);
         }
         else {
             succesor_implies_not_mid_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,

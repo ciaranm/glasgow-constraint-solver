@@ -3,6 +3,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/am1_from_pairs.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -16,6 +17,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,6 +30,7 @@ using std::map;
 using std::optional;
 using std::pair;
 using std::set;
+using std::span;
 using std::string;
 using std::to_string;
 using std::unique_ptr;
@@ -443,40 +446,40 @@ auto MinDistance::install_forward_propagator(Propagators & propagators, bool pai
                     // derivation (both work by symmetry; the smaller one is cheaper).
                     auto loop_pos = state.domain_size(x[i]) <= state.domain_size(x[j]) ? i : j;
 
+                    // By cases on x_loop's in-range values: that is where the
+                    // per-value argument lives, and anything else is closed as
+                    // before. Built only when there is a proof to put it in.
+                    auto loop_values = [&, loop_pos]() {
+                        vector<ProofLiteralOrFlag> result;
+                        if (logger)
+                            state.for_each_value_immutable(x[loop_pos], [&](Integer a) {
+                                if (in_range(a))
+                                    result.emplace_back(x[loop_pos] == a);
+                            });
+                        return result;
+                    };
+
                     if (! u || *u < z_min) {
                         // Pair infeasible. For each a in dom(x_loop), every b in the
                         // other domain dies (R clause when D[a,b] < R_ij; else the
                         // pair clause with z >= z_min), so ~[x_loop = a]; then x_loop's
                         // at-least-one closes the contradiction. Item 4 of the spec.
                         const bool z_guards = u.has_value(); // empty set is pure-R, no z role
-                        auto emit_infeasible = [&, loop_pos](const ReasonLiterals & reason) {
-                            state.for_each_value_immutable(x[loop_pos], [&](Integer a) {
-                                if (! in_range(a))
-                                    return;
-                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x[loop_pos] != a) >= 1_i, ProofLevel::Temporary);
-                            });
-                        };
                         Reason reason = generic_reason(vector<IntegerVariableID>{x[i], x[j]});
                         if (z_guards)
                             reason = with_extra(std::move(reason), ReasonLiterals{z >= z_min});
-                        inference.contradiction(logger, JustifyExplicitly{emit_infeasible, ThenRUP::Yes}, reason);
+                        auto cases = loop_values();
+                        inference.contradiction(logger, JustifyUsingCases{span<const ProofLiteralOrFlag>{cases}}, reason);
                     }
                     else if (*u < state.upper_bound(z)) {
                         auto uu = *u;
-                        // Item 3 of the spec: for each a in dom(x_loop) derive
+                        // Item 3 of the spec: for each a in dom(x_loop),
                         // ~[x_loop = a] \/ [z <= u_ij]; the z bound needed to kill each
                         // partner b comes free from negating [z <= u_ij], so the reason
                         // is just the two endpoint domains.
-                        auto emit_ub = [&, loop_pos, uu](const ReasonLiterals & reason) {
-                            state.for_each_value_immutable(x[loop_pos], [&](Integer a) {
-                                if (! in_range(a))
-                                    return;
-                                logger->emit_rup_proof_line_under_reason(
-                                    reason, WPBSum{} + 1_i * (x[loop_pos] != a) + 1_i * (z <= uu) >= 1_i, ProofLevel::Temporary);
-                            });
-                        };
-                        inference.infer_less_than(
-                            logger, z, uu + 1_i, JustifyExplicitly{emit_ub, ThenRUP::Yes}, generic_reason(vector<IntegerVariableID>{x[i], x[j]}));
+                        auto cases = loop_values();
+                        inference.infer(logger, z < uu + 1_i, JustifyUsingCases{span<const ProofLiteralOrFlag>{cases}},
+                            generic_reason(vector<IntegerVariableID>{x[i], x[j]}));
                     }
 
                     // (3) Pair-support scan (paper Section 4.2), PairSupport only.

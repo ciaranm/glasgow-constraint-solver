@@ -563,28 +563,40 @@ namespace
             }
         }
 
-        auto scan = logger.emit_rup_proof_line(
-            WPBSum{} + 1_i * champion.at(make_pair(candidates[0], size_t{0})) + 1_i * nothing_yet[0] >= 1_i, ProofLevel::Top);
-        for (size_t k = 0; k + 1 < candidates.size(); ++k) {
-            auto next = candidates[k + 1];
-            auto & fresh = champion.at(make_pair(next, k + 1));
-            PolBuilder pol;
-            pol.add(scan);
-            for (size_t p = 0; p <= k; ++p) {
-                auto j = candidates[p];
-                pol.add(logger.emit_rup_proof_line(
-                    WPBSum{} + 1_i * ! champion.at(make_pair(j, k)) + 1_i * champion.at(make_pair(j, k + 1)) + 1_i * fresh >= 1_i, ProofLevel::Top));
-            }
-            pol.add(logger.emit_rup_proof_line(WPBSum{} + 1_i * ! nothing_yet[k] + 1_i * fresh + 1_i * nothing_yet[k + 1] >= 1_i, ProofLevel::Top));
-            scan = pol.saturate().emit(logger, ProofLevel::Top);
-        }
+        // The scan: after the first k + 1 candidates, one of them is the latest
+        // starter so far, or nobody has started. Each step follows from the one
+        // before by cases on which: the champion so far stays champion, or the
+        // next candidate overtakes it, or (from nobody) starts, each by unit
+        // propagation.
+        auto scan_after = [&](size_t k) {
+            WPBSum some;
+            for (size_t p = 0; p <= k; ++p)
+                some += 1_i * champion.at(make_pair(candidates[p], k));
+            return move(some) + 1_i * nothing_yet[k] >= 1_i;
+        };
+        auto scan_cases = [&](size_t k) {
+            vector<ProofFlag> cases;
+            for (size_t p = 0; p <= k; ++p)
+                cases.push_back(champion.at(make_pair(candidates[p], k)));
+            cases.push_back(nothing_yet[k]);
+            return cases;
+        };
+        auto last_scan = logger.emit_rup_proof_line(scan_after(0), ProofLevel::Top);
+        for (size_t k = 0; k + 1 < candidates.size(); ++k)
+            last_scan = logger.emit_cases_proof_line_under_reason({}, scan_after(k + 1), scan_cases(k), ProofLevel::Top);
         auto last = candidates.size() - 1;
 
         auto [target_flag, target_forward, target_reverse, target] = literalise_target(v, t);
 
         // --- each case implies the target -------------------------------------
+        //
+        // Deliberately arithmetic, rather than a `cases` over the last step:
+        // under `both-recovering` a `cases` branch could close against the very
+        // per-time row being recovered, so a wrong emit_case would go unnoticed
+        // (see RecoverFromWrongCheckpoint). The pol makes the recovered line
+        // depend on exactly these cases.
         PolBuilder finish;
-        finish.add(scan);
+        finish.add(last_scan);
         for (auto j : candidates) {
             auto w = champion.at(make_pair(j, last));
             std::map<size_t, ProofLine> pinned;

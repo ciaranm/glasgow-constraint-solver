@@ -4,6 +4,7 @@
 #include <gcs/constraints/min_max/min_max.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -169,8 +170,12 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                 // the unconditional row and does not. For max the model is
                                 // result >= var_i always and result <= var_i under f_i, so
                                 // it is the lower lemma that needs f_i; for min it is the
-                                // upper one. With both in the database the selector clause
-                                // and the conclusion are plain propagation.
+                                // upper one. With both in the database the conclusion is
+                                // plain propagation: under the reason and result in
+                                // [lo, hi], each pair of lemmas propagates ~f_i, and al1
+                                // then fails. The `cases` line below states that split
+                                // over the selectors explicitly, but RUP alone would
+                                // also accept the conclusion here.
                                 for (const auto & [idx, var] : enumerate(vars)) {
                                     auto lower = WPBSum{} + 1_i * (result < lo) + 1_i * (var >= lo);
                                     auto upper = WPBSum{} + 1_i * (var < hi + 1_i) + 1_i * (result >= hi + 1_i);
@@ -181,11 +186,9 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
 
                                     logger->emit_rup_proof_line_under_reason(reason, move(lower) >= 1_i, ProofLevel::Temporary);
                                     logger->emit_rup_proof_line_under_reason(reason, move(upper) >= 1_i, ProofLevel::Temporary);
-                                    logger->emit_rup_proof_line_under_reason(reason,
-                                        WPBSum{} + 1_i * ! selectors.at(idx) + 1_i * not_in_range(result, lo, hi) + 1_i * in_range(var, lo, hi) >=
-                                            1_i,
-                                        ProofLevel::Temporary);
                                 }
+                                logger->emit_cases_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * not_in_range(result, lo, hi) >= 1_i, selectors, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::MinMax{owner}},
                         ExplicitReason{reason});
@@ -252,14 +255,16 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 // lemmas the bridge below still needs. A value an earlier interval's
                 // removal took out of result is harmless here, since its var != val
                 // literal is still in the reason.
+                //
+                // Each is a `cases` on the value result takes from result_set: under
+                // each, var's selector would make var that value, which the reason
+                // says it lacks.
                 auto rule_out_other_selectors = [&](const ReasonLiterals & reason) {
+                    auto result_values = case_variables_over_values(result, result_set.each());
                     for (const auto & [idx, var] : enumerate(vars))
-                        if (var != *support_1) {
-                            for (const auto & rval : result_set.each())
-                                logger->emit_rup_proof_line_under_reason(
-                                    reason, WPBSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != rval)) >= 1_i, ProofLevel::Temporary);
-                            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
-                        }
+                        if (var != *support_1)
+                            logger->emit_cases_proof_line_under_reason(
+                                reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, result_values, ProofLevel::Temporary);
                 };
 
                 // Each contiguous removed interval is a single ~[support_1 in lo..hi]
@@ -353,13 +358,10 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                 for (auto r : result_before.each()) {
                                     if (min ? r >= v : r <= v)
                                         continue;
-                                    // if var_i = v and result = r, no var can equal result, breaking al1
-                                    for (std::size_t k = 0; k < vars.size(); ++k)
-                                        logger->emit_rup_proof_line_under_reason(reason,
-                                            WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) + 1_i * (! selectors.at(k)) >= 1_i,
-                                            ProofLevel::Temporary);
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason, WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) >= 1_i, ProofLevel::Temporary);
+                                    // if var_i = v and result = r, no var can equal result, so
+                                    // every selector is ruled out, breaking al1
+                                    logger->emit_cases_proof_line_under_reason(
+                                        reason, WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) >= 1_i, selectors, ProofLevel::Temporary);
                                 }
                             };
                             inference.infer_not_equal(

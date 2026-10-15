@@ -27,7 +27,9 @@
 #include <bit>
 #include <functional>
 #include <numeric>
+#include <optional>
 #include <queue>
+#include <span>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -45,8 +47,11 @@ using std::function;
 using std::greater;
 using std::make_unique;
 using std::move;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::priority_queue;
+using std::span;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -170,6 +175,26 @@ auto Sort::define_proof_model(ProofModel & model, const State &) -> void
 
 namespace
 {
+    // pos is in the band [fa, fb], or `also` holds: by cases on the ranks
+    // outside the band, each of which the reason rules out (with `also` where
+    // that is what rules it out), and pos's at-least-one closing the case where
+    // it takes none of them.
+    auto pin_to_band(ProofLogger & logger, const ReasonLiterals & reason, const ProofOnlySimpleIntegerVariableID & pos, long long n, long long fa,
+        long long fb, const optional<IntegerVariableCondition> & also = nullopt) -> ProofLine
+    {
+        WPBSum in_band;
+        if (also)
+            in_band += 1_i * *also;
+        vector<ProofLiteralOrFlag> outside;
+        for (long long k = 0; k < n; ++k) {
+            if (k < fa || k > fb)
+                outside.emplace_back(ProofLiteral{pos == Integer{k}});
+            else
+                in_band += 1_i * (pos == Integer{k});
+        }
+        return logger.emit_cases_proof_line_under_reason(reason, move(in_band) >= 1_i, outside, ProofLevel::Temporary);
+    }
+
     // Mehlhorn-Thiel bounds-consistency propagation for Sortedness(x; y), i.e.
     // y = sort(x). Achieves bounds(Z) on both x and y (Thiel's thesis, ch. 3;
     // Mehlhorn & Thiel, CP 2000). See dev_docs/sortedness.md.
@@ -193,6 +218,16 @@ namespace
         const ConstraintID & owner, const State & state, Inference_ & inference, ProofLogger * const logger, const Reason & reason) -> void
     {
         auto n = x.size();
+
+        // pos[i]'s rank atoms, for a split over which rank i takes, built only
+        // when there is a proof to put it in.
+        auto rank_cases = [&](size_t i) {
+            vector<ProofLiteralOrFlag> result;
+            if (logger)
+                for (size_t k = 0; k < n; ++k)
+                    result.emplace_back(ProofLiteral{pos[i] == Integer(k)});
+            return result;
+        };
 
         // Snapshot bounds. ox/oy are the originals (to decide what actually
         // tightened); lx/ux/ly/uy are working copies the algorithm narrows.
@@ -297,21 +332,12 @@ namespace
                             logger->emit_rup_proof_line_under_reason(reason_lits, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
                         for (size_t k = 0; k < n; ++k)
                             logger->emit_rup_proof_line_under_reason(reason_lits, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
-                        // Per i in S: pin pos[i] into [fa,fb] by excluding every
-                        // outside rank k (k < fa <= lo_i: y_k <= uy[k] < lx[i] breaks
-                        // the channel; k > fb >= hi_i-1: y_k >= ly[k] > ux[i]). The
-                        // restricted at-least-one then follows from the root al1[i].
+                        // Per i in S: pin pos[i] into [fa,fb], every outside rank k
+                        // being excluded (k < fa <= lo_i: y_k <= uy[k] < lx[i] breaks
+                        // the channel; k > fb >= hi_i-1: y_k >= ly[k] > ux[i]).
                         vector<ProofLine> restricted(S.size());
-                        for (const auto & [idx, i] : enumerate(S)) {
-                            for (long long k = 0; cmp_less(k, n); ++k)
-                                if (k < fa || k > fb)
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason_lits, WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
-                            WPBSum in_band;
-                            for (long long k = fa; k <= fb; ++k)
-                                in_band += 1_i * (pos[i] == Integer{k});
-                            restricted[idx] = logger->emit_rup_proof_line_under_reason(reason_lits, move(in_band) >= 1_i, ProofLevel::Temporary);
-                        }
+                        for (const auto & [idx, i] : enumerate(S))
+                            restricted[idx] = pin_to_band(*logger, reason_lits, pos[i], static_cast<long long>(n), fa, fb);
                         // Pigeonhole: |S| pins into [fa,fb] but injectivity caps it at
                         // fb-fa+1 < |S|. (For an empty band the restricted lines are
                         // already 0 >= 1 and the closing RUP suffices.)
@@ -558,12 +584,6 @@ namespace
                                 // cross-constraint sum so a pol not RUP).
                                 for (size_t i = 0; i < n; ++i)
                                     PolBuilder{}.add(rankub[i]).add(xcount_line).emit(*logger, ProofLevel::Temporary);
-                                // per i : (pos[i] != j) v (y[j] >= L). RUP under reason
-                                // from RANKUB2_i + channel: pos[i]=j forces [x_i>=L]=1,
-                                // and the channel gives y[j] = x_i >= L.
-                                for (size_t i = 0; i < n; ++i)
-                                    logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (pos[i] != Integer(j)) + 1_i * (y[j] >= Integer{L}) >= 1_i, ProofLevel::Temporary);
                                 // surjectivity (same counting pol as the upper bound).
                                 PolBuilder surj;
                                 for (size_t i = 0; i < n; ++i)
@@ -572,6 +592,14 @@ namespace
                                     if (k != j)
                                         surj.add(inj_lines[k]);
                                 surj.emit(*logger, ProofLevel::Temporary);
+                                // By cases on who holds rank j: under the reason, from
+                                // RANKUB2_i + channel, pos[i]=j forces [x_i>=L]=1, and
+                                // the channel gives y[j] = x_i >= L.
+                                vector<ProofLiteralOrFlag> holders;
+                                for (size_t i = 0; i < n; ++i)
+                                    holders.emplace_back(ProofLiteral{pos[i] == Integer(j)});
+                                logger->emit_cases_proof_line_under_reason(
+                                    reason_lits, WPBSum{} + 1_i * (y[j] >= Integer{L}) >= 1_i, holders, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
@@ -593,8 +621,7 @@ namespace
                     else
                         inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
                             JustifyExplicitly{//
-                                [&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](
-                                    const ReasonLiterals & reason_lits) -> void {
+                                [&y, &pos, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](const ReasonLiterals & reason_lits) -> void {
                                     for (size_t k = n; k-- > 0;)
                                         logger->emit_rup_proof_line_under_reason(
                                             reason_lits, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
@@ -607,25 +634,9 @@ namespace
                                         logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (y[k] < Integer{L}) >= 1_i,
                                             ProofLevel::Temporary);
                                     std::vector<ProofLine> restricted(S.size());
-                                    for (const auto & [idx, i] : enumerate(S)) {
-                                        for (long long k = 0; cmp_less(k, n); ++k) {
-                                            if (k >= fa && k <= fb)
-                                                continue;
-                                            if (cmp_less(k, lo_i[i]) || cmp_greater_equal(k, hi_i[i]))
-                                                logger->emit_rup_proof_line_under_reason(
-                                                    reason_lits, WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
-                                            else
-                                                logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                    WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (pos[i] != Integer{k}) >= 1_i,
-                                                    ProofLevel::Temporary);
-                                        }
-                                        WPBSum in_band;
-                                        in_band += 1_i * (y[j] >= Integer{L});
-                                        for (long long k = fa; k <= fb; ++k)
-                                            in_band += 1_i * (pos[i] == Integer{k});
+                                    for (const auto & [idx, i] : enumerate(S))
                                         restricted[idx] =
-                                            logger->emit_rup_proof_line_under_reason(reason_lits, move(in_band) >= 1_i, ProofLevel::Temporary);
-                                    }
+                                            pin_to_band(*logger, reason_lits, pos[i], static_cast<long long>(n), fa, fb, y[j] >= Integer{L});
                                     PolBuilder pol;
                                     for (auto l : restricted)
                                         pol.add(l);
@@ -723,30 +734,16 @@ namespace
                                     reason_lits, move(xcount) >= Integer{static_cast<long long>(j) + 1}, ProofLevel::Temporary);
                                 // RANKLB2_i : pos[i] + n*[x_i<=U] >= j+1, folding count_U away
                                 // with the x-count (cross-constraint sum, hence a pol not RUP).
-                                // Emitted for their RUP side effect; consumed by the per-i lines
-                                // below via the database, never by explicit reference.
+                                // Emitted for their RUP side effect; consumed by the cases
+                                // branches below via the database, never by explicit reference.
                                 for (size_t i = 0; i < n; ++i)
                                     PolBuilder{}.add(ranklb[i]).add(xcount_line).emit(*logger, ProofLevel::Temporary);
-                                // HONEST (extended reason): per i, (pos[i] != j) v (y[j] <= U).
-                                // RUP from RANKLB2_i + channel: negate -> pos[i]=j and
-                                // y[j] >= U+1; channel gives x_i = y[j] >= U+1 so [x_i<=U]=0,
-                                // and then RANKLB2_i forces pos[i] >= j+1, contradicting
-                                // pos[i]=j. Emitted under the reason: RANKLB2_i carries the
-                                // reason literals (it was pol'd with the reason-conditional
-                                // count line), so the per-i RUP check must assume the reason
-                                // true to activate it.
-                                for (size_t i = 0; i < n; ++i)
-                                    logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (pos[i] != Integer(j)) + 1_i * (y[j] < Integer{U + 1}) >= 1_i, ProofLevel::Temporary);
                                 // HONEST (surjectivity): rank j is occupied,
                                 // sum_i [pos[i] = j] >= 1. Counting pol over the
                                 // root permutation lines: sum_i al1_i (each pos takes
                                 // a rank) minus sum_{k != j} inj_k (each other rank
                                 // used at most once) leaves rank j with >= 1 occupant
-                                // -- the n(n-1) constants cancel exactly. With the
-                                // per-i lines above, the closing RUP then closes:
-                                // under y[j] >= U+1 each gives pos[i] != j,
-                                // contradicting this.
+                                // -- the n(n-1) constants cancel exactly.
                                 PolBuilder surj;
                                 for (size_t i = 0; i < n; ++i)
                                     surj.add(al1_lines[i]);
@@ -754,6 +751,18 @@ namespace
                                     if (k != j)
                                         surj.add(inj_lines[k]);
                                 surj.emit(*logger, ProofLevel::Temporary);
+                                // HONEST (extended reason): by cases on who holds rank j.
+                                // Under pos[i]=j and y[j] >= U+1 the channel gives
+                                // x_i = y[j] >= U+1 so [x_i<=U]=0, and then RANKLB2_i
+                                // forces pos[i] >= j+1, contradicting pos[i]=j. Under the
+                                // reason: RANKLB2_i carries the reason literals (it was
+                                // pol'd with the reason-conditional count line), so the
+                                // branches must assume the reason true to activate it.
+                                vector<ProofLiteralOrFlag> holders;
+                                for (size_t i = 0; i < n; ++i)
+                                    holders.emplace_back(ProofLiteral{pos[i] == Integer(j)});
+                                logger->emit_cases_proof_line_under_reason(
+                                    reason_lits, WPBSum{} + 1_i * (y[j] < Integer{U + 1}) >= 1_i, holders, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
@@ -775,57 +784,40 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid ub(y) tightening"};
                     else
                         inference.infer_less_than(logger, y[j], Integer{U + 1},
-                            JustifyExplicitly{[&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, U, logger](
-                                                  const ReasonLiterals & reason_lits) -> void {
-                                                  // Normalized y-bounds for the unconditional rank
-                                                  // exclusions (k < lo_i: y_k <= uy[k] < lx_i;
-                                                  // k >= hi_i: y_k >= ly[k] > ux_i).
-                                                  for (size_t k = n; k-- > 0;)
-                                                      logger->emit_rup_proof_line_under_reason(
-                                                          reason_lits, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
-                                                  for (size_t k = 0; k < n; ++k)
-                                                      logger->emit_rup_proof_line_under_reason(
-                                                          reason_lits, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
-                                                  // BNLY[k], k >= j : (y[j] <= U) v (y[k] >= U+1),
-                                                  // a chain up from j (each RUP from sortedness and
-                                                  // the previous). Makes the assumption-dependent
-                                                  // exclusions (ranks in [j, hi_i)) one-step RUPs.
-                                                  for (size_t k = j; k < n; ++k)
-                                                      logger->emit(RUPProofRule{},
-                                                          WPBSum{} + 1_i * (y[j] < Integer{U + 1}) + 1_i * (y[k] >= Integer{U + 1}) >= 1_i,
-                                                          ProofLevel::Temporary);
-                                                  // Per i in S: pin pos[i] into [fa,fb].
-                                                  std::vector<ProofLine> restricted(S.size());
-                                                  for (const auto & [idx, i] : enumerate(S)) {
-                                                      for (long long k = 0; cmp_less(k, n); ++k) {
-                                                          if (k >= fa && k <= fb)
-                                                              continue;
-                                                          if (cmp_less(k, lo_i[i]) || cmp_greater_equal(k, hi_i[i]))
-                                                              logger->emit_rup_proof_line_under_reason(
-                                                                  reason_lits, WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
-                                                          else
-                                                              logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                                  WPBSum{} + 1_i * (y[j] < Integer{U + 1}) + 1_i * (pos[i] != Integer{k}) >= 1_i,
-                                                                  ProofLevel::Temporary);
-                                                      }
-                                                      WPBSum in_band;
-                                                      in_band += 1_i * (y[j] < Integer{U + 1});
-                                                      for (long long k = fa; k <= fb; ++k)
-                                                          in_band += 1_i * (pos[i] == Integer{k});
-                                                      restricted[idx] = logger->emit_rup_proof_line_under_reason(
-                                                          reason_lits, move(in_band) >= 1_i, ProofLevel::Temporary);
-                                                  }
-                                                  // Pigeonhole: the |S| restricted-at-least-ones
-                                                  // against inj_k for k in [fa,fb] force the goal
-                                                  // (the contradiction core conflicts with the
-                                                  // negated goal in the closing RUP).
-                                                  PolBuilder pol;
-                                                  for (auto l : restricted)
-                                                      pol.add(l);
-                                                  for (long long k = fa; k <= fb; ++k)
-                                                      pol.add(inj_lines[static_cast<size_t>(k)]);
-                                                  pol.emit(*logger, ProofLevel::Temporary);
-                                              },
+                            JustifyExplicitly{
+                                [&y, &pos, &ly, &uy, &inj_lines, S, fa, fb, n, j, U, logger](const ReasonLiterals & reason_lits) -> void {
+                                    // Normalized y-bounds for the unconditional rank
+                                    // exclusions (k < lo_i: y_k <= uy[k] < lx_i;
+                                    // k >= hi_i: y_k >= ly[k] > ux_i).
+                                    for (size_t k = n; k-- > 0;)
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason_lits, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                                    for (size_t k = 0; k < n; ++k)
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason_lits, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                    // BNLY[k], k >= j : (y[j] <= U) v (y[k] >= U+1),
+                                    // a chain up from j (each RUP from sortedness and
+                                    // the previous). Makes the assumption-dependent
+                                    // exclusions (ranks in [j, hi_i)) one-step RUPs.
+                                    for (size_t k = j; k < n; ++k)
+                                        logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (y[j] < Integer{U + 1}) + 1_i * (y[k] >= Integer{U + 1}) >= 1_i,
+                                            ProofLevel::Temporary);
+                                    // Per i in S: pin pos[i] into [fa,fb].
+                                    std::vector<ProofLine> restricted(S.size());
+                                    for (const auto & [idx, i] : enumerate(S))
+                                        restricted[idx] =
+                                            pin_to_band(*logger, reason_lits, pos[i], static_cast<long long>(n), fa, fb, y[j] < Integer{U + 1});
+                                    // Pigeonhole: the |S| restricted-at-least-ones
+                                    // against inj_k for k in [fa,fb] force the goal
+                                    // (the contradiction core conflicts with the
+                                    // negated goal in the closing RUP).
+                                    PolBuilder pol;
+                                    for (auto l : restricted)
+                                        pol.add(l);
+                                    for (long long k = fa; k <= fb; ++k)
+                                        pol.add(inj_lines[static_cast<size_t>(k)]);
+                                    pol.emit(*logger, ProofLevel::Temporary);
+                                },
                                 ThenRUP::Yes, hints::Sort{owner}},
                             reason);
                 }
@@ -840,17 +832,12 @@ namespace
                 // (y_k <= uy[k] < lx[i] <= x_i, so pos[i]=k would force y_k=x_i
                 // above its own upper bound), and k >= lo_i gives x_i = y_k >=
                 // ly[k] >= ly[lo_i] = L via the channel. The at-least-one line
-                // for pos[i] then closes it. HALL (jl_in > lo_i): asserted.
-                if (jl_in[i] == lo_i[i])
-                    inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
-                        JustifyExplicitly{//
-                            [&x, &pos, n, i, L, logger](const ReasonLiterals & reason_lits) -> void {
-                                for (size_t k = 0; k < n; ++k)
-                                    logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] >= Integer{L}) >= 1_i, ProofLevel::Temporary);
-                            },
-                            ThenRUP::Yes, hints::Sort{owner}},
-                        reason);
+                // for pos[i] then closes it, so it is by cases on pos[i]. HALL
+                // (jl_in > lo_i): asserted.
+                if (jl_in[i] == lo_i[i]) {
+                    auto ranks = rank_cases(i);
+                    inference.infer(logger, x[i] >= Integer{L}, JustifyUsingCases{span<const ProofLiteralOrFlag>{ranks}, hints::Sort{owner}}, reason);
+                }
                 else {
                     // HALL: lb(x[i]) = ly[jl] with jl = jl_in[i] > lo_i (the SCC
                     // pushes x[i]'s rank strictly above the intersection floor).
@@ -874,30 +861,13 @@ namespace
                                     for (size_t k = 0; k < n; ++k)
                                         logger->emit_rup_proof_line_under_reason(
                                             reason_lits, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                    // i excluded from ranks > fb (>= jl) needs the
+                                    // assumption (NLY: y_k >= ly[k] >= L); all other
+                                    // exclusions are unconditional.
                                     std::vector<ProofLine> restricted(S.size());
-                                    for (const auto & [idx, m] : enumerate(S)) {
-                                        for (long long k = 0; cmp_less(k, n); ++k) {
-                                            if (k >= fa && k <= fb)
-                                                continue;
-                                            // i excluded from ranks > fb (>= jl) needs the
-                                            // assumption (NLY: y_k >= ly[k] >= L); all other
-                                            // exclusions are unconditional.
-                                            if (m == i && k > fb)
-                                                logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                    WPBSum{} + 1_i * (x[i] >= Integer{L}) + 1_i * (pos[m] != Integer{k}) >= 1_i,
-                                                    ProofLevel::Temporary);
-                                            else
-                                                logger->emit_rup_proof_line_under_reason(
-                                                    reason_lits, WPBSum{} + 1_i * (pos[m] != Integer{k}) >= 1_i, ProofLevel::Temporary);
-                                        }
-                                        WPBSum in_band;
-                                        if (m == i)
-                                            in_band += 1_i * (x[i] >= Integer{L});
-                                        for (long long k = fa; k <= fb; ++k)
-                                            in_band += 1_i * (pos[m] == Integer{k});
-                                        restricted[idx] =
-                                            logger->emit_rup_proof_line_under_reason(reason_lits, move(in_band) >= 1_i, ProofLevel::Temporary);
-                                    }
+                                    for (const auto & [idx, m] : enumerate(S))
+                                        restricted[idx] = pin_to_band(*logger, reason_lits, pos[m], static_cast<long long>(n), fa, fb,
+                                            m == i ? optional<IntegerVariableCondition>{x[i] >= Integer{L}} : nullopt);
                                     PolBuilder pol;
                                     for (auto l : restricted)
                                         pol.add(l);
@@ -913,16 +883,11 @@ namespace
                 auto U = nux[i];
                 // Mirror: x[i] <= U, honest when U is the intersection bound
                 // uy[hi_i-1] (jh_in[i] == hi_i[i]-1).
-                if (jh_in[i] + 1 == hi_i[i])
-                    inference.infer_less_than(logger, x[i], Integer{U + 1},
-                        JustifyExplicitly{//
-                            [&x, &pos, n, i, U, logger](const ReasonLiterals & reason_lits) -> void {
-                                for (size_t k = 0; k < n; ++k)
-                                    logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] < Integer{U + 1}) >= 1_i, ProofLevel::Temporary);
-                            },
-                            ThenRUP::Yes, hints::Sort{owner}},
-                        reason);
+                if (jh_in[i] + 1 == hi_i[i]) {
+                    auto ranks = rank_cases(i);
+                    inference.infer(
+                        logger, x[i] < Integer{U + 1}, JustifyUsingCases{span<const ProofLiteralOrFlag>{ranks}, hints::Sort{owner}}, reason);
+                }
                 else {
                     // HALL mirror: ub(x[i]) = uy[jh] with jh = jh_in[i] < hi_i-1.
                     // Refute x[i] >= U+1: then x[i] = y_{pos[i]} > U >= uy[k] for
@@ -943,29 +908,12 @@ namespace
                                     for (size_t k = 0; k < n; ++k)
                                         logger->emit_rup_proof_line_under_reason(
                                             reason_lits, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                    // i excluded from ranks < fa (<= jh) needs the
+                                    // assumption (NUY: y_k <= uy[k] <= U).
                                     std::vector<ProofLine> restricted(S.size());
-                                    for (const auto & [idx, m] : enumerate(S)) {
-                                        for (long long k = 0; cmp_less(k, n); ++k) {
-                                            if (k >= fa && k <= fb)
-                                                continue;
-                                            // i excluded from ranks < fa (<= jh) needs the
-                                            // assumption (NUY: y_k <= uy[k] <= U).
-                                            if (m == i && k < fa)
-                                                logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                    WPBSum{} + 1_i * (x[i] < Integer{U + 1}) + 1_i * (pos[m] != Integer{k}) >= 1_i,
-                                                    ProofLevel::Temporary);
-                                            else
-                                                logger->emit_rup_proof_line_under_reason(
-                                                    reason_lits, WPBSum{} + 1_i * (pos[m] != Integer{k}) >= 1_i, ProofLevel::Temporary);
-                                        }
-                                        WPBSum in_band;
-                                        if (m == i)
-                                            in_band += 1_i * (x[i] < Integer{U + 1});
-                                        for (long long k = fa; k <= fb; ++k)
-                                            in_band += 1_i * (pos[m] == Integer{k});
-                                        restricted[idx] =
-                                            logger->emit_rup_proof_line_under_reason(reason_lits, move(in_band) >= 1_i, ProofLevel::Temporary);
-                                    }
+                                    for (const auto & [idx, m] : enumerate(S))
+                                        restricted[idx] = pin_to_band(*logger, reason_lits, pos[m], static_cast<long long>(n), fa, fb,
+                                            m == i ? optional<IntegerVariableCondition>{x[i] < Integer{U + 1}} : nullopt);
                                     PolBuilder pol;
                                     for (auto l : restricted)
                                         pol.add(l);

@@ -374,108 +374,61 @@ auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & l
 
 auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger, const ReasonLiterals & reason, const WPBSumLE & conclusion,
     const vector<SignCaseDimension> & dims, const vector<std::optional<ConditionalBound>> & premise_by_pattern,
-    const vector<Literal> & zero_refutations, SubproofRUPHints hint_rups) -> ProofLine
+    const vector<Literal> & zero_refutations, PremiseShape premise_shape) -> ProofLine
 {
     if (premise_by_pattern.size() != (1u << dims.size()))
         throw UnexpectedException{"wrong number of case patterns"};
 
-    // Hints for the subproof's RUP steps, assembled outside the subproof so
-    // the defining rows and ladder bridges land at the outer level. A dead
-    // pattern's clause refutes either shallowly (a branch atom clashes with
-    // the reason's units through the order ladder) or numerically (the
-    // opposite corner is live, and its premise meets the negated goal), and
-    // the closing contradiction propagates between the negated goal and the
-    // cut result; when the premises cancel exactly against the goal, the
-    // union of premise lines, premise case-literal defs, reason defs and
-    // their bridges covers all of these. Hinting keeps the checker off the
-    // hint-free path, which costs time proportional to the live database at
-    // every step.
-    vector<ProofLine> case_hints;
-    if (hint_rups == SubproofRUPHints::Assemble) {
-        auto add_hints_for = [&](const Literal & l) {
-            if (const auto * cond = std::get_if<IntegerVariableCondition>(&l)) {
-                add_condition_def_hints(logger, *cond, case_hints);
-                add_order_bridge_hints(logger, *cond, case_hints);
-            }
-        };
-        for (const auto & dim : dims)
-            add_hints_for(dim.positive_atom);
-        for (const auto & rl : reason)
-            if (const auto * pl = std::get_if<ProofLiteral>(&rl))
-                if (const auto * l = std::get_if<Literal>(pl))
-                    add_hints_for(*l);
-        for (const auto & premise : premise_by_pattern)
-            if (premise) {
-                case_hints.emplace_back(premise->line);
-                for (const auto & cl : premise->cases)
-                    if (const auto * pl = std::get_if<ProofLiteral>(&cl))
-                        if (const auto * l = std::get_if<Literal>(pl))
-                            add_hints_for(*l);
-            }
-    }
-
-    auto goal = logger.reify(conclusion, reason);
-    std::map<ProofGoal, Subproof> subproofs{};
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
-        // The negated goal is the last line added when the subproof opens.
-        auto negation = sub_logger.get_current_proof_line();
-        auto sub_hints = case_hints;
-        sub_hints.emplace_back(negation);
-        // an empty hint list would restrict propagation to nothing at all
-        auto rup_rule = [&](const vector<ProofLine> & hints) {
-            return hint_rups == SubproofRUPHints::Assemble ? RUPProofRule{hints} : RUPProofRule{};
-        };
-
-        // One clause per case pattern: added premise for a live case, plain
-        // RUP for a dead one (its branch atoms contradict the reason's units
-        // through the order encoding).
-        vector<ProofLine> clauses;
+    // Where a premise does not cancel against the conclusion, one lemma per
+    // live case pattern, `reason /\ pattern => conclusion`, by contradiction:
+    // the pattern's premise pol-added onto the negated lemma and saturated
+    // leaves a clause over the premise's case atoms, which the pattern's own
+    // atoms (units in the negation) then refute. Where the premise is strict
+    // about zero, the zero-refutation units close [v=0]: it forces the
+    // magnitude, the grid, and hence the result to zero, which the reason's
+    // result bounds and the negated lemma exclude, all by unit propagation.
+    //
+    // A premise that is already a refutation clause over its case atoms (a
+    // factor bound's clash with the reason's bounds) needs no lemma, nor does
+    // a dead pattern, whose atoms contradict the reason's units through the
+    // order encoding: the `cases` check below closes both by propagation.
+    if (premise_shape == PremiseShape::NeedsLemmas)
         for (std::size_t pattern = 0; pattern < premise_by_pattern.size(); ++pattern) {
-            if (premise_by_pattern[pattern] && premise_by_pattern[pattern]->sum.terms.empty()) {
-                // Already a refutation clause over its case atoms (a factor
-                // bound's clash with the reason's bounds): adding the negated
-                // goal would only inject its terms as free slack.
-                clauses.emplace_back(premise_by_pattern[pattern]->line);
-            }
-            else if (premise_by_pattern[pattern]) {
+            const auto & premise = premise_by_pattern[pattern];
+            if (! premise || premise->sum.terms.empty())
+                continue;
+            ReasonLiterals under_pattern = reason;
+            for (std::size_t k = 0; k < dims.size(); ++k)
+                under_pattern.emplace_back(ProofLiteral{(pattern & (1u << k)) ? dims[k].negative_atom : dims[k].positive_atom});
+            std::map<ProofGoal, Subproof> subproofs{};
+            subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+                // The negated lemma is the last line added when the subproof opens.
+                auto negation = sub_logger.get_current_proof_line();
                 PolBuilder builder;
-                builder.add(premise_by_pattern[pattern]->line).add(negation).saturate();
-                clauses.emplace_back(builder.emit(sub_logger, ProofLevel::Temporary));
-            }
-            else {
-                auto clause = WPBSum{};
-                for (std::size_t k = 0; k < dims.size(); ++k)
-                    clause += 1_i * ((pattern & (1u << k)) ? dims[k].positive_atom : dims[k].negative_atom);
-                clauses.emplace_back(sub_logger.emit(rup_rule(sub_hints), clause >= 1_i, ProofLevel::Temporary));
-            }
+                builder.add(premise->line).add(negation).saturate();
+                builder.emit(sub_logger, ProofLevel::Temporary);
+                for (const auto & lit : zero_refutations)
+                    sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Temporary);
+                sub_logger.emit_rup_proof_line(WPBSum{} >= 1_i, ProofLevel::Temporary);
+            }});
+            logger.emit_red_proof_line(logger.reify(conclusion, under_pattern), {}, ProofLevel::Temporary, subproofs);
         }
 
-        // The fixed nested cut: pair patterns differing in dimension k and
-        // saturate, one dimension at a time, until one line remains.
-        for (std::size_t k = 0; k < dims.size(); ++k) {
-            vector<ProofLine> next;
-            for (std::size_t low = 0; low < clauses.size(); low += 2) {
-                PolBuilder builder;
-                builder.add(clauses[low]).add(clauses[low + 1]).saturate();
-                next.emplace_back(builder.emit(sub_logger, ProofLevel::Temporary));
-            }
-            clauses = std::move(next);
-        }
-
-        // Unit clauses refuting a strengthened co-factor's zero case: [v=0]
-        // forces the magnitude, the grid, and hence the result to zero, which
-        // the reason's result bounds exclude - all by unit propagation. As
-        // units these cascade into the cut result's leftover [v=0] terms,
-        // which mere propagation could otherwise satisfy rather than refute.
-        // These stay hint-free: their conflict path runs through the whole
-        // encoding (channels, w-lines, grid), which no local hint set covers.
-        auto closing_hints = sub_hints;
-        closing_hints.emplace_back(clauses[0]);
-        for (const auto & lit : zero_refutations)
-            closing_hints.emplace_back(sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Temporary));
-
-        sub_logger.emit(rup_rule(closing_hints), WPBSum{} >= 1_i, ProofLevel::Temporary);
-    }});
-
-    return logger.emit_red_proof_line(goal, {}, ProofLevel::Temporary, subproofs);
+    // The case analysis is then one `cases` line, over the dimensions' sign
+    // atoms and any zero atoms: each assignment is one sign pattern, closed by
+    // its premise or lemma, or by propagation for a dead or refuted pattern.
+    // Because [v>=0] and [v<0] are complementary atoms, the signs need no
+    // separate zero cases. A strengthened co-factor's zero case does, because
+    // a refuted pattern's premise is strict about zero: the zero atom is a
+    // case variable of its own, and its true branch closes by the same
+    // propagation as its refutation unit, under the negated conclusion. (The
+    // unit itself is not RUP from the reason alone: an aliased product such
+    // as x * x = x can be zero, and only the conclusion's negation rules that
+    // out.)
+    vector<ProofLiteralOrFlag> case_atoms;
+    for (const auto & dim : dims)
+        case_atoms.emplace_back(ProofLiteral{dim.positive_atom});
+    for (const auto & lit : zero_refutations)
+        case_atoms.emplace_back(ProofLiteral{lit});
+    return logger.emit_cases_proof_line_under_reason(reason, conclusion, case_atoms, ProofLevel::Temporary);
 }
