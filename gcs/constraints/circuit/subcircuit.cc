@@ -655,6 +655,11 @@ namespace
 
                 need_value_at_least_one(logger, succ, cache, consts, static_cast<long>(x));
 
+                // E(t, x) by cases on which predecessor q takes the value x: each one
+                // the reason does not already exclude sits at t-1 under E(t-1, q), so
+                // is a self loop, and with none of them the pigeonhole has nobody left
+                // to take x.
+                vector<ProofLiteralOrFlag> predecessors;
                 for (size_t q = 0; q < n; ++q) {
                     if (q == x)
                         continue;
@@ -674,14 +679,14 @@ namespace
                     if (cmp_equal(q, *pos_data.anchor))
                         continue;
 
-                    logger.emit_rup_proof_line_under_reason(reason,
-                        guarded(WPBSum{} + 1_i * ! at_t + 1_i * ! (succ[q] == Integer(static_cast<long long>(x)))) >= 1_i, ProofLevel::Temporary);
+                    predecessors.emplace_back(succ[q] == Integer(static_cast<long long>(x)));
                 }
 
-                // E(t, x) itself, at ProofLevel::Current so that the next layer still has it:
-                // that is how the layers chain, and why nothing has to restate a layer.
-                logger.emit_rup_proof_line_under_reason(
-                    reason, guarded(WPBSum{} + 1_i * ! at_t + 1_i * (succ[x] == Integer(static_cast<long long>(x)))) >= 1_i, ProofLevel::Current);
+                // At ProofLevel::Current so that the next layer still has it: that is how
+                // the layers chain, and why nothing has to restate a layer.
+                logger.emit_cases_proof_line_under_reason(reason,
+                    guarded(WPBSum{} + 1_i * ! at_t + 1_i * (succ[x] == Integer(static_cast<long long>(x)))) >= 1_i, predecessors,
+                    ProofLevel::Current);
             }
     }
 
@@ -731,21 +736,19 @@ namespace
 
                 auto at_t = pos_data.pos.at(static_cast<long>(x)) == Integer{t};
 
-                for (long long y = 0; y < n; ++y) {
-                    // A candidate that reaches the anchor is excluded by the reason, and so
-                    // is anything outside the domain; the anchor itself reaches itself, so it
-                    // is never a candidate here, which is why the step row this leans on is
-                    // always the step row and never the wrap one.
-                    if (y == x || reaches[static_cast<size_t>(y)])
-                        continue;
+                // G(t, x) by cases on succ[x]. A candidate that reaches the anchor is
+                // excluded by the reason, and so is anything outside the domain; the
+                // anchor itself reaches itself, so it is never a candidate here, which
+                // is why the step row this leans on is always the step row and never the
+                // wrap one.
+                vector<ProofLiteralOrFlag> successors;
+                for (long long y = 0; y < n; ++y)
+                    if (y != x && ! reaches[static_cast<size_t>(y)])
+                        successors.emplace_back(succ[static_cast<size_t>(x)] == Integer{y});
 
-                    logger.emit_rup_proof_line_under_reason(reason,
-                        guarded(WPBSum{} + 1_i * ! at_t + 1_i * ! (succ[static_cast<size_t>(x)] == Integer{y})) >= 1_i, ProofLevel::Temporary);
-                }
-
-                // G(t, x) itself, at ProofLevel::Current so the layer below still has it.
-                logger.emit_rup_proof_line_under_reason(
-                    reason, guarded(WPBSum{} + 1_i * ! at_t + 1_i * (succ[static_cast<size_t>(x)] == Integer{x})) >= 1_i, ProofLevel::Current);
+                // At ProofLevel::Current so the layer below still has it.
+                logger.emit_cases_proof_line_under_reason(reason,
+                    guarded(WPBSum{} + 1_i * ! at_t + 1_i * (succ[static_cast<size_t>(x)] == Integer{x})) >= 1_i, successors, ProofLevel::Current);
             }
     }
 
