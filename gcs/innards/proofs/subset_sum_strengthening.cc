@@ -230,12 +230,12 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
             carry_at_most.add(state.at_most_forward).add(stay.at_most_reverse).saturate();
             carry_at_most.emit(logger, level);
 
-            // Item out: the state stays where it was.
-            WPBSum stays;
-            stays += 1_i * ! state.exactly;
-            add_term_to(stays, 1_i, item.term);
-            stays += 1_i * stay.exactly;
-            auto stay_transition = logger.emit_rup_proof_line_under_reason(reason, move(stays) >= 1_i, level);
+            // The state moves to one of the two it can, by cases on the
+            // item: out, it stays where it was, and in, it advances.
+            const ProofLiteralOrFlag item_case[] = {item.term};
+            WPBSum moves;
+            moves += 1_i * ! state.exactly;
+            moves += 1_i * stay.exactly;
 
             if (advanced <= bound) {
                 const auto & step = after.at(advanced);
@@ -254,24 +254,15 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
                 advance_at_most.add(state.at_most_forward).add(step.at_most_reverse).add(negated_item_literal, item.coefficient, tracker).saturate();
                 advance_at_most.emit(logger, level);
 
-                WPBSum steps;
-                steps += 1_i * ! state.exactly;
-                add_term_to(steps, 1_i, ! item.term);
-                steps += 1_i * step.exactly;
-                auto step_transition = logger.emit_rup_proof_line_under_reason(reason, move(steps) >= 1_i, level);
-
-                // Either way the layer moves to one of the two states:
-                // resolving the two transitions on the item literal.
-                if (! skip_this_layer) {
-                    PolBuilder resolve;
-                    resolve.add(stay_transition).add(step_transition).saturate();
-                    resolve.emit(logger, level);
-                }
+                moves += 1_i * step.exactly;
+                if (! skip_this_layer)
+                    logger.emit_cases_proof_line_under_reason(reason, move(moves) >= 1_i, item_case, level);
             }
             else {
                 // Taking the item from here would put the prefix past the
-                // bound, which the source line forbids. So the item is out,
-                // and the only transition is the one that stays.
+                // bound, which the source line forbids, so where the item is
+                // in the state cannot hold, and the only transition is the
+                // one that stays.
                 PolBuilder dead;
                 dead.add(state.at_least_forward).add(source);
                 for (size_t later = k + 1; later < items.size(); ++later)
@@ -279,16 +270,8 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
                 dead.add(negated_item_literal, item.coefficient, tracker).saturate();
                 dead.emit(logger, level);
 
-                WPBSum out;
-                out += 1_i * ! state.exactly;
-                add_term_to(out, 1_i, ! item.term);
-                auto item_is_out = logger.emit_rup_proof_line_under_reason(reason, move(out) >= 1_i, level);
-
-                if (! skip_this_layer) {
-                    PolBuilder resolve;
-                    resolve.add(stay_transition).add(item_is_out).saturate();
-                    resolve.emit(logger, level);
-                }
+                if (! skip_this_layer)
+                    logger.emit_cases_proof_line_under_reason(reason, move(moves) >= 1_i, item_case, level);
             }
         }
 
