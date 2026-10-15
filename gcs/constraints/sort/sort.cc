@@ -584,12 +584,6 @@ namespace
                                 // cross-constraint sum so a pol not RUP).
                                 for (size_t i = 0; i < n; ++i)
                                     PolBuilder{}.add(rankub[i]).add(xcount_line).emit(*logger, ProofLevel::Temporary);
-                                // per i : (pos[i] != j) v (y[j] >= L). RUP under reason
-                                // from RANKUB2_i + channel: pos[i]=j forces [x_i>=L]=1,
-                                // and the channel gives y[j] = x_i >= L.
-                                for (size_t i = 0; i < n; ++i)
-                                    logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (pos[i] != Integer(j)) + 1_i * (y[j] >= Integer{L}) >= 1_i, ProofLevel::Temporary);
                                 // surjectivity (same counting pol as the upper bound).
                                 PolBuilder surj;
                                 for (size_t i = 0; i < n; ++i)
@@ -598,6 +592,14 @@ namespace
                                     if (k != j)
                                         surj.add(inj_lines[k]);
                                 surj.emit(*logger, ProofLevel::Temporary);
+                                // By cases on who holds rank j: under the reason, from
+                                // RANKUB2_i + channel, pos[i]=j forces [x_i>=L]=1, and
+                                // the channel gives y[j] = x_i >= L.
+                                vector<ProofLiteralOrFlag> holders;
+                                for (size_t i = 0; i < n; ++i)
+                                    holders.emplace_back(ProofLiteral{pos[i] == Integer(j)});
+                                logger->emit_cases_proof_line_under_reason(
+                                    reason_lits, WPBSum{} + 1_i * (y[j] >= Integer{L}) >= 1_i, holders, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
@@ -733,30 +735,16 @@ namespace
                                     reason_lits, move(xcount) >= Integer{static_cast<long long>(j) + 1}, ProofLevel::Temporary);
                                 // RANKLB2_i : pos[i] + n*[x_i<=U] >= j+1, folding count_U away
                                 // with the x-count (cross-constraint sum, hence a pol not RUP).
-                                // Emitted for their RUP side effect; consumed by the per-i lines
-                                // below via the database, never by explicit reference.
+                                // Emitted for their RUP side effect; consumed by the cases
+                                // branches below via the database, never by explicit reference.
                                 for (size_t i = 0; i < n; ++i)
                                     PolBuilder{}.add(ranklb[i]).add(xcount_line).emit(*logger, ProofLevel::Temporary);
-                                // HONEST (extended reason): per i, (pos[i] != j) v (y[j] <= U).
-                                // RUP from RANKLB2_i + channel: negate -> pos[i]=j and
-                                // y[j] >= U+1; channel gives x_i = y[j] >= U+1 so [x_i<=U]=0,
-                                // and then RANKLB2_i forces pos[i] >= j+1, contradicting
-                                // pos[i]=j. Emitted under the reason: RANKLB2_i carries the
-                                // reason literals (it was pol'd with the reason-conditional
-                                // count line), so the per-i RUP check must assume the reason
-                                // true to activate it.
-                                for (size_t i = 0; i < n; ++i)
-                                    logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (pos[i] != Integer(j)) + 1_i * (y[j] < Integer{U + 1}) >= 1_i, ProofLevel::Temporary);
                                 // HONEST (surjectivity): rank j is occupied,
                                 // sum_i [pos[i] = j] >= 1. Counting pol over the
                                 // root permutation lines: sum_i al1_i (each pos takes
                                 // a rank) minus sum_{k != j} inj_k (each other rank
                                 // used at most once) leaves rank j with >= 1 occupant
-                                // -- the n(n-1) constants cancel exactly. With the
-                                // per-i lines above, the closing RUP then closes:
-                                // under y[j] >= U+1 each gives pos[i] != j,
-                                // contradicting this.
+                                // -- the n(n-1) constants cancel exactly.
                                 PolBuilder surj;
                                 for (size_t i = 0; i < n; ++i)
                                     surj.add(al1_lines[i]);
@@ -764,6 +752,18 @@ namespace
                                     if (k != j)
                                         surj.add(inj_lines[k]);
                                 surj.emit(*logger, ProofLevel::Temporary);
+                                // HONEST (extended reason): by cases on who holds rank j.
+                                // Under pos[i]=j and y[j] >= U+1 the channel gives
+                                // x_i = y[j] >= U+1 so [x_i<=U]=0, and then RANKLB2_i
+                                // forces pos[i] >= j+1, contradicting pos[i]=j. Under the
+                                // reason: RANKLB2_i carries the reason literals (it was
+                                // pol'd with the reason-conditional count line), so the
+                                // branches must assume the reason true to activate it.
+                                vector<ProofLiteralOrFlag> holders;
+                                for (size_t i = 0; i < n; ++i)
+                                    holders.emplace_back(ProofLiteral{pos[i] == Integer(j)});
+                                logger->emit_cases_proof_line_under_reason(
+                                    reason_lits, WPBSum{} + 1_i * (y[j] < Integer{U + 1}) >= 1_i, holders, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
