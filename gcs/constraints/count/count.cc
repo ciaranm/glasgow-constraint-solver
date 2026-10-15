@@ -345,13 +345,11 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             }
                     }
 
-                    // Per-voi unconditional lines: emit after all the
-                    // conditionals so they have the full set of pairwise
-                    // facts to RUP-derive against.
-                    for (const auto & voi : voi_set.each())
-                        logger->emit_rup_proof_line_under_reason(reason,
-                            WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
-                            ProofLevel::Temporary);
+                    // Then the bound by cases on value_of_interest, after all
+                    // the conditionals so that each branch has the full set of
+                    // pairwise facts to RUP-derive against.
+                    logger->emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
+                        case_variables_over_values(value_of_interest, voi_set.each()), ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
                 if (! infer_before_push_or_stop(
