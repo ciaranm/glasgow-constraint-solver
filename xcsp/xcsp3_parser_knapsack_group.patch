@@ -1,0 +1,25 @@
+--- a/src/XCSP3Code.cc
++++ b/src/XCSP3Code.cc
+@@ -678,6 +678,9 @@ void XConstraintKnapsack::unfoldParameters(XConstraintGroup *group, vector<XVari
+     XConstraintKnapsack *xc = dynamic_cast<XConstraintKnapsack *>(original);
+     XConstraint::unfoldParameters(group, arguments, original);
+     XInitialCondition::unfoldParameters(group, arguments, original);
++    // Copy the profit condition from the template before unfolding it, as
++    // XInitialCondition::unfoldParameters does for the weights condition.
++    profitCondition.condition = xc->profitCondition.condition;
+     group->unfoldString(profitCondition.condition, arguments);
+     group->unfoldVector(profits, arguments, xc->profits);
+     group->unfoldVector(weights, arguments, xc->weights);
+--- a/src/XMLParserTags.cc
++++ b/src/XMLParserTags.cc
+@@ -1284,7 +1284,9 @@ void XMLParser::KnapsackTagAction::beginTag(const AttributeList &attributes) {
+     // Link constraint to group
+     if(this->group != nullptr) {
+         this->group->constraint = constraint;
+-        this->group->type = FLOW;
++        // A knapsack group, not a flow one: FLOW sent every row through the
++        // flow unfolder, which cast this constraint to a flow and crashed.
++        this->group->type = KNAPSACK;
+     }
+ }
+ 
