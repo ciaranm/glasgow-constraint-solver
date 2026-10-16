@@ -286,6 +286,15 @@ each as `s UNSUPPORTED` with the reason on a `c` line. When moving the pinned
 parser commit, check the patch still applies; the configure step fails if it
 does not.
 
+A second patch, `xcsp/xcsp3_parser_knapsack_group.patch`, is applied after it in
+the same way and is not about range: it makes a `<group>` of `<knapsack>`
+constraints work (#1354). Upstream tags such a group as a flow, so every row
+went through the flow unfolder and crashed on a null cast, and its knapsack
+unfolder never copied the profit condition from the template, so each row
+arrived with an empty one. Both bugs are still in upstream master as of
+2026-10-16. `xcsp_knapsack_group` checks the group against its written-out form,
+`xcsp_knapsack`.
+
 ## Testing
 
 Each ctest is a small `.xml` instance run by `xcsp/run_xcsp_test.bash`:
