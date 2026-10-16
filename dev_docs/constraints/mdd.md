@@ -8,7 +8,10 @@
 > (six kinds of MiniZinc shape the binding gets wrong), #1338 (the graph is
 > deep-copied at every search node; with `Regular`'s), #1339 (a wide declared
 > domain leaves one empty map entry per value for the rest of the search; with
-> `Regular`'s). Commented on: #1070 (the always-true declared-bound literals in
+> `Regular`'s). Filed in review: #1351 (the degree cascade recurses once per
+> layer and can exhaust the native stack on a long sequence; with `Regular`'s),
+> #1353 (each removal copies the call's whole reason, proofs off too).
+> Commented on: #1070 (the always-true declared-bound literals in
 > the whole-scope reason). Already open and touching
 > this family: #842 (the OPB alphabet includes every domain value), #846 (its
 > tracker), #833 (the large-domain policy), #200 (one layered-graph framework
@@ -36,7 +39,8 @@ Four things to know before touching it.
   its proofs verify.** No failure at any of 73,723 search nodes of 30,000
   random diagrams over distinct variables, and 8,579 of 9,000 proofs are
   accepted, each at the one level it was run at (6,600 at `Off`, 800 at each
-  assertion level); the 421 others are the first finding.
+  of `Definitions`, `Links` and `Inferences`); the 421 others are the first
+  finding. Of 800 more at `Backtracking`, the 56 rejected are that finding's.
 - **A diagram over no variables with an empty accepting list reports
   solutions** (#1329). Nothing propagates, since the propagator only removes
   values. VeriPB rejects the proof. Only the C++ API and the `.scp` reader can
@@ -313,8 +317,11 @@ an enumeration and a write, read, write round trip.
   it. A later inference's RUP leans on lemmas written by **earlier calls on the
   same branch**, under weaker reasons, so a trimmed proof that keeps an
   inference has to keep the lemmas above it.
-- **At every level:** one line per removed value, the `a` line above `Off`.
-  Above `Off` nothing else is written: no chains, no lemmas.
+- **Per removed value:** a RUP line at `Off`, an `a` line at `Definitions`,
+  `Links` and `Inferences`, and nothing at `Backtracking`, where
+  `ProofLogger::infer` returns before writing (`proof_logger.cc:537`), so a
+  `Backtracking` proof holds only the backtracks and the solution lines.
+  Above `Off` the family writes nothing else: no chains, no lemmas.
 - **Deleted:** the lemmas and the inferences of a level, by `del range` on
   backtrack. The Top scaffolding is never deleted.
   `decision-diagram-proof-strategies.md` explains why deleting it is not safe in
@@ -364,8 +371,42 @@ on.** Ten layers of width `w` over four values, root only, at `86caad24`
 | 1,600 | 0.058 s | 0.69 s |
 | 3,200 | 0.11 s | 2.64 s |
 
-Indexing the parents per target and value once would make it linear in the
-edges ([Next steps](#next-steps)). An initialiser installed earlier by another
+Indexing the parents per target and value once would cut the chains' lookups
+to `O(E + Σ_i N_{i+1} · |D_i|)`, `E` the transitions ([Next steps](#next-steps)):
+linear in the edges plus the rows written, not in the edges alone, because a
+chain is written for every node of layer `i + 1` and value of `D_i`, empty
+parent list included (`mdd.cc:361–375`). The chains are `Σ_i N_{i+1} · |D_i|`
+rows of `2 Σ_i N_{i+1} · |D_i| + E_D` terms, `E_D` the transitions on a value
+in its variable's domain at the root, each of which names its source in
+exactly one chain, less one term per chain at a constant's layer, which has
+no `vars[i] ≠ v` term (`[x, 1, y]` over `0..2`: 11 chains of 28 terms, where
+the formula without the correction gives 30). Nothing bounds the chains by
+the edges: a node with no in-edges still gets one per value. Two variables of
+`0..k−1`, layer widths `{1, k, k}`, transitions `root –q→ q` and `q –q→ q`,
+every terminal accepting, have `2k` edges and `2k²` chains: 128, 512 and
+2,048 chains of 272, 1,056 and 4,160 terms at `k = 8, 16, 32`. Every proof
+verified, both stopped after the root's propagation and enumerating all `k`
+solutions (`tmp/fd-codex-1015/mdd/scaffold/fan.cc`, at `86caad24`,
+fataepyc-09, 2026-10-16). A scaffold linear in the edges would have to change
+what is written, and what an offline reconstruction rebuilds; the OPB already
+has a term of the same shape, a row per node of layer `i` and value of `A_i`
+(#842).
+
+Indexing does nothing for the **reachability passes**. `compute_static_dead`'s
+forward pass and the scaffolding's second one (`mdd.cc:299–307`, `391–401`)
+each cost `Σ_i |D_i| · |R_i|` lookups, `R_i` the forward-reachable nodes of
+layer `i`; the backward pass (`mdd.cc:317–327`) is bounded the same way but
+stops at a node's first value that reaches a live node. So writing the scaffold with indexed
+parents would still cost `O(Σ_i |D_i| · |R_i| + E + Σ_i N_{i+1} · |D_i|)`,
+and the first term can dominate: widths `{1, k, 1}`, `D_0 = 0..k−1`,
+`D_1 = 0..k²−1`, transitions `root –q→ q` and `q –0→ 0`, have `2k` edges and
+`2k²` chains, but each forward pass makes `k³ + k` lookups (1,010; 8,020;
+64,040 and 512,080 at `k = 10, 20, 40, 80`, counted in a scratch copy of
+`mdd.cc`, `tmp/fd-codex-1015/mdd/src-count` and `fc-fixes/wedge.cc`; proofs
+stopped after the root verify at 10, 20 and 40). The propagator's first call
+walks values times reachable nodes the same way, proofs or not (below).
+
+An initialiser installed earlier by another
 constraint can narrow the domains first, and the static dead set is then taken
 on the narrowed domains; that still verifies, since the narrowing is in the
 proof at the root (`proofs/initorder.cc`, with `Abs`'s bound before and after,
@@ -410,15 +451,19 @@ Two slots, both backtrackable through `add_constraint_state`, and so both
   set of nodes with a live edge on it), per node `out_edges` and `in_edges`
   (neighbour to the set of labels), `out_deg` and `in_deg`, and the live nodes
   per layer, as `unordered_map`, `unordered_set` and `set`. Built on the first
-  call; maintained incrementally after that, by the degree cascade.
+  call; maintained incrementally after that, by the degree cascade, which
+  recurses once per layer it crosses (#1351; see
+  [Robustness](#robustness-and-limits)).
 - **`DeadCache`**: per layer, the nodes whose `¬state` lemma is in the proof on
   this branch.
 
 The content is incremental; the restoration is a full copy of every node-based
-container, which is where the time goes (#1338, and
-[CPU performance](#cpu-performance)). Recomputed per call: the whole-scope reason
-(`mdd.cc:245`), and a walk over every value of every variable's domain
-(`mdd.cc:277–282`), touched or not. #1339 is a third: two lookups that insert
+container, which is where the time goes on a search with many nodes (#1338,
+and [CPU performance](#cpu-performance)); on a long sequence with few nodes and
+long cascades the reason copy below dominates instead (#1353). Recomputed per call: the
+whole-scope reason (`mdd.cc:245`), then copied once per removed value (#1353; see
+[Interval efficiency](#interval-efficiency)), and a walk over every value of
+every variable's domain (`mdd.cc:277–282`), touched or not. #1339 is a third: two lookups that insert
 an empty entry per root domain value during the first call, which every later
 copy then carries.
 
@@ -463,6 +508,26 @@ XCSP3 models use values from −3 to 9, and `multilabel.mzn` negative labels.
   proofs on; a negative node count throws `std::length_error`. A duplicated
   terminal is harmless.
 
+**Long sequences exhaust the native stack** (#1351, with `Regular`'s). The
+degree cascade (`decrement_outdeg` and `decrement_indeg`, `mdd.cc:195–236`)
+recurses once per layer, so a node death that runs the length of the diagram
+takes one stack frame per layer, however shallow the search. The first call's
+sweep is iterative, so only later calls are exposed. A width-two diagram over
+`n` Booleans accepting `0ⁿ` and `1ⁿ` is generalised arc consistent at the root
+and needs three search nodes, and the first decision kills one whole path
+(`tmp/fd-codex-1015/mdd/stack/narrow.cc`, at `86caad24`, fataepyc-09,
+2026-10-15, proofs off). Branching on `x[0]` first, so the cascade runs down
+through `decrement_indeg`, it ends in a segmentation fault at `n = 20,000`
+under a 2 MiB stack and finds both solutions under 4 MiB; under this machine's
+default 8 MiB it passes at `n = 50,000` and fails at 55,000. Branching on
+`x[n − 1]` first, up through `decrement_outdeg`, 55,000 passes and 60,000
+fails. In gdb, at 1 MiB and `n = 10,000`, the crashing stack holds 6,486
+nested `decrement_indeg` frames (6,498 in all) branching forwards and 7,206
+nested `decrement_outdeg` frames (7,218 in all) branching backwards. The
+thresholds depend on the platform, the build and the stack limit.
+This is separate from deep search (#1085) and from the per-node copy (#1338):
+one decision suffices.
+
 **Overflow.** Nothing to guard: the family does no arithmetic on values or node
 indices. Transition values are checked against `±(2⁶⁰ − 1)` (#1215), and a view
 offset is refused outside the same range (#1214).
@@ -506,7 +571,29 @@ offset is refused outside the same range (#1214).
    one literal per bound and one per run of missing values, found one step per
    run since #937. It is **materialised on every call, unguarded by
    `want_reasons()`** (`mdd.cc:245`), with proofs off as well, where nothing
-   reads it.
+   reads it. And it is **copied once per removal** (#1353): it is a
+   `ReasonLiterals`, `infer_not_equal` takes a `const Reason &`, so each call
+   at `mdd.cc:280` builds a temporary `Reason` through the by-value
+   `ReasonLiterals` constructor (`reason.hh:185`), copying every literal. With
+   proofs off the tracker only keeps a pointer to that temporary
+   (`inference_tracker.hh:103–112`), so the copy is waste: a call removing `k`
+   values copies the whole reason, at least one literal per variable, `k`
+   times, which is quadratic in `n` when a cascade removes a value at every
+   layer (see [CPU performance](#cpu-performance)). With proofs on, the
+   tracker makes a second copy per removal when it materialises the snapshot
+   (`inference_tracker.hh:116–126`). From `Off` to `Inferences` the line it
+   writes is as long, so there the copies are in proportion to the proof (on
+   the narrow diagram at `n = 10,000`, `Inferences`, 174.0·10⁹ instructions
+   shipped against 171.0·10⁹ converting once per call, for a 7.4 GB proof).
+   At `Backtracking` both copies are made and nothing is written: 8.13·10⁹
+   instructions shipped, 5.12·10⁹ converting once per call, 4.28·10⁹ with
+   proofs off, and the same 655,916-byte proof either way (fataepyc-09,
+   2026-10-16). `Regular`'s default `Upfront` passes its declarative reason
+   to the same call (`regular.cc:348`) and has no such copy; its `PerCall`
+   passes a materialised `ReasonLiterals` (`regular_legacy.cc:374`) and has
+   the same copy, which costs only with proofs off, since with proofs on its
+   default short reason is one flag ([`regular.md`](regular.md), the reason
+   side).
 3. **The proof side.** Per value throughout, with no width gate: one RUP per
    removed value; one backward chain per node and value; and in the OPB one row
    per node and declared value (#842), plus the atoms each names. The per-value
@@ -531,7 +618,10 @@ builds the graph on the first call, and the degree cascade that maintains it
 after that. Both phases give the same reason, the same assertion, the same hint
 and the same reconstruction, so they are one rule, whose **Algorithm** and
 **Proof size** fields describe each phase. [`regular.md`](regular.md) describes
-`Regular`'s copy of the same code the same way.
+`Regular`'s copy of the same code the same way, except that `Regular`'s
+`Upfront` and `PerCall` cascades rescan a parent's targets before dropping its
+support (#1352); `MDD`'s finds the one target by `find_transition`
+(`mdd.cc:256`) and drops the parent's support with no check (`mdd.cc:212`).
 
 ### Rule: unsupported-value
 
@@ -577,10 +667,17 @@ and the same reconstruction, so they are one rule, whose **Algorithm** and
   - *Later calls:* a degree-counting cascade in the style of Pesant's `Regular`
     propagator, each edge removed at most once per branch; each removal costs
     a few hash-table and `std::set` operations (`nodes_supporting` holds a
-    `set<long>`). On top of that, every call walks every key of every layer's
-    `nodes_supporting` and every value of every domain, whatever changed.
+    `set<long>`), with no rescan of a parent's targets (#1352 is `Regular`'s
+    only). It is recursive, one native stack frame per layer crossed
+    (#1351). On top of that, every call walks every key of every layer's
+    `nodes_supporting` and every value of every domain, whatever changed, and
+    every removed value copies the call's materialised reason, proofs off too
+    (#1353).
 
-  Both are dwarfed by the per-node copy of the graph (#1338).
+  On a search with many nodes both are dwarfed by the per-node copy of the
+  graph (#1338); on a long sequence with few nodes and long cascades, where
+  a call removes values in proportion to `n`, the reason copy dominates
+  (#1353; 80% of the instructions on the narrow diagram at `n = 20,000`).
 - **Why it is true** — `vars[i] = v` extends to an accepted sequence within the
   domains only if some edge on `v` from layer `i` lies on a path from the root
   to an accepting node through edges whose values are all in the domains. The
@@ -638,7 +735,13 @@ and the same reconstruction, so they are one rule, whose **Algorithm** and
   whose domains killed the nodes in question. One literal per run, so per run of
   each domain, not per value; the work of finding the runs is one step per run.
   Each lemma carries the whole reason too (`emit_rup_proof_line_under_reason`).
-- **Assertion** — `vars[i] ≠ v ∨ ¬reason`. There is no explicit contradiction:
+  The snapshot is taken once, at the start of the call, and that is what the
+  lemmas and the Offline reconstructibility argument below rely on; but each
+  removal then converts it to a `Reason`, a full copy, with proofs off too
+  (#1353; see [Interval efficiency](#interval-efficiency)).
+- **Assertion** — `vars[i] ≠ v ∨ ¬reason`, at `Definitions`, `Links` and
+  `Inferences`; at `Backtracking` nothing is written for a removal
+  (`proof_logger.cc:537`). There is no explicit contradiction:
   a conflict is a variable's last value being removed, in the same shape, and
   the backtrack closes it. When no accepting node is reachable, the first
   variable loses all its values and the loop stops at the wipeout; the other
@@ -680,8 +783,8 @@ and the same reconstruction, so they are one rule, whose **Algorithm** and
   a node's lemma is written at most once, so a branch costs at most `Σ_i N_i`
   lemmas; after a backtrack they are written again. At the root, the Top
   scaffolding adds `Σ_i N_{i+1} · |D_i|` backward chains of `2 + (parents on v)`
-  literals and at most `Σ_i N_i` unit lemmas. On the nonogram below, the lemmas
-  are 313,612 of the proof's 413,975 lines and 179.5 MB of its 207 MB.
+  literals (one fewer at a constant's layer) and at most `Σ_i N_i` unit
+  lemmas. On the nonogram below, the lemmas are 313,612 of the proof's 413,975 lines and 179.5 MB of its 207 MB.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.` No mutation lane.
 
@@ -716,10 +819,14 @@ solutions.
 - **No variables**, which is #1329, and **node indices out of range**, #1333.
 - **Holey initial domains**: every tested domain is an interval.
 - **Views, repeated variables and constants**: none tested.
-- **Any assertion level but `Off`.** The audit's sweep ran the other three
-  (below); the suite does not.
+- **Any assertion level but `Off`.** The audit's sweep ran `Definitions`,
+  `Links` and `Inferences`, and this review ran `Backtracking` (below); the
+  suite does not.
 - **Anything larger than four variables or three nodes a layer**, and anything
   with a search: every test diagram is solved nearly without branching.
+- **A long sequence**, which would catch #1351's stack exhaustion and #1353's
+  quadratic copy: the width-two `0ⁿ`/`1ⁿ` diagram under
+  [Robustness](#robustness-and-limits) is the shape.
 - **A wide declared domain past the root**, #1339's shape.
 - **The MiniZinc shapes of #1336**, and non-1-based `x`.
 - **Real instances:** none ported; no MiniZinc Challenge model (every year in
@@ -735,11 +842,16 @@ solutions.
   `Links` and `Inferences` (`UNDER ASSERTIONS`); 8,579 accepted, and the 421
   rejected (292 at `Off`, 43 at each of the other three levels) are exactly
   the 421 zero-variable instances with a wrong solution set;
-- the `.scp` round trip on 530 of them.
+- the `.scp` round trip on 530 of them;
+- in review (fataepyc-09, 2026-10-16; `tmp/fd-codex-1015/mdd/backtracking/`),
+  the same probe at `Backtracking`, seed 61, 200 each of the plain, view,
+  alias and big shapes: 744 of 800 accepted, and the 56 rejected are all
+  zero-variable instances, as many as gave a wrong solution set (#1329).
 
 This document's fact-check ran its own checker
 (`tmp/fd-dd/factcheck/mdd/core/sweep/fc.cc`):
-48,000 instances proofs off and 6,400 at each of the four levels, every
+48,000 instances proofs off and 6,400 at each of `Off`, `Definitions`,
+`Links` and `Inferences`, every
 variable count at least one, with holes, views, repeats, constants, empty
 layers and a second `MDD` over the same variables; no wrong solution set, no
 exception, and no proof rejected at any level.
@@ -790,8 +902,38 @@ automaton.
 
 **What the benchmark does not exercise.** Only 0/1 variables, so neither the
 wide-domain costs nor holes; one shape of diagram (a run-length automaton
-unfolded); no views or repeats. It exercises both phases of the rule, the
-sweep only at the root.
+unfolded); no views or repeats; no long sequence. It exercises both phases of
+the rule, the sweep only at the root.
+
+**A long narrow diagram: the reason copy** (#1353). The width-two `0ⁿ`/`1ⁿ`
+diagram of [Robustness](#robustness-and-limits), branching on `x[0]` first,
+proofs off, two solutions and three recursions every time; the shipped
+library against a scratch copy of `mdd.cc` that converts the reason to a
+`Reason` once per call and passes that to the final loop, nothing else
+changed (`tmp/fd-codex-1015/mdd/reasoncopy/`, `src-reasonconv`; same build,
+fataepyc-09, `taskset -c 60`, fixed malloc thresholds, serial). Instructions
+are `instructions:u` for the whole process (`perf stat`), and identical over
+reruns at the precision quoted; seconds are the probe's own clock around `solve_with`, so propagator
+installation is included, model building is not, median of five taken
+2026-10-16 with the machine otherwise idle (load average about 1.2); max
+minus min is under 2% of the median except for the control at 20,000 (6%, one
+slow run):
+
+| n | shipped | one conversion per call |
+|---|---|---|
+| 2,500 | 0.46·10⁹, 0.103 s | 0.27·10⁹, 0.031 s |
+| 5,000 | 1.33·10⁹, 0.362 s | 0.57·10⁹, 0.069 s |
+| 10,000 | 4.28·10⁹, 1.32 s | 1.27·10⁹, 0.156 s |
+| 20,000 | 15.06·10⁹, 5.04 s | 3.04·10⁹, 0.366 s |
+
+The difference in `instructions:u` (0.19, 0.76, 3.01 and 12.0·10⁹) quadruples
+with each doubling of `n`, and at 20,000 `perf` puts 80% of the shipped run's
+instructions in `memmove`. A null control, the unmodified `mdd.cc` built the
+same way, matches the shipped instruction counts to within a millionth. The
+control still grows faster than linearly, but not in this family: a third of
+its instructions at 20,000 are in installing the propagator
+(`Propagators::install_returning_id`, quadratic in a propagator's scope,
+#1309). This is a measurement of the copy, not a validated fix.
 
 ### Proof performance
 
@@ -830,8 +972,10 @@ removals ([Next steps](#next-steps)).
 
 **Assertion levels.** On the random sweep, every proof but #1329's is
 accepted at whichever of `Definitions`, `Links` and `Inferences` it was run at
-(800 runs each, above; and 6,400 each in the fact-check), and
-`Regular`'s non-deterministic failure (#1332) does not arise: an
+(800 runs each, above; and 6,400 each in the fact-check), and at `Backtracking`
+(800 runs, in review), where the family writes nothing and only the backtracks
+and the solution lines remain; and `Regular`'s non-deterministic failure
+(#1332) does not arise: an
 `MDD` is deterministic, so unit propagation assigns every flag on a solution.
 Nor does #1210 (`Links` rejects the first solution line when a variable wider
 than `{0, 1}` has undefined order atoms) reach `MDD`'s variables, by reading
@@ -872,11 +1016,21 @@ VeriPB rejects it (#1329).
 - **A variable declared much wider than the diagram's alphabet costs time at
   every search node**, not only at the root (#1339), and its proof model is
   linear in the declared width (#842).
+- **A long sequence can exhaust the native stack** (#1351): the degree
+  cascade recurses once per layer, and under an 8 MiB stack a width-two
+  diagram fails between 50,000 and 60,000 variables after one decision.
+- **Each removal copies the call's whole reason**, proofs off too, so a
+  cascade that removes a value at every layer is quadratic in the length
+  (#1353).
 - **A repeated variable propagates less than it could.**
 - **Non-deterministic diagrams are unsupported:** `mdd_nondet` decomposes in
   MiniZinc, and XCSP3 reports them unsupported.
 - **With proofs, writing the root scaffolding takes time quadratic in the
-  layer width**, though the scaffolding itself is linear in it.
+  layer width**, though the scaffolding itself is linear in it at a fixed
+  domain: `Σ_i N_{i+1} · |D_i|` backward chains, one per node and value
+  whatever the edges, so indexing the parents leaves the chains' time in
+  proportion to those chains, not to the edges, and leaves the reachability
+  passes at `Σ_i |D_i| · |R_i|` each.
 - **No reified form.**
 
 ### Next steps
@@ -890,7 +1044,7 @@ VeriPB rejects it (#1329).
    `element.cc:191–194`, `In` and `Table` do; return `false` only when 0 is
    accepting. The fact-check built both placements: the empty accepting list
    then gives no solution, `VERIFIED UNSATISFIABLE` at `Off` and accepted at
-   every assertion level. In the constructor, every target and terminal in
+   `Definitions`, `Links` and `Inferences`. In the constructor, every target and terminal in
    range. Tiny; buys a wrong answer and a crash. Add both shapes to
    `mdd_test`.
 2. **Fix the MiniZinc binding's shapes** (#1336): post a contradiction for
@@ -910,14 +1064,30 @@ VeriPB rejects it (#1329).
    counters, then a trail of removed edges, shared with `Regular` if #200 lands
    first. Moderate to large; buys most of the two orders of magnitude. Check
    solutions and node counts unchanged.
-5. **Claim idempotence** and **build the reason only when an inference reads
-   it** (not filed; the second is the pattern #1338 mentions and #1070's comment
-   counts). One line and a few; the first removes a quarter of the calls but saves
-   little until item 4, and holds only on distinct variables, which
-   `Propagators` already enforces by ignoring the claim when trigger positions
-   alias; the second saves a whole-scope materialisation per call with proofs
-   off.
-6. **A per-layer reason.** A dead node at layer `i` depends on the domains
+5. **Convert the reason once per call, and build it only when something
+   reads it** (#1353; the second half is the pattern #1338 mentions and
+   #1070's comment counts). Make the `Reason` from the start-of-call snapshot
+   once, at the top of the call, and pass it to every `infer_not_equal`,
+   keeping that snapshot, which the lemmas and the Offline reconstructibility
+   argument rely on; then guard both the materialisation and the conversion
+   with `want_reasons()`. The first half alone takes the 20,000-variable
+   narrow diagram from 15.06·10⁹ to 3.04·10⁹ instructions
+   ([CPU performance](#cpu-performance)). The guard does not help at
+   `Backtracking`, where `want_reasons()` is true and the tracker still
+   materialises a copy per removal that nothing writes; that one is the
+   engine's, not this family's. A few lines. Check the proof unchanged, and,
+   for the guard, that a wipeout still hands dom/wdeg the reason it reads
+   with proofs off.
+6. **Replace the recursive cascade with an explicit worklist** (#1351),
+   keeping the order the lemmas need: a backward-dead node's lemma before its
+   parents', a forward-dead node's before its children's (the rule's **Proof
+   technique**). Small to moderate; buys a crash on long sequences. Shared in
+   shape with `Regular`'s cascade.
+7. **Claim idempotence** (not filed). One line; it removes a quarter of the
+   calls but saves little until item 4, and holds only on distinct variables,
+   which `Propagators` already enforces by ignoring the claim when trigger
+   positions alias.
+8. **A per-layer reason.** A dead node at layer `i` depends on the domains
    between it and the root (forward) or the last layer (backward), so a lemma's
    reason could be those layers' literals, and a removal's the union over its
    edges; and a reason need not name a bound that is still the declared one,
@@ -925,10 +1095,21 @@ VeriPB rejects it (#1329).
    #1070; not filed separately). That shrinks the
    lemmas, which are 87% of the nonogram proof. Which lemmas the closing RUPs
    need is an empirical question, settled with VeriPB.
-7. **Index the backward chains' parents** once per layer, so the Top scaffolding
-   is linear in the edges rather than `Σ N_i N_{i+1} |D_i|`. Small.
-8. **Tests:** a random differential lane in the style of this audit's sweep,
-   with holes, views and constants, and an `mdd_test` run above `Off`.
+9. **Index the backward chains' parents** once per layer, so the chains take
+   `O(E + Σ_i N_{i+1} · |D_i|)` lookups rather than
+   `Σ_i N_i · N_{i+1} · |D_i|`: linear in the edges plus the chains written,
+   not in the edges alone. The reachability passes stay at
+   `Σ_i |D_i| · |R_i|` each, so the initialiser's lookups become
+   `O(Σ_i |D_i| · |R_i| + E + Σ_i N_{i+1} · |D_i|)`. The chains stay one per
+   node of layer `i + 1` and value of `D_i`, empty parent lists included
+   (`2k²` chains for `2k` edges in the example under
+   [Initialisation](#initialisation-and-global-data)); a
+   scaffold linear in the edges would change what is written and
+   reconstructed. Small.
+10. **Tests:** a random differential lane in the style of this audit's sweep,
+    with holes, views and constants; an `mdd_test` run above `Off`; and a long
+    narrow sequence (#1351, #1353), sized past the default stack once the
+    cascade is iterative.
 
 ## Prior art
 

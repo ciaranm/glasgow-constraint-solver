@@ -726,7 +726,7 @@ constraints and do not restate it.
   assesses for all four families. Generalised arc consistent on distinct
   variables, views included, at every one of 73,723 brute-forced search nodes;
   every proof but the first finding's is accepted at whichever level it was
-  run at, `Off` or one of the three assertion levels, since a deterministic
+  run at, `Off` or one of the four assertion levels, since a deterministic
   diagram leaves no flag unassigned on a solution. The audit found a wrong
   answer through the C++ API and the `.scp` reader: a diagram over no
   variables with an empty accepting list reports solutions, and VeriPB rejects
