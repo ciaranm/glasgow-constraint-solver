@@ -706,7 +706,11 @@ constraints and do not restate it.
   reader refuses NFAs (#1335), the graph is deep-copied at every search node
   (#1338; 49 to 264 times Gecode's instructions on nonograms with the same
   node counts), and a stale entry per declared value makes every node cost
-  time linear in the declared width (#1339); the regex form's value-by-value
+  time linear in the declared width (#1339); a long, narrow sequence
+  exhausts the native stack in the recursive degree cascade (#1351, shared
+  with `mdd`), and `Upfront`'s and `PerCall`'s cascades rescan a state's
+  targets, so one decision that deletes many edges costs quadratic time even
+  for a deterministic automaton (#1352); the regex form's value-by-value
   alphabet is a comment on #1227.
 
 Everything else is still to write; the family list in

@@ -23,6 +23,13 @@
 > audit: #1227 (the regex form also builds its alphabet one value at a time),
 > #364 (`regular` is not the incrementality gold standard; #1338, #1339) and
 > #1120 (`PerCall`'s per-call short-reason flag, the same pattern).
+> Filed since, from review of this document: #1351 (the degree cascade
+> recurses once per layer, so a long sequence exhausts the native stack;
+> shared with `MDD`) and #1352 (`Upfront` and `PerCall` rescan a state's
+> targets for every edge removed, so deleting many edges out of one state is
+> quadratic). #1353 (each pruning copies the whole reason) is filed for
+> `MDD`; `PerCall` has the same copy, with proofs off (or with short
+> reasons off).
 > Already open and touching this family: #841 (the OPB alphabet includes every
 > domain value), #1227 (the regex parser expands class ranges and quantifiers
 > value by value), #489 (cake chain fails when a domain is narrower than the
@@ -510,14 +517,65 @@ every domain and every reachable state, then a backward pass. That is
 `Σ_i S · |D_i|` lines built by an `O(S)` scan each, so `O(n · S² · |D|)` work;
 and for a non-deterministic automaton `regular_is_ambiguous`, a product of the
 automaton with itself over the live states, `O(n · P · |D| · t²)` for `P ≤ S²`
-live pairs, which returns at once for a deterministic automaton. The canonical
-run, when it fires, is linear in `n` times the live edges per layer: for
-`"(0|1)* 1 (0|1)*"` at `n = 8, 16, 32, 64`, the non-comment lines
-`emit_regular_canonical_run` writes are 988, 2,156, 4,492 and 9,164, of which
-941, 2,077, 4,349 and 8,893 are the canonical run proper and the rest its
-static dead section (`tmp/fd-dd/regular/canon/recount.txt`, re-counted after the
-fact-check; the audit's first figures counted comment lines and left out the
-static dead section).
+live pairs, which returns at once for a deterministic automaton.
+
+The canonical run, when it fires, grows linearly in `n` **for a fixed
+automaton over fixed domains**, but it is not linear in the live edges of a
+layer: its at-most-one grows as the layer's live width times the edge choices
+into the layer, at least quadratic in the width and cubic for a dense layer.
+Write `L_i` for the
+live states at layer `i`, `M_i` for those whose canonical-run flag `c[i][q]`
+is not constant, `e_q` for the edge-choice flags `d` into `q`, and `t_{q,v}`
+for the live targets of `(q, v)`. From `canonical_run.cc`:
+
+- the per-layer at-most-one writes, for every pair of non-constant states at
+  layer `i`, one pair line plus one exclusion line per edge choice into the
+  lower-numbered state of the pair (`:310-337`). That is `M_i(M_i − 1)/2` pair
+  lines and up to `(M_i − 1) · Σ_q e_q` exclusion lines, then from
+  `recover_am1_from_pairs` `M_i` lines for `M_i ≥ 3` (one for `M_i = 2`),
+  whose `pol` steps cite `O(M_i²)` lines in all;
+- the at-least-one takes `L_{i−1}` step lines of `L_i + 1` terms each, then
+  the at-least-one itself (`:299-308`);
+- the lemmas that the state flags' run is co-reachable and the rows over `c`
+  are one line per live state per root value, `Σ_i L_i (2|D_i| + 1)` lines,
+  whatever the edges (`:264-275`, `:288-297`), plus one `¬c ∨ b` line per
+  non-constant `c` at layers `1..n−1` (`:278-286`);
+- the `j`-th choice out of `(q, v)` is defined over `j + 3` terms, so a
+  non-deterministic `(q, v)` with `t_{q,v}` live targets costs
+  `t_{q,v}(t_{q,v} + 5)/2` terms (`:231-248`; only the lowest target at the last
+  layer);
+- the flags themselves take two `red` lines each, one `t` per `(q, v)` with
+  a live target (none at the last layer, where `x_i = v` enters `b`
+  directly), one `b` and one `c` per live state and one `d` per live edge (the lowest
+  target's only, at the last layer), so their lines are linear in the live
+  edges; the pinning is one guard per live non-constant `c` plus one `red`
+  whose witness names every state flag, `O(n · S)` terms.
+
+Measured (`tmp/fd-codex-1015/regular/canon/`, `cw.cc`, `sizes.txt`; `86caad24`,
+fataepyc-09, 2026-10-16, `Upfront` at `Off`, stopping at the first solution;
+every proof verifies under VeriPB 3.0.2 with `--force-checked-deletion`): a
+root that steps on either of `0` and `1` into all of `k` states, each with a
+`0` and a `1` self-loop, every state final, over three `0..1` variables, has
+`6k` unrolled edges and live width `k`. The non-comment lines from the
+co-reachability section to just before the pinning are 611, 1,783, 5,855,
+20,911 and 78,671 at `k = 8, 16, 32, 64, 128`, which is `4.5k² + 38.5k + 15`
+exactly for every `k ≥ 3` (at `k = 2` the clique step is one line and the
+count 107), the `k²` term being the at-most-one; each state there has two
+edge choices into it. With the root's `1` transition removed, 565, 1,629,
+5,293 and 18,765 at `k = 8` to `64`. A dense layer is cubic: with every state
+stepping on `0` and on `1` to all of `k` states, the exclusion lines alone
+are `k(k − 1) + k²(k − 1)`, 60, 504, 4,080 and 32,736 at `k = 4, 8, 16, 32`,
+and the section 297, 1,121, 5,937 and 38,993 lines (`sizes2.txt`; verified
+up to `k = 16`). The first fixture (the fan-out, not the dense layer)
+at `k = 8` and `n = 6, 12, 24, 48, 96` gives 1,346, 2,816, 5,756, 11,636 and
+23,396 lines, linear in `n`. For `"(0|1)* 1 (0|1)*"` at `n = 8, 16, 32, 64`,
+the non-comment lines `emit_regular_canonical_run` writes are 988, 2,156,
+4,492 and 9,164, of which 941, 2,077, 4,349 and 8,893 are the canonical run
+proper and the rest its static dead section
+(`tmp/fd-dd/regular/canon/recount.txt`, re-counted after the fact-check; the
+audit's first figures counted comment lines and left out the static dead
+section). None of this says that a different canonical encoding would be
+smaller; it is the cost of this one.
 
 **Root cost that dominates:** a wide declared domain, in every one of these
 passes, and on the regex form before the constraint exists. A domain
@@ -554,7 +612,7 @@ cross-document check's `regidem.cc`, re-run at `tmp/fd-dd/regular/fc/`). A
 claim would still be safe, because `Propagators` ignores
 `EnableButIdempotent` from a propagator whose trigger positions alias one
 variable (`propagators.cc:111-129`, `:777-780`); see [Next
-steps](#next-steps) item 10.
+steps](#next-steps) item 12.
 
 **Self-disabling.** Never, even with every variable fixed.
 
@@ -577,7 +635,13 @@ of states whose dead line this search path has written. `RegularLegacy` and
 
 The graph's **content** is maintained incrementally, as Pesant's algorithm
 intends: a call removes only the edges whose value has gone and cascades from
-there. But its **restoration** is not: `State::new_epoch` copies every
+there, though under `Upfront` and `PerCall` each removal also scans the source
+state's live targets, which makes a large deletion out of one state quadratic
+(#1352; rule 2's **Algorithm**; [Next steps](#next-steps) item 5). And the
+cascade is recursive, one stack frame per layer, so a long enough sequence
+exhausts the native stack (#1351; see [Robustness](#robustness-and-limits),
+and item 3). But its **restoration** is not
+incremental: `State::new_epoch` copies every
 constraint state whole at every search node and pops the copy on backtrack
 (`state.cc:798`, `:808`), so every node deep-copies every `Regular`'s graph,
 touched or not, at a cost proportional to the graph, in allocator calls,
@@ -586,10 +650,12 @@ supporting-value map to find values that have gone, which with the stale
 entries is `O(Σ_i |D_i⁰|)` for the **root** domains `D_i⁰`, then every value of
 every current domain to find values to prune (`O(Σ_i |D_i|)`), instead of the
 variables the trigger says changed; and it materialises the whole-scope reason first, unguarded by
-`want_reasons()` (`regular.cc:306`). #364 lists `regular` under "already
+`want_reasons()` (`regular.cc:306`). With proofs off (or short reasons off),
+`PerCall` then copies that materialised reason at every pruning (see [Interval efficiency](#interval-efficiency), the
+reason side). #364 lists `regular` under "already
 incremental (no work needed)" as "the gold standard"; that is true of the
 content and not of the restore, as this audit's comment on #364 says. What it costs is under [CPU
-performance](#cpu-performance); what to do is [Next steps](#next-steps) item 3.
+performance](#cpu-performance); what to do is [Next steps](#next-steps) item 4.
 
 ### Interior values and optional pruning
 
@@ -646,6 +712,37 @@ and the XCSP3 check has negative symbols. FlatZinc numbers symbols `1..S`, and
 - *An empty regex* throws `InvalidProblemDefinitionException`; so does any
   unparsable one.
 
+**Long sequences exhaust the stack (#1351).** `decrement_outdeg` and
+`decrement_indeg` recurse once per layer (`regular.cc:234-278`,
+`regular_legacy.cc:223-283`, `regular_bacchus.cc:141-171`), so a cascade that
+runs the length of the sequence needs `n` native stack frames, at one decision
+level. Over distinct `0..1` variables, a three-state automaton accepting
+exactly `0ⁿ` and `1ⁿ` (`0 →0→ 1`, `0 →1→ 2`, `1 →0→ 1`, `2 →1→ 2`, finals
+`{1, 2}`) is GAC at the root, and its first decision kills a whole path:
+forwards through `decrement_indeg` when the search branches on `x_0` first,
+backwards through `decrement_outdeg` when it branches on `x_{n−1}` first
+(gdb backtraces). Enumerating it with proofs off on an 8 MiB stack
+(`tmp/fd-codex-1015/regular/stack/`, `dd.cc`, `sweep8m.txt` and
+`bisect8m.txt`; `86caad24`, fataepyc-09, 2026-10-15/16), the last passing and
+first failing lengths are: `Upfront` 50,000 and 60,000 forwards, 40,000 and
+45,000 backwards; `PerCall` 14,000 and 16,000 forwards, 16,000 and 18,000
+backwards; `Bacchus` 80,000 and 90,000 both ways. Every failure is a
+`SIGSEGV`; every pass finds the two solutions in three recursions. On a
+64 MiB stack the lengths 20,000 and 80,000, which fail on 8 MiB, pass, as do
+`Upfront` and `Bacchus` at 160,000, while `PerCall` dies at 160,000
+(`sweep64m.txt`). The first call builds the graph in iterative passes
+(`initialise_graph`, `regular.cc:153-232`, and its copies), and on that call
+no value has yet left a domain, so it runs no cascade: only later calls'
+cascades are exposed.
+The thresholds depend on the frame sizes, so on the build and platform. This
+is propagation depth, not search depth (#1085), and `MDD`'s copy of the
+cascade has the same recursion (#1351 covers both). An explicit worklist
+would remove it, provided it keeps the orders the proof needs: `Upfront`
+writes a node's dead line before it visits the node's parents in
+`decrement_outdeg` (`regular.cc:246`, then `:255`), and before it visits the
+node's children in `decrement_indeg` (`:267`, then `:273`), so that each
+lemma finds its neighbours' lemmas in the database (rule 2).
+
 **Overflow.** There is no arithmetic on values: symbols are hashed and
 compared. Transition values and regex integers are range-checked (#1215,
 and #1268 for the non-deterministic constructor), and a declared domain or view outside `±(2⁶⁰ − 1)` is refused by
@@ -677,6 +774,14 @@ the OPB, in the root's proof and in the regex front end.
      **one `infer_not_equal` at a time**, `n · (W − |Σ|)` inferences for a
      width-`W` domain; afterwards the pruning loop is bounded by the alphabet,
      and the scan is not.
+   - Under `Upfront` and `PerCall`, two target scans (#1352; rule 2's
+     **Algorithm**): per removed `(q, v)`, the main loop scans `q`'s live
+     targets; and per in-edge `(l, v)` of a node that dies by its
+     out-degree, one call per value `v` on the edge (`regular.cc:252-253`),
+     `still_supports` scans `l`'s live targets. A state with
+     a distinct target per value of a width-`W` variable makes a call that
+     removes most of those values cost `Θ(W²)`, and so does one removed value
+     that kills most of its targets at once.
    - `prepare()`: the OPB alphabet walks every initial domain (#841), with
      proofs off too, since it is not gated on a proof model; a regex
      builds `min..max` of the union of the domains as a vector before parsing
@@ -692,6 +797,32 @@ the OPB, in the root's proof and in the regex front end.
    materialised on every call before anything is known to need it
    (`eager_reason`, `regular.cc:306`; `regular_legacy.cc:291`), unguarded by
    `want_reasons()`, proofs off too. `RegularBacchus` uses `NoReason`.
+   `PerCall` also passes that materialised `ReasonLiterals` to each
+   `infer_not_equal`, which takes a `const Reason &`, so every pruning copies
+   it through `Reason`'s converting constructor (`regular_legacy.cc:374`,
+   `reason.hh:185`). With proofs off that is the whole reason, and a call that
+   prunes `p` values costs `O(p · n)` in copies; with proofs on and the
+   default short reasons it is the one reason flag (`regular_legacy.cc:315-326`),
+   and the copy is cheap (it is the whole reason again under
+   `with_short_reasons(false)`). `Upfront` passes the declarative reason
+   (`regular.cc:348`), so with proofs off it copies nothing; with proofs on,
+   the inference tracker materialises that generic reason at every removal
+   (`snapshot_reason`, `inference_tracker.hh:103-129`), as it does for every
+   family whose reason is not lazy, at `Backtracking` too, where nothing is
+   written (see [`mdd.md`](mdd.md)'s reason side). On the `0ⁿ`/`1ⁿ` automaton of
+   [Robustness](#robustness-and-limits), enumerating with proofs off on a
+   64 MiB stack (on 8 MiB `PerCall` dies at 20,000), `PerCall` executes
+   3.78·10⁹ and 14.05·10⁹ instructions at `n = 10,000` and 20,000; a scratch
+   control converting once per call executes 0.77·10⁹ and 2.04·10⁹, the same
+   as `Upfront` (`tmp/fd-codex-1015/regular/stack/ctl.txt`; `86caad24`,
+   fataepyc-09, 2026-10-16; scratch worktree `src-reasoncopy`, not
+   committed). With proofs on the two differ by under 0.1% (1.2216·10⁹
+   against 1.2211·10⁹ at `n = 4,000`) and write byte-identical proofs (`pon.txt`).
+   `MDD` has
+   the same conversion, filed as #1353; `Regular`'s is not filed
+   separately. The hottest function left in `Upfront`'s profile there, 24% of
+   the samples at 20,000, is model installation, which is quadratic in the
+   arity (#1309).
 3. **The proof side.** One line per pruned value, never a range: at the root a
    width-`W` domain gets `W − |Σ|` lines per variable for its out-of-alphabet
    values, where one `x_i ∉ …` range line per gap would do. `Upfront`'s backward
@@ -844,9 +975,33 @@ row and the exactly-one.
   recursively, forwards or backwards; a value is supported while some edge
   carries it. Per call: `O(Σ_i |D_i⁰| + Σ_i |D_i|)` scanning, `D_i⁰` the root
   domain, because the support map keeps an entry for every root value
-  (#1339), plus
-  `O(edges removed)` for the cascade, amortised over a search path. The edges
-  are `(i, q, v, q')` tuples, so the graph is `O(n · S · |Σ| · t)`.
+  (#1339), plus the cascade. Under `Bacchus` the cascade is `O(edges removed)`,
+  amortised over a search path: the main loop finds an edge's target with one
+  lookup in the transition table (`regular_bacchus.cc:187-202`), and
+  `decrement_outdeg` drops a parent's support on the value with no check at
+  all (`:148-149`), which is right for the deterministic automata it accepts.
+  **Under
+  `Upfront` and `PerCall` it is not** (#1352): the main loop finds the edges
+  of a removed `(q, v)` by scanning all of `q`'s live targets
+  (`regular.cc:321-323`, `regular_legacy.cc:346-348`), and when a node dies by
+  its out-degree, each in-edge `(l, v)` removed calls `still_supports`, which
+  scans all of `l`'s remaining live targets for `v` (`regular.cc:145-151`,
+  `:253`; `regular_legacy.cc:215-221`, `:235`). For a deterministic automaton
+  that scan always fails and so always runs to the end. So each removed edge
+  costs up to its source's number of distinct live targets, at most
+  `min(S, |Σ| · t)`: for a fixed automaton a constant factor, but a state
+  with a distinct target per value makes it quadratic. Two variables,
+  `x ∈ 1..k` and `y ∈ 0..1`, under a deterministic automaton with
+  `0 →q→ q` for `q = 1..k`, `1 →0→ F` and `q →1→ F` for `q ≥ 2`, stopping at
+  the first solution with proofs off, two recursions
+  (`tmp/fd-codex-1015/regular/quad/quad.txt`; `86caad24`, fataepyc-09,
+  2026-10-16): branching on `y` first, so that `y ≠ 1` kills `k − 1` paths
+  through `still_supports`, `Upfront` executes 0.137, 0.395, 1.28 and
+  4.52·10⁹ instructions at `k = 2,000, 4,000, 8,000, 16,000`, `PerCall` the
+  same to three figures, and `Bacchus` 0.079, 0.156, 0.312 and 0.624·10⁹;
+  branching on `x` first, so that `x = 1` removes `k − 1` values through the
+  main loop's scan, the same figures to within 0.6%. The edges are
+  `(i, q, v, q')` tuples, so the graph is `O(n · S · |Σ| · t)`.
 - **Why it is true** — a value at position `i` is in some accepted word only if
   some run reads it on an edge from a state reachable from the start to a
   state that can still reach a final state, over the current domains; the
@@ -893,7 +1048,10 @@ row and the exactly-one.
     and VeriPB rejects the backtrack line, with one final state as well as
     several (#1331).
 - **Reason** — the generic reason over the scope, per run; at the root, the
-  root domains. Not minimal. Assembled every call, unguarded. `PerCall` states
+  root domains. Not minimal. Assembled every call, unguarded, and under
+  `PerCall` with proofs off copied again at every pruning (#1353's
+  conversion; see [Interval efficiency](#interval-efficiency)); with proofs
+  on, the copy is (by default) of the one short-reason flag. `PerCall` states
   every line under one flag reifying it; `Bacchus` uses `NoReason`.
 - **Assertion** — `x_i ≠ v ∨ ¬R` per pruned value; in the conflict form, the
   attempted literal and the reason both appear, with no deduplication. Measured
@@ -1017,6 +1175,17 @@ solves there, 40 with proofs, in 0.75 s; `regular_legacy_test` 50 (25),
   the missing unit clauses (#1329 and #1331). Two of its seven shapes have two
   final states; neither needs one.
 - **Search over a declared domain wider than the alphabet** (#1339).
+- **A long, narrow sequence** (#1351): every sequence in the three test
+  binaries is a few positions long, so no test runs a cascade deep enough to
+  approach the stack. The
+  `0ⁿ`/`1ⁿ` automaton under [Robustness](#robustness-and-limits), at a
+  length that crashes today, would cover it, under every strategy and in
+  both directions.
+- **A large deletion out of one state** (#1352): a high-fanout state whose
+  targets die together, as in rule 2's **Algorithm**, branching on each
+  side; a cost regression wants an instruction count, not a pass/fail test.
+- **A canonical run over a wide layer**: every ambiguous shape in the tests
+  has a handful of live states per layer.
 - **A start state other than 1 through MiniZinc** (#1328): `regex.mzn` and
   `nurses.mzn` both use `q0 = 1`, and no test uses the enum form.
 - **Out-of-range state numbers** (#1333).
@@ -1097,7 +1266,9 @@ node counts differ (24,087 against 27,147) and the pair is not a comparison.
 
 **What the benchmark does not exercise.** Non-deterministic automata, the
 regex form, holes in the initial domains, wide domains, repeated variables,
-and proofs.
+and proofs; nor long sequences (#1351) or states with many targets (#1352),
+which have their own fixtures under rule 2 and
+[Robustness](#robustness-and-limits).
 
 ### Proof performance
 
@@ -1220,6 +1391,22 @@ here.
   on nonograms), because its graph is copied at every node (#1338), and
   every node costs time linear in the declared width of the domains, even
   after the root has cut them down to the alphabet (#1339).
+- **A long sequence can crash the solver**: the degree cascade recurses once
+  per layer, and on an 8 MiB stack a single decision that kills a path of
+  45,000 to 60,000 positions (`Upfront`, depending on the direction), 16,000
+  to 18,000 (`PerCall`) or 90,000 (`Bacchus`), or a longer one, dies of
+  `SIGSEGV` (#1351; the thresholds depend on the build and the stack).
+- **Deleting many edges out of one state is quadratic** under `Upfront` and
+  `PerCall`, which rescan the state's live targets per removed edge; `Bacchus`
+  does not (#1352).
+- **`PerCall` copies the whole reason at every pruning** with proofs off (or
+  with short reasons off), so such a call pruning `p` values over `n`
+  positions costs `O(p · n)` (#1353's conversion, filed for `MDD`); with
+  proofs on, the default short reasons make the copied reason one flag.
+- **The canonical run grows as a layer's live width times the edge choices
+  into it**, through its pairwise at-most-one: at least quadratic in the
+  width, cubic for a dense layer; linear in `n` only for a fixed automaton (see
+  [Initialisation](#initialisation-and-global-data)).
 - **Above `Links`, the proof can fail** under the canonical run, `PerCall`'s
   NFA scaffold or `Bacchus`, for a sequence variable declared as a range such
   as `-1..2`, or a view whose own range is one (#1330).
@@ -1252,7 +1439,14 @@ here.
    #1330 (or `Bacchus`'s scaffold gated to `Off`). Or retire the strategy,
    which no front end selects; the design note
    [`regular.md`](../regular.md) keeps it for #200.
-3. **Stop copying the graph at every node** (#1338). Flat arrays with degree
+3. **Make the cascade iterative** (#1351, shared with `MDD`): an explicit
+   worklist for `decrement_outdeg` and `decrement_indeg` in all three copies,
+   keeping `Upfront`'s orders, a node's dead line before its parents' going
+   backwards and before its children's going forwards (rule 2,
+   [Robustness](#robustness-and-limits)), with the `0ⁿ`/`1ⁿ` automaton at a
+   crashing length as the regression test. Small to moderate; it wants the proofs of the existing
+   tests checked, not only their solutions.
+4. **Stop copying the graph at every node** (#1338). Flat arrays with degree
    counters first (a copy becomes a few `memcpy`s), then a trail of removed
    edges restored on backtrack (#364's survey has the pattern); separately,
    scan only the positions the trigger reports, and build the reason only when
@@ -1263,37 +1457,46 @@ here.
    half the profile, and the gap to Gecode is two orders of magnitude, so this
    is the family's main performance item. Each step wants the solution
    sequence and node counts checked unchanged.
-4. **Validate the automaton** (#1333) in each constructor and the `.scp`
+5. **Remove the target rescans** (#1352): find a removed `(q, v)`'s targets
+   through the transition table, as `Bacchus` does, filtered by the live
+   edges, and replace `still_supports` by a live-edge count per
+   `(layer, state, value)`, or skip it for a deterministic automaton, where it
+   always fails. Small; it wants an instruction count on rule 2's fixture,
+   and solution sequences and node counts unchanged. With it, build the
+   `Reason` once per call in `PerCall` (#1353's fix, applied to
+   `regular_legacy.cc:374`; the scratch control under [Interval
+   efficiency](#interval-efficiency) did exactly that).
+6. **Validate the automaton** (#1333) in each constructor and the `.scp`
    reader. Small.
-5. **Read non-deterministic automata from `.scp`** (#1335) and add an NFA
+7. **Read non-deterministic automata from `.scp`** (#1335) and add an NFA
    chain case. Small.
-6. **Width** (#841, #1227 and this audit's comment on it): out-of-alphabet values as a range row per
+8. **Width** (#841, #1227 and this audit's comment on it): out-of-alphabet values as a range row per
    gap rather than a row per `(state, value)`, the root pruning of those values
    as range inferences, and the regex alphabet built as an interval and only
    when `.` or `[^…]` needs it. Moderate; #841 lists what VeriPB has to accept
    first. The regex alphabet was not filed separately: it is this audit's
    comment on #1227.
-7. **`PerCall`'s short-reason flag on every call**: define it only when
+9. **`PerCall`'s short-reason flag on every call**: define it only when
    something is inferred, or delete it after the call. Small, and the same
    change `smart_table` (#1120, which this audit commented on) and `Circuit`
    (#1317) want; not filed separately. Separately, its in-degree
    lemmas' per-value lines name the wrong variable and are dead weight (rule
    2); worth a mutation check before dropping them. Not filed.
-8. **A test lane at the assertion levels**, for every strategy, with views
-   and ranges such as `-1..2` in the regex and NFA shapes, so that the next
-   shape of #1331, #1332 and #1330 shows up. Small. #1330 itself wants a decision
-   first, between two options: have the tracker emit the boundary pins at every
-   level (two RUP lines per variable, for every family), or gate `Regular`'s
-   every-level scaffolding to `Off` and say what replaces it above `Links`,
-   where solution lines need it. The lane itself is not filed.
-9. **Minimal reasons.** A pruning depends only on what has gone from the
-   domains; the whole-scope reason is what makes `Upfront`'s per-call lemmas
-   58% of the nonogram proof's bytes. The right subset is the edges' killing
-   literals, which the cascade knows; per the arc's standing rule, which
-   literals are needed is for the justifier to show. Moderate. Not filed;
-   the always-true declared-bound literals in the same `generic_reason` are
-   part of this audit's comment on #1070.
-10. **Claim idempotence on distinct variables.** Return
+10. **A test lane at the assertion levels**, for every strategy, with views
+    and ranges such as `-1..2` in the regex and NFA shapes, so that the next
+    shape of #1331, #1332 and #1330 shows up. Small. #1330 itself wants a decision
+    first, between two options: have the tracker emit the boundary pins at every
+    level (two RUP lines per variable, for every family), or gate `Regular`'s
+    every-level scaffolding to `Off` and say what replaces it above `Links`,
+    where solution lines need it. The lane itself is not filed.
+11. **Minimal reasons.** A pruning depends only on what has gone from the
+    domains; the whole-scope reason is what makes `Upfront`'s per-call lemmas
+    58% of the nonogram proof's bytes. The right subset is the edges' killing
+    literals, which the cascade knows; per the arc's standing rule, which
+    literals are needed is for the justifier to show. Moderate. Not filed;
+    the always-true declared-bound literals in the same `generic_reason` are
+    part of this audit's comment on #1070.
+12. **Claim idempotence on distinct variables.** Return
     `PropagatorState::EnableButIdempotent` from all three copies of the
     propagator; `Propagators` already ignores the claim when two trigger
     positions alias one variable (`propagators.cc:111-129`, `:777-780`), which
@@ -1383,7 +1586,13 @@ here.
     domain (each is skipped when no transition exists, `regular_bacchus.cc:414`,
     `:432`, and the second runs over the OPB alphabet);
   - it calls the sibling classes internal, while their headers are installed
-    and the audit lane posts them.
+    and the audit lane posts them;
+  - its Cost section says the canonical run's "flags and lines grow as `n`
+    times the live edges per layer"; that holds for the flags, but the
+    per-root-value lemmas and rows are `L_i · |D_i|` lines whatever the edges,
+    and the at-most-one is not linear in the edges either, as the note's
+    next sentence, the live states times the edges into them, correctly says
+    (see [Initialisation](#initialisation-and-global-data)).
 
   And `regular.hh:103-104` says `Bacchus` "requires every such set to have at
   most one member", where an empty set is refused too (`regular.cc:563`).
