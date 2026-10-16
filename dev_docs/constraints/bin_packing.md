@@ -18,11 +18,15 @@
 > writes their flags at `Top`), #1348 (no cross-bin load reasoning: the loads
 > are never made to sum to the total size). Commented on by this audit: #1340
 > (`Upfront`'s interior-value pass is `Knapsack`'s, linear in a large size and
-> quadratic in the terminals) and #1210 (the `Links` rejections of
+> quadratic in the terminals, and with proofs writes one removal per value in
+> a gap) and #1210 (the `Links` rejections of
 > range-declared variables, which this family's proofs meet too).
 > Already open and touching this family: #497 (an open draft PR, a
 > prototype that hints the `pol`-based dead-state RUPs of `Knapsack` and of
-> `BinPacking`'s `Upfront`, recording a negative result), #200 (one layered-diagram framework), #833
+> `BinPacking`'s `Upfront`, recording a negative result), #1355 (Stage 4
+> tries only 1 and the distinct sizes as thresholds, and misses prunes and
+> failures the same derivation gives at other thresholds; confirmed here),
+> #200 (one layered-diagram framework), #833
 > (the large-domain policy), #868 (cross-solver comparisons; this document
 > gives one, by hand). Tracked under #871.
 
@@ -49,7 +53,8 @@ propagation is staged, and the stages are the thing to know:
   one cutting-planes derivation per threshold `α` (divide each bin's row by
   `α`, sum against the items' at-least-one rows), which catches pigeonhole
   infeasibilities that no single bin can see, plus a shaving loop that turns
-  it into item prunes.
+  it into item prunes. It tries `α` at 1 and at the distinct sizes only,
+  which is a sample of the useful thresholds, not all of them (#1355).
 
 Five things to know before touching it.
 
@@ -88,7 +93,10 @@ Five things to know before touching it.
   to 3.5 times the instructions on the same trees. Its copy of `Knapsack`'s
   interior-value pass walks every value of the load after Stage 2: two items
   of sizes 1 and 10⁸ take 60 s in the root call under `Upfront` and about
-  0.1 ms under `PerCall` (#1340, commented on). The declared width of a load costs nothing under either, because
+  0.1 ms under `PerCall` (#1340, commented on). With proofs on, the same
+  pass writes one removal per load value in a gap, where `PerCall` writes one
+  range literal per gap, so a large size makes `Upfront`'s proof wide too.
+  The declared width of a load costs nothing under either, because
   Stage 2 cuts the load to the reachable range first.
 - **Front ends refuse shapes their definitions constrain away.** An item
   domain reaching outside the bins, or a load with a negative lower bound,
@@ -514,7 +522,9 @@ checked against the solver's own OPB only (workflow 1), where they verify. The
 allocates the `DagBridge` (`:1795–1799`), which the propagator and the
 initialiser share; each search's clone of the constraint prepares its own. With Shaw it sizes Stage 4's scratch and computes the
 threshold list (1 and every distinct size above 1, largest first) and the
-items in decreasing size (`:1801–1839`): `O(n log n)`.
+items in decreasing size (`:1801–1839`): `O(n log n)`. The comment there
+(`:1821–1826`) says this list is the whole family; it is a sample (rule 11,
+#1355).
 
 With `consistency::GAC` it builds, for each bin, the **static diagram**: the
 partial sums of the sizes of the first `i` items that can be in the bin,
@@ -735,11 +745,27 @@ a node is a reachable partial sum.
 3. **The proof side.** Stage 3's lines are per node or per edge (flags,
    chains, splits, dead-node lemmas), so the proof is as wide as the diagrams,
    which is as wide as the reachable sums; the per-value ban does not extend to
-   what a proof emits, and here the proof follows the algorithm. `PerCall`
-   writes its gap cuts as range literals (`i[l][in4_5]`), `Upfront` its hole
-   removals one value at a time (`i[l][eq4]`, `i[l][eq5]`): the form is chosen
-   by the strategy, not by a width test, but both are bounded by the
-   terminals, since every removed value lies between two reachable sums.
+   what a proof emits, and here the proof follows the algorithm. The load
+   cuts are where the strategies part, and the form is chosen by the strategy,
+   not by a width test. `PerCall` writes one range literal per gap
+   (`i[l][in4_5]`), so its cuts are bounded by the terminals. `Upfront`
+   removes one value at a time (`i[l][eq4]`, `i[l][eq5]`): one RUP carrying
+   the full reason per removed value, after the definitions of that value's
+   equality literal and of the order atom above it. Its cuts are bounded by
+   the gaps' **total cardinality**, up to the reachable range `ceiling −
+   floor`, and not by the terminals: that every removed value lies between two
+   reachable sums says where the values are, not how many. Two items of sizes
+   1 and `W`, each allowed in either of two bins, loads in `0..W+1`, have
+   four terminals per bin (`0, 1, W, W+1`); `PerCall` cuts the gap `2..W−1`
+   with one range literal per bin, `Upfront` with `W − 2` removals per bin.
+   The root-only proofs are 292 lines under `PerCall` at `W = 10, 100, 1000`
+   and `10⁴` (15.6 to 20.0 KB, growing only with the load's bit width), and
+   821, 3,521, 30,521 and 300,521 lines under `Upfront` (45 KB to 20.4 MB;
+   15 lines per removed value per bin: four `red` literal definitions, two
+   `pol`s, two RUPs and seven `core id` lines); all
+   eight verify (`size/bpwide.cc`'s `bigsize` case, re-run at `86caad24` in
+   `tmp/fd-codex-1015/bin_packing/gapproof/` on fataepyc-09, 2026-10-15, VeriPB 3.0.2 with `--force-checked-deletion`).
+   This is the proof side of the pass #1340 tracks for its CPU cost.
 4. **The audit lane.** One row, `BinPacking`, pinned `Clean`
    (`large_domain_audit_test.cc:779–782`): three 0/1 items of size 1 and two
    loads in `0..10⁹`, default `GAC` and `PerCall`, proofs off. It is `Clean`
@@ -1166,8 +1192,14 @@ procedures in turn, and one is guaranteed to succeed.
   in both.
 - **Hint** — `hints::BinPacking`.
 - **Offline reconstructibility** — `offline`.
-- **Proof size** — `PerCall`: one conclusion per gap; `Upfront`: one RUP per
-  removed value, each of `O(n + m + h)` literals.
+- **Proof size** — `PerCall`: one conclusion per gap, so at most one per
+  terminal. `Upfront`: one RUP per removed value, each of `O(n + m + h)`
+  literals, plus a second RUP linking the value to a hole-run literal and the
+  value's equality-literal and order-atom definitions (four `red`s and two
+  `pol`s), 15 lines per removed value counting seven `core id` lines: as
+  many sets as the gaps' total cardinality, up to the reachable range, and
+  not bounded by the terminals ([Interval efficiency](#interval-efficiency),
+  #1340).
 - **Gaps** — `None.`
 - **Tightness** — `Not shown` (rule 7's hand-run lanes include a gap cut).
 
@@ -1222,15 +1254,95 @@ procedures in turn, and one is guaranteed to succeed.
   `DELTA = Σ_b max(0, ⌈(T_b − cap_b)/α⌉) − Σ_{i ∈ S(α)} c_i (|D_i| − 1)`.
 - **Strength** — `partial`: a cross-bin infeasibility test, spanning the energy
   bound (`α = 1`) and pigeonhole counts (large `α`), in the family of Martello
-  and Toth's L2. It does not make the constraint GAC; at the root it removed
+  and Toth's L2. It does not make the constraint GAC. On `gac/bpcheck.cc`'s
+  small instances (sizes 0 to 4, up to five items and three bins) it removed
   every joint GAC failure the per-bin stages left at the root fixpoints of
-  8,000 random capacity-form instances but one value in one instance, and changed almost
-  nothing in the load form (`gac/bpcheck.cc`).
+  8,000 random capacity-form instances but one value in one instance, and
+  changed almost nothing in the load form; on this audit's tighter instances
+  below (sizes up to 5, 15 or 60, capacities near the average share, up to
+  six items and four bins), 71 to 204 item values per 2,000 capacity-form
+  instances are still without support at the root fixpoint.
+  **It also samples its own bound** (#1355). It tries `α` at 1 and at the
+  distinct sizes (`:1827–1832`), and the comment there (`:1821–1826`) says
+  that is the whole family because `DELTA` is piecewise constant in `α` with
+  breakpoints at the sizes. It is not: while `S(α)` stays the same, `c_i =
+  ⌈sizes[i] / α⌉` and each bin's `⌈(T_b − cap_b) / α⌉` still change between
+  sizes. Four items of sizes 44, 30, 42 and 45, each free over two bins of
+  capacities 63 and 100, cannot be packed (bin 0 holds at most one of them,
+  and any three of them overflow bin 1); `DELTA` is −1, −2, −2, 0 and −2 at
+  the listed thresholds 45, 44, 42, 30 and 1, and at least 1 only at `α =
+  15`. The shipped code needs three nodes and two failures to refute it; a
+  scratch build that adds 15 fails at the root, and its proof verifies,
+  under `GAC` and `BC`. The counted set is a choice too: the comment at
+  `:1594–1597` says an item below the threshold only pays its way once it is
+  pinned, but such an item can raise each of its `|D_i|` bins' rounded
+  overflows by one at a cost of `|D_i| − 1`. Against `S(α)`, both with every
+  threshold up to the largest size tried, counting every item changes the
+  root fixpoint in 123 of 8,000 random capacity-form instances (the same
+  under `GAC` and `BC`; stronger in 88, weaker in 35) and in 132 of 16,000
+  load-form runs (8,000 instances under each consistency; stronger in 101,
+  weaker in 31), so neither choice dominates (30 of its proofs checked, all
+  verify).
+  **A complete list for this `S(α)` is static but not size-independent.**
+  Over a run of thresholds where `S(α)` and every `c_i` stay the same, the
+  penalty is fixed and each bin's term is `max(0, ⌈x / α⌉)` of a fixed `x`
+  (`bin_contribution`, `:1420`). For `x > 0` that can only fall as `α`
+  rises; for `x ≤ 0`, `⌈x / α⌉` rises towards 0 but the clamp holds the term
+  at 0. So `DELTA` and every shaved `DELTA` are largest at the run's smallest
+  `α`. Those smallest thresholds are 1, every `⌈s / k⌉` for a size `s` and
+  `k ≥ 1`, and every `s + 1`, the largest size + 1 included: at most about
+  `2√s + 1` per distinct size, against one now (this audit's argument).
+  Above the largest size only items already pinned to a bin are counted and
+  every `c_i` is 1, so every threshold there lies in one run, which the
+  largest size + 1 covers; the list is therefore complete over every integer
+  threshold. Those thresholds are not idle within a call: Stage 2's own
+  prunes can pin items (`run_stage2`, `:1222–1301`), and Stage 4 then runs
+  on a state Stage 2 has not re-checked. Capacities 5, 2, 100 and 100, two
+  items of size 3 over bins `{0, 1}` and two of size 10 over `{2, 3}`:
+  Stage 2 pins both 3s into bin 0, and `DELTA` and every shaved `DELTA` are
+  at least 1 only at `α ≥ 11`. With the shipped list Stage 4 does nothing
+  and Stage 2 fails on the next call; with the complete list Stage 4 fails
+  in the first call at `α = 11`; all proofs verify, under `GAC` and `BC`
+  (`tmp/fd-codex-1015/bin_packing/stage4/c1355.cc`, case C). They cannot change a fixpoint or a search
+  tree, though. Above the largest size only pinned items count and there is
+  no penalty, so `DELTA ≥ 1` means pinned items overflow a bin. A shave
+  there comes only after the contradiction test has found no such overflow,
+  and it means `floor_b + sizes[h] > cap_b`. Stage 2 finds both on the next
+  call, which the framework runs because the call changed a domain. So this
+  threshold matters for the offline argument below, not for strength.
+  A scratch build with that list (`tmp/fd-codex-1015/bin_packing/src-alpha`:
+  `86caad24` plus an environment switch for the list) reaches the same root
+  fixpoint as one that tries every integer up to the largest size + 1 on all
+  96,000 random runs it was compared on, and differs from the shipped list
+  at the root in 1, 27 and 37 of 8,000 capacity-form instances with sizes up
+  to 5, 15 and 60 (10 and 9 of the latter two a root failure the shipped list
+  misses; the same under `GAC` and `BC`), and in 0, 19 and 30 of 16,000
+  load-form runs. No root was unsound. Every one of the 179 differing runs
+  was proved, as a full enumeration under both the shipped and the complete
+  list: all 358 proofs verify with the brute force's counts
+  (`tmp/fd-codex-1015/bin_packing/stage4/runs5/`, plain items and `x + c`
+  views and constants, two seeds; at `86caad24` plus a scratch threshold
+  switch, on fataepyc-09, 2026-10-16). So `partial` stands twice over: the
+  bound is not GAC, and the shipped code does not take its own bound's best
+  threshold.
 - **Algorithm** — `O(n · m)` to read the domains, then per threshold `O(n)` for
   the weights and `O(m)` for the bins, the totals folded once across the
   descending list: `O(n · m + d · (n + m))` for `d` distinct sizes. The
   bound's derivation is the code's own (`:1303–1347`); its threshold rule is
-  the domain-aware form of L2's.
+  the domain-aware form of L2's. The complete list above makes `d` grow
+  with the square roots of the sizes: on enumerations of ten items over three
+  bins (sizes drawn from `[M/4, M]`, capacities 1.15 times the average share,
+  two seeds), where the trees are identical under every list, it costs 1.4
+  and 1.6 times the shipped list's instructions at `M = 100` (about 45
+  thresholds against 10), 2.0 and 2.2 at `10³` (about 140 against 11) and
+  3.6 and 4.2 at `10⁴` (about 440 against 11); every integer up to the
+  largest size + 1 costs 2.1 and 2.3, 8.9 and 9.1, and 60 and 68 times
+  (`cost/costprobe.cc`, scratch build `src-alpha` throughout, serial on one
+  core, `instructions:u`, three runs each within 0.001%, fataepyc-09,
+  2026-10-16). On `bin_packing_bench`, whose sizes cover every value from 1
+  up, the complete list is the shipped one plus the largest size + 1, and
+  costs 1.013 to 1.034 times the instructions on instances 1, 2, 5 and 6, on
+  identical trees.
 - **Why it is true** — divide each bin's capacity row, weakened to the counted
   items, by `α` and round up; add `c_i` times each counted item's at-least-one
   over its domain. Every `[x = b] + ¬[x = b]` pair cancels, leaving a line whose
@@ -1279,6 +1391,19 @@ procedures in turn, and one is guaranteed to succeed.
   contradiction's scan over bins, and like it nothing is found that the rows
   and the reason do not fix; `offline` is the reading taken here. The hint does not carry `α`; carrying it
   would save the enumeration, not make anything reconstructible that is not.
+  #1355 does not move this verdict. The guarantee needs only that the
+  solver's `α` lie in the list the reconstructor scans, and a reconstructor
+  that does not want to depend on the shipped list can scan the complete
+  list above instead, which the sizes fix and which holds, for any `α` the
+  code would try, a threshold at least as good on the same domains (the run
+  argument under Strength, the largest size + 1 covering every threshold
+  above the largest size; the scan skips thresholds above every ceiling, as
+  the code does): a longer scan, still with nothing chosen, still stopping at a
+  success. A candidate policy computed from the model keeps the direct
+  shape. One computed per call from the domains the sweep saw, as next step
+  8 considers, could not be recomputed from the reason, whose domains can be
+  tighter; the verdict would then rest on the fallback to the complete list,
+  which holds whatever threshold the policy picks.
 - **Proof size** — per firing, at most `2m + 1` `pol` and `RUP` lines plus the
   conclusion, `O(n · m)` terms (the at-least-one rows are per run of each
   domain).
@@ -1304,7 +1429,16 @@ procedures in turn, and one is guaranteed to succeed.
 - **Strength** — `partial`: shaving on rule 11's bound (Shaw §3.4's
   construction of a propagation rule from a pruning rule, after Gent and
   Walsh). It prunes the #209 example, `sizes {1, 2, 2}` over capacities `{3,
-  2}`, which no single bin can.
+  2}`, which no single bin can. It samples the same thresholds as rule 11:
+  #1355's instance, `x ∈ {1, 2}`, `y ∈ {0, 1, 2}`, `z ∈ {1, 2}` of sizes 9,
+  8 and 8 under capacities 14, 12 and 13, has two solutions, both with `y =
+  0`. Shaving `y = 1` gives `DELTA` 0, 0, 1, 0, 0, 0, −1 and 0 at `α = 1` to
+  8, over all of which `S(α)` is all three items, so `α = 3` prunes `y = 1`
+  and the shipped list (9, 8, 1) does not. A scratch build adding 3 prunes it
+  at the root; its root-only and full proofs verify, and it enumerates the
+  same two solutions (`tmp/fd-codex-1015/bin_packing/stage4/c1355.cc`, `86caad24`, fataepyc-09). `y = 2`,
+  also without support, is pruned at no threshold, with or without the
+  complete list: the bound itself is partial.
 - **Algorithm** — `O(1)` per item for the necessary condition and `O(m)` per
   candidate, incrementally from the sweep's totals.
 - **Why it is true** — rule 11's argument under the hypothesis `items[h] = b`.
@@ -1401,7 +1535,8 @@ scratch `tmp/fd-bp/bin_packing/`):
 **What the tests do not cover.**
 
 - **Strength.** No test checks GAC, per bin or otherwise, at any node, which is
-  how the missing commitment (#1346) went unseen; the comment at
+  how the missing commitment (#1346) went unseen, nor Stage 4 against its
+  bound's other thresholds (#1355); the comment at
   `bin_packing_test.cc:228–233` defers a per-bin GAC checker "if regressions
   appear".
 - **The constant-capacity form's waste** (#1349): nothing compares `GAC`
@@ -1685,10 +1820,17 @@ the mistranslation is in the `.scp` it starts from and `cake_pb_cp` has no
   form (#1346).
 - **Nothing reasons across the loads**: the loads are never made to sum to the
   total size (#1348), and Stage 4, off by default, prunes items only.
+- **Stage 4 samples its own bound**: it tries `α` at 1 and the distinct sizes
+  only, and counts the items a fixed rule picks at each threshold, so it
+  misses prunes and failures the same derivation proves at other thresholds
+  (#1355): at the root, a few random instances in a thousand once sizes go
+  above 5, on this audit's generator (other shapes give more).
 - **The default spends time and proof on the constant-capacity form without
   changing the fixpoint**; pass `consistency::BC` there (#1349).
 - **`Upfront` is slow with a large size or many reachable sums** (#1340),
-  and bigger and slower to check than `PerCall` on every instance measured
+  its proof grows with the total width of the load's gaps, one removal per
+  value where `PerCall` writes one per gap,
+  and it is bigger and slower to check than `PerCall` on every instance measured
   ([Proof performance](#proof-performance)).
 - **A repeated variable propagates less than it could.**
 - **Large reachable sums make the diagrams, and with proofs the `Top` flags,
@@ -1718,8 +1860,9 @@ the mistranslation is in the `.scp` it starts from and `cake_pb_cp` has no
 5. **Shaw's load coherence** (#1348): one `O(m)` pass in Stage 2 with a
    one-`pol` proof. Small.
 6. **Fix `Upfront`'s interior-value pass** (#1340) by sharing
-   `PerCall`'s interval loop, and close its temporary level on failure (a
-   scope guard, as `Knapsack`'s next step 6; not filed). Small; or retire `Upfront`, which
+   `PerCall`'s interval loop, which could also write each gap as one range
+   literal as `PerCall` does (not tried), and close its temporary level on
+   failure (a scope guard, as `Knapsack`'s next step 7; not filed). Small; or retire `Upfront`, which
    is worse on every axis measured and is kept for A/B measurement and for
    #200 (its design note's reason).
 7. **Hint `Upfront`'s dead-state RUPs** (#497, an open draft PR whose
@@ -1727,35 +1870,55 @@ the mistranslation is in the `.scp` it starts from and `cake_pb_cp` has no
    dead-state lemmas) and, to save a reconstructor Stage 4's enumeration,
    carry `α` in the hint. Per the arc's rule, whether either is needed is for
    the justifier to show.
-8. **Sweep the large-domain lane wider:** an `Upfront` row with a large size,
+8. **Choose Stage 4's thresholds by a measured policy** (#1355). The
+   complete static list of rule 11 needs no new argument and changes no
+   derivation, but it is `O(Σ√s)` thresholds where the shipped list is at
+   most `n + 1`, and it costs 1.4 to 4.2 times the instructions at sizes up
+   to 10² to 10⁴ on enumerations where it prunes nothing more (every integer
+   threshold up to the largest size + 1, 2.1 to 68 times). Look for a
+   cheaper candidate policy that keeps
+   what the complete list gains, for example a test that drops a candidate
+   which cannot beat its neighbours on the current overflows, or candidates
+   chosen per call from the bins' overflows, and measure its cost and its
+   gain the same way, rather than scanning every integer or capping the
+   list's length. Settle the counted set alongside it, since counting the
+   items below the threshold neither dominates nor is dominated. Add #1355's
+   instance and rule 11's four-item failure to `capa_data`. Medium.
+9. **Sweep the large-domain lane wider:** an `Upfront` row with a large size,
    a capacity-form row and a proof-size row.
-9. **Bring the out-of-stack text into line**:
-   - `dev_docs/bin-packing.md` cites CP 2024 "§4" for the knapsack encoding
-     (it is §3.3), still describes a `KnapsackUpfront` variant, calls Stage 3
-     per-bin GAC without the commitment caveat, and names the removed
-     `bounds_only` and `upfront_proof` constructor flags (six places) where
-     the API is `with_consistency` and `with_proof_strategy`;
-   - `bin_packing.cc:807–810` says the item-commitment direction "needs a
-     separate argument involving all OTHER bins" (it does not; #1346);
-     `:993–994` calls the per-call sweep per-bin GAC, and `:994–996` says the
-     two strategies draw the same inferences and differ only in the proof;
-     `:369–370` says
-     `emit_bin_scaffolding` "Mirrors knapsack.cc", where the function now
-     lives in `knapsack_upfront.cc:177`;
-   - `bin_packing.hh:20–25` and `:174–175` claim per-bin GAC, and `:104–106`
-     per-bin GAC on the item variables; `:106–129` describes the removed
-     `bounds_only` and `upfront_proof` selectors; `:38–39` and `:180–183` say
-     the proof strategy has no effect with proof logging off (it picks the
-     Stage 3 code path: 60 s against 0.1 ms in [Interval
-     efficiency](#interval-efficiency)), and `:37–38` and `:181–182` that it
-     never changes the inferences (it changes them within a call, not the
-     fixpoint); `:124–125` speaks of "joint chains", which `k = 1` does not
-     have;
-   - `bin_packing_test.cc:228–233` says Stage 3 achieves per-bin GAC and
-     strengthens only the load form's load pruning (it prunes items' value
-     `b` too), and `:160–164` says the edge-of-range shapes' rows cannot be
-     written with a proof, where the rows are written and verify and the
-     throws come from `GAC`'s Stage 3 ([Overflow](#robustness-and-limits)).
+10. **Bring the out-of-stack text into line**:
+    - `dev_docs/bin-packing.md` cites CP 2024 "§4" for the knapsack encoding
+      (it is §3.3), still describes a `KnapsackUpfront` variant, calls Stage 3
+      per-bin GAC without the commitment caveat, and names the removed
+      `bounds_only` and `upfront_proof` constructor flags (six places) where
+      the API is `with_consistency` and `with_proof_strategy`; on main at
+      `86caad24` it also says `DELTA` is piecewise constant in `α` with
+      breakpoints at the sizes, so that 1 and the distinct sizes are the whole
+      family (`:390–391`), and that an item below the threshold only pays its
+      way once pinned (`:395–397`), both wrong (rule 11, #1355);
+    - `bin_packing.cc:807–810` says the item-commitment direction "needs a
+      separate argument involving all OTHER bins" (it does not; #1346);
+      `:993–994` calls the per-call sweep per-bin GAC, and `:994–996` says the
+      two strategies draw the same inferences and differ only in the proof;
+      `:369–370` says
+      `emit_bin_scaffolding` "Mirrors knapsack.cc", where the function now
+      lives in `knapsack_upfront.cc:177`; `:1821–1826` says the threshold list
+      is the whole family, and `:1594–1597` that an item below the threshold
+      only pays its way once pinned (rule 11, #1355);
+    - `bin_packing.hh:20–25` and `:174–175` claim per-bin GAC, and `:104–106`
+      per-bin GAC on the item variables; `:106–129` describes the removed
+      `bounds_only` and `upfront_proof` selectors; `:38–39` and `:180–183` say
+      the proof strategy has no effect with proof logging off (it picks the
+      Stage 3 code path: 60 s against 0.1 ms in [Interval
+      efficiency](#interval-efficiency)), and `:37–38` and `:181–182` that it
+      never changes the inferences (it changes them within a call, not the
+      fixpoint); `:124–125` speaks of "joint chains", which `k = 1` does not
+      have;
+    - `bin_packing_test.cc:228–233` says Stage 3 achieves per-bin GAC and
+      strengthens only the load form's load pruning (it prunes items' value
+      `b` too), and `:160–164` says the edge-of-range shapes' rows cannot be
+      written with a proof, where the rows are written and verify and the
+      throws come from `GAC`'s Stage 3 ([Overflow](#robustness-and-limits)).
 
 ## Prior art
 
@@ -1781,7 +1944,8 @@ Mathematics 28(1):59–70, 1990) to a partial assignment, by turning it into a
 fixed-capacity instance with one item per bin to "top up" its capacity
 (§4.1). **Stage 4 is not that
 construction**: it is a family of rounded counting bounds, one per threshold,
-each a single cutting-planes derivation, which shares L2's idea (count the
+each a single cutting-planes derivation (the code tries a sample of the
+thresholds, rule 11); the family shares L2's idea (count the
 items above a size threshold against how many each bin can hold) and adds
 domain-awareness (an item that can only go in some bins pays `c_i (|D_i| − 1)`)
 and shaving, the construction of item rules from a pruning rule that Shaw's
@@ -1827,7 +1991,7 @@ joint-only case.
   strategies and the argument for why `PerCall`'s RUPs close, the hand-run
   mutation results for Stage 3 and Stage 4, Stage 4's derivation in full, and
   its benchmark tables from the #995 and #209 era. Some of its text is stale
-  (next step 9).
+  (next step 10).
 - [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md):
   upfront against per-call for `Regular`, `MDD`, `Knapsack` and `BinPacking`,
   and why this family's per-call strategy wins both axes.
