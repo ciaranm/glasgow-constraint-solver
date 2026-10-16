@@ -16,7 +16,9 @@
 > on at `AssertionLevel::Off`, which this audit finds reachable from MiniZinc;
 > both corpus models pass a constant total that it covers, though neither has
 > been seen to reach it), #1070 (every proof line restates the 0/1 items'
-> always-true bounds; the corpus does post Knapsack). Also open: #497
+> always-true bounds; the corpus does post Knapsack). Filed since the audit
+> and reproduced for this document: #1354 (a `<knapsack>` inside an XCSP3
+> `<group>` crashes the parser before the solver sees it). Also open: #497
 > (hint the dead-state RUPs), #200 (one generic layered-DAG propagator
 > framework for the diagram constraints), #833 (the large-domain policy), #868
 > (cross-solver comparisons; this document gives one, by hand). Tracked under
@@ -130,7 +132,7 @@ profit})`.
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `Knapsack`, `proof_strategy::PerCall` | ✓ `fzn_knapsack`[^mzn] | ✓ `knapsack`[^xcsp] | ?[^cpmpy] | ✓ `knapsack` | `k` rows from C++ and the `.scp` reader; MiniZinc and XCSP3 post two |
+| `Knapsack`, `proof_strategy::PerCall` | ✓ `fzn_knapsack`[^mzn] | ✓ `knapsack`[^xcsp] | ?[^cpmpy] | ✓ `knapsack` | `k` rows from C++ and the `.scp` reader; MiniZinc and XCSP3 post two; an XCSP3 `<group>` of knapsacks crashes (#1354) |
 | `Knapsack`, `proof_strategy::Upfront` | — | — | — | written as `knapsack`[^sexpr] | C++ only; `knapsack_bench --upfront` |
 | `knapsack_reif` | `decompose`[^reif] | n/a | — | — | |
 
@@ -153,9 +155,42 @@ profit})`.
     `<weights>`, `<condition>`, `<profits>`, `<condition>`; it ignores a
     `<limit>`. A negative weight, profit or item value throws from
     `Knapsack::prepare()`, inside `solve_with`, where the binary catches only
-    `IntegerOverflow`, so the process aborts (exit 134; #1337). Inside a
-    `<group>`, the vendored parser tags a knapsack template as `FLOW`
-    (`XMLParserTags.cc:1287`), which was not followed further.
+    `IntegerOverflow`, so the process aborts (exit 134; #1337). **A
+    `<knapsack>` inside a `<group>` crashes the parser** (#1354), with
+    proofs off or on, before the knapsack reaches the solver (the front end
+    posts each constraint from its callback as it is parsed, `:842`, so
+    constraints ahead of the group are already posted): the parser's
+    `KnapsackTagAction::beginTag` tags the group `FLOW`
+    (`XMLParserTags.cc:1287`), so `newConstraintGroup` unfolds each row as an
+    `XConstraintFlow` (`XCSP3Manager.cc:1483–1484` in the patched file the
+    build compiles, `:1482–1483` in the unpatched pin; not the `KNAPSACK`
+    arm at `:1487–1488`, unpatched `:1486–1487`), whose `unfoldParameters`
+    `dynamic_cast`s the knapsack template to a flow, gets a null pointer and
+    reads its weights (`XCSP3Code.cc:665`, `:669`). Reproduced on 2026-10-15
+    on fataepyc-09 at the parser revision `xcsp/CMakeLists.txt` pins
+    (`179670dd`), both as the repository builds it (with
+    `xcsp3_parser_integer_overflow.patch`, which changes none of these lines'
+    content) in the `86caad24` binary, and unpatched under the parser's own
+    sample driver: a two-row group of a two-item knapsack over 0/1 variables,
+    a one-row group, and a two-row group whose profit condition is a
+    parameter (`(eq,%2)`) all exit on `SIGSEGV`; the same rows written as
+    plain `<knapsack>` constraints solve, ACE 2.6 agrees on the first, and
+    their proofs verify (`tmp/fd-codex-1015/knapsack/xcsp-group/`).
+    Retagging the group `KNAPSACK` is not enough on its own: the row then
+    fails with "condition is malformed", because
+    `XConstraintKnapsack::unfoldParameters` (`XCSP3Code.cc:677–684`)
+    unfolds the copy's profit condition without first copying it from the
+    template; Glasgow's binary, relinked from the `86caad24` front-end
+    object against the patched parser plus the retag alone, reports
+    `s UNSUPPORTED` and exits 1, without crashing. With both changes, the
+    same relinked binary solves all three groups with the same solution sets
+    as their written-out forms (1, 1 and 9 solutions), and every proof
+    verifies (VeriPB 3.0.2, `--force-checked-deletion`; 2026-10-16,
+    fataepyc-09, `tmp/fd-codex-1015/knapsack/xcsp-relink/`). The parser's
+    upstream `master` (`36ff5222`, as of 2026-10-15) has both lines
+    unchanged. Line numbers here are the pin's (`179670dd`); at `master`
+    the same lines are `XMLParserTags.cc:1296` and `XCSP3Code.cc:655`,
+    `:659` and `:667–674`.
 [^cpmpy]: `gcspy` binds nothing in this family. CPMpy's upstream GCS
     interface, as copied on 2026-09-23 (`tmp/linear-audit/cpmpy_gcs.py:670`),
     decomposes every global it does not map and names Knapsack as future work.
@@ -187,7 +222,9 @@ status and solution set together.
   in its `Problem.sum`), which are not counted. The 56 disagreements are all
   aborts on a negative weight (32) or a negative domain value (24); a negative
   profit aborts the same way, since `prepare()`'s coefficient check covers
-  every row (`knapsack.cc:612–615`).
+  every row (`knapsack.cc:612–615`). Every instance posts plain `<knapsack>`
+  elements; none is inside a `<group>`, which crashes (#1354, in the footnote
+  above).
 - **`.scp`:** `knapsack_sat` and `knapsack_unsat` chain-verify; see [Cake
   conformity](#cake-conformity).
 
@@ -299,17 +336,98 @@ For each row `x`:
 written by `model.add_labelled_constraint(…, sum == totals[x])`
 (`knapsack.cc:644–646`; `knapsack_upfront.cc:933–934`, identical). It is
 **definitional**: nothing but the equalities. Neither strategy adds anything to
-the OPB; every flag lives in the proof.
+the OPB; every flag lives in the proof. (A view item or total brings the
+shared view rows described under Size below, some written alongside these
+rows and some under later constraints, but they are the view machinery's,
+not this family's.)
 
-**Size: `2k` rows**, with, per row, one term per bit of every item with a
-non-zero coefficient plus one per bit of the total, so `Σ_{i: c_xi ≠ 0}
-bits(vars[i]) + bits(totals[x])` terms, where `bits(v) = ⌈log₂(ub(v) + 1)⌉`
-for the non-negative domains the class accepts. Logarithmic in every width,
-linear in `n` and `k`, independent of the coefficients' magnitudes except
-through the coefficients themselves. Measured (`size/grid.txt`, terms summed
-over the rows): 2 rows and 16 terms for four 0/1 items and one row; 4 rows and
-82 terms for eight items in `0..2` and two rows; 2 rows of **no** terms for `n = 0` with the total fixed at
-0 (the row is `0 ≥ 0`).
+**Size: `2k` rows**, with, per row, one term per bit of every item position
+with a non-zero coefficient plus one per bit of the total, so `Σ_{i: c_xi ≠
+0} bits(vars[i]) + bits(totals[x])` terms. What `bits` is depends on the kind
+of variable:
+
+- **A plain variable:** `bits(v) = ⌈log₂(U + 1)⌉`, where `U` is the upper
+  bound it was **declared** with: `Problem::create_state_for_new_search`
+  passes each variable's declared bounds to `set_up_integer_variable`
+  (`problem.cc:175–176`, `proof_model.cc:514–528`), and
+  `get_bits_encoding_coeffs` (`bits_encoding.cc:35–36`) turns them into the
+  bit count. There is no sign bit, since `prepare()` refuses a variable
+  declared with a negative lower bound even when another constraint has
+  already clamped it to non-negative. So it is logarithmic in the encoded
+  magnitude, not in the width of the interval: an item and a total in `[2ʲ,
+  2ʲ + 1]` have two values each and `j + 1` bits each (`j ≥ 1`; 4, 22 and 82
+  terms a row at `j` = 1, 10 and 40), and a clamp does not shrink it (an item
+  declared `0..1000` and posted `≤ 3` before the call still writes 10 terms).
+- **A constant** writes no terms: its contribution moves to the right-hand
+  side.
+- **A view** writes the bits of its own proof-only variable, sized the same
+  way over the view's range (`need_view`, `names_and_ids_tracker.cc:1994–2031`).
+  The view machinery also writes rows to the OPB, once per view in the
+  model, not per row, and shared with any other constraint that names it:
+  - two link rows, `@c[<view>][viewle]` and `[viewge]`, each with the view's
+    bits plus the underlying variable's (plus the underlying's sign bit when
+    it is declared with a negative lower bound), written by the first
+    constraint to name the view;
+  - at `AssertionLevel::Off` (the default) up to `Links`, a copy on the view
+    of every atom the underlying variable has or later gains in the model.
+    Atoms it already has are copied when the view is registered
+    (`names_and_ids_tracker.cc:2033–2063`); a later one is copied by the
+    reverse hooks (`need_direct_encoding_for`, `:1248–1257`; `need_gevar`,
+    `:1526–1540`) and written under the constraint that creates it. Each
+    copied or needed view atom is defined by two `@po` rows: an order atom
+    over the view's bits plus its flag, an equality atom over two of the
+    view's order atoms plus its flag, so an equality copy also brings the
+    view order atoms it is defined over. Those view order atoms link back to
+    the underlying's order atoms of the matching value (`y + 1 ≥ 1` with
+    `y ≥ 0`), which are created if missing, two `@i` rows each. A 0/1 variable always has atoms, because it
+    is direct-encoded (`proof_model.cc:524–525`), and so does a variable
+    some constraint names by value, such as one declared with holes.
+  So a view's share is linear in its bits only when its underlying never
+  gets atoms in the OPB; otherwise it grows with the underlying's atoms times
+  the view's bits.
+- **A repeated variable** is not merged: it writes its bits once per
+  position, as an item or as a total.
+
+So the knapsack rows themselves are linear in `n` and `k` and in the number of
+encoded bits, and independent of the coefficients' magnitudes except through
+the coefficients themselves; a view adds its rows on top, as above. Measured
+(`size/grid.txt`, terms summed over the rows): 2 rows and 16 terms for four 0/1
+items and one row; 4 rows and 82 terms for eight items in `0..2` and two rows;
+2 rows of **no** terms for `n = 0` with the total fixed at 0 (the row is
+`0 ≥ 0`). The edge cases above, one row each, at `86caad24` on fataepyc-09,
+2026-10-15 and 2026-10-16 (`tmp/fd-codex-1015/knapsack/opb-terms/kterms.cc`,
+OPB rows counted by label):
+
+- three 0/1 items against a constant total: 3 terms a row;
+- a constant item and a 0/1 item against a total in `0..6`: 4;
+- three 0/1 items against `y + 3`, `y ∈ 0..10`: 7 a row, plus two 8-term
+  link rows and no atom rows;
+- three 0/1 items against `y + 3`, `y` declared `{0, 5, 10}`: 7 a row, plus
+  two 8-term link rows and 18 `@po` rows of 78 terms (the copies of `y`'s
+  three equality atoms and the six order atoms they need);
+- `b + 1` and `1 − b` as the one item, `b` 0/1, against a total in `0..3`:
+  4 and 3 a row, plus two link rows (3 and 2 terms each) and 16 atom rows
+  per view, 10 `@po` (copies of `b`'s two equality atoms and the three view
+  order atoms they are defined over) and 6 `@i` (`b`'s order atoms `ge0` to
+  `ge2`), 42 terms for `b + 1` (30 + 12) and 36 for `1 − b` (24 + 12); four
+  `b_i + 1` items, 40 `@po` and 24 `@i` rows; `b + 1` as the total of three
+  0/1 items, the same 16;
+- `y + 1`, `y ∈ 0..6` named only by `NotEquals`'s two bits-level rows: 7 a
+  row, two 6-term link rows, no atom rows;
+- `y + 1`, `y ∈ 0..10`, as the one item against a total in `0..20`, with
+  `In{y, {0, 5, 10}}` posted **after** the knapsack: 9 a row and two 8-term
+  link rows under the knapsack, and 18 `@po` rows of 78 terms (the view's
+  copies of `In`'s three equality atoms and the six view order atoms they
+  are defined over) under `In`, none of which the same model with item `y`
+  writes;
+- `−y` with `y ∈ −5..−1` against a total in `0..10`: 7 a row, plus two 7-term
+  link rows (with the sign bit) and no atom rows;
+- `[x, x]` with `x ∈ 0..3` against a total in `0..9`: 8.
+
+The constant-total and view-total cases write their OPB and then throw #1229
+(`UnimplementedException`) at the default `AssertionLevel::Off`, so they do not
+solve with `--prove`; the counts are of the OPB, which is complete by then.
+The others solve, and their proofs verify.
 
 ### Labels
 
@@ -558,13 +676,40 @@ costs anything.
    every pruning builds it again, with proofs off (3.1% of the 18-item
    enumeration's cycles, in `materialise_generic`). It also always names the
    0/1 items' always-true bounds (#1070).
-3. **The proof side.** Every line is per state or per edge: a flag per
-   partial-sum value, a transition per edge, a must-pick per state, a dead
-   lemma per state. So the proof is as wide as the diagram, which is as wide
-   as the items and the reachable sums, and every RUP line carries the whole
-   reason. There is no width gate, and no interval form to gate to: the
-   per-value ban does not extend to what a proof emits, and here the proof
-   follows the algorithm.
+3. **The proof side.** Almost every line is per state, per edge or per row:
+   a flag per partial-sum value, a transition per edge, a must-pick per
+   state, a dead lemma per state, the terminal `pol`s per row and terminal
+   state, and a conclusion per removed item value, of which there are no
+   more than the item's edges. The exception is rule 6, which writes one RUP
+   per value it removes from a total, and those values are per value of the
+   total's domain inside its new bounds, not per state: one 0/1 item with
+   coefficient `W` against a total in `0..W` has two terminal states and
+   removes `W − 1` values. Measured at `86caad24` on fataepyc-09,
+   2026-10-16 (`tmp/fd-codex-1015/knapsack/holes-proof/kholes.cc`,
+   enumerating): 331, 1,771 and 16,171 proof lines at `W` = 10, 100 and
+   1,000 under `PerCall` and 336, 1,776 and 16,176 under `Upfront`, all
+   verifying. That is 16 file lines per removed value under both, by line
+   type between `W` = 10 and 100:
+   - **rule 6's own:** 1, the RUP `totals[x] ≠ v ∨ ¬reason`;
+   - **the literal machinery, introducing the atoms it names:** 4 for the
+     equality atom `totals[x] = v` (2 `red`, 2 `core id`) and 8 for a new
+     order atom `totals[x] ≥ v + 1` (2 `red`, 2 `core id`, and its 2 chain
+     `pol`s to its neighbours, `names_and_ids_tracker.cc:1448`, with 2 more
+     `core id`);
+   - **the reason machinery:** 2, a RUP `totals[x] ≠ v ∨ totals[x] ∈ 1..W−1`
+     and its `core id`, which ties the value to the range literal that a
+     later reason uses to name the hole run;
+   - 1 `del` when the enumeration backtracks.
+
+   So 8 of the 16 are `core id` or `del` lines. [`bin_packing.md`](bin_packing.md)
+   counts the same 15 lines for its copy of this pass (4 `red`, 2 `pol`, 2
+   `rup`, 7 `core id`), and has no `del` because its fixture stops at the
+   root. So the proof is as wide as the diagram, which is as
+   wide as the items and the reachable sums, plus, under rule 6, as wide as
+   the totals' domains between their new bounds; every RUP line carries the
+   whole reason. There is no width gate, and no interval form to gate to:
+   the per-value ban does not extend to what a proof emits, and here the
+   proof follows the algorithm.
 4. **The audit lane.** One row, `Knapsack`, pinned `KnownTrip`
    (`large_domain_audit_test.cc:783–787`): three 0/1 items and two totals in
    `0..10⁹`, `PerCall`, proofs off. What trips is the interior-value pass
@@ -844,7 +989,13 @@ assertions are 62 to 72% of all the proof's assertions under either strategy
 - **Hint** — as rule 3.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one RUP of `O(n + k + h)` literals per removed value, on
-  top of rule 5's lines.
+  top of rule 5's lines. Around it, the first use of each `totals[x] ≠ v`
+  introduces its equality atom and an order atom (12 lines with their
+  `core id`s), and the reason machinery links the value to a hole-run range
+  literal (2 lines). That makes 16 file lines per removed value in the
+  probe's run of consecutive removals, a `del` included; it is per value of
+  the total's domain rather than per state ([Interval
+  efficiency](#interval-efficiency), item 3).
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
 
@@ -942,7 +1093,9 @@ sense that it must verify uncorrupted; nothing corrupts a derivation.
   audit's root checks and sweeps cover them.
 - **A view or constant total with proofs at `Off`** (#1229): nothing tests it, which is
   how it stayed hidden from MiniZinc's fixed capacities.
-- **Negative values from a front end**, and any XCSP3 knapsack at all.
+- **Negative values from a front end**, and any XCSP3 knapsack at all,
+  including a `<group>` of knapsacks against the same rows written out as
+  plain `<knapsack>` constraints, which would have caught #1354.
 - **Wide domains**, beyond the one `KnownTrip` row; and **any instance large
   enough to show the pseudo-polynomial cost**. The largest test has 210
   solutions.
@@ -1151,12 +1304,17 @@ derivation:
   non-negative (negative weights and profits are refused by MiniZinc's wrapper
   for every solver). **XCSP3 aborts** on a negative item value, weight or
   profit. #1337.
+- **XCSP3 crashes on a `<knapsack>` inside a `<group>`** (`SIGSEGV` in the
+  parser, proofs off or on); the same rows written as separate `<knapsack>`
+  constraints work. The bug is in the pinned parser, not in Glasgow's
+  front end. #1354.
 - **Large partial-sum ranges make every call slow**, and a two-row knapsack
   whose second row has a large range (a profit) can stall the root: the
   `multi-knapsack` models spend their whole time limit in it. #1341.
 - **A total with a wide declared domain, or an item whose values reach many
   sums, costs time proportional to the total's width times the reachable
-  sums.** #1340.
+  sums**, and with proofs on, rule 6 writes one removal per value in a gap.
+  #1340.
 - **With proofs on at `AssertionLevel::Off` (`--prove`), a fixed capacity or
   profit fails** (#1229); at higher assertion levels it does not.
 - **A repeated variable propagates less than it could.**
@@ -1175,11 +1333,21 @@ derivation:
    standard definition does; in XCSP3, decompose shapes with negative item
    values, weights or profits to linear equalities, and catch `InvalidProblemDefinitionException`
    around the solve so a refusal is `UNSUPPORTED` rather than an abort. Small.
-3. **Make the interior-value pass per terminal state** (#1340): collect each
+3. **Fix the parser's grouped knapsack** (#1354): tag the group `KNAPSACK`
+   in `KnapsackTagAction::beginTag` and copy the template's profit condition
+   in `XConstraintKnapsack::unfoldParameters` before unfolding it; both are
+   needed, and with both Glasgow's own binary solves grouped knapsacks
+   (including a parameterised profit condition) with verifying proofs (see
+   the XCSP3 footnote). Whether the fix goes into the repository's parser
+   patch or upstream is not settled here. Then add an XCSP3 test that
+   solves a `<group>` of knapsacks and the same rows written out, and
+   compares them. Small.
+4. **Make the interior-value pass per terminal state** (#1340): collect each
    row's reachable sums once, then remove the gaps from the total's domain by
    intervals. Small; removes the quadratic case and the audit lane's trip at
-   the root.
-4. **Do something about large partial-sum ranges** (#1341). The
+   the root. With proofs on, removing a gap as one range literal would also
+   make rule 6's lines per gap rather than per value; not tried.
+5. **Do something about large partial-sum ranges** (#1341). The
    `multi-knapsack` models show the exact DP is the wrong tool when a row's
    range is in the tens of thousands; the relaxation and approximation
    filtering of Fahle and Sellmann and of Sellmann are the published
@@ -1187,24 +1355,24 @@ derivation:
    design question not filed separately (#200 is about one generic diagram
    propagator, not that). Per the standing rule, not a budget. Large; needs a
    design.
-5. **Validate row lengths in the constructor, for both strategies** (#1334).
+6. **Validate row lengths in the constructor, for both strategies** (#1334).
    Trivial: move `Upfront`'s checks into `Knapsack`'s constructor (the lower
    bounds still need `prepare()`).
-6. **Close the temporary level on a failure.** Wrap the call in the same
+7. **Close the temporary level on a failure.** Wrap the call in the same
    `try`/`catch` the inference tracker uses, or a scope guard. Small; cuts the
    live database after every failing call. Not filed.
-7. **Claim idempotence when no variable repeats**, after checking it with the
+8. **Claim idempotence when no variable repeats**, after checking it with the
    idempotence checker (#1056): on the bench, 907 of 1,783 calls change
    nothing, and whether those are the propagator re-running after its own
    change was not shown. Small; measure on a fixed tree. Not filed.
-8. **Trim `PerCall`'s proof** (#1070's always-true bounds; the redundant `¬S ∨
+9. **Trim `PerCall`'s proof** (#1070's always-true bounds; the redundant `¬S ∨
    vars[i] ≠ v` lines under rule 3; materialise the reason once per call
    rather than per line, and not at all with proofs off). Per the arc's rule,
    which lemmas the RUPs need is an empirical question. Not filed beyond
    #1070.
-9. **Hint the dead-state RUPs** (#497), and **sweep the large-domain lane
+10. **Hint the dead-state RUPs** (#497), and **sweep the large-domain lane
    wider**: an `Upfront` row, a wide item, and a proof-size row.
-10. **Bring the out-of-stack text into line**: `dev_docs/knapsack.md` still
+11. **Bring the out-of-stack text into line**: `dev_docs/knapsack.md` still
     describes a `KnapsackUpfront` class, a `knapsack_upfront` keyword and XCSP3
     posting "the general k-total constructor" (it posts the two-row one), and
     its benchmark table predates this one; `bin-packing.md` cites CP 2024 "§4"
