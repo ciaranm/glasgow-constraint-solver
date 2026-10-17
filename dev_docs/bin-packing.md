@@ -387,16 +387,24 @@ the threshold and `R_b` counts how many of them a bin cannot take, so
 which unit propagation cannot do at all, and which is why the division
 step is load-bearing rather than cosmetic. The rounding in between is
 what the Martello–Toth L2 bound is made of, and Shaw §4 is where bin
-packing gets it. `DELTA` is piecewise constant in `α` with breakpoints at
-the item sizes, so the distinct sizes plus 1 are the whole family.
+packing gets it. The code tries `α = 1` and the distinct sizes, which is a
+sample of the family rather than all of it: `DELTA` is not piecewise
+constant between sizes, because each `c_i` and each bin's rounded overflow
+still change there. #1355 has an instance that only `α = 3` prunes. A
+complete list exists (1, every `⌈s / k⌉`, every `s + 1` and the largest size
+plus 1), and it is never weaker, but measured over search on BPPLIB and
+generated instances it changed about one search tree in twenty, at 1.5 to 19
+times the instructions, so the cheaper sample is kept.
 
 **Which items are counted.** `S(α)` is the items with `sizes[i] >= α`,
 plus every item of positive size already pinned to a bin, however small.
-An item below the threshold buys less than a whole unit of a bin's divided
-capacity while costing `c_i (|D_i| - 1)`, so it only pays its way once
-`|D_i| = 1` — which is exactly where that cost is zero. This is the
-domain-aware form of the threshold rule L2 uses: the classical bound has
-no domains to be aware of, and `|D_i| - 1` is where ours reads them.
+Counting only these is a choice rather than a consequence: an item below the
+threshold can still raise each of its `|D_i|` possible bins' rounded
+overflows by one while costing `c_i (|D_i| - 1)`, so counting every item
+gives a different bound, stronger on some states and weaker on others.
+Measured over search, neither choice dominates, so this one is kept (#1355).
+This is the domain-aware form of the threshold rule L2 uses: the classical
+bound has no domains to be aware of, and `|D_i| - 1` is where ours reads them.
 
 A constant item of positive size is pinned, so it is counted, but it gets
 no at-least-one row, and no term in a bin's weakening or slack line. There
