@@ -25,10 +25,14 @@
 > prototype that hints the `pol`-based dead-state RUPs of `Knapsack` and of
 > `BinPacking`'s `Upfront`, recording a negative result), #1355 (Stage 4
 > tries only 1 and the distinct sizes as thresholds, and misses prunes and
-> failures the same derivation gives at other thresholds; confirmed here),
-> #200 (one layered-diagram framework), #833
+> failures the same derivation gives at other thresholds; confirmed here,
+> and answered by a measurement over search, on which the shipped list and
+> counted set were kept, with the two source comments corrected in #1359;
+> see [Next steps](#next-steps)), #200 (one layered-diagram framework), #833
 > (the large-domain policy), #868 (cross-solver comparisons; this document
-> gives one, by hand). Tracked under #871.
+> gives one, by hand). Filed since, from review: #1358 (Stage 4's
+> shaving spends most of its time on candidates that almost never prune).
+> Tracked under #871.
 
 `BinPacking(items, sizes, loads)` puts item `i` in bin `items[i]` and makes
 each bin's sizes sum to `loads[b]`; `BinPacking(items, sizes, capacities)`
@@ -54,7 +58,8 @@ propagation is staged, and the stages are the thing to know:
   `α`, sum against the items' at-least-one rows), which catches pigeonhole
   infeasibilities that no single bin can see, plus a shaving loop that turns
   it into item prunes. It tries `α` at 1 and at the distinct sizes only,
-  which is a sample of the useful thresholds, not all of them (#1355).
+  which is a sample of the useful thresholds, not all of them; a complete
+  list was measured over search and not adopted (#1355).
 
 Five things to know before touching it.
 
@@ -522,9 +527,9 @@ checked against the solver's own OPB only (workflow 1), where they verify. The
 allocates the `DagBridge` (`:1795–1799`), which the propagator and the
 initialiser share; each search's clone of the constraint prepares its own. With Shaw it sizes Stage 4's scratch and computes the
 threshold list (1 and every distinct size above 1, largest first) and the
-items in decreasing size (`:1801–1839`): `O(n log n)`. The comment there
-(`:1821–1826`) says this list is the whole family; it is a sample (rule 11,
-#1355).
+items in decreasing size (`:1801–1839`): `O(n log n)`. Until #1359 the
+comment there (`:1821–1826` at `86caad24`) called this list the whole
+family; it is a sample, kept by choice (rule 11, #1355).
 
 With `consistency::GAC` it builds, for each bin, the **static diagram**: the
 partial sums of the sizes of the first `i` items that can be in the bin,
@@ -1263,9 +1268,10 @@ procedures in turn, and one is guaranteed to succeed.
   six items and four bins), 71 to 204 item values per 2,000 capacity-form
   instances are still without support at the root fixpoint.
   **It also samples its own bound** (#1355). It tries `α` at 1 and at the
-  distinct sizes (`:1827–1832`), and the comment there (`:1821–1826`) says
-  that is the whole family because `DELTA` is piecewise constant in `α` with
-  breakpoints at the sizes. It is not: while `S(α)` stays the same, `c_i =
+  distinct sizes (`:1827–1832`). Until #1359 the comment there
+  (`:1821–1826`, line numbers at `86caad24` throughout) said that is the
+  whole family because `DELTA` is piecewise constant in `α` with breakpoints
+  at the sizes. It is not: while `S(α)` stays the same, `c_i =
   ⌈sizes[i] / α⌉` and each bin's `⌈(T_b − cap_b) / α⌉` still change between
   sizes. Four items of sizes 44, 30, 42 and 45, each free over two bins of
   capacities 63 and 100, cannot be packed (bin 0 holds at most one of them,
@@ -1273,10 +1279,10 @@ procedures in turn, and one is guaranteed to succeed.
   the listed thresholds 45, 44, 42, 30 and 1, and at least 1 only at `α =
   15`. The shipped code needs three nodes and two failures to refute it; a
   scratch build that adds 15 fails at the root, and its proof verifies,
-  under `GAC` and `BC`. The counted set is a choice too: the comment at
-  `:1594–1597` says an item below the threshold only pays its way once it is
-  pinned, but such an item can raise each of its `|D_i|` bins' rounded
-  overflows by one at a cost of `|D_i| − 1`. Against `S(α)`, both with every
+  under `GAC` and `BC`. The counted set is a choice too: until #1359 the
+  comment at `:1594–1597` said an item below the threshold only pays its way
+  once it is pinned, but such an item can raise each of its `|D_i|` bins'
+  rounded overflows by one at a cost of `|D_i| − 1`. Against `S(α)`, both with every
   threshold up to the largest size tried, counting every item changes the
   root fixpoint in 123 of 8,000 random capacity-form instances (the same
   under `GAC` and `BC`; stronger in 88, weaker in 35) and in 132 of 16,000
@@ -1324,7 +1330,9 @@ procedures in turn, and one is guaranteed to succeed.
   views and constants, two seeds; at `86caad24` plus a scratch threshold
   switch, on fataepyc-09, 2026-10-16). So `partial` stands twice over: the
   bound is not GAC, and the shipped code does not take its own bound's best
-  threshold.
+  threshold, by choice: measured over search, the complete list changed few
+  trees for its cost, and neither counted set dominates, so both shipped
+  choices are kept ([Next steps](#next-steps), #1355).
 - **Algorithm** — `O(n · m)` to read the domains, then per threshold `O(n)` for
   the weights and `O(m)` for the bins, the totals folded once across the
   descending list: `O(n · m + d · (n + m))` for `d` distinct sizes. The
@@ -1400,8 +1408,8 @@ procedures in turn, and one is guaranteed to succeed.
   above the largest size; the scan skips thresholds above every ceiling, as
   the code does): a longer scan, still with nothing chosen, still stopping at a
   success. A candidate policy computed from the model keeps the direct
-  shape. One computed per call from the domains the sweep saw, as next step
-  8 considers, could not be recomputed from the reason, whose domains can be
+  shape. One computed per call from the domains the sweep saw (none is
+  planned) could not be recomputed from the reason, whose domains can be
   tighter; the verdict would then rest on the fallback to the complete list,
   which holds whatever threshold the policy picks.
 - **Proof size** — per firing, at most `2m + 1` `pol` and `RUP` lines plus the
@@ -1440,7 +1448,12 @@ procedures in turn, and one is guaranteed to succeed.
   also without support, is pruned at no threshold, with or without the
   complete list: the bound itself is partial.
 - **Algorithm** — `O(1)` per item for the necessary condition and `O(m)` per
-  candidate, incrementally from the sweep's totals.
+  candidate, incrementally from the sweep's totals. For a free item outside
+  `S(α)` the necessary condition passes whenever `DELTA` is 0, and `DELTA`
+  is exactly 0 (nothing counted overflows, and the penalty is 0) for 88 to
+  98% of the outside candidates that pass, on the six instances counted.
+  Those candidates almost never prune and are most of Stage 4's time (on Hard28's `BPP14`, 92% of the run's instructions are
+  Stage 4's, 1,101,746 candidates pass, and none prunes; #1358).
 - **Why it is true** — rule 11's argument under the hypothesis `items[h] = b`.
 - **Proof technique** — `pol` and `RUP`, as rule 11, with `h` kept in bin
   `b`'s row only and its at-least-one row stated over its real domain, so that
@@ -1824,7 +1837,11 @@ the mistranslation is in the `.scp` it starts from and `cake_pb_cp` has no
   only, and counts the items a fixed rule picks at each threshold, so it
   misses prunes and failures the same derivation proves at other thresholds
   (#1355): at the root, a few random instances in a thousand once sizes go
-  above 5, on this audit's generator (other shapes give more).
+  above 5, on this audit's generator (other shapes give more). Kept by
+  choice: over search the complete list rarely changed a tree and cost 1.5
+  to 19 times the instructions ([Next steps](#next-steps)).
+- **Stage 4's shaving wastes most of its time** on candidates that pass its
+  necessary condition at `DELTA = 0` and almost never prune (#1358).
 - **The default spends time and proof on the constant-capacity form without
   changing the fixpoint**; pass `consistency::BC` there (#1349).
 - **`Upfront` is slow with a large size or many reachable sums** (#1340),
@@ -1838,6 +1855,60 @@ the mistranslation is in the `.scp` it starts from and `cake_pb_cp` has no
   ever uses them.
 
 ### Next steps
+
+**Settled, not on the list: Stage 4's thresholds and counted set (#1355).**
+Both shipped choices are kept, on a measurement over search (at `86caad24`
+plus a scratch switch for the list and the counted set, which matched the
+shipped binary in nodes and to within 0.5% in instructions; fataepyc-09,
+2026-10-16 and 17; `tmp/fd-codex-1015/stage4-search/`, `REPORT.txt` and its
+independent check `CHECK.txt`).
+
+- *Variants:* the shipped list with `S(α)`; the complete list of rule 11
+  (1, every `⌈s / k⌉`, every `s + 1`, the largest size + 1 included); every
+  integer threshold up to the largest size + 1; both lists counting every
+  item of positive size, and the complete list acting on either counted set;
+  and Shaw off.
+- *Instances:* 270 generated (20 to 60 items, sizes uniform in `[⌈M/L⌉, M]`
+  for `M` of 10², 10³ or 10⁴ and `L` of 4 or 10, capacity 1.0, 1.2 or 1.5
+  times `M`, three seeds; optima proved by OR-Tools CP-SAT) and 428 from
+  BPPLIB (Falkenauer t60 and u120, Scholl 1 and 2 at 50 items, Scholl 3,
+  Schwerin 1 and 2, Hard28; optima from its solutions file), each run with
+  the optimum's number of bins (to a first solution) and one fewer (to a
+  refutation).
+- *Search and limits:* dom over the items, ties to the larger item, with
+  either plain binary branching or the empty-bin restriction of next step 11
+  (which a proof cannot use, so every run was without proofs); mostly
+  `consistency::BC`, since `GAC` searched identical trees in the capacity
+  form and its diagram work hides Stage 4's cost; both forms; a 60 s cap
+  per run and no node cap. 27,132 runs, no wrong answer.
+- *Results,* on the four configurations whose trees are distinct (the
+  others repeat them exactly), over runs both variants solved: the complete
+  list gave fewer nodes than the shipped one on 99 of 1,896 runs and more on
+  none, and solved nothing the shipped list did not (which solved up to four
+  more per configuration, from the cap), at 1.5 to 1.7 times the
+  instructions on BPPLIB and 1.5 to 1.6, 3.6 to 3.9 and 15 to 18 times on
+  the generated sets at sizes up to 10², 10³ and 10⁴ (geomeans under `BC`,
+  root refutations and the 12 searched refutations of the plain-branching
+  configuration aside; under `GAC` the diagram work dilutes every ratio to
+  about 1). Every integer threshold gave exactly the complete list's nodes
+  on all 1,888 runs both solved. Counting every item gave fewer nodes than
+  `S(α)` on 52 of 1,900 runs and more on 135, so neither dominates. Its runs
+  cost about half the instructions under `BC` with root refutations
+  excluded (0.73 to 0.93 on all the refutations both finished), but that is
+  the shave loop's waste (#1358), not a property of the counted set. The
+  complete list evaluating both counted sets cost 1.9 to 2.2 times the
+  shipped list on BPPLIB and 29 to 35 times at sizes up to 10⁴, mostly the
+  complete list's own cost; the shipped list evaluating both was not run
+  over search. Stage 4 itself is what matters on refutations: 7 to 13 times
+  fewer nodes than Shaw off (geomeans over the refutations every variant
+  finished, on the three distinct configurations under the `sb` search),
+  and 246 of the 270 generated and 383 of
+  the 428 BPPLIB refutations within the cap, against 171 and 99 without it;
+  every root refutation is Stage 4's.
+- *Decision:* keep the shipped list and `S(α)`. The two source comments
+  that called them complete and dominant are corrected in #1359, with their
+  copies in the design note. The offline argument of rule 11 is unaffected
+  either way.
 
 1. **Fix XCSP3's condition form** (#1345): build the bins from the union of
    the items' domains with an offset, and post the condition only on loads of
@@ -1865,46 +1936,72 @@ the mistranslation is in the `.scp` it starts from and `cake_pb_cp` has no
    failure (a scope guard, as `Knapsack`'s next step 7; not filed). Small; or retire `Upfront`, which
    is worse on every axis measured and is kept for A/B measurement and for
    #200 (its design note's reason).
-7. **Hint `Upfront`'s dead-state RUPs** (#497, an open draft PR whose
+7. **Stop Stage 4's shaving from wasting its time** (#1358). `DELTA` is
+   exactly 0 for most of the free items outside `S(α)` that pass the
+   necessary condition, and each pays `O(m)` and almost never prunes (rule
+   12's Algorithm field). Placing such an item in one bin changes only that bin's
+   term, so its shaved `DELTA` may not need the per-bin recomputation; the
+   tighter test `DELTA + c_h ≥ 1` is valid but removes only 2 to 12% of these
+   candidates. Medium; untried, and its effect on the proof unmeasured.
+8. **Pin Stage 4's sample in the suite:** add #1355's instance and rule 11's
+   four-item failure to `capa_data`, pinned to what the shipped list does,
+   so that a change of policy shows. Small.
+9. **Hint `Upfront`'s dead-state RUPs** (#497, an open draft PR whose
    prototype reached about 14% of the ceiling; `PerCall` writes no
    dead-state lemmas) and, to save a reconstructor Stage 4's enumeration,
    carry `α` in the hint. Per the arc's rule, whether either is needed is for
    the justifier to show.
-8. **Choose Stage 4's thresholds by a measured policy** (#1355). The
-   complete static list of rule 11 needs no new argument and changes no
-   derivation, but it is `O(Σ√s)` thresholds where the shipped list is at
-   most `n + 1`, and it costs 1.4 to 4.2 times the instructions at sizes up
-   to 10² to 10⁴ on enumerations where it prunes nothing more (every integer
-   threshold up to the largest size + 1, 2.1 to 68 times). Look for a
-   cheaper candidate policy that keeps
-   what the complete list gains, for example a test that drops a candidate
-   which cannot beat its neighbours on the current overflows, or candidates
-   chosen per call from the bins' overflows, and measure its cost and its
-   gain the same way, rather than scanning every integer or capping the
-   list's length. Settle the counted set alongside it, since counting the
-   items below the threshold neither dominates nor is dominated. Add #1355's
-   instance and rule 11's four-item failure to `capa_data`. Medium.
-9. **Sweep the large-domain lane wider:** an `Upfront` row with a large size,
-   a capacity-form row and a proof-size row.
-10. **Bring the out-of-stack text into line**:
+10. **Sweep the large-domain lane wider:** an `Upfront` row with a large
+    size, a capacity-form row and a proof-size row.
+11. **A proof-logging challenge: the identical-bin symmetry.** When the
+    bins have equal capacities (or equal load domains) and every item's
+    initial domain contains both of any two bins or neither, every
+    permutation of the bins is a symmetry of the model, and the
+    measurement's `sb` search breaks it as it goes: choose
+    the item with the smallest domain (ties to the larger item, items being
+    sorted by decreasing size), then branch d-way over its bins in increasing
+    order, trying every bin that already holds a fixed item but at most one
+    that holds none (scratch driver
+    `tmp/fd-codex-1015/stage4-search/drv/bpsearch.cc`, `search=sb`). It is
+    valid because the decisions only fix items, so swapping two bins that
+    hold no fixed item maps the solutions under one child onto the other's
+    (every measured instance has equal capacities and every item over every
+    bin). Under the shipped
+    Stage 4, `BC`, the capacity form and a 60 s cap, it refutes 246 of the 270
+    generated instances at one bin below the optimum, against 119 under plain
+    binary branching, where 101 of those 119 are root refutations (the
+    same 101 as under `sb`). GCS cannot log a proof that uses it, so the
+    driver refuses to write one. The likely
+    route is VeriPB's dominance-based strengthening rule, which certifies
+    symmetry breaking (Bogaerts, Gocht, McCreesh and Nordström, *Certified
+    Symmetry and Dominance Breaking for Combinatorial Optimisation*, AAAI
+    2022, 3698–3707; extended as *Certified Dominance and Symmetry Breaking
+    for Combinatorial Optimisation*, JAIR 77:1539–1589, 2023). The symmetry
+    itself is static: interchangeable values of the item variables, together
+    with the loads in the load form. `sb` breaks it dynamically; value
+    precedence would break it statically, as the measurement's optimum model
+    (`tmp/fd-codex-1015/stage4-search/gen/bpopt.mzn`) does. #957 plans automatic symmetry
+    elimination for interchangeable variables and leaves value symmetries,
+    and dynamic orderings, out of its scope. Research; to be revisited.
+12. **Bring the out-of-stack text into line**:
     - `dev_docs/bin-packing.md` cites CP 2024 "§4" for the knapsack encoding
       (it is §3.3), still describes a `KnapsackUpfront` variant, calls Stage 3
       per-bin GAC without the commitment caveat, and names the removed
       `bounds_only` and `upfront_proof` constructor flags (six places) where
-      the API is `with_consistency` and `with_proof_strategy`; on main at
-      `86caad24` it also says `DELTA` is piecewise constant in `α` with
-      breakpoints at the sizes, so that 1 and the distinct sizes are the whole
-      family (`:390–391`), and that an item below the threshold only pays its
-      way once pinned (`:395–397`), both wrong (rule 11, #1355);
+      the API is `with_consistency` and `with_proof_strategy` (its two Stage
+      4 claims, at `:390–391` and `:395–397` on main at `86caad24`, are
+      corrected in #1359, which also adds to "Where the work goes", at
+      `:445–447` there, that the shave's necessary condition passes nearly
+      every free item where `DELTA` is 0, #1358);
     - `bin_packing.cc:807–810` says the item-commitment direction "needs a
       separate argument involving all OTHER bins" (it does not; #1346);
       `:993–994` calls the per-call sweep per-bin GAC, and `:994–996` says the
       two strategies draw the same inferences and differ only in the proof;
       `:369–370` says
       `emit_bin_scaffolding` "Mirrors knapsack.cc", where the function now
-      lives in `knapsack_upfront.cc:177`; `:1821–1826` says the threshold list
-      is the whole family, and `:1594–1597` that an item below the threshold
-      only pays its way once pinned (rule 11, #1355);
+      lives in `knapsack_upfront.cc:177` (the Stage 4 comments at
+      `:1821–1826` and `:1594–1597` are corrected in #1359, which also adds
+      #1358's caveat to the shave's necessary condition at `:1645–1650`);
     - `bin_packing.hh:20–25` and `:174–175` claim per-bin GAC, and `:104–106`
       per-bin GAC on the item variables; `:106–129` describes the removed
       `bounds_only` and `upfront_proof` selectors; `:38–39` and `:180–183` say
@@ -1991,7 +2088,7 @@ joint-only case.
   strategies and the argument for why `PerCall`'s RUPs close, the hand-run
   mutation results for Stage 3 and Stage 4, Stage 4's derivation in full, and
   its benchmark tables from the #995 and #209 era. Some of its text is stale
-  (next step 10).
+  (next step 12).
 - [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md):
   upfront against per-call for `Regular`, `MDD`, `Knapsack` and `BinPacking`,
   and why this family's per-call strategy wins both axes.
