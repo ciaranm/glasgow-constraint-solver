@@ -387,16 +387,25 @@ the threshold and `R_b` counts how many of them a bin cannot take, so
 which unit propagation cannot do at all, and which is why the division
 step is load-bearing rather than cosmetic. The rounding in between is
 what the Martello–Toth L2 bound is made of, and Shaw §4 is where bin
-packing gets it. `DELTA` is piecewise constant in `α` with breakpoints at
-the item sizes, so the distinct sizes plus 1 are the whole family.
+packing gets it. The code tries `α = 1` and the distinct sizes, which is a
+sample of the family rather than all of it: `DELTA` is not piecewise
+constant between sizes, because each `c_i` and each bin's `R_b` still change
+there. #1355 has an instance that only `α = 3` prunes. A complete list
+exists (1, every `⌈s / k⌉` and every `s + 1`, the largest size plus 1
+included), and it is never weaker, but measured over search on BPPLIB and
+generated instances it changed about one search tree in twenty among those
+every list finished, at 1.5 to 19 times the instructions (geometric means,
+bounds consistency), so the cheaper sample is kept.
 
 **Which items are counted.** `S(α)` is the items with `sizes[i] >= α`,
 plus every item of positive size already pinned to a bin, however small.
-An item below the threshold buys less than a whole unit of a bin's divided
-capacity while costing `c_i (|D_i| - 1)`, so it only pays its way once
-`|D_i| = 1` — which is exactly where that cost is zero. This is the
-domain-aware form of the threshold rule L2 uses: the classical bound has
-no domains to be aware of, and `|D_i| - 1` is where ours reads them.
+This is the domain-aware form of the threshold rule L2 uses: the classical
+bound has no domains to be aware of, and `|D_i| - 1` is where ours reads them.
+Counting only these is a choice rather than a consequence: an item below the
+threshold can still raise each of its `|D_i|` possible bins' `R_b` by up to
+one while costing `c_i (|D_i| - 1)`, so counting every item gives a different
+bound, stronger on some states and weaker on others. Measured over search,
+neither choice dominates, so this one is kept (#1355).
 
 A constant item of positive size is pinned, so it is counted, but it gets
 no at-least-one row, and no term in a bin's weakening or slack line. There
@@ -444,7 +453,11 @@ threshold list rather than recomputed: `S(α)` only grows as `α` falls, so
 the thresholds are walked largest-first and each item folds into the
 totals once. The shaving scan is gated on `base - penalty + c_h |D_h| >=
 1`, a necessary condition that costs `O(1)` per item, so the `O(bins)`
-work happens only where a prune is possible.
+work happens only where a prune is possible. In practice that is far more
+often than a prune happens: at every threshold where `S(α)` holds only
+pinned items, `DELTA` is 0 and the condition passes for every free item,
+and almost none of those prune; under bounds consistency this can be most
+of the run's time (#1358).
 
 **Benchmark.** `bin_packing_bench`, default (per-call) Stage 3 proofs,
 `--cardinality` against the default, one core of an otherwise idle
