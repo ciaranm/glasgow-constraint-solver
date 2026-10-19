@@ -28,7 +28,10 @@ internals (see [Constraint definition](#constraint-definition) and
 [OPB encoding](#opb-encoding) below). What differs is what each strategy
 derives in its initialiser at search root, and what its per-call
 propagator emits; the choice never changes the inferences drawn or the
-solutions found.
+solutions found. That includes the empty sequence, which each strategy
+checks for itself, since with no variables there is nothing for a
+propagator to fail on: `Upfront` and `PerCall` in the propagator (#254),
+`Bacchus` by installing the contradiction up front (#1329).
 
 The public `Regular` front-end (`gcs/constraints/regular/regular.{cc,hh}`)
 *is* the `Upfront` implementation; for `PerCall` and `Bacchus` its
@@ -286,7 +289,13 @@ Following [Bacchus, "GAC via unit propagation," CP 2007], the
 `install_initialiser` derives a stronger scaffolding so that the
 per-call propagator can emit **no proof lines at all** — every
 value-pruning is `NoJustificationNeeded`, and VeriPB closes the
-eventual backtrack RUP by UP on the Top-level encoding.
+eventual backtrack RUP by UP on the Top-level encoding. That holds
+only for the whole of the encoding: Bacchus's property is for his
+encoding as published, which McIlree states as Encoding Procedure 5.2
+and #215 lists, and it includes three kinds of line that become
+**unit clauses** in edge cases. The scaffold once skipped all three,
+and then a backtrack after an unlogged pruning, or one of the
+scaffold's own incoming AL1s, was not RUP (#1331).
 
 Concretely, for every `(i, q, v)` with `T(q,v)` defined:
 
@@ -301,17 +310,48 @@ Concretely, for every `(i, q, v)` with `T(q,v)` defined:
    The complementary `state + ~state` pair is what unlocks the AL1
    RUPs below — VeriPB's UP collapses it during the RUP check.
 
-3. Outgoing AL1: `~state_i_is_q + ∑_{v ∈ dom_q} t[i][q][v] >= 1`
-   (one per `(i, q)` with `dom_q` non-empty).
+Then, in this order, all as RUP at `ProofLevel::Top`:
 
-4. Incoming AL1: `~state_{i+1}_is_q' + ∑_{(p, v) : T(p,v)=q'} t[i][p][v] >= 1`
-   (one per `(i+1, q')`).
+3. Last-layer units: `~state_n_is_q >= 1` for every non-final `q`
+   (EP 5.2 writes them as one line, `∑_{q ∉ F} ~state_n_is_q >= |Q \ F|`).
+   RUP because `state_n_is_q` falsifies the final states through the last
+   layer's exactly-one, and with them the OPB's accept row. Unit
+   propagation cannot get there from the accept row on its own once `F`
+   has two states or more.
 
-5. Variable-support AL1: `(vars[i] != v) + ∑_{q : T(q,v) def} t[i][q][v] >= 1`
-   (one per `(i, v)` with `v` in the initial domain).
+4. Outgoing AL1: `~state_i_is_q + ∑_{v ∈ dom_q} t[i][q][v] >= 1`, one
+   per `(i, q)`. RUP because, with `state_i_is_q` and every `t[i][q][v]`
+   false, the step-2 lines rule out each `v` with a transition and the
+   OPB's no-transition rows rule out every other value, which empties
+   `vars[i]`'s domain. When `q` has no transition at all the sum is empty
+   and the line is the unit `~state_i_is_q`.
 
-3–5 are emitted as RUP, and close via UP given the t-defs from step 1
-and the per-(q, v) pol lines from step 2.
+5. Incoming AL1: `~state_{i+1}_is_q' + ∑_{(p, v) : T(p,v)=q'} t[i][p][v] >= 1`,
+   one per `(i+1, q')`. RUP because `state_{i+1}_is_q'` falsifies the
+   rest of layer `i+1` through its exactly-one, so every `t[i][p][v]` that
+   does not lead to `q'` is false by its definition, and then every state
+   of layer `i` is false by its step-4 line, against layer `i`'s
+   exactly-one. That is why all the step-4 lines come first. When no
+   transition leads to `q'` the sum is empty and the line is the unit
+   `~state_{i+1}_is_q'`.
+
+6. Variable-support AL1: `(vars[i] != v) + ∑_{q : T(q,v) def} t[i][q][v] >= 1`
+   (one per `(i, v)` with `v` in the alphabet and some transition on
+   it). EP 5.2 has this line for every `v` (its line 12), so when no
+   state has a transition on `v` it is the unit `vars[i] != v` (RUP,
+   since `vars[i] = v` falsifies every state of layer `i` through the
+   no-transition rows). That unit is not written. No sweep has found a
+   proof that needs it, but nor is there an argument that none does.
+
+The step-4 lines need the domain of `vars[i]` to empty under unit
+propagation, which the bound pins give for a variable declared as a
+range. Above `AssertionLevel::Links` the tracker emits no such pins
+(#1330), so there a step-4 line, the no-outgoing unit among them, need
+not be RUP for a range-declared variable, and Inferences-level proofs
+over range-declared variables can still be rejected. (Variables declared
+from a value list are unaffected: their OPB has an at-least-one row over
+the values.) At `Off`, `Definitions` and `Links`, random sweeps of the repaired
+scaffold (#1331) find no rejected proof over either kind of declaration.
 
 ### `RegularBacchus`'s per-call propagator
 

@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/require_bounded.hh>
+#include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regular_bacchus.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -321,6 +322,19 @@ auto RegularBacchus::define_proof_model(ProofModel & model, const State &) -> vo
 
 auto RegularBacchus::install_propagators(Propagators & propagators) -> void
 {
+    // The empty sequence (issue #254 for the other strategies, #1329 here): with no
+    // variables there is nothing to propagate over, but the empty word is accepted
+    // only if the start state 0 is itself final. The OPB pins state0 to 0, requires
+    // it to be final, and has the exactly-one over state0, so the contradiction is
+    // RUP.
+    if (_vars.empty()) {
+        if (std::ranges::find(_final_states, 0L) == _final_states.end())
+            propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+                "A Regular constraint was posted over no variables with a start state that is not final",
+                JustifyUsingRUP{hints::RegularBacchus{constraint_id()}});
+        return;
+    }
+
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
@@ -329,13 +343,14 @@ auto RegularBacchus::install_propagators(Propagators & propagators) -> void
     //      t[i][q][v] <=> (vars[i]=v AND state[i]=q AND state[i+1]=delta(q,v)).
     //   2. For each (i, q, v in dom_q): pol(forward_chain + reverse_t_def)
     //      to derive the per-(q,v) intermediate the AL1 RUPs need.
-    //   3. Outgoing AL1, incoming AL1, variable-support AL1 via RUP.
+    //   3. The last layer's non-final units, then outgoing AL1, incoming AL1
+    //      and variable-support AL1 via RUP, in that order.
     //
     // With those at ProofLevel::Top, every per-call value-pruning the
     // propagator decides becomes RUP-closable purely by UP on the proof DB,
     // so the propagator uses NoJustificationNeeded and writes no proof.
-    propagators.install_initialiser([vars = _vars, ns = _num_states, t = _transitions, alphabet = _opb_alphabet, bridge = _bridge](
-                                        State &, auto &, ProofLogger * const logger) -> void {
+    propagators.install_initialiser([vars = _vars, ns = _num_states, t = _transitions, finals = _final_states, alphabet = _opb_alphabet,
+                                        bridge = _bridge](State &, auto &, ProofLogger * const logger) -> void {
         if (! logger)
             return;
 
@@ -384,11 +399,29 @@ auto RegularBacchus::install_propagators(Propagators & propagators) -> void
             }
         }
 
+        // Three kinds of line below become unit clauses in edge cases, and each unit
+        // is a line of the published encoding (#1331): without them, unit
+        // propagation is not complete for GAC on the encoding, so a backtrack
+        // after an unlogged pruning, or an incoming AL1 below, need not be RUP.
+
+        // Last layer: a non-final state is false. The published form is
+        // sum_{q not in F} ~state[n][q] >= |Q \ F|; one unit per state says the
+        // same. RUP: state[n][q] falsifies the final states through the last
+        // layer's exactly-one, and with them the OPB's accept row. Unit
+        // propagation cannot get there from the accept row once F has two
+        // states or more.
+        for (long q = 0; q < ns; ++q)
+            if (std::ranges::find(finals, q) == finals.end())
+                logger->emit_rup_proof_line(WPBSum{} + 1_i * ! flags[vars.size()][q] >= 1_i, ProofLevel::Top);
+
         // Outgoing AL1: state[i][q] -> sum_{v: delta(q,v) def} t[i][q][v] >= 1.
+        // RUP: with state[i][q] and every t[i][q][v] false, the per-(q,v) lines
+        // above rule out each v with a transition, and the OPB's no-transition
+        // rows rule out every other v of the alphabet, which covers the
+        // variable's domain. When q has no transition at all the sum is empty
+        // and the line is the unit ~state[i][q].
         for (size_t i = 0; i < vars.size(); ++i) {
             for (long q = 0; q < ns; ++q) {
-                if (ts[i][q].empty())
-                    continue;
                 WPBSum sum;
                 sum += 1_i * ! flags[i][q];
                 for (const auto & [val, tf] : ts[i][q])
@@ -398,21 +431,21 @@ auto RegularBacchus::install_propagators(Propagators & propagators) -> void
         }
 
         // Incoming AL1: state[i+1][q'] -> sum_{(p,v): delta(p,v)=q'} t[i][p][v] >= 1.
+        // RUP: state[i+1][q'] falsifies the rest of layer i+1 through its
+        // exactly-one, so each t[i][p][v] not into q' is false by its definition,
+        // and with the assumed-false ones into q', every state of layer i is
+        // false by its outgoing AL1 (or its unit), against layer i's exactly-one.
+        // So the outgoing lines must all come first. When no transition leads to
+        // q' the sum is empty and the line is the unit ~state[i+1][q'].
         for (size_t i = 0; i < vars.size(); ++i) {
             for (long next_q = 0; next_q < ns; ++next_q) {
                 WPBSum sum;
                 sum += 1_i * ! flags[i + 1][next_q];
-                bool any = false;
-                for (long p = 0; p < ns; ++p) {
-                    for (const auto & [val, tf] : ts[i][p]) {
-                        if (find_transition(t[p], val) == next_q) {
+                for (long p = 0; p < ns; ++p)
+                    for (const auto & [val, tf] : ts[i][p])
+                        if (find_transition(t[p], val) == next_q)
                             sum += 1_i * tf;
-                            any = true;
-                        }
-                    }
-                }
-                if (any)
-                    logger->emit_rup_proof_line(move(sum) >= 1_i, ProofLevel::Top);
+                logger->emit_rup_proof_line(move(sum) >= 1_i, ProofLevel::Top);
             }
         }
 

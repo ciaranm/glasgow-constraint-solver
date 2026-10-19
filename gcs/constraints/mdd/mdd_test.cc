@@ -118,6 +118,11 @@ auto run_all_tests(bool proofs) -> void
     // "no transition" constraints over the full alphabet so GAC verifies.
     run_mdd_test(proofs, "narrow domains vs alphabet", {{0, 1}, {0, 1}, {0, 1}},
         {{{{0_i, 0}, {1_i, 1}, {2_i, 1}}}, {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 0}}}, {{{0_i, 0}}, {{1_i, 0}}}}, {1, 2, 2, 1}, {0});
+
+    // No variables: the empty sequence is accepted exactly when the root is an
+    // accepting terminal (#1329).
+    run_mdd_test(proofs, "no variables, root accepting", {}, {}, {1}, {0});
+    run_mdd_test(proofs, "no variables, root not accepting", {}, {}, {1}, {});
 }
 
 auto main(int argc, char * argv[]) -> int
