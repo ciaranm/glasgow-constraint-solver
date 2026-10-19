@@ -1198,6 +1198,24 @@ auto main(int argc, char * argv[]) -> int
                 const auto num_symbols = json_integer(args.at(2)).raw_value;
                 const auto & raw_transitions = arg_as_array_of_integer(data, args, 3);
                 const auto start_state = json_integer(args.at(4)).raw_value;
+                if (start_state < 1 || start_state > num_states)
+                    throw FlatZincInterfaceError{format("regular has start state {}, which is not a state in 1..{}", start_state, num_states)};
+
+                // FlatZinc numbers the states 1..Q and starts from q0, where Regular
+                // starts from state 0. Renumber by the permutation that sends q0 to 0
+                // and, to keep it a permutation, 1 to q0 - 1; every other state k
+                // becomes k - 1, so with q0 = 1 this is the plain shift. It has to be
+                // applied alike to the rows of the table, to the transition targets
+                // and to the final states, or Regular is handed a different automaton
+                // from the model's (#1328).
+                auto renumber = [&](long long state) -> long {
+                    if (state == start_state)
+                        return 0;
+                    else if (state == 1)
+                        return start_state - 1;
+                    else
+                        return state - 1;
+                };
 
                 // Keyed by the symbol values the model's own variables take, which
                 // FlatZinc regular numbers 1..S. Regular takes the symbols it is
@@ -1208,28 +1226,23 @@ auto main(int argc, char * argv[]) -> int
                 vector<unordered_map<Integer, long>> transitions(num_states);
                 for (int i = 0; i < num_states; i++) {
                     for (int j = 0; j < num_symbols; j++) {
-                        // Swap 0 and start state to ensure start state is always 0 for gcs::regular
                         auto t_value = raw_transitions->at(i * num_symbols + j).raw_value;
-                        long target;
-                        if (t_value == start_state)
-                            target = 0;
-                        else if (t_value == 1)
-                            target = start_state - 1;
-                        else
-                            target = t_value - 1;
                         // A FlatZinc transition to state 0 means "no transition", which
-                        // maps to -1 above and is what Regular drops.
-                        transitions[i].emplace(Integer{j + 1}, target);
+                        // is -1 for Regular, and Regular drops it.
+                        long target = (t_value == 0) ? -1 : renumber(t_value);
+                        transitions[renumber(i + 1)].emplace(Integer{j + 1}, target);
                     }
                 }
 
                 const auto & final_states = arg_as_set_of_integer(data, args, 5);
+                vector<bool> is_final(num_states, false);
+                for (long i = 1; i < num_states + 1; i++)
+                    if (final_states.contains(Integer{i}))
+                        is_final[renumber(i)] = true;
                 vector<long> final_states_raw{};
-                for (long i = 1; i < num_states + 1; i++) {
-                    if (final_states.contains(Integer{i})) {
-                        final_states_raw.emplace_back(i - 1);
-                    }
-                }
+                for (long i = 0; i < num_states; i++)
+                    if (is_final[i])
+                        final_states_raw.emplace_back(i);
 
                 problem.post(Regular{vars, long(num_states), transitions, final_states_raw});
             }

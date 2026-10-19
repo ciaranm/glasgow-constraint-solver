@@ -1,0 +1,22 @@
+{
+    "variables": {
+        "x1": { "type": "int", "domain": [[1, 2]] },
+        "x2": { "type": "int", "domain": [[1, 2]] },
+        "x3": { "type": "int", "domain": [[1, 2]] },
+        "b": { "type": "bool" },
+        "bi": { "type": "int", "domain": [[0, 1]], "introduced": true, "defined": true },
+        "flag": { "type": "int", "domain": [[3, 4]], "introduced": true, "defined": true }
+    },
+    "arrays": {
+        "d": { "a": [1, 1, 0, 4, 3, 1, 4, 0, 5, 2, 4, 0, 0, 0, 0, 0, 5, 5, 4, 0] },
+        "xs": { "a": ["x1", "x2", "x3", "flag"] }
+    },
+    "constraints": [
+        { "id": "glasgow_regular", "args": ["xs", 5, 4, "d", 2, { "set": [[4, 4]] }] },
+        { "id": "bool2int", "args": ["b", "bi"], "defines": "bi" },
+        { "id": "int_lin_eq", "args": [[1, -1], ["bi", "flag"], -3], "defines": "flag" }
+    ],
+    "output": ["xs"],
+    "solve": { "method": "satisfy" },
+    "version": "1.0"
+}
