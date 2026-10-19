@@ -77,6 +77,16 @@ add_xcsp_test(all_different_except_values)
 add_xcsp_test(all_different_matrix)
 add_xcsp_test(all_equal)
 add_xcsp_test(bin_packing)
+# The <condition> form, whose bins are the values the items' domains can take
+# (#1345). In the first three the condition rejects a load of 0, so posting it on
+# a value no item can take loses solutions: items over {1, 2}, items over {0, 2}
+# so that 1 is not a bin, and a variable operand that an empty phantom bin 0
+# would force to 0. The fourth has an item domain reaching below zero, which
+# used to be refused as unsupported. The caches are ACE's.
+add_xcsp_test(bin_packing_condition_shift)
+add_xcsp_test(bin_packing_condition_gap)
+add_xcsp_test(bin_packing_condition_var)
+add_xcsp_test(bin_packing_condition_negative)
 add_xcsp_test(cardinality)
 add_xcsp_test(cardinality_occvars)
 add_xcsp_test(cardinality_intervals)

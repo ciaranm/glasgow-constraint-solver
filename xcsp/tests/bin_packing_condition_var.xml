@@ -1,0 +1,16 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="x" size="[3]">
+            <domain for="x[0] x[1]"> 2 </domain>
+            <domain for="x[2]"> 1 </domain>
+        </array>
+        <var id="k"> 0 1 </var>
+    </variables>
+    <constraints>
+        <binPacking>
+            <list> x[] </list>
+            <sizes> 2 1 3 </sizes>
+            <condition> (ge,k) </condition>
+        </binPacking>
+    </constraints>
+</instance>
