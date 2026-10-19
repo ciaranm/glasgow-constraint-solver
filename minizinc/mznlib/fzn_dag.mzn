@@ -15,10 +15,19 @@ predicate glasgow_dag(array[int] of int: from, array[int] of int: to,
 % distance labelling only forces an edge's head to be selected, so it admits a
 % selected edge leaving an unselected node. Dag follows the documentation and
 % fzn_dreachable, which calls subgraph explicitly. See dev_docs/minizinc.md.
+%
+% With no nodes, min(index_set(ns)) is undefined, which MiniZinc would read as
+% false and so report an empty graph as unsatisfiable (#1303). The empty graph
+% is a DAG, so the guard holds. dag.mzn's asserts leave no edges in that case;
+% one passed to fzn_dag directly has an endpoint that is not a node, so it is
+% left out, as the standard library's own fzn_dag reads it.
 predicate fzn_dag(array[int] of int: from, array[int] of int: to,
     array[int] of var bool: ns, array[int] of var bool: es) =
-    let { int: offset = min(index_set(ns)) } in
-    glasgow_dag([from[e] - offset | e in index_set(from)],
-                [to[e] - offset | e in index_set(to)],
-                [ns[n] | n in index_set(ns)],
-                [es[e] | e in index_set(es)]);
+    if length(ns) = 0 then forall (e in index_set(es)) (not es[e])
+    else
+        let { int: offset = min(index_set(ns)) } in
+        glasgow_dag([from[e] - offset | e in index_set(from)],
+                    [to[e] - offset | e in index_set(to)],
+                    [ns[n] | n in index_set(ns)],
+                    [es[e] | e in index_set(es)])
+    endif;
