@@ -842,6 +842,55 @@ constraints and do not restate it.
   Root simplification is 82% of the solve on a dense unconditional
   `difference_chain` and the whole of a tight RCPSP/max refutation;
   `dev_docs/difference-logic.md` stays as the long note.
+- [`difference_logic.md`](../presolvers/difference_logic.md) — the
+  `DifferenceLogic` presolver. It lifts each two-term unit-coefficient
+  `x − y ≤ d` over distinct variables, posted as a linear inequality or as a
+  comparison, unconditionally or half-reified, into one global
+  difference-logic propagator and a root initialiser. These are installed
+  alongside the donors. It writes nothing to the OPB, and every inference is
+  certified by citing the donors' own `@c[<id>]` rows in deview mode; the cake
+  chain, run by hand, re-checks such proofs for linear donors. The machinery
+  it installs is [`difference.md`](difference.md)'s. It is the only presolver
+  a front end can turn on (`--difference-logic` in `fzn-glasgow` and the
+  XCSP3 solver).
+  - **Detection.** No wrong answer and no rejected proof turned up in any of:
+    - a 43-shape probe;
+    - a fuzz of 8,300 random systems;
+    - a differential harness over both front ends (554 MiniZinc models on
+      2.9.7 and 2.10.1, and 497 XCSP3 models), against Gecode, ACE and brute
+      force.
+
+    3,496 proofs verified in all.
+  - **Findings.**
+    - No front end ever lifts a conditional edge. MiniZinc delivers
+      `b → x − y ≤ d` fully reified, and `Iff` donors are skipped.
+      - On the 2024–2025 MiniZinc Challenge it lifted 17,449 edges, all
+        unconditional, and fixed no condition at the root.
+      - A prototype that lifts the two halves verifies. It reclassified the
+        skipped reified donors and found about a quarter of them, about
+        129,000, to be differences. Those fixed 13,016 conditions at the root
+        (#1373).
+      - That prototype depends on #1371.
+    - In-range weights near `2⁶⁰`, from eight heavy edges, make the installed
+      machinery throw on models the donors answer. From MiniZinc that turns
+      `=====UNSATISFIABLE=====` into `=====ERROR=====` (#1371). The
+      refutation pass's overflow (#1372) needs a configuration no front end
+      selects.
+    - The default-on root simplification has no budget and does not observe
+      `--timeout` (#816). Each round is a Dijkstra per source node, and it
+      repeats while it fixes conditions.
+      - It took 15 s on a connected random graph of 10,000 nodes and 30,000
+        edges.
+      - It was most of the presolver's time on `difference_chain`.
+      - It took at most 1 ms on any challenge instance.
+    - Installing its one propagator is quadratic in the node count (#1309).
+    - `glasgow_scp_solver` has no switch for it (#1374).
+    - It raises the degree of every lifted variable, so `dom_then_deg` can
+      search differently even where it propagates nothing.
+  - **Order.** Its root fixings can change what `InferredCumulative`,
+    `InferredDisjunctive` and `CumulativeStrengthening` find, and their
+    documents' probes reproduce at `86caad24`. With donors retired, the
+    scheduling presolvers' makespan links still work, on a probe (`mk2.cc`).
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
