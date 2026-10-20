@@ -30,11 +30,18 @@ constraints and do not restate it.
   `Greater*` mirrors and their eight reified forms: twelve posted constraints
   over one propagator whose whole vocabulary is bounds, so one definitional OPB
   row, **no proof flags and no view detour anywhere**, eight inference rules
-  each a single RUP, and 11.8% of its own proof. Nearly unreachable from the
-  frontends, which turn a binary ordering into a two-term linear inequality;
-  its real consumer is the difference-logic presolver. The audit's two findings
-  are both fixed — a reason assembled on every call whether or not anything
-  reads it, 43% of the cycles on a family-dominated benchmark (#907 → #916),
+  each a single RUP, and 11.8% of its own proof. From MiniZinc it is reached
+  mostly through the reader's recovery of a two-term unit-coefficient
+  `int_lin_le` as `LessThanEqual` (`8c6cb43d`), which is also how every edge
+  the difference-logic presolver lifts from MiniZinc arrives. XCSP3's peephole
+  posts a top-level binary ordering as a two-term linear inequality instead, so
+  from there it is reached through reified orderings, conditions on a count, an
+  nValues, a bin load, a knapsack total or an extremum, `circuit`'s tour-size
+  bound, and orderings the peephole declines. The document called the family
+  nearly unreachable from both front ends until the difference audits, which
+  was wrong when written. The audit's two findings are both fixed — a reason
+  assembled on every call whether or not anything reads it, 43% of the cycles
+  on a family-dominated benchmark (#907 → #916),
   and two reification kinds that threw from `s_expr()` leaving a truncated
   `.scp` behind (#908 → #915). It is also the family that makes
   `consistency::Auto` pay: everything it reads is a bound, so **holes affect

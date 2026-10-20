@@ -472,10 +472,13 @@ them and fail the next:*
    [Next steps](#next-steps) gets an item.*
 
 *`Fine at any width` is a legitimate and common answer to all four, and a family
-whose encoding is logarithmic in width should say so plainly. What is not
-legitimate is answering only the first: three of the four sites this arc found
-were on the reason and proof sides, where a search for pruning loops does not
-reach.*
+whose encoding is logarithmic in the domains' magnitudes, and so never linear in
+width, should say so plainly. A variable over `lb..ub` gets `bit_width(ub)`
+magnitude bits when `lb ≥ 0`, and otherwise `bit_width(max(|lb| − 1, ub))` plus
+a sign bit (`gcs/innards/proofs/bits_encoding.cc:35–38`), so `1000..1010`
+takes 10 bits, as `0..1010` does. What is not legitimate is answering only
+the first: three of the four sites this arc found were on the reason and proof
+sides, where a search for pruning loops does not reach.*
 
 ## Inference catalogue
 
@@ -939,7 +942,8 @@ mutation-lane inventory need them per rewrite: **Proof size** and
 **Tightness**. A bound the presolver pins at the root, such as a makespan
 bound, is a rewrite too, and gets an entry. What the installed machinery's
 assertions carry in hints-only mode (it is installed under
-`CurrentlyUnnamedConstraint`, so its hints say `constraint_id unnamed`) goes in
+`CurrentlyUnnamedConstraint`, so any hint it carries says
+`constraint_id unnamed`; `difference_logic`'s carries no hint at all) goes in
 **Proof-time state**.
 
 **Added, and these are the ones that matter.** Three sections with no analogue

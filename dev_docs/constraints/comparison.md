@@ -7,16 +7,29 @@
 > filed are fixed**: #907 (every reason built unguarded) in #916, and #908
 > (`MustNotHold` and `NotIf` throw from `s_expr()`) in #915. #868 is the
 > audit-wide cross-solver prerequisite; #598 would close a deliberate presolver
-> gap that is half about this family; #310, from outside, means a range-literal
-> reification condition cannot be written into the model. Tracked under #871.
+> gap that is half about this family; #1225, from outside, means a
+> range-literal reification condition throws with proofs on, because it cannot
+> be written into the model (#310 is the encoding fix). Tracked under #871.
 
-Twelve posted classes over one implementation and one propagator: an
-inequality between two operands, optionally reified, in either direction, with
-or without equality. It is the second-simplest constraint in the solver after
-[`equals`](equals.md), and unlike `equals` it is **almost unreachable from the
-frontends** — both of them turn a binary ordering into a two-term linear
-inequality instead — so its main consumer is the difference-logic presolver,
-which reads it back and lifts it into a global propagator.
+Twelve posted classes over one implementation and one propagator: an inequality
+between two operands, optionally reified, in either direction, with or without
+equality. It is the second-simplest constraint in the solver after
+[`equals`](equals.md). **From MiniZinc it is reached mostly by recovery.** The
+flattener writes `x <= y + d` as a two-term `int_lin_le`, and since `8c6cb43d`
+(2026-09-04) `fzn_glasgow.cc` posts every two-term unit-coefficient one as a
+`LessThanEqual`, with any constant or sign folded into a view of one operand, as
+it posts `Equals` for a two-term `int_lin_eq`. That commit counted 37,850 such
+rows across 30 of 75 sampled challenge instances. XCSP3's affine peephole turns
+a top-level binary ordering into a two-term linear inequality instead, so from
+XCSP3 the family is reached through reified orderings, conditions on a count,
+an nValues, a bin load, a knapsack total or an extremum, `circuit`'s tour-size
+bound, and the orderings the peephole declines. Its other consumer is the
+difference-logic presolver, which reads it back and lifts it into a global
+propagator; from MiniZinc, every edge that presolver lifts comes through this
+family ([`difference_logic.md`](../presolvers/difference_logic.md)). Earlier
+versions of this document called the family almost unreachable from the
+frontends. That was wrong when written: the recovery predates this document's
+first audit.
 
 Two things to know before touching it, and the second has changed since the
 first pass. Its facts are **single order literals** and nothing else: no value
@@ -31,6 +44,19 @@ And its propagator used to assemble a reason on every call without asking
 whether anything would read it, which this audit measured at **43% of the
 cycles** on a family-dominated benchmark. #916 guarded all nine.
 
+**Corrected after the `difference` and `difference_logic` audits** (2026-10-20,
+against `86caad24`). Not a re-audit. The frontend story was wrong when written:
+MiniZinc reaches this family through the two-term `int_lin_le` recovery of
+`8c6cb43d`, which predates the first pass (the lead, the table and [^lin]).
+"Not to do" listed that recovery as not to do, on the per-call costs in [CPU
+performance](#cpu-performance). It had already landed, and its commit measured
+it neutral on real instances, so the entry is gone and whether to keep the
+recovery is next step 1's question. The claim that half-reified edges are where
+the paper's scheduling wins come from had no support in Kletzander et al.
+([Known limitations](#known-limitations)). One new measurement, behind #1375,
+attributes the comparison-versus-linear gap (next step 1). The
+range-literal throw cites #1225, filed since the third pass.
+
 **What the third pass changed.** One fix from outside the audit, and one
 existing limitation recorded for the first time. Nothing else touching
 `gcs/constraints/comparison/` has merged since `6b220c79`, and no table below
@@ -39,7 +65,7 @@ was re-measured.
 | Landed | What it changed here |
 |---|---|
 | #1047 → #1088 | `LessThan(x, x)` and `GreaterThan(x, x)` on a non-constant `x` are **accepted** rather than rejected at construction, and an enforce pass on aliased operands whose comparison cannot hold contradicts at once. That is a new rule, [rule 8](#rule-contradiction-from-aliased-operands), and an eleventh cake chain case, `less_than_aliased_unsat`. XCSP3's `lt(x,x)` reaches it; MiniZinc simplifies the shape away. The Known-limitations entry on the throw-versus-reified asymmetry is now history, since the asymmetry is gone |
-| #310, not a fix | a reified form whose condition is a range literal is right with proofs off and throws with proofs on, when the model is written. Measured at `61112ed0`; see [Reification](#reification) |
+| #1225 (#310 is the encoding fix), not a fix | a reified form whose condition is a range literal is right with proofs off and throws with proofs on, when the model is written. Measured at `61112ed0`; see [Reification](#reification) |
 
 **What the second pass changed.** A narrow pass, against `6b220c79`. Both of
 the audit's own findings are fixed, and the two new template sections are
@@ -130,25 +156,38 @@ two this table replaces.
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
 | `LessThan` | ✓ `int_lt`, `bool_lt` — but see[^lin] | ✓ `intension` lt, `decompose`[^intaff] | ? | ✓ `less_than` | |
-| `LessThanEqual` | ✓ `int_le`, `bool_le` — but see[^lin] | ✓ `intension` le, `decompose`[^intaff]; also `ordered` arms | ? | ✓ `less_equal` | |
-| `GreaterThan` | `decompose` — flattened to `int_lt` with the operands exchanged | ✓ `intension` gt | ? | ✓ `greater_than` | |
-| `GreaterThanEqual` | as `GreaterThan` | ✓ `intension` ge; also `circuit`'s tour-size bound | ? | ✓ `greater_equal` | |
-| `LessThanIff`, `LessThanEqualIff` | ✓ `int_lt_reif` / `int_le_reif` and the `bool_` forms | ✓ reified `intension` lt/le | ? | ✓ `less_than_iff`, `less_equal_iff` | |
-| `GreaterThanIff`, `GreaterThanEqualIff` | `decompose` — as the unreified `Greater*` | ✓ reified `intension` gt/ge | ? | ✓ `greater_*_iff` | |
-| the four `*If` forms | frontend gap — no FlatZinc predicate half-reifies[^imp] | unsupported — a top-level `imp` becomes an `Or` over a fully-reified control | frontend gap (#61) | ✓ `less_than_if` etc. | the presolver's most valuable donor shape, and nothing produces it |
+| `LessThanEqual` | ✓ every two-term unit-coefficient `int_lin_le` and `bool_lin_le`, recovered[^lin]; `int_le` and `bool_le` are bound too, though a Boolean `<=` flattens to `bool_clause` | ✓ `intension` le, `decompose`[^intaff] | ? | ✓ `less_equal` | |
+| `GreaterThan` | `decompose` — over integers, flattened to a two-term `int_lin_le` and recovered as `LessThanEqual`[^lin]; over Booleans, to `bool_lt` with the operands exchanged | ✓ `intension` gt | ? | ✓ `greater_than` | |
+| `GreaterThanEqual` | `decompose` — over integers, as `GreaterThan`; over Booleans, flattened to a `bool_clause`, so it reaches `Or` rather than this family | ✓ `intension` ge; also `circuit`'s tour-size bound | ? | ✓ `greater_equal` | |
+| `LessThanIff`, `LessThanEqualIff` | ✓ `int_le_reif` against a constant, and `bool_lt_reif`; a reified ordering between integer variables arrives as `int_lin_le_reif` (see[^lin]), and a non-strict Boolean one as `bool_clause_reif` | ✓ reified `intension` lt/le | ? | ✓ `less_than_iff`, `less_equal_iff` | |
+| `GreaterThanIff`, `GreaterThanEqualIff` | `decompose` — between two integer variables, to a two-term `int_lin_le_reif`, posted as `LinearLessThanEqualIff`[^lin]; against a constant, to `int_le_reif` with the operands exchanged, so a `LessThanEqualIff`; over Booleans, `>` to `bool_lt_reif` with the operands exchanged and `>=` to `bool_clause_reif` | ✓ reified `intension` gt/ge | ? | ✓ `greater_*_iff` | |
+| the four `*If` forms | frontend gap — no FlatZinc predicate half-reifies[^imp] | unsupported — a top-level `imp` becomes an `Or` over a fully-reified control | frontend gap (#61) | ✓ `less_than_if` etc. | the one conditional shape of this family the presolver lifts. Neither MiniZinc nor XCSP3 produces it, and the routes that do (`.scp`'s `less_than_if`, `gcspy`'s `*If` posts) cannot turn the presolver on |
 
-[^lin]: **This family is nearly unreachable from MiniZinc, deliberately.**
-    MiniZinc 2.10's flattener emits `int_lin_le([1,-1],[x,y],d)` even for a bare
-    `x <= y`, so `int_le` and `int_lt` are bound but hardly ever produced. Note
-    the contrast with `equals`: there, `fzn_glasgow.cc` *recovers* the
-    two-variable shape from a two-term `int_lin_eq` and posts `Equals` instead,
-    because `Equals` intersects domains where a linear equality is only
-    bounds-consistent. No such recovery exists here and none is wanted — a
-    two-term linear inequality and a `LessThanEqual` are both bounds-consistent,
-    so the strength argument that justifies the `equals` recovery has no
-    analogue. This audit adds a second reason: on `difference_chain` the
-    comparison spelling is **2.7x slower** than the two-term linear one, at
-    the same recursion count (503) with propagation counts 0.4% apart. See
+[^lin]: **From MiniZinc this family is reached through a recovery.** The
+    flattener (2.9.7 and 2.10.1 alike) emits `int_lin_le([1,-1],[x,y],d)` even
+    for a bare `x <= y`, so `int_le` and `int_lt` are bound but hardly ever
+    produced. `fzn_glasgow.cc` recovers every two-term unit-coefficient
+    `int_lin_le` and `bool_lin_le` as a `LessThanEqual`, folding any constant or
+    sign into a view of one operand (`8c6cb43d`, 2026-09-04; pinned by the
+    `minizinc-two-term-lin-le` lanes, which require
+    `propagatorCallsLessEqualConstraints=8`). A `<` arrives as a `<=` with the
+    constant shifted by one, so the recovery never posts `LessThan`. There is no
+    reified recovery: a two-term `int_lin_le_reif` is posted as a
+    `LinearLessThanEqualIff`, so a reified ordering between integer variables
+    reaches the linear family instead. The recovery mirrors the `equals`
+    recovery from a two-term `int_lin_eq`, but without that one's reason:
+    `Equals` intersects domains where a linear equality is only
+    bounds-consistent, whereas a two-term linear inequality and a
+    `LessThanEqual` are both bounds-consistent, so this recovery buys no
+    strength. Its commit landed it for uniformity rather than speed, measuring
+    it neutral on the eight of the twelve le-heaviest challenge instances that
+    found a first solution within 45 s: identical node counts, and times within
+    0.1 s except one, 21.92 s before and 22.62 s after. Earlier versions of this
+    footnote said no such recovery existed and none was wanted. That was wrong
+    when written: `8c6cb43d` is an ancestor of all three of this document's
+    audit commits. On the propagation-bound `difference_chain` the comparison
+    spelling is the slower one, at the same recursion count: 2.0x the two-term
+    linear spelling's time at `86caad24`, for a reason next step 1 gives. See
     [CPU performance](#cpu-performance).
 
 [^intaff]: XCSP3's `post_intension_top_level` tries an affine peephole first for
@@ -160,9 +199,13 @@ two this table replaces.
     [`frontend-support-matrix.md`](../frontend-support-matrix.md).
 
 [^imp]: `minizinc/mznlib/` declares no `*_imp` predicates, so MiniZinc's
-    flattener never half-reifies. That matters more than it looks: the
-    difference-logic presolver lifts a half-reified donor, which is where the
-    paper's scheduling wins come from, and neither frontend produces one.
+    flattener never half-reifies. Every conditional difference arrives fully
+    reified instead, as an `int_lin_le_reif` (over Booleans, a `bool_lt_reif`
+    if strict and a `bool_clause_reif` if not), which the reader posts as a
+    `LinearLessThanEqualIff` (a `LessThanIff`, or a reified `Or`), and the
+    difference-logic presolver skips a fully reified donor
+    ([`difference_logic.md`](../presolvers/difference_logic.md)). Lifting its
+    two halves is #1373.
 
 ### Options
 
@@ -239,15 +282,15 @@ are specific to this family:
   one enforce pass directly, with no per-call `test_reification_condition`.
   That is the path all four unconditional classes always take.
 
-**A range-literal condition works only with proofs off** (#310). The condition
-is an `IntegerVariableCondition`, which includes `in_range` and `not_in_range`.
-With `x, y ∈ 0..3`, `z ∈ 0..4` and the condition `z ∈ 1..3`, `LessThanIff` and
-`LessThanEqualIf` find the right 38 and 62 solutions. With proofs on, both
-throw `range literals during model writing are not yet supported` from
-`NamesAndIDsTracker::need_invar` when the model is written. Measured at
-`61112ed0`. No front end posts one: MiniZinc and XCSP3 pass `b = 1`, `gcspy`
-passes `b ≠ 0`, and the `.scp` reader's conditions are `=`, `!=`, `>=` and `<`
-against one value.
+**A range-literal condition works only with proofs off** (#1225; #310 is the
+encoding fix). The condition is an `IntegerVariableCondition`, which includes
+`in_range` and `not_in_range`. With `x, y ∈ 0..3`, `z ∈ 0..4` and the
+condition `z ∈ 1..3`, `LessThanIff` and `LessThanEqualIf` find the right 38 and
+62 solutions. With proofs on, both throw `range literals during model writing
+are not yet supported` from `NamesAndIDsTracker::need_invar` when the model is
+written. Measured at `61112ed0`, and the same again at `86caad24`. No front
+end posts one: MiniZinc and XCSP3 pass `b = 1`, `gcspy` passes `b ≠ 0`, and the
+`.scp` reader's conditions are `=`, `!=`, `>=` and `<` against one value.
 
 ### Relation to other families
 
@@ -263,22 +306,24 @@ nothing.
 **Shares code with.** Nothing.
 
 **Read by a presolver — and this is the family's one real coupling.**
-`DifferenceLogic` enumerates every posted
-`ReifiedCompareLessThanOrMaybeEqual` and lifts it into a global
-difference-constraint propagator, because `x ≤ y + d` *is* a difference
-constraint: `x ≤ y` states `x − y ≤ 0` and `x < y` states `x − y ≤ −1`. It
-reads the family through a published API kept deliberately narrow —
-`left_variable()`, `right_variable()`, `or_equal()`,
-`reification_condition()`, and
+`DifferenceLogic` enumerates every posted `ReifiedCompareLessThanOrMaybeEqual`
+and lifts each `MustHold` or `If` one into a global difference-constraint
+propagator, provided its operands are two distinct variables, each plain or
+under an offset view (not a constant, not a negated view), and, with proofs on,
+its row is citable. That is because `x ≤ y + d` *is* a difference constraint:
+`x ≤ y` states `x − y ≤ 0` and `x < y` states `x − y ≤ −1`. It reads the family
+through a published API kept deliberately narrow — `left_variable()`,
+`right_variable()`, `or_equal()`, `reification_condition()`, and
 `ConstraintProofModelData<ReifiedCompareLessThanOrMaybeEqual>::primary_row_role()`
 — and counts what it lifts as `DifferenceLogicStats::comparison_edges_lifted`,
 separately from the linear family's edges.
 
 This is a *read* coupling through a documented interface rather than a shared
 function, and the interface is load-bearing in a way that is easy to
-underestimate: the presolver builds VeriPB `pol` steps citing the row
-`primary_row_role` names, and `cake_pb_cp` re-derives the same labels at the
-other end. Renaming a role is a cross-tool break, not an internal one.
+underestimate: the propagator the presolver installs builds VeriPB `pol` steps
+citing the row `primary_row_role` names, and `cake_pb_cp` re-derives the same
+labels at the other end. Renaming a role is a cross-tool break, not an internal
+one.
 
 Two things about that API are worth reading before changing it. It exposes the
 constructor's arguments and nothing else — no `prepare()`-time snapshot —
@@ -301,10 +346,17 @@ else.
   `hints.hh`. The template's family list flags them as a candidate merge and
   the `equals` audit settled it: **keep them separate.**
 - `gcs/constraints/linear/` — a two-term `LinearLessThanEqual` expresses
-  exactly what this family does, emits the same labelled OPB row, and is lifted
-  by the same presolver. Which one a model gets is a question of size and speed
-  rather than reach; [^lin] and [CPU performance](#cpu-performance) are about
-  precisely that.
+  exactly what this family does, emits the same labelled row when both operands
+  are plain, and is lifted by the same presolver. With a view operand the
+  comparison's row is over the view's bits, which the OPB defines with two more
+  rows, and its proof cites them: `difference_chain -n 5 --prove` writes 85 OPB
+  lines as comparisons against 77 as linears (`86caad24`), and
+  [`difference_logic.md`](../presolvers/difference_logic.md) (Proof
+  performance) measures the proof cost. Which one a model gets is the front
+  end's choice — MiniZinc's reader posts this family for a two-term
+  unit-coefficient `int_lin_le`, XCSP3's peephole posts the linear one for a
+  top-level ordering — and a question of size and speed rather than strength;
+  [^lin] and [CPU performance](#cpu-performance) are about precisely that.
 - `gcs/constraints/lex/` — `LexCompareGreaterThanOrMaybeEqual` is the
   lexicographic analogue over two *arrays*, with the same
   swapped/or-equal/reification flag design. Separate family.
@@ -1018,15 +1070,16 @@ What the tests do **not** cover:
   disables the `.scp` deliberately. See [Known
   limitations](#known-limitations).
 - **A range-literal reification condition.** No lane posts one, which is how
-  #310's reach into this family went unrecorded.
+  its throw with proofs on (#1225; #310 is the encoding fix) went unrecorded
+  here.
 - **`difference_chain`, the family's own benchmark, exercises one of the eight
   rules.** See [Proof performance](#proof-performance).
 
 ### Benchmarks and examples
 
 In-repo examples posting this family: `difference_chain`, `table_layout`,
-`talent`, `magic_square`, plus the XCSP3 and FlatZinc paths — though [^lin] is
-the caveat that matters for anything arriving from MiniZinc.
+`talent`, `magic_square`, plus the XCSP3 and FlatZinc paths; [^lin] says how a
+MiniZinc model reaches it.
 
 - **For CPU benchmarking: `difference_chain --variant=decomposed
   --donor=comparison -n 500`.** Purpose-built for this family and the one to
@@ -1064,8 +1117,9 @@ Under `GCS_PROPAGATOR_STATS=time`, `less_equal` takes **99% of 4,993 ms** of
 propagation — about **78 ns a call**. A timed run's own wall clock (6.41 s) is
 not comparable with an uninstrumented one.
 
-**The two donor arms are the finding.** Same model, same OPB row, same
-presolver treatment, and the same search: 503 recursions and 126,251
+**The two donor arms are the finding.** Same model, the same OPB row on every
+edge but the 499 whose right operand is a view, the same presolver treatment,
+and the same search: 503 recursions and 126,251
 propagators in both, with propagation counts 0.4% apart (63,004,752 against
 63,253,752) and effectful counts 0.13% apart. So this is a per-call cost
 comparison and nothing else — and **the comparison spelling costs 2.7x the
@@ -1150,8 +1204,10 @@ which is consistent with the offset view's indirection on every bounds read —
 `--donor=comparison` spells each edge `LessThanEqual{x, y + d}`. This audit did
 **not** isolate that, and says so rather than guessing: the honest claim is
 that the reason accounted for 43% of the cycles and the rest is unattributed.
-It remains unattributed; #916 removed the attributed part and nothing has
-looked at the rest.
+It stayed unattributed until the difference audits, and it is not the view:
+`y + 0` is the plain variable, so at `n = 500` only 499 of the 126,250 edges
+carry one. It is the two inference calls every call makes, which change nothing
+on 99.4% of calls; see next step 1.
 
 **Cross-solver comparison: `Not measured.`** #868's harness exists and the
 method is written up in `dev_docs/cross-solver-benchmarking.md`, but it has
@@ -1230,7 +1286,8 @@ inference and no lemmas, and there is no interval degradation anywhere
 
 **One model-writing gap, not this family's own**: a range-literal reification
 condition cannot be written into the OPB model at all, so a proving run throws
-before search (#310; see [Reification](#reification)).
+before search (#1225, with #310 the encoding fix; see
+[Reification](#reification)).
 
 The cost gap used to run the other way — the propagator paid a *proof-shaped*
 cost when proofs were off, by assembling reasons nothing would read. That was a
@@ -1276,14 +1333,23 @@ swept its own.
 **The linear family had the identical gap**, which was the audit's argument for
 fixing both at once; #915 did.
 
-**Half-reified forms are unreachable from every frontend.** The four `*If`
-classes exist, propagate, and are the difference-logic presolver's most
-valuable donor shape — a half-reified edge is where the paper's scheduling wins
-come from — and neither frontend produces one. MiniZinc's flattener never
-half-reifies because `minizinc/mznlib/` declares no `*_imp` predicates; the
-XCSP3 binding turns a top-level `imp(b, le(...))` into an `Or` over a fully
-reified control. Declaring `int_lin_le_imp` is the obvious step and changes
-flattening for every model, so it wants measuring on its own.
+**Half-reified forms are unreachable from MiniZinc and XCSP3.** The four `*If`
+classes exist, propagate, and are the one conditional shape of this family the
+difference-logic presolver lifts, and neither of those front ends produces one.
+The `.scp` reader (`less_than_if`) and `gcspy` (all four, through `post_*_reif`
+with `fully_reify` false) do post them, but neither can turn the presolver on.
+MiniZinc's flattener never half-reifies because `minizinc/mznlib/` declares no `*_imp`
+predicates; the XCSP3 binding turns a top-level `imp(b, le(...))` into an `Or`
+over a fully reified control. Earlier versions of this entry added that a
+half-reified edge "is where the paper's scheduling wins come from", repeating
+`difference_logic.hh`. Kletzander et al. ([Prior art](#prior-art)) do not say
+so: their level 1 captures plain and (half-)reified differences together, and
+they report their scheduling gains for difference logic as a whole, calling
+root simplification an important part of them (§6.4). Declaring
+`int_lin_le_imp` is one route to a half-reified donor, and it changes
+flattening for every model. Lifting the `Iff` donors the reader already posts
+(the linear family's, for integer operands) is the other
+([`difference_logic.md`](../presolvers/difference_logic.md), next step 1).
 
 **The negated forms are a deliberate presolver gap (#598).** `DifferenceLogic`
 lifts `MustHold` and `If` donors and counts `MustNotHold` / `NotIf` under
@@ -1293,8 +1359,9 @@ for closing them together rather than one at a time is the right one. Note the
 strictness flip is the risk there: an off-by-one inverting an edge is
 *unsound*, not merely incomplete.
 
-**A range-literal condition throws with proofs on** (#310). It gives the right
-answers without proofs. No front end posts one.
+**A range-literal condition throws with proofs on** (#1225; #310 is the
+encoding fix). It gives the right answers without proofs. No front end posts
+one.
 
 *Aliased operands under a strict comparison used to throw at construction*,
 where the reified forms decided the condition. XCSP3's `lt(x,x)` reached the
@@ -1304,19 +1371,19 @@ instead (rule 8). The asymmetry is gone.
 ### Next steps
 
 Ranked. **Both of this audit's own findings are done**: #907 landed as #916 and
-#908 as #915, so what is left is one unattributed measurement and the
-audit-wide prerequisite.
+#908 as #915, so what is left is a propagator fix and a decision about the
+recovery (item 1), and the audit-wide prerequisite.
 
-1. **Find out what the rest of the comparison-versus-linear gap is.** Not
-   filed. Guarded, the comparison spelling is still 1.55x the two-term linear
-   one at the same recursion count, and the difference is IPC-shaped rather than
-   instruction-shaped — consistent with the offset view's indirection on every
-   bounds read, but not isolated. It matters beyond this family: if a view
-   costs that much on a bounds read, it is a fact about the view layer, not
-   about comparisons, and every family that accepts views inherits it. The
-   experiment is small — the same chain with and without a zero-offset view —
-   but it needs a propagation-bound harness, and the obvious two-line probe is
-   not one (tried; search dominated it).
+1. **Make the must-hold pass skip a push that changes nothing, then settle
+   the recovery** (#1375, which has the measurements).
+   The rest of the comparison-versus-linear gap is the pass's per-call cost,
+   not the view: it calls both `infer_*_or_stop` on every call, and on
+   `difference_chain` 99.4% of calls change nothing. Guarding the two calls on
+   the current bounds, as the linear propagator does, makes the comparison arm
+   4.5x faster at identical counts and byte-identical proofs (`86caad24`), and
+   on real challenge instances it is neutral, while the recovery itself is
+   neutral to slightly favourable. #1375 asks whether to keep the recovery
+   and make the propagator cheaper, or drop it.
 2. **#868 — point the cross-solver harness at this family.** The harness and
    method exist and have been used for `equals` only. This family is an easier
    target than that one was: a system of difference constraints is a model any
@@ -1325,15 +1392,6 @@ audit-wide prerequisite.
    answers itself.
 
 **Not to do, having been considered.**
-
-*Recovering a two-variable `Comparison` from a two-term linear inequality in
-`fzn_glasgow.cc`,* the way that file recovers `Equals` from a two-term
-`int_lin_eq`. The `equals` recovery is a strength gain — `Equals` intersects
-domains where a linear equality is bounds-consistent — and there is no
-analogous gain here, since both spellings are bounds-consistent. The measured
-per-call costs say the recovery would have been a 2.7x **loss** as the first
-audit found it, and 1.55x now that #916 has landed — which is the state item 1
-is about.
 
 *Tuning the trigger set.* `on_bounds` is already the coarsest trigger that can
 see everything any pass reads, and every pass self-disables once the bounds
@@ -1383,10 +1441,11 @@ separate. There is nothing here of the kind #819 and #889 found in `equals`.
 - `dev_docs/reification.md` — `ReificationCondition`,
   `EvaluatedReificationCondition` and `install_reified_dispatcher`, which carry
   all eight reified forms here.
-- `dev_docs/difference-logic.md` — the presolver that consumes this family, the
-  global propagator it lifts into, and its proof logging. The `pol` steps there
-  cite the rows [Labels](#labels) describes, so the two documents share an
-  interface.
+- [`difference_logic.md`](../presolvers/difference_logic.md) and
+  [`difference.md`](difference.md) — the presolver that consumes this family and
+  the global propagator it installs, with its proofs. The `pol` steps there cite
+  the rows [Labels](#labels) describes, so the documents share an interface.
+  `dev_docs/difference-logic.md` is their long design note.
 - `dev_docs/variable-encodings.md` — the in-OPB versus in-proof axis this
   family sits entirely on the OPB side of, and the order-literal layer that
   turns out to be 88% of its proof.
@@ -1394,7 +1453,7 @@ separate. There is nothing here of the kind #819 and #889 found in `equals`.
   for the neighbouring families live, and the `GCS_PROPAGATOR_STATS` caveats
   used above.
 - `dev_docs/cross-solver-benchmarking.md` — the identical-tree method, for
-  whoever picks up item 3.
+  whoever picks up item 2.
 - `dev_docs/large-domains.md` — the audit lane carrying this family's three
   `Clean` rows, and why a `Clean` row usually needs more scepticism than it
   does here.

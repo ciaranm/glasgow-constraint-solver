@@ -221,9 +221,10 @@ optional form, `presences[i] = 1`). The constraint holds iff, at every integer
     constant/variable length × height overloads, and a capacity that is an
     integer or a variable under the `le` condition. Any other condition reports
     `s UNSUPPORTED`, with a message citing #147, which is closed. Neither frontend sets a `CumulativeRules` flag, and
-    neither installs a scheduling presolver: `fzn-glasgow` installs only
-    `DifferenceLogic`. So a frontend model gets time-tabling and (TTOC), as
-    the matrix's footnote already says.
+    neither installs a scheduling presolver: `fzn-glasgow` and the XCSP3
+    solver add only `DifferenceLogic`, and only behind `--difference-logic`.
+    So a frontend model gets time-tabling and (TTOC), as the matrix's footnote
+    already says.
 [^opt]: `fzn_cumulative_opt` splits each `var opt int` start into a deopted
     start and an `occurs` Boolean. An absent constant start becomes `0`.
     XCSP3 has no optional-task cumulative.
