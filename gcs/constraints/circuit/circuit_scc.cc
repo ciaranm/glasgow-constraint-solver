@@ -783,20 +783,26 @@ namespace
             set<long> new_reached_nodes{};
             bool exclude_based_on_ordering = false;
             for (const auto & node : last_reached_nodes) {
-                WPBSum possible_next_nodes_sum{};
-                PolBuilder add_for_node_implies_at_least_1;
+                // If node is at count - 1, something is at count: by cases on
+                // node's successor, each of which the step lemma puts there.
+                vector<ProofLiteralOrFlag> successors;
+                WPBSum next_at_count{};
                 PolBuilder add_for_node_implies_not_mid;
 
                 for (auto val : ctx.state.each_value_immutable(ctx.succ[node])) {
                     if (skip_based_on_assumption(ctx.succ[node], val, assumption))
                         continue;
 
-                    possible_next_nodes_sum += 1_i * (ctx.succ[node] == val);
+                    successors.emplace_back(ctx.succ[node] == val);
                     auto next_node = val.raw_value;
 
                     all_values_seen[next_node].insert(count);
 
-                    add_sat(add_for_node_implies_at_least_1, prove_pos_and_node_implies_next_node(ctx, node, next_node, count));
+                    prove_pos_and_node_implies_next_node(ctx, node, next_node, count);
+                    if (! using_shifted_pos)
+                        next_at_count += 1_i * (ctx.pos_var_data.at(next_node).var == Integer{count});
+                    else if (next_node != ctx.root)
+                        next_at_count += 1_i * ctx.root_flag_data.shifted_pos_eq[next_node][count].flag;
 
                     if (ordering && next_node == ordering.value().last && ! seen_middle) {
                         // Ordering says that since we haven't seen "middle" yet, we can't visit "last"
@@ -819,11 +825,13 @@ namespace
                     }
                 }
 
-                add_sat(add_for_node_implies_at_least_1,
-                    ctx.logger.emit_rup_proof_line_under_reason(
-                        ctx.reason, possible_next_nodes_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary));
-
-                add_sat(add_for_at_least_1, add_for_node_implies_at_least_1.emit(ctx.logger, ProofLevel::Current));
+                if (using_shifted_pos)
+                    next_at_count += 1_i * ! ctx.root_flag_data.shifted_pos_eq[node][count - 1].flag;
+                else
+                    next_at_count += 1_i * (ctx.pos_var_data.at(node).var != Integer{count - 1});
+                next_at_count += 1_i * ! assumption;
+                add_sat(add_for_at_least_1,
+                    ctx.logger.emit_cases_proof_line_under_reason(ctx.reason, move(next_at_count) >= 1_i, successors, ProofLevel::Current));
                 ++add_for_at_least_1_count;
 
                 if (ordering && ! seen_middle) {
