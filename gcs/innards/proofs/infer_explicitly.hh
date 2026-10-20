@@ -14,6 +14,7 @@
 #include <gcs/variable_id.hh>
 
 #include <optional>
+#include <span>
 #include <string_view>
 
 #include <util/overloaded.hh>
@@ -138,6 +139,55 @@ namespace gcs::innards
         if (then_rup == ThenRUP::Yes)
             logger.infer(lit, JustifyUsingRUP{}, reason);
         logger.forget_proof_level(t);
+    }
+
+    /**
+     * \brief The mode-dispatched back end for a JustifyUsingCases inference.
+     *
+     * The `cases` counterpart of ProofLogger::infer's JustifyUsingRUP arm, and
+     * deliberately not built on infer_explicitly: the one `cases` line concludes
+     * the inference at the current level, so there is no temporary level to open
+     * or to forget. Forgetting one would delete the propagator's own temporary
+     * lines from earlier in the same call, which a propagator such as Knapsack
+     * keeps and refers back to across several inferences.
+     *
+     *   - above AssertionLevel::Inferences: nothing;
+     *   - assertion mode: assert the inference under its reason, annotated by
+     *     the resolved hint;
+     *   - eager mode: one `cases` line deriving the inferred literal under the
+     *     reason, over \c case_variables.
+     *
+     * The conclusion is built from \c lit here rather than by the caller, so a
+     * NotInRange conclusion that cannot become a single range literal can fall
+     * back to one per-value line, exactly as ProofLogger::infer does.
+     *
+     * \ingroup Innards
+     */
+    template <typename CaseVariable_, typename Hint_>
+    auto infer_by_cases(ProofLogger & logger, const Literal & lit, std::span<const CaseVariable_> case_variables, const ReasonLiterals & reason,
+        const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback_annotation = std::nullopt) -> void
+    {
+        if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
+            if (cond->op == VariableConditionOperator::NotInRange)
+                if (! logger.names_and_ids_tracker().can_represent_range_literal_for(cond->var)) {
+                    for (Integer val = cond->value; val <= cond->upper_value; ++val)
+                        infer_by_cases(logger, cond->var != val, case_variables, reason, hint, fallback_annotation);
+                    return;
+                }
+
+        if (logger.get_assertion_level() > AssertionLevel::Inferences)
+            return;
+
+        if (is_literally_true(lit))
+            return;
+
+        if (logger.get_assertion_level() != AssertionLevel::Off) {
+            logger.emit_under_reason(
+                AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, hint_annotation(logger, hint, fallback_annotation));
+            return;
+        }
+
+        logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, case_variables, ProofLevel::Current);
     }
 }
 

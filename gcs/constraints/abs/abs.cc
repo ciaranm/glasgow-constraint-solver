@@ -13,7 +13,9 @@
 #include <gcs/interval_set.hh>
 
 #include <algorithm>
+#include <array>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -30,10 +32,12 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::array;
 using std::holds_alternative;
 using std::max;
 using std::min;
 using std::pair;
+using std::span;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -96,51 +100,38 @@ auto Abs::define_proof_model(ProofModel & model, const State &) -> void
 auto Abs::install_propagators(Propagators & propagators) -> void
 {
     // All four consequence bounds live in a single SimpleDefinition-priority
-    // initialiser. The OPB encoding stays free of "Abs" labels for inferences
-    // that aren't definitional; each bound's proof is assembled via the
-    // shared helpers in abs/justify.hh as PB resolution steps over the
-    // encoding's two half-reified halves.
-    //
-    // VeriPB's RUP alone cannot derive any of these bounds for non-constant
-    // v1, because it can't case-split on `v1 >= 0 \/ v1 < 0`. The helpers
-    // supply the case split explicitly; the final RUP then closes the
-    // inference. When v1 IS constant the encoding's relevant half is
-    // unreified, the helpers short-circuit, and plain RUP suffices. When v2
-    // is constant we bail out -- the propagator's per-value loop will
+    // initialiser. v2 >= 0 and the two bounds on v1 are each a `cases` line on
+    // v1's sign, the argument one would give by hand. v2 <= max(ub(v1),
+    // -lb(v1)) is the one that keeps a helper; abs/justify.hh says why. When
+    // v2 is constant we bail out -- the propagator's per-value loop will
     // discover any UNSAT.
     propagators.install_initialiser(
-        [v1 = _v1, v2 = _v2, originator = constraint_id(), abs_nonneg_le = _abs_nonneg_lines.first, abs_nonneg_ge = _abs_nonneg_lines.second,
-            abs_neg_le = _abs_neg_lines.first,
-            abs_neg_ge = _abs_neg_lines.second](State & state, auto & inference, ProofLogger * const logger) -> void {
+        [v1 = _v1, v2 = _v2, originator = constraint_id(), abs_nonneg_le = _abs_nonneg_lines.first, abs_neg_le = _abs_neg_lines.first](
+            State & state, auto & inference, ProofLogger * const logger) -> void {
             if (holds_alternative<ConstantIntegerVariableID>(v2))
                 return;
 
-            inference.infer(logger, v2 >= 0_i,
-                JustifyExplicitly{
-                    [logger, v1, v2, abs_nonneg_ge](const ReasonLiterals &) -> void { justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge); },
-                    ThenRUP::Yes, hints::Abs{originator}},
-                NoReason{});
+            // v2 >= 0 by cases on v1's sign. Each branch is a contradiction
+            // between sign bits alone: under v1 >= 0, v2 - v1 >= 0 with v2's
+            // sign bit set; under v1 < 0, v2 + v1 >= 0 with both set. A
+            // constant v1's sign atom is dropped from the split, leaving the
+            // one unreified half to close it by RUP.
+            array<ProofLiteralOrFlag, 1> v1_sign{ProofLiteral{Literal{v1 >= 0_i}}};
+            inference.infer(logger, v2 >= 0_i, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}}, NoReason{});
 
             auto v2_ub = state.upper_bound(v2);
 
-            // Skip when ub(v2) < 0 -- the v1_ge_(ub(v2)+1) flag would
-            // collide with v1_ge0 / become vacuous; the propagator detects
-            // UNSAT directly.
+            // v1 <= ub(v2) by cases on v1's sign: if v1 >= 0 then v1 = v2, so
+            // the bound crosses the non-negative half (Theorem 2.9); if v1 < 0
+            // it is below ub(v2) >= 0 anyway. v1 >= -ub(v2) is the mirror. The
+            // propagator repeats both under v2's current bound.
             if (v2_ub >= 0_i) {
-                inference.infer(logger, v1 <= v2_ub,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](
-                                          const ReasonLiterals & r) -> void { justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r); },
-                        ThenRUP::Yes, hints::Abs{originator}},
-                    NoReason{});
+                inference.infer(logger, v1 <= v2_ub, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}}, NoReason{});
             }
 
-            // Symmetric flag-collision concern: skip when ub(v2) <= 0.
+            // When ub(v2) is 0 the propagator infers v1 >= 0 instead.
             if (v2_ub > 0_i) {
-                inference.infer(logger, v1 >= -v2_ub,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](
-                                          const ReasonLiterals & r) -> void { justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r); },
-                        ThenRUP::Yes, hints::Abs{originator}},
-                    NoReason{});
+                inference.infer(logger, v1 >= -v2_ub, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}}, NoReason{});
             }
 
             auto [v1_lb, v1_ub] = state.bounds(v1);
@@ -169,6 +160,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             auto [v1_lb, v1_ub] = state.bounds(v1);
             auto [v2_lb, v2_ub] = state.bounds(v2);
             auto v2_is_constant = holds_alternative<ConstantIntegerVariableID>(v2);
+            array<ProofLiteralOrFlag, 1> v1_sign{ProofLiteral{Literal{v1 >= 0_i}}};
 
             // Direction v1 -> v2: tighten v2 from the image of v1. Skipped
             // when v2 is constant -- the proof helpers need v2's order-encoding
@@ -190,37 +182,29 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         ExplicitReason{ReasonLiterals{{v1 >= v1_lb, v1 <= v1_ub}}});
                 }
 
+                // The reason puts v1 wholly on one side of zero, so its sign
+                // is fixed, and each lower bound is plain RUP across the
+                // active half (Theorem 2.9).
                 if (v1_lb >= 1_i && v1_lb > v2_lb) {
-                    inference.infer_greater_than_or_equal(logger, v2, v1_lb,
-                        JustifyExplicitly{[logger, v1, v2, v1_lb, abs_nonneg_ge](const ReasonLiterals & r) -> void {
-                                              justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonneg, v1_lb, *abs_nonneg_ge, r);
-                                          },
-                            ThenRUP::Yes, hints::Abs{originator}},
-                        ExplicitReason{ReasonLiterals{v1 >= v1_lb}});
+                    inference.infer_greater_than_or_equal(
+                        logger, v2, v1_lb, JustifyUsingRUP{hints::Abs{originator}}, ExplicitReason{ReasonLiterals{v1 >= v1_lb}});
                 }
                 else if (v1_ub <= -1_i && -v1_ub > v2_lb) {
-                    inference.infer_greater_than_or_equal(logger, v2, -v1_ub,
-                        JustifyExplicitly{[logger, v1, v2, v1_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
-                                              justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonpos, -v1_ub, *abs_neg_ge, r);
-                                          },
-                            ThenRUP::Yes, hints::Abs{originator}},
-                        ExplicitReason{ReasonLiterals{v1 <= v1_ub}});
+                    inference.infer_greater_than_or_equal(
+                        logger, v2, -v1_ub, JustifyUsingRUP{hints::Abs{originator}}, ExplicitReason{ReasonLiterals{v1 <= v1_ub}});
                 }
             }
 
-            // Direction v2 -> v1: tighten v1 from the preimage of v2.
+            // Direction v2 -> v1: tighten v1 from the preimage of v2, by cases
+            // on v1's sign as in the initialiser. For a negative constant v2,
+            // which the initialiser skips, each branch is instead a bound on v1
+            // against its own sign (Theorem 2.7).
             if (v2_ub < v1_ub) {
-                inference.infer_less_than(logger, v1, v2_ub + 1_i,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](
-                                          const ReasonLiterals & r) -> void { justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r); },
-                        ThenRUP::Yes, hints::Abs{originator}},
+                inference.infer(logger, v1 < v2_ub + 1_i, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}},
                     ExplicitReason{ReasonLiterals{v2 <= v2_ub}});
             }
             if (-v2_ub > v1_lb) {
-                inference.infer_greater_than_or_equal(logger, v1, -v2_ub,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](
-                                          const ReasonLiterals & r) -> void { justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r); },
-                        ThenRUP::Yes, hints::Abs{originator}},
+                inference.infer(logger, v1 >= -v2_ub, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}},
                     ExplicitReason{ReasonLiterals{v2 <= v2_ub}});
             }
 
@@ -304,9 +288,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     image_guard.step();
                     if (! state.in_domain(v2, val))
                         continue;
-                    inference.infer_not_equal(logger, v2, val,
-                        JustifyExplicitly{[logger, v1, v2, val](const ReasonLiterals & r) { justify_abs_hole(*logger, r, v1, v2, val); },
-                            ThenRUP::Yes, hints::Abs{originator}},
+                    // By cases on v1's sign. v2 == val pins every bit of v2,
+                    // and through whichever half-reified row the branch makes
+                    // active, every bit of v1, at val or -val, against the
+                    // reason.
+                    inference.infer_not_equal(logger, v2, val, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}},
                         ExplicitReason{ReasonLiterals{{v1 != val, v1 != -val}}});
                 }
             }

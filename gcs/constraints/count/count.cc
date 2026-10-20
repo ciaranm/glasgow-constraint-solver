@@ -1,6 +1,7 @@
 #include <gcs/constraints/count/count.hh>
 #include <gcs/constraints/count/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -145,14 +146,13 @@ auto Count::install_propagators(Propagators & propagators) -> void
             // can't have more that this many occurrences of the value of interest
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
             auto justf = [&](const ReasonLiterals & reason) -> void {
-                for (const auto & [idx, var] : enumerate(vars)) {
-                    if (! state.domains_intersect(var, value_of_interest)) {
-                        for (const auto & val : state.each_value_immutable(value_of_interest))
-                            logger->emit_rup_proof_line_under_reason(
-                                reason, WPBSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                    }
-                }
+                // A var sharing no value with value_of_interest has its flag
+                // false whichever value value_of_interest takes: by cases on that.
+                auto voi_values = case_variables_over_values(value_of_interest, state.each_value_immutable(value_of_interest));
+                for (const auto & [idx, var] : enumerate(vars))
+                    if (! state.domains_intersect(var, value_of_interest))
+                        logger->emit_cases_proof_line_under_reason(
+                            reason, WPBSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, voi_values, ProofLevel::Temporary);
             };
             // The _or_stop family throughout this propagator, rather than the
             // throwing infer: Count is the failure detector at a large share of
@@ -313,9 +313,10 @@ auto Count::install_propagators(Propagators & propagators) -> void
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
                 auto emit = [&](const ReasonLiterals & reason) -> void {
-                    for (const auto & voi : state.each_value_immutable(value_of_interest))
-                        logger->emit_rup_proof_line_under_reason(reason,
-                            WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i, ProofLevel::Temporary);
+                    // Whichever value value_of_interest takes, at least this many
+                    // vars must take it: by cases on that value.
+                    logger->emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
+                        case_variables_over_values(value_of_interest, state.each_value_immutable(value_of_interest)), ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
                 if (! infer_before_push_or_stop(
@@ -344,13 +345,11 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             }
                     }
 
-                    // Per-voi unconditional lines: emit after all the
-                    // conditionals so they have the full set of pairwise
-                    // facts to RUP-derive against.
-                    for (const auto & voi : voi_set.each())
-                        logger->emit_rup_proof_line_under_reason(reason,
-                            WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
-                            ProofLevel::Temporary);
+                    // Then the bound by cases on value_of_interest, after all
+                    // the conditionals so that each branch has the full set of
+                    // pairwise facts to RUP-derive against.
+                    logger->emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
+                        case_variables_over_values(value_of_interest, voi_set.each()), ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
                 if (! infer_before_push_or_stop(

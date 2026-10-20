@@ -511,8 +511,22 @@ auto main(int argc, char * argv[]) -> int
     // contradiction is gone.
     const Instance sharp{{{0, 7}, {0, 6}, {0, 7}, {0, 11}}, {{5, 5}, {6, 6}, {5, 5}, {1, 1}}, {{4, 4}, {3, 3}, {2, 2}, {1, 1}}, 4};
 
-    // Mutation mode: emit one deliberately corrupted proof of `sharp` and
-    // stop, for run_test_and_expect_verify_failure.bash to hand to veripb.
+    // F2: (TTOC), the profile strengthening. Four length-two, height-one tasks
+    // free in [0, 2] fill the window [0, 4) exactly: energy 8 against a supply
+    // of 2 x 4, so (OC') is silent. The fifth task runs past the end of the
+    // window (est 1, lct 6), so it is not in the window's energy set at all,
+    // but its mandatory part [2, 5) puts two units of load inside the window
+    // regardless of where it starts --- and 8 + 2 > 8.
+    //
+    // Time-tabling can say nothing here: no task in the window has a mandatory
+    // part, and the fifth task's one unit of load never blocks a height-one
+    // task under a capacity of two, so no bound moves either.
+    const Instance f2{
+        {{0, 2}, {0, 2}, {0, 2}, {0, 2}, {1, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}, {4, 4}}, {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}, 2};
+
+    // Mutation mode: emit one deliberately corrupted proof of `sharp` (or of
+    // F2, for the wrong-checkpoint recovery) and stop, for
+    // run_test_and_expect_verify_failure.bash to hand to veripb.
     // The corruption is in the proof only, so the solve still refutes; if it
     // ever stops doing so, the harness would be checking an empty proof.
     {
@@ -526,9 +540,10 @@ auto main(int argc, char * argv[]) -> int
                 mutation = cumulative_proof_mutation::OmitCapacityLine{};
             else if (arg == "--mutate=window")
                 mutation = cumulative_proof_mutation::ShrinkLemmaWindow{};
-            // Only does anything under GCS_CUMULATIVE_ENCODING=both-recovering,
-            // which the ctest entry for it sets; under any other encoding the
-            // recovery does not run and the proof comes out honest.
+            // Run on F2 rather than `sharp`: the recovery's finishes are
+            // `cases` lines, and on `sharp` unit propagation recovers every
+            // row without the per-champion cases at all, so a wrong one goes
+            // unread. On F2 the cases are what each branch closes on.
             else if (arg == "--mutate=recover_wrong_checkpoint")
                 mutation = cumulative_proof_mutation::RecoverFromWrongCheckpoint{};
             else if (arg == "--mutate=chain_drop_previous")
@@ -540,8 +555,9 @@ auto main(int argc, char * argv[]) -> int
         }
 
         if (mutation) {
-            if (! solve_root_only(sharp, all_rules, *mutation, make_optional(proof_basename)))
-                fail("mutation mode: the sharp-margin instance was not refuted, so the proof is empty");
+            const auto & instance = std::holds_alternative<cumulative_proof_mutation::RecoverFromWrongCheckpoint>(*mutation) ? f2 : sharp;
+            if (! solve_root_only(instance, all_rules, *mutation, make_optional(proof_basename)))
+                fail("mutation mode: the instance was not refuted, so the proof is empty");
             println(cerr, "wrote a deliberately corrupted proof to {}.pbp", proof_basename);
             return EXIT_SUCCESS;
         }
@@ -579,19 +595,6 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && with_rule.markers.total() != 0)
             fail("F1 twin: the overload check claimed a conflict at the root");
     }
-
-    // F2: (TTOC), the profile strengthening. Four length-two, height-one tasks
-    // free in [0, 2] fill the window [0, 4) exactly: energy 8 against a supply
-    // of 2 x 4, so (OC') is silent. The fifth task runs past the end of the
-    // window (est 1, lct 6), so it is not in the window's energy set at all,
-    // but its mandatory part [2, 5) puts two units of load inside the window
-    // regardless of where it starts --- and 8 + 2 > 8.
-    //
-    // Time-tabling can say nothing here: no task in the window has a mandatory
-    // part, and the fifth task's one unit of load never blocks a height-one
-    // task under a capacity of two, so no bound moves either.
-    const Instance f2{
-        {{0, 2}, {0, 2}, {0, 2}, {0, 2}, {1, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}, {4, 4}}, {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}, 2};
 
     // F2's negative twin: the same, with the straddling task moved past the
     // window, so its mandatory part [5, 8) contributes nothing to [0, 4) and

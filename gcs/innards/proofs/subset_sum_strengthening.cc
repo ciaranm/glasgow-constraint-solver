@@ -230,12 +230,12 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
             carry_at_most.add(state.at_most_forward).add(stay.at_most_reverse).saturate();
             carry_at_most.emit(logger, level);
 
-            // Item out: the state stays where it was.
-            WPBSum stays;
-            stays += 1_i * ! state.exactly;
-            add_term_to(stays, 1_i, item.term);
-            stays += 1_i * stay.exactly;
-            auto stay_transition = logger.emit_rup_proof_line_under_reason(reason, move(stays) >= 1_i, level);
+            // The state moves to one of the two it can, by cases on the
+            // item: out, it stays where it was, and in, it advances.
+            const ProofLiteralOrFlag item_case[] = {item.term};
+            WPBSum moves;
+            moves += 1_i * ! state.exactly;
+            moves += 1_i * stay.exactly;
 
             if (advanced <= bound) {
                 const auto & step = after.at(advanced);
@@ -254,24 +254,15 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
                 advance_at_most.add(state.at_most_forward).add(step.at_most_reverse).add(negated_item_literal, item.coefficient, tracker).saturate();
                 advance_at_most.emit(logger, level);
 
-                WPBSum steps;
-                steps += 1_i * ! state.exactly;
-                add_term_to(steps, 1_i, ! item.term);
-                steps += 1_i * step.exactly;
-                auto step_transition = logger.emit_rup_proof_line_under_reason(reason, move(steps) >= 1_i, level);
-
-                // Either way the layer moves to one of the two states:
-                // resolving the two transitions on the item literal.
-                if (! skip_this_layer) {
-                    PolBuilder resolve;
-                    resolve.add(stay_transition).add(step_transition).saturate();
-                    resolve.emit(logger, level);
-                }
+                moves += 1_i * step.exactly;
+                if (! skip_this_layer)
+                    logger.emit_cases_proof_line_under_reason(reason, move(moves) >= 1_i, item_case, level);
             }
             else {
                 // Taking the item from here would put the prefix past the
-                // bound, which the source line forbids. So the item is out,
-                // and the only transition is the one that stays.
+                // bound, which the source line forbids, so where the item is
+                // in the state cannot hold, and the only transition is the
+                // one that stays.
                 PolBuilder dead;
                 dead.add(state.at_least_forward).add(source);
                 for (size_t later = k + 1; later < items.size(); ++later)
@@ -279,16 +270,8 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
                 dead.add(negated_item_literal, item.coefficient, tracker).saturate();
                 dead.emit(logger, level);
 
-                WPBSum out;
-                out += 1_i * ! state.exactly;
-                add_term_to(out, 1_i, ! item.term);
-                auto item_is_out = logger.emit_rup_proof_line_under_reason(reason, move(out) >= 1_i, level);
-
-                if (! skip_this_layer) {
-                    PolBuilder resolve;
-                    resolve.add(stay_transition).add(item_is_out).saturate();
-                    resolve.emit(logger, level);
-                }
+                if (! skip_this_layer)
+                    logger.emit_cases_proof_line_under_reason(reason, move(moves) >= 1_i, item_case, level);
             }
         }
 
@@ -306,16 +289,18 @@ auto gcs::innards::derive_subset_sum_strengthening(ProofLogger & logger, const v
 
     // Every state of the last layer is at most the strengthened bound --- that
     // is what makes it the strengthened bound --- so whichever one holds, the
-    // sum is under it.
+    // sum is under it: by cases on the last layer's states, each closed by its
+    // dominated line, with the layer's at-least-one ruling out none.
     auto [under, under_forward, under_reverse] = logger.create_proof_flag_reifying(total <= claimed, "ssunder", level);
+    vector<ProofFlag> last_states;
     for (const auto & [value, state] : layers.back()) {
         PolBuilder dominated;
         dominated.add(state.at_most_forward).add(under_reverse).saturate();
         dominated.emit(logger, level);
-        logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! state.exactly + 1_i * under >= 1_i, level);
+        last_states.push_back(state.exactly);
     }
 
-    auto under_holds = logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * under >= 1_i, level);
+    auto under_holds = logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * under >= 1_i, last_states, level);
 
     // Discharge the flag: its forward half is the strengthened line, weakened
     // by the reification coefficient, and the unit above pays exactly that

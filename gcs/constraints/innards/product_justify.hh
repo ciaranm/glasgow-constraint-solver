@@ -143,32 +143,38 @@ namespace gcs::innards::product_justify
     };
 
     /**
-     * \brief Whether conclude_by_sign_cases hints its subproof RUP steps.
-     * Assemble is right when the premises' sum terms cancel exactly against
-     * the negated goal (product bounds through
-     * channel_grid_bound_to_result), so the dead-pattern clauses and the cut
-     * result close from the reason atoms, their ladders and the premise
-     * lines alone. Leave None when the premises drag further encoding terms
-     * into the cut (divide/modulus premises carry view bits and aux-atom
-     * rows), where only a database-wide RUP reaches the closing conflict.
+     * \brief How a sign case's premise meets the conclusion, which decides
+     * whether conclude_by_sign_cases needs a lemma per case.
+     *
+     * CancelsAgainstConclusion is right when the premises' sum terms cancel
+     * exactly against the negated conclusion (product bounds through
+     * channel_grid_bound_to_result). Each case then closes by unit
+     * propagation from its premise line, and the `cases` check needs nothing
+     * more. NeedsLemmas is for premises that drag further encoding terms in
+     * (divide/modulus premises carry view bits and aux-atom rows). There,
+     * meeting the negated conclusion takes a pol step, so each live case gets
+     * a lemma by contradiction first.
      *
      * \ingroup Innards
      */
-    enum class SubproofRUPHints
+    enum class PremiseShape
     {
-        None,
-        Assemble,
+        NeedsLemmas,
+        CancelsAgainstConclusion,
     };
 
     /**
-     * \brief Conclude an inference from its per-case bounds: one
-     * red-with-empty-witness derivation of `reason => conclusion`, whose
-     * subproof derives a clause per case pattern — a pol add of the case's
-     * premise line onto the negated goal where a premise exists, a plain RUP
-     * clause where the case is dead under the reason — then combines them
-     * with the fixed nested saturating cut over the dimensions (thesis
-     * ResolveSigns, made total by [v>=0]/[v<0] being complementary: no
-     * separate zero cases). Never a search. premise_by_pattern is indexed by
+     * \brief Conclude an inference from its per-case bounds, by one `cases`
+     * line over the dimensions' sign atoms deriving `reason => conclusion`.
+     *
+     * Each assignment to the atoms is one sign pattern (thesis ResolveSigns,
+     * made total by [v>=0]/[v<0] being complementary: no separate zero
+     * cases). A live pattern closes from its premise line, directly or
+     * through a lemma (see PremiseShape), a premise that is already a
+     * refutation clause closes by propagation, and so does a dead pattern,
+     * whose atoms clash with the reason. A strengthened co-factor's zero case
+     * is a case of its own: each of zero_refutations names an atom that
+     * becomes one more case variable. premise_by_pattern is indexed by
      * bitmask over dims, bit k set meaning dim k's negative branch; its size
      * must be 2^dims.size(). Returns the derived reified conclusion line;
      * the inferred literal itself then follows by the caller's ThenRUP.
@@ -177,7 +183,7 @@ namespace gcs::innards::product_justify
      */
     auto conclude_by_sign_cases(ProofLogger &, const ReasonLiterals & reason, const WPBSumLE & conclusion,
         const std::vector<SignCaseDimension> & dims, const std::vector<std::optional<ConditionalBound>> & premise_by_pattern,
-        const std::vector<Literal> & zero_refutations = {}, SubproofRUPHints hint_rups = SubproofRUPHints::None) -> ProofLine;
+        const std::vector<Literal> & zero_refutations = {}, PremiseShape premise_shape = PremiseShape::NeedsLemmas) -> ProofLine;
 }
 
 #endif

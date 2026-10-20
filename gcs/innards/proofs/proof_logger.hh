@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -316,6 +317,33 @@ namespace gcs::innards
          */
         auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level)
             -> ProofLine;
+
+        /**
+         * Emit a `cases` proof step deriving the specified expression by case
+         * analysis over `case_variables`, subject to a given reason. VeriPB checks
+         * that, for every assignment to the case variables, the (reason-reified)
+         * conclusion is trivial, in the database, RUP, or implied by a database
+         * constraint, and expands the step to plain lines during elaboration.
+         * Each branch must be automatically provable, so this suits
+         * selector-style "exactly one of these holds" reasoning, not
+         * cross-variable cutting-planes case splits.
+         *
+         * The case list names variables, not literals: each entry is written as
+         * the variable it names, in positive polarity, so `x != v` and `x == v`
+         * split on the same atom. Entries naming a variable already listed are
+         * dropped, as VeriPB requires the variables to be distinct, and so are
+         * literals that fold to a constant, which have no variable to split on.
+         * Atoms that have no proof name yet are introduced, as for the
+         * conclusion.
+         */
+        auto emit_cases_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
+            std::span<const ProofFlag> case_variables, ProofLevel level) -> ProofLine;
+
+        /**
+         * As above, with case variables that are literals or flags.
+         */
+        auto emit_cases_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
+            std::span<const ProofLiteralOrFlag> case_variables, ProofLevel level) -> ProofLine;
 
         /**
          * Like `emit_rup_proof_line_under_reason`, but returns the deview-form

@@ -616,12 +616,15 @@ if(GCS_BUILD_TESTS)
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
     endforeach()
-    # #780: the corruption no `pol` failure catches. Recovering a capacity row
-    # from the neighbouring task's checkpoint leaves every step of the
-    # derivation valid and produces a perfectly good line --- it is simply not
-    # the row the model states, and only the implication check against that row
-    # rejects it. Needs the recovering encoding, since under any other the
-    # recovery does not run and the proof comes out honest.
+    # #780: recovering a capacity row from the neighbouring task's checkpoint.
+    # When the finishes were weighted pols, every step of that stayed valid
+    # and produced a perfectly good line that was simply not the model's row,
+    # which only the recovering arm's implication check rejected. With the
+    # finishes as `cases` lines, the wrong case is rejected at the finish
+    # itself, so the lane runs under the shipped encoding as well.
+    add_test(NAME cumulative_overload_mutation_recover_wrong
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            --basename cumulative_overload_mutation_recover_wrong $<TARGET_FILE:cumulative_overload_test> --mutate=recover_wrong_checkpoint)
     add_cumulative_arm(cumulative_overload_mutation_recover_wrong checkpoint_recovering
         ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
@@ -878,7 +881,7 @@ if(GCS_BUILD_TESTS)
     # its rules on, over both dense families in turn.
     add_test(NAME disjunctive_2d_projection_search
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --projection --search 16)
-    foreach(mutation emit_nothing skip_refutation skip_guard_weakening skip_escape_pins overload_emit_nothing overload_skip_energy overload_skip_row
+    foreach(mutation emit_nothing skip_refutation skip_escape_pins overload_emit_nothing overload_skip_energy overload_skip_row
             edge_finding_one_too_far edge_finding_drop_pushed ttef_one_too_far ttef_drop_pushed projection_row_too_strong projection_skip_bridge
             projection_skip_refutations skip_presence_guard skip_presence_conjunct skip_size_floor
             projection_skip_size_floor skip_floor_escape_pins skip_resource_floor overload_skip_resource_floor

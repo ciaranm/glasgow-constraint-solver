@@ -2373,10 +2373,12 @@ walk below never has to know which tasks are running.
 the first `k+1` candidates"; `N_k` says none of the first `k+1` has started.
 `A_k : \/_{j<=k} W_{j,k} \/ N_k` is carried up the scan one candidate at a
 time, each step one `rup` per live `W` plus one for `N`, resolved together by a
-single `pol`. `A_{m-1}` is then resolved against the per-case clauses, and the
-target row comes out from behind the fully reified `F_t` the cases were routed
-through --- the issue's guard-relativized rendering of a case split whose
-target is a row rather than a clause.
+single `pol`. The finish is then one `cases` line over `A_{m-1}`'s literals,
+with the per-case clauses as its lemmas, and the target row comes out from
+behind the fully reified `F_t` the cases were routed through --- the issue's
+guard-relativized rendering of a case split whose target is a row rather than
+a clause. (It used to resolve `A_{m-1}` against the per-case clauses by
+`pol`.)
 
 **In the solver.** `recover_cumulative_capacity_row`
 (`gcs/constraints/cumulative/checkpoint_recovery.cc`) uses this derivation
@@ -2411,8 +2413,12 @@ against a 6.7M-line proof.
 
 **Two things hold the solver's version to what the hand-written one showed.**
 `cumulative_overload_mutation_recover_wrong` recovers a row from the
-neighbouring task's checkpoint and requires veripb to reject it, which only the
-implication check does. And `cumulative_checkpoint_recovery_leak_check` cuts
+neighbouring task's checkpoint and requires veripb to reject it. That used to
+take the implication check, when the finish was a weighted `pol` that happily
+summed a wrong case into a wrong row. Now that the finishes are `cases` lines
+stating the row they recover, the wrong case is rejected at the finish, under
+either encoding. The lane runs on F2 rather than `sharp`, where unit
+propagation recovers every row without the cases and a wrong one goes unread. And `cumulative_checkpoint_recovery_leak_check` cuts
 the proof at the marker the recovery emits and rechecks the prefix against an
 OPB with every per-time capacity row stripped out --- the only thing that says
 the recovery is not quietly closing one of its rups against the very row it
@@ -2451,7 +2457,7 @@ What is left is quadratic in the candidates, given `C_{t-1}`.
 | `~cb_{i,t} \/ cb_{j,t-1} \/ sb_{i,j}`, `~ca_{i,t} \/ ~cb_{j,t} \/ sa_{i,j}` | one `pol` each | `2m(m-1)` |
 | `~starts_at_j \/ ~cact_{i,t} \/ sact_{i,j}` | one `pol`: the two above, `sact[f]`, `cact[r]`, `starts_at_j[r]` | `m(m-1)` |
 | case `j`: `C^start_j` + pins + `F_t`'s reverse half | one `pol`, as the scan's | `m` |
-| finish: no-start + each case at `starts_at_j`'s coefficient | one `pol` | 1 |
+| finish: `F_t`, by cases on which `starts_at_j` holds | one `cases` | 1 |
 
 Some details:
 - **Where `j`'s window opens at `t`.** There is no `cb_{j,t-1}`. Its declared
@@ -2466,10 +2472,12 @@ Some details:
   The only `rup` a chain step still writes is the no-start pin for a task
   whose window opens at `t`, which is one of `cact`'s own conjuncts and
   happens once per task.
-- **The finish weights each case** by `starts_at_j`'s coefficient in the
-  no-start line, so it cancels exactly. Without a previous row, at the base
-  of a chain, the no-start line's degree is `C + 1` rather than one, so the
-  finish divides by it. That needs a constant capacity that is not negative.
+- **The finish is a `cases` line** over the `starts_at_j`. Each case closes
+  on its own clause, and with no starter the no-start line is left with the
+  target alone against its degree. It used to be a weighted `pol`, each case
+  at `starts_at_j`'s coefficient in the no-start line and divided by `C + 1`
+  at the base of a chain, which needed a constant capacity that is not
+  negative.
 
 **Where it runs.** `recover_cumulative_capacity_row` chains up from the
 nearest point below `t` that is already recovered, or at which no task can be
@@ -2527,8 +2535,8 @@ certificate cites recovered rows and the model has no per-time row. Under
 `both-recovering` the second one verifies, its weakened pins closing by unit
 propagation against the very rows being recovered. That is the leak the leak
 check exists for, so the recovering arm is the wrong place for it.
-`recover_wrong_checkpoint`, which the scan's section says only the
-implication check catches, is now also rejected under the shipped encoding.
+`recover_wrong_checkpoint` has a lane under the shipped encoding too, now
+that the finishes reject it themselves.
 
 Across the suite, the recovery takes every path: 10,565 chain steps, 896
 bases, 524 scans (the inferred-cumulative, strengthening, optional,

@@ -302,7 +302,8 @@ namespace
         auto & tracker = v.tracker;
 
         // Tests only: cite the next candidate's checkpoint instead of this
-        // one's. Everything still checks --- see RecoverFromWrongCheckpoint.
+        // one's. The case still checks; the finish does not --- see
+        // RecoverFromWrongCheckpoint.
         auto cite = j;
         if (std::holds_alternative<cumulative_proof_mutation::RecoverFromWrongCheckpoint>(inputs.proof_mutation))
             for (size_t q = 0; q < candidates.size(); ++q)
@@ -563,28 +564,32 @@ namespace
             }
         }
 
-        auto scan = logger.emit_rup_proof_line(
-            WPBSum{} + 1_i * champion.at(make_pair(candidates[0], size_t{0})) + 1_i * nothing_yet[0] >= 1_i, ProofLevel::Top);
-        for (size_t k = 0; k + 1 < candidates.size(); ++k) {
-            auto next = candidates[k + 1];
-            auto & fresh = champion.at(make_pair(next, k + 1));
-            PolBuilder pol;
-            pol.add(scan);
-            for (size_t p = 0; p <= k; ++p) {
-                auto j = candidates[p];
-                pol.add(logger.emit_rup_proof_line(
-                    WPBSum{} + 1_i * ! champion.at(make_pair(j, k)) + 1_i * champion.at(make_pair(j, k + 1)) + 1_i * fresh >= 1_i, ProofLevel::Top));
-            }
-            pol.add(logger.emit_rup_proof_line(WPBSum{} + 1_i * ! nothing_yet[k] + 1_i * fresh + 1_i * nothing_yet[k + 1] >= 1_i, ProofLevel::Top));
-            scan = pol.saturate().emit(logger, ProofLevel::Top);
-        }
+        // The scan: after the first k + 1 candidates, one of them is the latest
+        // starter so far, or nobody has started. Each step follows from the one
+        // before by cases on which: the champion so far stays champion, or the
+        // next candidate overtakes it, or (from nobody) starts, each by unit
+        // propagation.
+        auto scan_after = [&](size_t k) {
+            WPBSum some;
+            for (size_t p = 0; p <= k; ++p)
+                some += 1_i * champion.at(make_pair(candidates[p], k));
+            return move(some) + 1_i * nothing_yet[k] >= 1_i;
+        };
+        auto scan_cases = [&](size_t k) {
+            vector<ProofFlag> cases;
+            for (size_t p = 0; p <= k; ++p)
+                cases.push_back(champion.at(make_pair(candidates[p], k)));
+            cases.push_back(nothing_yet[k]);
+            return cases;
+        };
+        logger.emit_rup_proof_line(scan_after(0), ProofLevel::Top);
+        for (size_t k = 0; k + 1 < candidates.size(); ++k)
+            logger.emit_cases_proof_line_under_reason({}, scan_after(k + 1), scan_cases(k), ProofLevel::Top);
         auto last = candidates.size() - 1;
 
         auto [target_flag, target_forward, target_reverse, target] = literalise_target(v, t);
 
         // --- each case implies the target -------------------------------------
-        PolBuilder finish;
-        finish.add(scan);
         for (auto j : candidates) {
             auto w = champion.at(make_pair(j, last));
             std::map<size_t, ProofLine> pinned;
@@ -606,13 +611,13 @@ namespace
             if (auto diagonal = v.sact_diagonal(j))
                 diagonal_pin = logger.emit_rup_proof_line(WPBSum{} + 1_i * ! w + 1_i * ! v.cact(j, t) + 1_i * *diagonal >= 1_i, ProofLevel::Top);
 
-            finish.add(emit_case(v, t, candidates, j, w, pinned, diagonal_pin, target_reverse));
+            emit_case(v, t, candidates, j, w, pinned, diagonal_pin, target_reverse);
         }
 
-        // Nobody has started by t, so nobody is active at t and the row holds
-        // on the flags' own definitions.
-        finish.add(logger.emit_rup_proof_line(WPBSum{} + 1_i * ! nothing_yet[last] + 1_i * target_flag >= 1_i, ProofLevel::Top));
-        auto target_holds = finish.saturate().emit(logger, ProofLevel::Top);
+        // By cases on the scan's last step: each champion's case is its
+        // emit_case clause, and if nobody has started by t, nobody is active at
+        // t and the row holds on the flags' own definitions.
+        auto target_holds = logger.emit_cases_proof_line_under_reason({}, WPBSum{} + 1_i * target_flag >= 1_i, scan_cases(last), ProofLevel::Top);
 
         return unwrap_target(v, target, target_flag, target_forward, target_holds);
     }
@@ -714,7 +719,6 @@ namespace
                         no_start.weaken(v.cact(i, t - 1_i), tracker);
                 }
         }
-        std::map<size_t, Integer> coefficient;
         for (auto i : candidates) {
             auto continues = had_window_before(i);
             optional<ProofLine> still_running;
@@ -753,10 +757,11 @@ namespace
                     clause += 1_i * v.cact(i, t - 1_i);
                 no_start.add(logger.emit_rup_proof_line(move(clause) >= 1_i, ProofLevel::Top), v.height(i));
             }
-            coefficient.emplace(i, v.most(i, t));
         }
         no_start.add(target_reverse);
-        auto nobody = no_start.emit(logger, ProofLevel::Top);
+        // Not cited by line: the finish's `cases` closes its no-starter branch
+        // against it by propagation.
+        static_cast<void>(no_start.emit(logger, ProofLevel::Top));
 
         // --- j starts at t -----------------------------------------------------
         //
@@ -770,10 +775,10 @@ namespace
         // with the first taking `s_j >= t` from the order literal's defining
         // row where j's window opens at t, and so carrying that literal, which
         // the boundary pin makes a unit. The pin is then a `rup`.
-        PolBuilder finish;
-        finish.add(nobody);
+        vector<ProofFlag> starters;
         for (auto j : candidates) {
             auto guard = starts_at.at(j);
+            starters.push_back(guard);
             std::map<size_t, ProofLine> pinned;
             for (auto i : candidates) {
                 if (i == j)
@@ -820,19 +825,13 @@ namespace
             if (auto diagonal = v.sact_diagonal(j))
                 diagonal_pin = logger.emit_rup_proof_line(WPBSum{} + 1_i * ! guard + 1_i * ! v.cact(j, t) + 1_i * *diagonal >= 1_i, ProofLevel::Top);
 
-            // Weighted by j's coefficient in `nobody`, so that starts_at_j
-            // cancels exactly rather than leaving a residue saturation cannot
-            // remove.
-            finish.add(emit_case(v, t, candidates, j, guard, pinned, diagonal_pin, target_reverse), coefficient.at(j));
+            emit_case(v, t, candidates, j, guard, pinned, diagonal_pin, target_reverse);
         }
 
-        // What is left is the target at some coefficient, against degree D;
-        // saturating brings the coefficient down to D, and at the base dividing
-        // by it gives the unit.
-        finish.saturate();
-        if (! previous)
-            finish.divide_by(constant_value_of(inputs.capacity) + 1_i);
-        auto target_holds = finish.emit(logger, ProofLevel::Top);
+        // By cases on which candidate starts at t: each case is its emit_case
+        // clause, and if none does, the no-start row is left with the target alone
+        // against its degree.
+        auto target_holds = logger.emit_cases_proof_line_under_reason({}, WPBSum{} + 1_i * target_flag >= 1_i, starters, ProofLevel::Top);
 
         return unwrap_target(v, target, target_flag, target_forward, target_holds);
     }

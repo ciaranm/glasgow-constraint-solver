@@ -776,20 +776,21 @@ namespace
             }
 
             if (emitting) {
+                // By cases on the terminal coordinate reached, each bounding
+                // the total from its side. Terminal states sharing a coordinate
+                // share its flags, and the cases line lists each once.
+                vector<ProofFlag> up_flags, down_flags;
                 for (const auto & [w, _] : completed_layers.back()) {
                     const auto & cf = flags.per_coord_flags[n][x].at(w[x].raw_value);
                     PolBuilder{}.add(opb_lines[x].first).add(cf.g_up_fwd).emit(*logger, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(
-                        eager_reason(reason, state), WPBSum{} + 1_i * ! cf.g_up + 1_i * (totals[x] >= lo) >= 1_i, ProofLevel::Temporary);
-
                     PolBuilder{}.add(opb_lines[x].second).add(cf.g_dn_fwd).emit(*logger, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(
-                        eager_reason(reason, state), WPBSum{} + 1_i * ! cf.g_dn + 1_i * (totals[x] <= hi) >= 1_i, ProofLevel::Temporary);
+                    up_flags.push_back(cf.g_up);
+                    down_flags.push_back(cf.g_dn);
                 }
-                logger->emit_rup_proof_line_under_reason(
-                    eager_reason(reason, state), WPBSum{} + 1_i * (totals[x] >= lo) >= 1_i, ProofLevel::Temporary);
-                logger->emit_rup_proof_line_under_reason(
-                    eager_reason(reason, state), WPBSum{} + 1_i * (totals[x] <= hi) >= 1_i, ProofLevel::Temporary);
+                logger->emit_cases_proof_line_under_reason(
+                    eager_reason(reason, state), WPBSum{} + 1_i * (totals[x] >= lo) >= 1_i, up_flags, ProofLevel::Temporary);
+                logger->emit_cases_proof_line_under_reason(
+                    eager_reason(reason, state), WPBSum{} + 1_i * (totals[x] <= hi) >= 1_i, down_flags, ProofLevel::Temporary);
             }
         }
 
