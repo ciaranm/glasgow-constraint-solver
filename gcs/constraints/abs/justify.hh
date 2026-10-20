@@ -5,17 +5,13 @@
 
 namespace gcs::innards
 {
-    // Hole removal: justifies v2 != val, with one lemma settling v1's sign.
-    // Used in the v1 -> v2 direction when both val and -val are absent
-    // from dom(v1).
-    auto justify_abs_hole(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v1, IntegerVariableID v2, Integer val) -> void;
-
-    // The range form of the same removal: justifies `~[v2 in lo..hi]` from a
-    // reason saying v1 holds nothing in [lo, hi] and nothing in [-hi, -lo].
+    // Range hole removal: justifies `~[v2 in lo..hi]` from a reason saying v1
+    // holds nothing in [lo, hi] and nothing in [-hi, -lo].
     //
-    // The per-value form gets away with one RUP lemma because `v2 == val` pins
-    // every bit of v2, which pins v1's through whichever half-reified row is
-    // active. A range pins no bit, so it needs the bound lemmas min_max.cc and
+    // The per-value form (in abs.cc) is a single `cases` line on v1's sign with
+    // no lemmas, because `v2 == val` pins every bit of v2, which pins v1's
+    // through whichever half-reified row the branch makes active. A range pins
+    // no bit, so it needs the bound lemmas min_max.cc and
     // element.cc use -- and those are Theorem 2.9, which wants a lower bound on
     // one operand against an upper bound on the other across their *difference*.
     // This constraint's negative branch links v2 to -v1, so its row is a sum and
@@ -37,7 +33,7 @@ namespace gcs::innards
     // these resolutions to name; a view is fine, because each atom is taken
     // over whichever encoded variable its operand resolves to, and since #904
     // a registered view has one of its own (#931). Width-1 ranges are left to
-    // justify_abs_hole, which is what they canonicalise to anyway.
+    // the per-value form, which is what they canonicalise to anyway.
     auto justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & v1, const IntegerVariableID & v2,
         Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void;
 
@@ -66,11 +62,6 @@ namespace gcs::innards
     // the helper short-circuits when v1 is constant -- the encoding's
     // relevant half is then unreified and plain RUP closes the inference
     // without an explicit pol step.
-
-    // v2 >= 0. Initialiser-only: at run time v1 spanning zero already keeps
-    // v2's lower bound at 0, and the entirely-positive/negative cases use
-    // justify_abs_v2_lb below.
-    auto justify_abs_v2_ge_zero(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, ProofLine abs_nonneg_ge) -> void;
 
     // Side picks which half-reified piece drives the proof:
     //   Nonneg: dom(v1) sits at or above v1_bound >= 1; abs_ge is the

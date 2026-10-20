@@ -51,21 +51,6 @@ namespace
     }
 }
 
-auto gcs::innards::justify_abs_hole(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v1, IntegerVariableID v2, Integer val)
-    -> void
-{
-    // (v2 == val /\ v1 >= 0) -> v1 == val, which the reason's v1 != val turns
-    // into (v2 == val) -> v1 < 0.
-    logger.emit_rup_proof_line_under_reason_then_deview(
-        reason, WPBSum{} + 1_i * (v1 < 0_i) + 1_i * (v1 == val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-
-    // Only the one lemma. RUP cannot split on v1's sign, but it needs to walk
-    // just one branch: from v2 == val the lemma gives v1 < 0, which makes the
-    // negative half active, and that pins v1 to -val against the reason's
-    // v1 != -val. The mirror lemma, (v2 == val /\ v1 < 0) -> v1 == -val, is
-    // what that final RUP derives on the way.
-}
-
 auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & v1,
     const IntegerVariableID & v2, Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le,
     ProofLine abs_neg_ge) -> void
@@ -125,17 +110,6 @@ auto gcs::innards::justify_abs_preimage_range(ProofLogger & logger, const Intege
     }
 
     // rest follows by RUP
-}
-
-auto gcs::innards::justify_abs_v2_ge_zero(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, ProofLine abs_nonneg_ge) -> void
-{
-    if (holds_alternative<ConstantIntegerVariableID>(v1))
-        return;
-
-    auto & ids = logger.names_and_ids_tracker();
-    auto v1_ge0 = ids.need_pol_item_defining_literal(v1 >= 0_i);
-    auto v2_lt0 = ids.need_pol_item_defining_literal(v2 < 0_i);
-    emit_resolution(logger, v1_ge0, abs_nonneg_ge, v2_lt0);
 }
 
 auto gcs::innards::justify_abs_v2_lb(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, AbsLbSide side, Integer v2_lb,

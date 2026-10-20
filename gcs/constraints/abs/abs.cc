@@ -13,7 +13,9 @@
 #include <gcs/interval_set.hh>
 
 #include <algorithm>
+#include <array>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -30,10 +32,12 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::array;
 using std::holds_alternative;
 using std::max;
 using std::min;
 using std::pair;
+using std::span;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -97,17 +101,19 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 {
     // All four consequence bounds live in a single SimpleDefinition-priority
     // initialiser. The OPB encoding stays free of "Abs" labels for inferences
-    // that aren't definitional; each bound's proof is assembled via the
+    // that aren't definitional; the bounds other than v2 >= 0 are proved via the
     // shared helpers in abs/justify.hh as PB resolution steps over the
     // encoding's two half-reified halves.
     //
-    // VeriPB's RUP alone cannot derive any of these bounds for non-constant
-    // v1, because it can't case-split on `v1 >= 0 \/ v1 < 0`. The helpers
-    // supply the case split explicitly; the final RUP then closes the
-    // inference. When v1 IS constant the encoding's relevant half is
-    // unreified, the helpers short-circuit, and plain RUP suffices. When v2
-    // is constant we bail out -- the propagator's per-value loop will
-    // discover any UNSAT.
+    // v2 >= 0 needs a case split on v1's sign, which RUP cannot make, so it is
+    // a `cases` line. For the two bounds on v1, the negated conclusion fixes
+    // v1's sign itself, and the helpers carry the bound across through the
+    // active half. v2 <= max(ub(v1), -lb(v1)) needs both branches: its helper
+    // derives one resolution per sign, since the negative half's crossing is
+    // not RUP, and the final RUP combines them. When v1 IS constant
+    // the encoding's relevant half is unreified, the helpers short-circuit,
+    // and plain RUP suffices. When v2 is constant we bail out -- the
+    // propagator's per-value loop will discover any UNSAT.
     propagators.install_initialiser(
         [v1 = _v1, v2 = _v2, originator = constraint_id(), abs_nonneg_le = _abs_nonneg_lines.first, abs_nonneg_ge = _abs_nonneg_lines.second,
             abs_neg_le = _abs_neg_lines.first,
@@ -115,11 +121,13 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             if (holds_alternative<ConstantIntegerVariableID>(v2))
                 return;
 
-            inference.infer(logger, v2 >= 0_i,
-                JustifyExplicitly{
-                    [logger, v1, v2, abs_nonneg_ge](const ReasonLiterals &) -> void { justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge); },
-                    ThenRUP::Yes, hints::Abs{originator}},
-                NoReason{});
+            // v2 >= 0 by cases on v1's sign. Each branch is a contradiction
+            // between sign bits alone: under v1 >= 0, v2 - v1 >= 0 with v2's
+            // sign bit set; under v1 < 0, v2 + v1 >= 0 with both set. A
+            // constant v1's sign atom is dropped from the split, leaving the
+            // one unreified half to close it by RUP.
+            array<ProofLiteralOrFlag, 1> v1_sign{ProofLiteral{Literal{v1 >= 0_i}}};
+            inference.infer(logger, v2 >= 0_i, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}}, NoReason{});
 
             auto v2_ub = state.upper_bound(v2);
 
@@ -273,6 +281,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             auto v1_is_constant = holds_alternative<ConstantIntegerVariableID>(v1);
             auto neither_constant = ! v1_is_constant && ! v2_is_constant;
 
+            array<ProofLiteralOrFlag, 1> v1_sign{ProofLiteral{Literal{v1 >= 0_i}}};
             auto [post_v2_lb, post_v2_ub] = state.bounds(v2);
             for (auto [lo, hi] : v2_set.each_interval_minus(image_set)) {
                 auto clipped_lo = max(lo, post_v2_lb);
@@ -304,9 +313,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     image_guard.step();
                     if (! state.in_domain(v2, val))
                         continue;
-                    inference.infer_not_equal(logger, v2, val,
-                        JustifyExplicitly{[logger, v1, v2, val](const ReasonLiterals & r) { justify_abs_hole(*logger, r, v1, v2, val); },
-                            ThenRUP::Yes, hints::Abs{originator}},
+                    // By cases on v1's sign. v2 == val pins every bit of v2,
+                    // and through whichever half-reified row the branch makes
+                    // active, every bit of v1, at val or -val, against the
+                    // reason.
+                    inference.infer_not_equal(logger, v2, val, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}},
                         ExplicitReason{ReasonLiterals{{v1 != val, v1 != -val}}});
                 }
             }
