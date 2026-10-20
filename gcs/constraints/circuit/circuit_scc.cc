@@ -897,7 +897,7 @@ namespace
             .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line)
             .add(root_gt_next.forwards_reif_line)
             .emit(ctx.logger, ProofLevel::Temporary);
-        auto rup1 = ctx.logger.emit_rup_proof_line(
+        ctx.logger.emit_rup_proof_line(
             WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) + 1_i * ! root_gt_next.flag + 1_i * ! node_gt_root.flag >= 1_i,
             ProofLevel::Current);
         PolBuilder{}
@@ -905,18 +905,17 @@ namespace
             .add(next_gt_subroot.forwards_reif_line)
             .add(subroot_gt_node.forwards_reif_line)
             .emit(ctx.logger, ProofLevel::Temporary);
-        auto rup2 = ctx.logger.emit_rup_proof_line(
+        ctx.logger.emit_rup_proof_line(
             WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) + 1_i * ! next_gt_subroot.flag + 1_i * ! subroot_gt_node.flag >= 1_i,
             ProofLevel::Current);
-        PolBuilder{}
-            .add(rup1)
-            .add(rup2)
-            .add(get<2>(node_then_subroot_then_root))
-            .add(get<2>(subroot_then_node_then_root))
-            .saturate()
-            .emit(ctx.logger, ProofLevel::Current);
-
-        ctx.logger.emit_rup_proof_line_under_reason(ctx.reason, WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
+        // By cases on the order: under the first ordering, and under the second,
+        // the reachable-set argument above rules the edge out; under neither,
+        // the two lines just derived do, through the positions. Unit
+        // propagation happens to reach this without the split, but the split
+        // is the argument.
+        const ProofLiteralOrFlag orderings[] = {get<0>(node_then_subroot_then_root), get<0>(subroot_then_node_then_root)};
+        ctx.logger.emit_cases_proof_line_under_reason(
+            ctx.reason, WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, orderings, ProofLevel::Current);
     }
 
     auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner,
