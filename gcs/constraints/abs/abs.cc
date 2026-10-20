@@ -100,13 +100,11 @@ auto Abs::define_proof_model(ProofModel & model, const State &) -> void
 auto Abs::install_propagators(Propagators & propagators) -> void
 {
     // All four consequence bounds live in a single SimpleDefinition-priority
-    // initialiser. v2 >= 0 needs a case split on v1's sign, which RUP cannot
-    // make, so it is a `cases` line. The two bounds on v1 are plain RUP: each
-    // negated conclusion fixes v1's sign, which activates one half, and
-    // carrying a bound across that half is Theorem 2.9 (see
-    // dev_docs/large-domains.md). v2 <= max(ub(v1), -lb(v1)) is the one that
-    // keeps a helper; abs/justify.hh says why. When v2 is constant we bail out
-    // -- the propagator's per-value loop will discover any UNSAT.
+    // initialiser. v2 >= 0 and the two bounds on v1 are each a `cases` line on
+    // v1's sign, the argument one would give by hand. v2 <= max(ub(v1),
+    // -lb(v1)) is the one that keeps a helper; abs/justify.hh says why. When
+    // v2 is constant we bail out -- the propagator's per-value loop will
+    // discover any UNSAT.
     propagators.install_initialiser(
         [v1 = _v1, v2 = _v2, originator = constraint_id(), abs_nonneg_le = _abs_nonneg_lines.first, abs_neg_le = _abs_neg_lines.first](
             State & state, auto & inference, ProofLogger * const logger) -> void {
@@ -123,17 +121,17 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 
             auto v2_ub = state.upper_bound(v2);
 
-            // The negation, v1 >= ub(v2) + 1 >= 1, fixes v1's sign. A variable
-            // v2 cannot have ub(v2) < 0 here, since v2 >= 0 above would have
-            // failed.
+            // v1 <= ub(v2) by cases on v1's sign: if v1 >= 0 then v1 = v2, so
+            // the bound crosses the non-negative half (Theorem 2.9); if v1 < 0
+            // it is below ub(v2) >= 0 anyway. v1 >= -ub(v2) is the mirror. The
+            // propagator repeats both under v2's current bound.
             if (v2_ub >= 0_i) {
-                inference.infer(logger, v1 <= v2_ub, JustifyUsingRUP{hints::Abs{originator}}, NoReason{});
+                inference.infer(logger, v1 <= v2_ub, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}}, NoReason{});
             }
 
-            // The negation, v1 <= -ub(v2) - 1 <= -2, fixes v1's sign. When
-            // ub(v2) is 0 the propagator infers v1 >= 0 instead.
+            // When ub(v2) is 0 the propagator infers v1 >= 0 instead.
             if (v2_ub > 0_i) {
-                inference.infer(logger, v1 >= -v2_ub, JustifyUsingRUP{hints::Abs{originator}}, NoReason{});
+                inference.infer(logger, v1 >= -v2_ub, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}}, NoReason{});
             }
 
             auto [v1_lb, v1_ub] = state.bounds(v1);
@@ -197,12 +195,10 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            // Direction v2 -> v1: tighten v1 from the preimage of v2. When v2
-            // is non-negative, as the initialiser makes it unless it is a
-            // constant, each conclusion's negation fixes v1's sign, and these
-            // are plain RUP across the active half (Theorem 2.9). A negative
-            // constant v2 fixes no sign, so these split on it: each branch is
-            // then a bound on v1 against its own sign (Theorem 2.7).
+            // Direction v2 -> v1: tighten v1 from the preimage of v2, by cases
+            // on v1's sign as in the initialiser. For a negative constant v2,
+            // which the initialiser skips, each branch is instead a bound on v1
+            // against its own sign (Theorem 2.7).
             if (v2_ub < v1_ub) {
                 inference.infer(logger, v1 < v2_ub + 1_i, JustifyUsingCases{span<const ProofLiteralOrFlag>{v1_sign}, hints::Abs{originator}},
                     ExplicitReason{ReasonLiterals{v2 <= v2_ub}});
