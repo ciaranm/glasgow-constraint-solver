@@ -751,21 +751,13 @@ auto ComparatorNetwork::separate_from_gap(const ProofWire & x, const ProofWire &
     // apart, rather than one the model gave it. The reverse half of "x runs
     // first" contradicts the gap outright, so what comes out is the *unit*
     // `x runs first` --- strictly stronger than the two-literal clause a model
-    // pair gives.
-    //
-    // Weaken it straight back, by adding the literal axiom for the other
-    // direction. A transfer lemma cancels a separation's clause against one
-    // guard from each of its two halves, which lands on a contradiction only
-    // when the clause has both literals: handed the unit it lands one literal
-    // short, sound but not closing, and the subproof then needs a
-    // database-wide RUP to finish. That is a real cost --- transfers are the
-    // cubic term here --- for a row that is only stronger than needed.
+    // pair gives, and recorded as it is. Its only readers are transfers, whose
+    // `cases` lines take a unit as readily as a clause; the gap derivations
+    // never meet a gap-derived separation, since selection sort does not
+    // compare a comparator's two outputs again.
     auto flags = reify_separation(x, y, "gap");
     PolBuilder builder;
-    builder.add(flags.x_first_reverse)
-        .add(gap)
-        .divide_by(_big)
-        .add(_logger.names_and_ids_tracker().xliteral_for(flags.y_first), _logger.names_and_ids_tracker());
+    builder.add(flags.x_first_reverse).add(gap).divide_by(_big);
     record_separation(x, flags.x_first_row, flags.x_first, y, flags.y_first_row, flags.y_first, builder.emit(_logger, _level));
 }
 
@@ -790,6 +782,28 @@ auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other,
 
     auto flags = reify_separation(out, other, "t");
 
+    // Per branch and direction, one lemma: if the selector picks this input
+    // and the input runs first (or the other wire does), the output does too.
+    // The reverse half of "the output runs first" gives `out + d_out >= other +
+    // 1` unless it does, the output's record rows turn that into the input's
+    // start and duration under the selector's polarity, and the input's own
+    // separation row cancels it unless the input runs first. Every guard comes
+    // in at a multiple of `big`, or at `2 * span <= big` for the two record
+    // rows, so dividing by `big` leaves a clause:
+    // `out_first + ~[selector picks the input] + ~input_first (+ guard)`.
+    for (const auto & branch : branches) {
+        PolBuilder forwards;
+        forwards.add(flags.x_first_reverse).add(branch.le).add(branch.d_le).add(branch.separation->first.at(branch.input->id)).divide_by(_big);
+        forwards.emit(_logger, _level);
+
+        PolBuilder backwards;
+        backwards.add(flags.y_first_reverse).add(branch.ge).add(branch.separation->first.at(other.id)).divide_by(_big);
+        backwards.emit(_logger, _level);
+    }
+
+    // Then the separation by cases on the selector. Under either polarity, with
+    // neither new flag set, that branch's two lemmas say the input runs first
+    // in neither direction, against its separation clause.
     WPBSum goal;
     goal += 1_i * flags.x_first;
     goal += 1_i * flags.y_first;
@@ -800,64 +814,8 @@ auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other,
         for (const auto & term : _guard.terms)
             goal += 1_i * term.variable;
 
-    map<ProofGoal, Subproof> subproofs;
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
-        // The negated goal, as case_split takes it: the last line in when the
-        // subproof opens. Needed to discharge the guard at the end.
-        auto negation = sub_logger.get_current_proof_line();
-        // Under the negated goal neither flag holds, so both reverse halves
-        // fire: the output is not before the other wire, and the other wire is
-        // not before the output.
-        auto no_x = sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * ! flags.x_first >= 1_i, ProofLevel::Temporary);
-        auto no_y = sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * ! flags.y_first >= 1_i, ProofLevel::Temporary);
-
-        PolBuilder out_late_builder;
-        out_late_builder.add(flags.x_first_reverse).add(no_x, _big);
-        auto out_late = out_late_builder.emit(sub_logger, ProofLevel::Temporary);
-
-        PolBuilder other_late_builder;
-        other_late_builder.add(flags.y_first_reverse).add(no_y, _big);
-        auto other_late = other_late_builder.emit(sub_logger, ProofLevel::Temporary);
-
-        vector<ProofLine> kills;
-        for (const auto & branch : branches) {
-            // Rewrite both halves onto this input, then cancel each against the
-            // input's own separation row, leaving the selector's polarity and
-            // the separation's guard. The clause then removes the guard.
-            PolBuilder as_input;
-            as_input.add(out_late).add(branch.le).add(branch.d_le);
-            auto forwards = as_input.emit(sub_logger, ProofLevel::Temporary);
-
-            PolBuilder as_input_reverse;
-            as_input_reverse.add(other_late).add(branch.ge);
-            auto backwards = as_input_reverse.emit(sub_logger, ProofLevel::Temporary);
-
-            PolBuilder cancel_forwards;
-            cancel_forwards.add(forwards).add(branch.separation->first.at(branch.input->id)).divide_by(_big);
-            forwards = cancel_forwards.emit(sub_logger, ProofLevel::Temporary);
-
-            PolBuilder cancel_backwards;
-            cancel_backwards.add(backwards).add(branch.separation->first.at(other.id)).divide_by(_big);
-            backwards = cancel_backwards.emit(sub_logger, ProofLevel::Temporary);
-
-            PolBuilder kill;
-            kill.add(forwards).add(backwards).add(branch.separation->clause).divide_by(2_i);
-            kills.push_back(kill.emit(sub_logger, ProofLevel::Temporary));
-        }
-
-        PolBuilder both;
-        both.add(kills[0]).add(kills[1]);
-        // Unguarded this is already `0 >= 1`. Guarded it is `2 * guard >= 1`,
-        // which the negated goal refutes by propagation --- but a subproof has
-        // to END on a syntactic contradiction, so saturate to `guard >= 1` and
-        // add the negation: the guard's two polarities fold into the degree and
-        // what is left is `~x_first + ~y_first >= 3`.
-        if (_clauses_guarded)
-            both.saturate().add(negation);
-        both.emit(sub_logger, ProofLevel::Temporary);
-    }});
-
-    auto clause = _logger.emit_red_proof_line(move(goal) >= 1_i, {}, _level, subproofs);
+    const ProofLiteralOrFlag cases[] = {c.selector};
+    auto clause = _logger.emit_cases_proof_line_under_reason({}, move(goal) >= 1_i, cases, _level);
     record_separation(out, flags.x_first_row, flags.x_first, other, flags.y_first_row, flags.y_first, clause);
 }
 
