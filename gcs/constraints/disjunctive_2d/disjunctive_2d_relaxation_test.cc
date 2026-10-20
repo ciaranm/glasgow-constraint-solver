@@ -631,6 +631,13 @@ auto main(int argc, char * argv[]) -> int
     // end 3), so no pair overlaps on y and no pair has a blocker to be pushed
     // away from: the pairwise rule sees nothing here at all.
     const Instance sharp{{{0, 2}, {0, 2}, {0, 2}}, {{0, 5}, {0, 5}, {0, 5}}, {3, 3, 3}, {3, 3, 3}};
+    // `sharp` widened on the time axis, for the refutation mutation: the same
+    // overflow, at time 20. A pair's time-axis refutation carries a bound across
+    // its separation row at the width, which unit propagation only makes by
+    // itself when the positions are a couple of bits wide or the bound lands
+    // on zero. Since the network's gaps are concluded by cases, `sharp`'s
+    // corrupted proof verifies; this one's does not.
+    const Instance sharp_wide{{{7, 20}, {7, 20}, {7, 20}}, {{0, 5}, {0, 5}, {0, 5}}, {14, 14, 14}, {3, 3, 3}};
 
     // Mutation mode: emit one deliberately corrupted proof and stop, for
     // run_test_and_expect_verify_failure.bash to hand to veripb.
@@ -695,8 +702,18 @@ auto main(int argc, char * argv[]) -> int
             branch = branch_sequence(branch_with(variable_order::dom(presences), value_order::largest_first()),
                 branch_with(variable_order::dom(positions), value_order::smallest_first()));
         }
+        // The guard is only load-bearing where a presence is fixed by search
+        // rather than by its domain, for the same reason as the conjunct: so
+        // `sharp` with every presence free, presences first.
+        else if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceGuard>(*mutation)) {
+            auto [positions, presences] = post_present(p, sharp, with, *mutation, 0);
+            branch = branch_sequence(branch_with(variable_order::dom(presences), value_order::largest_first()),
+                branch_with(variable_order::dom(positions), value_order::smallest_first()));
+        }
         else if (presence_mutation)
             (void)post_present(p, sharp, with, *mutation);
+        else if (std::holds_alternative<disjunctive_2d_proof_mutation::SkipOneRefutation>(*mutation))
+            post(p, sharp_wide, with, *mutation);
         else if (ttef)
             post(p, std::holds_alternative<disjunctive_2d_proof_mutation::EdgeFindingDropPushed>(*mutation) ? ttef_pushed_matters : ttef_lb, with,
                 *mutation);
@@ -707,7 +724,8 @@ auto main(int argc, char * argv[]) -> int
         else
             post(p, sharp, with, *mutation);
         SolveCallbacks callbacks{.solution = [&](const CurrentState &) -> bool {
-            return std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceConjunct>(*mutation);
+            return std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceConjunct>(*mutation) ||
+                std::holds_alternative<disjunctive_2d_proof_mutation::SkipPresenceGuard>(*mutation);
         }};
         if (branch)
             callbacks.branch = *branch;

@@ -543,58 +543,58 @@ auto ComparatorNetwork::derive_gap(const Comparator & c) -> ProofLine
     const auto & separation = separation_between(c.a, c.b);
     auto a_first = separation.first.at(c.a.id), b_first = separation.first.at(c.b.id);
 
-    // One half per polarity of the selector. Under the guard one of the two
-    // inputs starts strictly later, so the separation cannot be resolved that
-    // way round: `later_first` is the row this refutes, `earlier_first` the one
-    // left standing, and the gap then reads off the outputs' record rows.
-    auto half = [&](ProofLine later_first, ProofLine earlier_first, ProofLine guard_row, const ProofWire & later_duration, ProofLine hi_ge,
-                    ProofLine lo_le, ProofLine d_lo_le) -> ProofLine {
-        // Starting later is only a reason not to finish first if the later
-        // task's duration is positive --- which has to be said, the duration no
-        // longer being a constant in the degree.
-        auto running = later_first;
-        if (! holds_alternative<comparator_network_mutation::DropPositivity>(_mutation)) {
-            PolBuilder builder;
-            builder.add(later_first).add(_positivity.at(later_duration.id));
-            running = builder.emit(_logger, _level);
-        }
-        {
-            PolBuilder builder;
-            builder.add(running).add(guard_row).divide_by(_big);
-            running = builder.emit(_logger, _level);
-        }
-        {
-            PolBuilder builder;
-            builder.add(running).add(separation.clause);
-            running = builder.emit(_logger, _level);
-        }
-        {
-            PolBuilder builder;
-            builder.add(running).multiply_by(_big).add(earlier_first);
-            running = builder.emit(_logger, _level);
-        }
+    // Under each polarity of the selector one input starts strictly later, so
+    // it cannot have run first: its separation row and the selector's own row
+    // cancel the positions and leave `-d_later >= 0`, which positivity refutes.
+    // Starting later is only a reason not to finish first if the later task's
+    // duration is positive --- which has to be said, the duration no longer
+    // being a constant in the degree. Dividing by `big` leaves the clause
+    // `~later_first + [the other polarity]`.
+    auto refute_later = [&](ProofLine later_first, ProofLine selector_row, const ProofWire & later_duration) -> void {
         PolBuilder builder;
-        builder.add(running).add(hi_ge).add(lo_le).add(d_lo_le);
-        return builder.emit(_logger, _level);
+        builder.add(later_first);
+        if (! holds_alternative<comparator_network_mutation::DropPositivity>(_mutation))
+            builder.add(_positivity.at(later_duration.id));
+        builder.add(selector_row).divide_by(_big);
+        builder.emit(_logger, _level);
+    };
+
+    // The direction the selector agrees with: the earlier task's separation
+    // row, read off through the outputs' record rows, is the gap.
+    auto agreeing = [&](ProofLine earlier_first, ProofLine hi_ge, ProofLine lo_le, ProofLine d_lo_le) -> void {
+        PolBuilder builder;
+        builder.add(earlier_first).add(hi_ge).add(lo_le).add(d_lo_le);
+        builder.emit(_logger, _level);
     };
 
     auto swapped = holds_alternative<comparator_network_mutation::SwapDurations>(_mutation);
-    half(a_first, b_first, c.reverse, c.d_a, c.hi_ge_a, c.lo_le_b, swapped ? c.d_lo_le_a : c.d_lo_le_b);
-    half(b_first, a_first, c.forward, c.d_b, c.hi_ge_b, c.lo_le_a, swapped ? c.d_lo_le_b : c.d_lo_le_a);
+    // Selector false: a starts later, lo is b, hi is a.
+    refute_later(a_first, c.reverse, c.d_a);
+    agreeing(b_first, c.hi_ge_a, c.lo_le_b, swapped ? c.d_lo_le_a : c.d_lo_le_b);
+    // Selector true: b starts later, lo is a, hi is b.
+    refute_later(b_first, c.forward, c.d_b);
+    agreeing(a_first, c.hi_ge_b, c.lo_le_a, swapped ? c.d_lo_le_b : c.d_lo_le_a);
 
     WPBSum goal;
     add_terms(goal, c.hi, 1_i);
     add_terms(goal, c.lo, -1_i);
     add_terms(goal, c.d_lo, -1_i);
-    // A guarded clause enters `running` at one and is multiplied by `big`
-    // below, so the half carries the guard at `big` and the goal must too.
+    // A guarded separation row carries the guard at `big`, so the agreeing
+    // half does too, and the goal must. That also makes the goal's negation
+    // falsify the guard, which the refutations and the separation clause carry
+    // at one.
     if (_clauses_guarded)
         for (const auto & term : _guard.terms)
             goal += term;
 
     if (holds_alternative<comparator_network_mutation::RupGap>(_mutation))
         return _logger.emit_rup_proof_line(move(goal) >= 0_i, _level);
-    return case_split(move(goal) >= 0_i, c.selector);
+
+    // By cases on the selector and the separation's two flags: under each
+    // polarity the later task's flag is refuted, the earlier task's has its
+    // half, and with neither flag the separation clause is falsified.
+    const ProofLiteralOrFlag cases[] = {c.selector, separation.flag.at(c.a.id), separation.flag.at(c.b.id)};
+    return _logger.emit_cases_proof_line_under_reason({}, move(goal) >= 0_i, cases, _level);
 }
 
 auto ComparatorNetwork::derive_gap_allowing_zero(const Comparator & c) -> ProofLine

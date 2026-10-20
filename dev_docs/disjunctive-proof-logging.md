@@ -1719,13 +1719,14 @@ twice and in their pair's clause at coefficient two, the shape #1039
 folded once per variable in 1D. Nothing asks for that here.
 
 Two mutation lanes show both halves are load-bearing:
-`skip_presence_guard` (route B, on `sharp` with presences fixed to 1)
-and `skip_presence_conjunct` (route A, rejected at the pair clause's
-RUP). The second needs presences that are really undecided when a row is
-derived: over a presence fixed to 1 by its domain, unit propagation
-falsifies the clause's presence disjuncts without the conjunct, so that
-lane enumerates five unit squares in a box of four, branching on
-presences first.
+`skip_presence_guard` (route B, on `sharp`) and `skip_presence_conjunct`
+(route A, rejected at the pair clause's RUP). Both need presences that
+are really undecided when a row is derived: over a presence fixed to 1 by
+its domain, unit propagation falsifies the clause's presence disjuncts
+without the guard or the conjunct. So both branch on presences first,
+the conjunct's lane over five unit squares in a box of four. Route B's
+lane had presences fixed to 1 until the comparator network's gaps were
+concluded by `cases`, after which its corrupted proof verified.
 
 **What it does not reach.** The endgame lands on a statement about the
 *mandatory* set with no activity flags in it, which is exactly enough
