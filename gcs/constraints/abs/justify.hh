@@ -22,13 +22,12 @@ namespace gcs::innards
     // dev_docs/large-domains.md.
     //
     // So each branch's two bounds are derived by `pol` instead, in the same
-    // resolution shape as the consequence-bound helpers below: the model half,
-    // plus the defining item of each atom whose arithmetic is used. That leaves
-    // one clause per branch whose only free literal is the sign, and the two
-    // signs being a literal and its negation, the conclusion follows by RUP.
+    // resolution shape as justify_abs_v2_le_big_m below: the model half, plus
+    // the defining item of each atom whose arithmetic is used. With those in
+    // the database the removal is one `cases` line on v1's sign.
     //
-    // Four resolutions and two RUP lines per removed range, independent of its
-    // width, which is the property that matters. Neither variable may be a
+    // Four resolutions and one `cases` line per removed range, independent of
+    // its width, which is the property that matters. Neither variable may be a
     // constant, which pins every bit and so has no order-encoding atom for
     // these resolutions to name; a view is fine, because each atom is taken
     // over whichever encoded variable its operand resolves to, and since #904

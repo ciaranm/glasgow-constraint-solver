@@ -72,16 +72,12 @@ auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLite
     emit_resolution(logger, abs_neg_le, ids.need_pol_item_defining_literal(v2 >= lo), ids.need_pol_item_defining_literal(v1 >= -lo + 1_i));
     emit_resolution(logger, abs_neg_ge, ids.need_pol_item_defining_literal(v2 < hi + 1_i), ids.need_pol_item_defining_literal(v1 < -hi));
 
-    // With each branch's pair in the database, v2 inside [lo, hi] falsifies
-    // every literal of that branch's reason literal, leaving the sign. Spelled
-    // with the two order atoms rather than the range literal, so no range flag
-    // has to be defined for this line.
-    logger.emit_rup_proof_line_under_reason(
-        reason, WPBSum{} + 1_i * (v1 < 0_i) + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, ProofLevel::Temporary);
-    logger.emit_rup_proof_line_under_reason(
-        reason, WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, ProofLevel::Temporary);
-
-    // The two signs being a literal and its negation, the rest follows by RUP.
+    // Then by cases on v1's sign: with that branch's pair in the database, v2
+    // inside [lo, hi] falsifies every literal of the branch's reason literal.
+    // Spelled with the two order atoms rather than the range literal, so no
+    // range flag has to be defined for this line.
+    const ProofLiteralOrFlag v1_sign[] = {ProofLiteral{Literal{v1 >= 0_i}}};
+    logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, v1_sign, ProofLevel::Temporary);
 }
 
 auto gcs::innards::justify_abs_preimage_range(ProofLogger & logger, const IntegerVariableID & v1, const IntegerVariableID & v2, Integer lo,
