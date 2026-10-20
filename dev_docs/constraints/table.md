@@ -13,7 +13,9 @@
 > this family: #503 (the engine, which is where the remaining gap to Gecode
 > is), #364 (incrementality survey), #833 (large domains), #131 (a generic
 > watched-clause propagator, which would subsume `NegativeTable`'s), #868
-> (cross-solver). Tracked under #871.
+> (cross-solver). Filed since, reaching in from a presolver: #1378, under an
+> `AutoTable` the root trim runs inside its throwaway search and is lost.
+> Tracked under #871.
 
 ### Re-audit, 2026-10-08
 
@@ -68,7 +70,7 @@ Three things to know before touching it.
   cost is posting, but 1.8× behind on the two small Renaults. #508's measurements
   put most of what remains in the engine (#503), not the table.
 - **A wide domain is trimmed to the table's values once, at the root**, which is
-  what keeps a `0..10^9` variable from costing its width. There are three ways
+  what keeps a `0..10^9` variable from costing its width. There are four ways
   round the trim.
   - It runs after the domain rasteriser, so a table of eight or more tuples,
     or any table under a forced `table::CompactTable`, still walks the whole
@@ -80,6 +82,10 @@ Three things to know before touching it.
     every call**, even with only two tuples and under the default algorithm.
     Once none is, the scan removes the unsupported values one at a time:
     33,942 proof lines at width 1,000.
+  - It runs once, on the first call, behind a marker that is not backtracked.
+    An `AutoTable` presolver's throwaway root search makes that call and then
+    undoes its removals, so the real root is never trimmed and the support
+    scan removes each out-of-range value separately (#1378).
 
   See [Interval efficiency](#interval-efficiency).
 - **`NegativeTable` is not generalised arc consistent**, nor even `bounds(D)`
@@ -241,9 +247,13 @@ Nothing in the corpus asked for one.
 - **Child constraints:** none.
 - **Shares its code.** `propagate_extensional` (`extensional_utils.{hh,cc}`) is
   the propagator for three other callers, each with its own table:
-  - the **`AutoTable` presolver**, which enumerates the solutions of its donor
-    constraints over a scope and installs the extensional propagator over them,
-    with no hint and no owning constraint (`auto_table.cc:110-173`);
+  - the **`AutoTable` presolver**, which runs a complete search over a scope
+    its caller names, propagating the whole model at every node, and installs
+    the extensional propagator over every assignment of the scope that
+    propagation does not refute, with no hint and no owning constraint
+    (`auto_table.cc:110-173`). It has no donors, and the table contains the
+    projection of the model's solutions but can be larger
+    ([`auto_table.md`](../presolvers/auto_table.md));
   - **`install_tabulation`** (`innards/tabulation.hh:312-340`): the
     `consistency::Tabulated` arm of `Plus`, `Minus`, `Multiply`, `Divide`,
     `Modulus`, `Power` and `LinearEquality`, and for the arithmetic classes also
@@ -254,7 +264,8 @@ Nothing in the corpus asked for one.
   So a change to the helper is a change to all of them, and so is a change to
   `ExtensionalCompactTable`'s thresholds. The rules in this document's catalogue
   are theirs as well. Their table-building rules belong to `arithmetic.md` and
-  `linear.md`, and the presolver's own pass to its document, not yet written.
+  `linear.md`, and the presolver's own pass to
+  [`auto_table.md`](../presolvers/auto_table.md).
 - **`NegativeTable` shares a design, not code, with the refined nogood store**
   (`nogoods.cc`, `install_refined_nogoods`): two watches per clause, the watched
   positions packed into `watch_state`, and the set-up count kept in
@@ -413,12 +424,13 @@ agreeing on the table rows, that gap is closed.
   that two rows matched, in a table of three or more tuples (#1115).
 - **`NegativeTable`:** none.
 - **`AutoTable`'s table** has a `State` selector, whose identifier is reserved
-  before the presolver's search and allocated after it. Its literals are
-  introduced in the proof as the search finds each tuple, with two `red` lines
-  per tuple (named `autotable`). **At any assertion level other than `Off`
-  those lines are skipped**, so a hints-only proof holds no rows for its
-  inferences at all. The tabulated constraints skip their in-proof table the
-  same way (`arithmetic.md`, tabulate-relation).
+  before the presolver's search and allocated after it. Its literals (named
+  `<index>intr_autotable`, e.g. `i[5intr_autotable][eq0]`) are introduced in
+  the proof as the search finds each tuple, with two `red` lines per tuple.
+  **At any assertion level other than `Off` those lines are skipped**, so a
+  hints-only proof holds no rows for its inferences at all. The tabulated
+  constraints skip their in-proof table the same way (`arithmetic.md`,
+  tabulate-relation).
 
 ## The implementation
 
@@ -436,7 +448,11 @@ agreeing on the table rows, that gap is closed.
   dictionary share one set of masks (`shared_tuples_test` checks that three
   constraints over one tuple set find one set of masks).
 
-**The first propagator call, at the root,** does the rest.
+**The first propagator call** does the rest. It is at the root, unless an
+`AutoTable` presolver's throwaway search made it: then the trim below runs
+inside that search, its backtrack undoes the removals, and the marker that
+says the trim is done (`ExtensionalResidues::initialised`) survives, so the
+real root is never trimmed (#1378).
 
 - It lays out the per-column rasterisation, using each column's range of
   **table** values, up to 64 words; a column with a wildcard is excluded.
@@ -512,6 +528,7 @@ those 1,500 instances, and none in the smaller sample.
 |---|---|---|
 | live set (`ExtensionalLiveTuples`) | only its size | every deeper removal swaps within `[0, size)`, so restoring the size re-admits exactly the tuples dropped since. Order within the live region changes, which changes only which witness is found first |
 | residual supports (`ExtensionalResidues`) | no | a stale residue is re-checked before use and re-sought if dead; a backtrack only makes more tuples live |
+| the root trim's marker (`ExtensionalResidues::initialised`) | no | only if the first call is at the real root. Under an `AutoTable` it is not: the presolver's throwaway search backtracks the trim's removals and keeps the marker (#1378) |
 | rasterised domains (`ExtensionalDomainBitmaps`) | no | scratch, rebuilt at the top of every call that uses it |
 | compact table: live words, their index, previous domains | through a propagator-owned undo trail and one backtracked trail mark | unwound lazily at the top of the next call. Nothing reads the arrays in between, so this is exact. Two constraint-state slots cost Dubois 14% before the limit moved onto the trail (#804) |
 | support masks (`ExtensionalSupportMasks`) | no | read-only once built, and shared per tuple set |
@@ -649,6 +666,11 @@ not close the gap to Gecode, and it put the remaining time in the engine
        at the root when the row is already dead (`y ∈ 1..1` above). They happen
        again at every node where search kills the last live wildcard row, and
        backtracking undoes them.
+     - **Under an `AutoTable` presolver** the root trim has not run at the real
+       root, on any column: it ran inside the presolver's throwaway search,
+       whose backtrack undid it. So the scan visits the whole domain there and
+       removes each out-of-range value separately (#1378); see [Known
+       limitations](#known-limitations).
 
      The timings are wall-clock time of the whole `solve_with` call
      (`steady_clock`), Release at `c9ceea25`, proofs off, fataepyc-10, pinned
@@ -837,9 +859,11 @@ where JP 3.3 states one value.
 
 - **Infers** — `x ≥ lo` and `x < hi + 1`, where `[lo, hi]` is the range of
   values `x`'s column holds.
-- **Fires when** — the first live-set call, at the root, for each column with
-  no wildcard whose range fits 64 words. It does not run under a forced
-  `table::CompactTable`.
+- **Fires when** — the first live-set call, for each column with no wildcard
+  whose range fits 64 words. That call is at the root unless an `AutoTable`
+  presolver's throwaway search made it, and then the rule's removals are undone
+  and it never fires at the real root (#1378). It
+  does not run under a forced `table::CompactTable`.
 - **Strength** — `partial`: a bound on each rasterisable column.
 - **Algorithm** — two comparisons per column.
 - **Why it is true** — a value outside the column's range is in no tuple.
@@ -856,9 +880,13 @@ where JP 3.3 states one value.
     says: its rows are skipped in a hints-only proof, and the hint's
     `originator` names the relation to rebuild them from.
   - **`search` for `AutoTable`**, whose rows are also absent and whose
-    assertion carries no hint. A reconstructor has to re-enumerate the model's
-    constraints over the variables the reason names, which is the presolver's
-    own search, at the product of those domains.
+    assertion carries no hint. A reconstructor has to re-run the presolver's
+    own search over its scope, at up to the product of the scope's domains,
+    propagating every constraint of the model: one over none of the reason's
+    variables may be what refuted a tuple. With `x ∈ 0..2`, `y, w ∈ 0..1`,
+    `x ≠ y`, `x ≠ w`, `y ≠ w` and a scope of `{x}`, the table's `x ≥ 2` needs
+    `y ≠ w` ([`auto_table.md`](../presolvers/auto_table.md),
+    install-table-propagator).
 - **Proof size** — one line per bound moved.
 - **Gaps** — `None.`
 - **Tightness** — a push one value too far (`v1 < 3` in place of `v1 < 4` in
@@ -871,8 +899,9 @@ where JP 3.3 states one value.
 
 - **Infers** — `x ∉ [a, b]` for each maximal run of `x`'s domain that its
   column does not hold.
-- **Fires when** — the first live-set call, at the root, for each column with
-  no wildcard whose range is **too wide** to rasterise.
+- **Fires when** — the first live-set call, for each column with no wildcard
+  whose range is **too wide** to rasterise. As for rule 2, that call is at the
+  root unless an `AutoTable` presolver's throwaway search made it (#1378).
 - **Strength** — `partial`: every column value outside the table removed, on
   those columns.
 - **Algorithm** — the column's distinct values as an interval set, then
@@ -1299,6 +1328,14 @@ Propagation strength does not change with proofs on, for any rule.
   such episode costs width-proportional time, but only the first costs about
   33–34 proof lines per value (one of ten in the probe under [Interval
   efficiency](#interval-efficiency)); each later one costs one line per value.
+- Under an `AutoTable` presolver, the root trim is lost for every
+  `propagate_extensional` caller: a posted `Table`, a tabulated constraint and
+  an earlier `AutoTable`'s own table (the last by the code, not measured). A
+  wide domain then costs its width at the real root. With four tuples over
+  `x ∈ 0..10^7` and `y`, and an `AutoTable` over an unrelated variable, a solve
+  went from under 1 ms to 838–888 ms, with the same 8 solutions and 11
+  recursions (`tmp/fd-pre/older/trim/trim.cc`, five runs each, Release at
+  `86caad24`, fataepyc-09, 2026-10-20; #1378 has 844 ms).
 - `NegativeTable` is not generalised arc consistent.
 - A repeated variable in `Table` weakens propagation below GAC on that variable.
 - There is no reified table; MiniZinc's decomposition stops at five variables.

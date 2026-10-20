@@ -943,8 +943,8 @@ mutation-lane inventory need them per rewrite: **Proof size** and
 bound, is a rewrite too, and gets an entry. What the installed machinery's
 assertions carry in hints-only mode (it is installed under
 `CurrentlyUnnamedConstraint`, so any hint it carries says
-`constraint_id unnamed`; `difference_logic`'s carries no hint at all) goes in
-**Proof-time state**.
+`constraint_id unnamed`; `difference_logic`'s and `auto_table`'s carry no
+hint at all) goes in **Proof-time state**.
 
 **Added, and these are the ones that matter.** Three sections with no analogue
 in a constraint document:

@@ -310,7 +310,8 @@ passed them except XCSP3's two-list `channel`. Fixed in #997, and
 `inverse_test` now runs every case again over shifted index sets.
 
 **Presolvers.** None rewrites this family or into it. `AutoTable` and
-`DifferenceLogic` post `AllDifferent` in their tests only.
+`DifferenceLogic` meet `AllDifferent` in their tests, and `AutoTable` also in
+the `auto_table` and `skyscrapers --autotable` examples.
 
 **The disequality clique** is the model-level alternative, and it is
 [`equals`](equals.md)'s family rather than this one's. The two write different

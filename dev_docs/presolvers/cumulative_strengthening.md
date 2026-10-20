@@ -250,11 +250,13 @@ flag that turns it on, per front end.
 
 | Entry point | C++ API | MiniZinc (`fzn-glasgow`) | XCSP3 | `.scp` solver | `gcspy` / CPMpy | Examples |
 |---|---|---|---|---|---|---|
-| `CumulativeStrengthening` | `Problem::add_presolver(CumulativeStrengthening{…})` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | none; `examples/rcpsp` has no flag[^fe] |
+| `CumulativeStrengthening` | `Problem::add_presolver(CumulativeStrengthening{…})` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#1374)` | `frontend gap (#983)` | none; `examples/rcpsp` has no flag[^fe] |
 
 #983 (open) tabulates all three scheduling presolvers as reachable from no
 front end, and asks whether each should get a flag or whether there should be
-a `--presolve` vocabulary.
+a `--presolve` vocabulary. Its table has no `.scp` column. The `.scp` solver's
+gap is #1374's, which asked for a `glasgow_scp_solver` switch for
+`DifferenceLogic` and which a comment now asks to broaden to every presolver.
 
 [^fe]: Checked by grep at `7e1c4178`, and again at `0a5b4ec6`. The only
 callers are its own test, `disjunctive_2d_presolver_test.cc` and

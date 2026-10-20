@@ -25,10 +25,13 @@
 > trigger count, from either entry point), #816 (initialisers, root
 > simplification's included, do not observe `--timeout`), and the sibling
 > #1298 (reified linear
-> inequalities, the same class of overflow). Filed since, from the review of
-> this document: #1384 (a negative cycle's or a root witness's reason
-> deduplicates its conditions by linear search, `k(k−1)/2` comparisons for `k`
-> distinct conditions, proofs on or off) and #1385 (root simplification counts
+> inequalities, the same class of overflow). Filed since: #1378, reaching in
+> from a presolver (an `AutoTable`'s throwaway root search makes the
+> incremental route's first call below a guess, so the default incremental
+> mode throws `UnexpectedException`); and, from the review of this document,
+> #1384 (a negative cycle's or a root witness's reason deduplicates its
+> conditions by linear search, `k(k−1)/2` comparisons for `k` distinct
+> conditions, proofs on or off) and #1385 (root simplification counts
 > isolated nodes as removed, but the propagator still seeds, scans and wakes
 > on them). Tracked under #871.
 
@@ -442,8 +445,12 @@ Four costs, kept apart.
    `O(n + m)`, and the potential function, one more `O(n·m)` Bellman-Ford over
    the active arcs (`difference_graph.cc:903-933`). It throws
    `UnexpectedException` if it ever finds itself below a decision on that
-   call, which cannot happen because root propagation runs before any guess.
-   The from-scratch route builds neither.
+   call. Search never puts it there, since it propagates the root before any
+   guess, but an `AutoTable` presolver's throwaway root search does: it
+   guesses `TrueLiteral` before its first `propagate()`. So a posted
+   `DifferenceConstraints`, or a `DifferenceLogic` added before the
+   `AutoTable` that installs a propagator (two edges or more), throws in its
+   default incremental mode (#1378). The from-scratch route builds neither.
 
 All four are paid with proofs off too.
 

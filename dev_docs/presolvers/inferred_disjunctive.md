@@ -83,10 +83,10 @@ Four things to know before touching it.
   325). It changed the posted cliques on 3 of the 30 and the capacity bound on
   none, and nothing says so. See
   [Detection and its failure modes](#detection-and-its-failure-modes).
-- **No front end can turn it on** (#983). `fzn-glasgow`, the XCSP3 solver and
-  `glasgow_scp_solver` have no switch, and `gcspy` has no presolver plumbing
-  at all. Only the C++ API and `examples/rcpsp --infer-disjunctive`
-  reach it.
+- **No front end can turn it on** (#983; for `glasgow_scp_solver`, #1374).
+  `fzn-glasgow`, the XCSP3 solver and `glasgow_scp_solver` have no switch, and
+  `gcspy` has no presolver plumbing at all. Only the C++ API and
+  `examples/rcpsp --infer-disjunctive` reach it.
 - **The pass's memory is quadratic in the task count, whether or not
   anything is posted.** The conflict matrix is 104 bytes per ordered task
   pair, and installing a clique copies it twice more, so the peak is about
@@ -162,11 +162,13 @@ Degenerate cases:
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `InferredDisjunctive` (presolver) | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | C++ API; `examples/rcpsp --infer-disjunctive` |
+| `InferredDisjunctive` (presolver) | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#1374)` | C++ API; `examples/rcpsp --infer-disjunctive` |
 
 For `.scp` the gap is in the solver, not the format. A `.scp` file is a model,
 and a presolver is a solve option, so `glasgow_scp_solver`
-(`scp/glasgow_scp_solver.cc`) would need a flag, and it adds no presolver. At
+(`scp/glasgow_scp_solver.cc`) would need a flag, and it adds no presolver
+(#1374, which a comment now asks to broaden from `DifferenceLogic` to every
+presolver; #983's table has no `.scp` column). At
 `7e1c4178`, `--help` on `fzn-glasgow` and
 `xcsp_glasgow_constraint_solver` mentions only the `--difference-logic`
 presolver, and on `glasgow_scp_solver` it mentions no presolver. Both
@@ -970,7 +972,8 @@ on anything else:
    bigger-energy clique that no top pair grows into is not found. With
    `max_candidates = 100` and 225 pairs, as on `la01`, more than half the
    pairs never seed anything.
-6. **Front ends.** None can reach it (#983).
+6. **Front ends.** None can reach it (#983; for `glasgow_scp_solver`,
+   #1374).
 
 `dropped_subset` cannot fire on an honest run. The greedy growth returns
 maximal cliques, and deduplication removes repeats, so no grown clique is a

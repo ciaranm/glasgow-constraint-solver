@@ -189,7 +189,7 @@ points rather than classes: the places a user can switch it on.
 
 | Entry point | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `InferredCumulative` | `frontend gap (#983)`¹ | `frontend gap (#983)`¹ | `frontend gap (#983)`² | `frontend gap (#983)`³ | C++ API, and `examples/rcpsp --infer-cumulative` |
+| `InferredCumulative` | `frontend gap (#983)`¹ | `frontend gap (#983)`¹ | `frontend gap (#983)`² | `frontend gap (#1374)`³ | C++ API, and `examples/rcpsp --infer-cumulative` |
 
 1. #983 tabulates all three scheduling presolvers as reachable from no front
    end. Neither `fzn-glasgow` nor the XCSP3 solver adds the presolver;
@@ -199,11 +199,13 @@ points rather than classes: the places a user can switch it on.
    rewriting some resources into `disjunctive` before this presolver could see
    them.
 2. `gcspy` binds no presolver at all.
-3. The `.scp` solver, `glasgow_scp_solver`, adds no presolver. The `.scp`
-   file format has nothing to say either way, since it describes the model
-   only. A presolver adds nothing to the `.scp` a solve writes, nor to the
-   `.opb`, so that `.scp` is still the right input for the verified chain;
-   see [Cake conformity](#cake-conformity).
+3. The `.scp` solver, `glasgow_scp_solver`, adds no presolver (#1374, which a
+   comment now asks to broaden from `DifferenceLogic` to every presolver;
+   #983's table has no `.scp` column). The `.scp` file format has nothing to
+   say either way, since it describes the model only. A presolver adds nothing
+   to the `.scp` a solve writes, nor to the `.opb`, so that `.scp` is still
+   the right input for the verified chain; see [Cake
+   conformity](#cake-conformity).
 
 ### Options
 
