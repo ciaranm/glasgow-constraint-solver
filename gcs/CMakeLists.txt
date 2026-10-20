@@ -616,12 +616,15 @@ if(GCS_BUILD_TESTS)
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
                 --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
     endforeach()
-    # #780: the corruption no `pol` failure catches. Recovering a capacity row
-    # from the neighbouring task's checkpoint leaves every step of the
-    # derivation valid and produces a perfectly good line --- it is simply not
-    # the row the model states, and only the implication check against that row
-    # rejects it. Needs the recovering encoding, since under any other the
-    # recovery does not run and the proof comes out honest.
+    # #780: recovering a capacity row from the neighbouring task's checkpoint.
+    # When the finishes were weighted pols, every step of that stayed valid
+    # and produced a perfectly good line that was simply not the model's row,
+    # which only the recovering arm's implication check rejected. With the
+    # finishes as `cases` lines, the wrong case is rejected at the finish
+    # itself, so the lane runs under the shipped encoding as well.
+    add_test(NAME cumulative_overload_mutation_recover_wrong
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            --basename cumulative_overload_mutation_recover_wrong $<TARGET_FILE:cumulative_overload_test> --mutate=recover_wrong_checkpoint)
     add_cumulative_arm(cumulative_overload_mutation_recover_wrong checkpoint_recovering
         ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash

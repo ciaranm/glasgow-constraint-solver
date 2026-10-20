@@ -160,16 +160,16 @@ namespace gcs::innards
         /// Recover a capacity row from the wrong task's checkpoint: cite the
         /// next candidate's row where the case wanted this one's.
         ///
-        /// The lane #780's differential exists for, and the one corruption in
-        /// this family that no `pol` failure catches. Every step of the
-        /// recovery still checks: the arithmetic is as valid over a
-        /// neighbour's row as over the right one, and what comes out is a
-        /// perfectly good line. It is simply not the row the model says. Only
-        /// asking whether the recovered line implies the model's own row ---
-        /// which is what CumulativeEncoding::BothRecovering does, and the only
-        /// thing the two encodings standing side by side buy that neither buys
-        /// alone --- rejects it. Needs that encoding: under any other, the
-        /// recovery does not run and this does nothing.
+        /// The lane #780's differential exists for. The arithmetic of a case is
+        /// as valid over a neighbour's row as over the right one, so when the
+        /// finishes were weighted pols the recovery produced a perfectly good
+        /// line that was simply not the row the model says, and only
+        /// CumulativeEncoding::BothRecovering's implication check against the
+        /// model's own row rejected it. The finishes are now `cases` lines that
+        /// state the row they recover, so the wrong case is rejected there,
+        /// under either encoding --- on an instance where the cases are what the
+        /// branches close on. On one small enough for unit propagation to
+        /// recover each row without them, the wrong case is never read.
         struct RecoverFromWrongCheckpoint
         {
         };
