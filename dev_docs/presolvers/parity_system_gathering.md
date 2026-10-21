@@ -14,7 +14,9 @@
 > switch. Already open
 > and touching this presolver: #983 (no front end reaches it, and
 > three-argument `bool_xor` donors are skipped), #1309 (installing many
-> propagators under one constraint id is quadratic), #310 (a range literal
+> propagators under one constraint id is quadratic), #1386 (a chain of unit
+> inferences made in one system call has a quadratic proof; retiring the
+> donors exposes it, but it is the system propagator's), #310 (a range literal
 > throws with proofs on), #649 (implied equivalences have nowhere to live),
 > #1210 and #1330 (assertion levels above `Off`), and #868 (cross-solver).
 > Tracked under #871.
@@ -176,15 +178,31 @@ corpus models with XOR structure.
 donors' own propagators running, instead of retiring them. It exists so that a
 test can check that the system subsumes the donors (the
 [retire-gathered-donors](#rewrite-retire-gathered-donors) tripwire), and it
-does not change the OPB or what is gathered. Donors in a component that got no
-propagator are never retired, however it is set. `parity.md` (Options)
-describes it as comparing trees node for node. What the test compares is
-solution counts and recursion counts.
+does not change the OPB or what is gathered. It is also the switch for
+comparing the two policies' cost, which the subsumption argument does not
+settle. With the donors kept, whichever of a donor and the system reaches an
+inference first writes its line, and the two lines differ in size. On #1386's
+chain that changes the proof size, VeriPB's time and the solver's own
+instructions, with proofs off too (see
+[retire-gathered-donors](#rewrite-retire-gathered-donors), **Proof size**). The
+test compares none of them. Donors in a component that got no
+propagator are never retired, however it is set. What the test compares is
+solution counts and recursion counts, as `parity.md` (Options) says.
 
 The default differs from `DifferenceLogic`'s on purpose. Its
 `disabling_lifted_donors()` ships off. The header gives the reason: a donor
 row with one literal left becomes a unit row of the reduced system, so the
-system infers whatever the donor would have.
+system infers whatever the donor would have. That is an argument about
+strength. The header goes on to a cost claim, that a gathered donor "is then
+pure overhead on every wake" (`.hh:181–185`; `parity-system.md` says the same,
+under "Donors are retired by default"), and this audit's measurements
+contradict it. Retiring changes which propagator explains each inference, and
+it is not a saving in general. Across the shapes measured, the retired proof
+ranged from about 6% smaller to quadratically larger
+([retire-gathered-donors](#rewrite-retire-gathered-donors), **Proof size**). On
+#1386's chain at 4,096 variables with the `Equals` posted first, the kept
+donors give a 0.56 MB proof against 145 MB, and 0.42 G instructions against
+3.5 G with proofs off ([Proof performance](#proof-performance)).
 
 There is no `with_consistency()`, and neither `consistency::Auto` nor
 `consistency::Dynamic` applies. What the installed propagator achieves is
@@ -799,8 +817,67 @@ These facts hold for every entry:
   - The harness compares it over its 30 named shapes. Recursions matched on
     all of them. Solutions matched on all but #1381's two shapes, where the
     kept arm finds none and the retired arm finds the wrong two.
-- **Proof size.** It shrinks the proof by what the retired donors would have
-  logged.
+- **Proof size.** Not a saving in general, and a large loss on #1386's
+  shape. A kept donor writes a line only for an inference it makes before the
+  system does. Once it is retired, the system makes that inference itself,
+  with `parity.md` rule 5's `pol` over both slack rows of every row in the
+  derived row's origin. So retiring trades donor lines for system lines. Which
+  arm is smaller depends on which propagator reaches each inference first, and
+  on how large the system's origins are. Measured at `86caad24` on
+  fataepyc-08, 2026-10-21 (`e1-chain/`). Every proof was `s VERIFIED`, and
+  each pair had the same solutions, recursions and OPB.
+  - **43 random `ParityOdd` systems**, rows over 2 to 20 variables: 35
+    enumerated by search, and 8 (the two-variable rows) refuted at the root.
+    The retired proof was the same size on 15, the 8 refutations among them,
+    and larger on 28, by 1% to 44% in bytes. Every check took under 0.5 s,
+    mostly near VeriPB's start-up floor, so the times are not compared. The
+    largest pair, 3.4 MB kept against 4.4 MB retired, took 0.42 s against
+    0.49 s.
+  - **An odd cycle of Boolean `NotEquals`**, refuted by elimination at the
+    root (63 to 1,023 rows): identical.
+  - **A chain of Boolean `NotEquals` or two-literal `ParityOdd` with one
+    end fixed** (#1386): see [Proof performance](#proof-performance). When
+    the end is fixed before the root's first pass (by its domain, or by an
+    `Equals` posted before the chain) and the chain is posted outward from
+    it, the kept donors settle the chain in that pass, before the system
+    runs. Retired, the system infers the whole chain in one call, and the
+    proof grows quadratically in the chain's length, in bytes: 274 KB
+    against 33.9 MB at 2,048 variables. In the other orders the system
+    writes nearly the same lines in both arms. With the `Equals` posted
+    after the chain, the kept `Equals` donor fixes `x0` and the system infers
+    the rest. With the fixed end at the far end of the posting order, or the
+    chain decided by search, the kept donor next to the fixed or decided
+    variable makes the first step or two, and the system the rest. From 64
+    variables up the two proofs are within 3.3% of each other (0.3% at
+    1,024). On shorter chains the donor's steps show. Under search the
+    retired proof is 37% larger at 3 variables, 15% at 8 and 5% at 32, and
+    with the far end fixed it is 26% larger at 2 variables. With the middle
+    variable fixed and the `Equals` first, the kept donors settle only the
+    half posted outward from it, and the kept proof is about half the
+    retired one.
+  - **A binary tree and a star of Boolean `NotEquals`**, rooted at a
+    variable fixed by an `Equals` posted first, 1,024 variables: 132 KB kept
+    against 317 KB retired for the tree, whose origins are as long as the
+    path to the root, and 126 KB against 198 KB for the star, whose origins
+    are two rows each. There the system's line is simply longer than the
+    donor's.
+
+  Across the shapes measured, the retired proof ranged from about 6% smaller
+  to quadratically larger. It is not a saving in general. Where it came out
+  smaller, the system made nearly every inference in both arms. In the kept
+  arm, a donor's earlier fixing of the root or end added one literal to each
+  of the system's reasons and axioms, but took one row from each origin. The
+  largest shrinks measured were with the `Equals` posted after the rest:
+  - a star, 5.7% at 48 variables (9,203 bytes kept against 8,678), and 4.5%
+    at 1,024;
+  - a tree, 4.7% at 48 variables;
+  - a chain with its middle variable fixed, 4.6% at 20.
+
+  The system making nearly every inference does not by itself make the
+  retired proof smaller. Under search the retired proof was larger, by 8.5%
+  at 16 variables and 0.2% at 1,024. With the `Equals` first and the far end
+  fixed, the two were within 0.2% either way from 32 to 1,024 variables. The
+  shapes were sampled, not searched exhaustively.
 - **Gaps.** None.
 - **Tightness.** Not applicable: there is no derivation. The tripwire's
   failure message, and the test's check that the retired arm retired something,
@@ -952,7 +1029,9 @@ The summary line separates the cases:
 
 That three-way split holds for the printed `Stats` only. **A caller's own block
 cannot tell the third case from the first.** `ParitySystemGatheringStats` has
-no `ran` field, unlike `AutoTableStats`, and its summary says `gathered nothing`
+no `ran` field, unlike `AutoTableStats` (whose `ran` tells the cases apart only
+in a fresh block; see [`auto_table.md`](auto_table.md#evidence-that-it-fired)),
+and its summary says `gathered nothing`
 whenever `rows_gathered` is 0 (`parity_system_gathering.cc:255–256`). A block
 handed to a solve on which the presolver did not run keeps its old values,
 which for a fresh block means `gathered nothing`. Re-run here
@@ -1109,6 +1188,8 @@ fixtures.
 - **Scale.** Every fixture has at most six variables; the quadratic pass
   (#1380) is invisible to it.
 - **Running it twice, or with another presolver.**
+- **The cost of either donor policy.** The tripwire compares solution and
+  recursion counts, not proof size or checking time, which differ (#1386).
 - **A mutation lane.** There are no mutation hooks.
 - **`skipped_uncitable_chain` non-zero.** It is asserted 0 everywhere and
   cannot be provoked. The comment at `:236–238` says it is "Only ever non-zero
@@ -1166,6 +1247,81 @@ presolver wrote 10 GB in two minutes, and was stopped. Everything per inference
 is `parity.md`'s. The share of the proof's assertions that carry
 `parity:((constraint_id unnamed))` was not measured at scale.
 
+**Retiring the donors, and unit chains (#1386).** The one proof cost the
+presolver's own options change is which line an inference gets: a kept donor's,
+or the system's ([retire-gathered-donors](#rewrite-retire-gathered-donors),
+**Proof size**). It matters most on a chain of two-literal rows with one end
+fixed. The system substitutes only what was assigned when its call began. So
+the unit at distance `d` from the fixed end is justified by one `pol` over the
+slack rows of the `d` rows between them, or `d + 1` when the fixing `Equals`
+row is itself gathered and still undecided when the call starts (the retired
+column below). A chain of `n` inferred in one call writes `pol` lines of about
+`2n²` tokens in all (2,106,368 at `n = 1,024`). On a Boolean
+`NotEquals` chain over `x0 … x(n−1)` with `Equals{x0, 0}`, one solution in one
+recursion in every arm, at `86caad24`, fataepyc-08, 2026-10-21, proof bytes and
+VeriPB time (`e1-chain/`):
+
+| `n` | no presolver | kept, `Equals` posted first | retired, `Equals` posted first | kept, `Equals` posted last |
+|---|---|---|---|---|
+| 1,024 | 52,660 / 0.02 s | 133,180 / 0.03 s | 8,567,318 / 1.7 s | 8,575,450 / 1.0 s |
+| 2,048 | 108,468 / 0.03 s | 273,980 / 0.04 s | 33,920,022 / 6.2 s | 33,936,346 / 6.2 s |
+| 4,096 | 220,084 / 0.04 s | 555,580 / 0.06 s | 145,145,942 / 43.7 s | 145,175,458 / 43.2 s |
+
+Retired with the `Equals` posted last is within 0.02% of the retired column
+in bytes at 1,024 and 2,048. The 1,024 row's 1.0 s against 1.7 s, at nearly
+equal bytes, reproduced on three runs and is unexplained; at 2,048 and 4,096
+the two take the same time.
+
+In the second column, the kept donors propagate the chain in the root's first
+pass, before the system has run. In the last, once the `Equals` donor has
+fixed `x0`, the system runs first. It does
+so in both arms after any search decision too: with nothing fixed, the chain's
+two solutions give 17.0 MB either way at `n = 1,024`, against 105 KB without
+the presolver. The same chain posted directly as one `ParitySystem` writes
+10.5 MB at `n = 1,024`. So the quadratic is the installed machinery's
+([`parity.md`](../constraints/parity.md), rule 5), and retirement
+only removes the chance that a donor gets there first. Two-literal `ParityOdd`
+rows show the same contrast: 1.2 MB kept with the `Equals` first against
+10.5 MB retired, at `n = 1,024`. The kept figure is 22 times the no-presolver
+proof, most of it the root slack scaffolding.
+
+It is not only the proof. With proofs off, at `n = 4,096`, the run takes
+3.5 G instructions (`instructions:u`) retired with the `Equals` first, and
+3.5 G kept with the `Equals` last. Kept with the `Equals` first it takes 0.42 G,
+and 0.18 G without the presolver. Two costs grow with the chain, both found
+with `perf record`:
+
+- **The reason's support.** On the retired, `Equals`-first run, 80% of the
+  instructions are in the propagator's own body, nearly all in one word-XOR
+  loop. That loop is `support_of`, which sums the origin rows' atoms to find
+  each unit's support (`gf2_system.cc:259–264`). It runs with proofs off,
+  because the reason is built from the support. The growing origin costs
+  about `n³/128` word operations per call. `gauss_jordan` takes 8.7% of that
+  run.
+- **The elimination.** Retired with the `Equals` last, the run takes 9.1 G,
+  and 64% of it is `gauss_jordan`. Kept with the far end fixed (`Equals`
+  first), it also takes 9.1 G. In both, the known end is the last pivot
+  column. `gauss_jordan` pivots in column order, and each new pivot column is
+  in every earlier row, so it is cleared from all of them
+  (`gf2_system.cc:129–151`). That is about `n²/2` row XORs, about `n³/64`
+  words: the worst case of `parity.md`'s `O(rows² · (atoms + rows) / 64)`
+  bound. The cost is paid in one call at the root; the retired runs make two
+  propagator calls in all. One `gauss_jordan` call on the retired,
+  `Equals`-last rows costs 104 M, 754 M and 5.7 G instructions at 1,024,
+  2,048 and 4,096 (`e3-gj/`), which is the whole extra over the
+  `Equals`-first order. With the unit row first, the same call costs 0.17 G at
+  4,096. Under search the elimination cost appears in both arms. With
+  nothing fixed, the chain's two solutions take 12.4 G instructions kept and
+  retired at 4,096, against 0.18 G without the presolver, and 51% of the
+  kept run is `gauss_jordan`.
+
+With every `pol` and `del` line deleted, the retired proof at `n = 256` still
+verifies (29 KB), so the long sums are not needed on this shape. A fix for
+#1386 is a change to `parity.md`'s machinery. It has to address the
+elimination's cost as well as the reason's support and the `pol`.
+Substituting units inferred earlier in the same call would not reach the
+elimination, which runs before any unit is inferred.
+
 ## Status, gaps, and next steps
 
 ### Proof-logging gaps
@@ -1209,6 +1365,15 @@ is `parity.md`'s. The share of the proof's assertions that carry
   variable, weaken the system.
 - **Boolean-only components are gathered too**, and pay the system's
   per-call cost for what odd-cycle detection buys.
+- **Retiring the donors is not a saving in general, and on a unit chain it
+  is a quadratic loss** (#1386). The system's justification of a chain
+  inferred in one call grows quadratically in the chain's length, in proof
+  bytes. With proofs off too, computing its reasons costs about `n³/128` word
+  operations per call. In some posting orders, in either arm, and under
+  search, the elimination costs about `n³/64`. With the donors retired,
+  nothing else gets there first. The
+  cost is `parity.md`'s machinery, and kept donors pay it too whenever the
+  system runs first ([Proof performance](#proof-performance)).
 - **On the one corpus model where parity dominates, gathering prunes nothing
   and costs four times as much** (`parity.md`).
 - **It changes the search under `dom_then_deg`**, through degree, even where
@@ -1252,6 +1417,14 @@ Ranked by what they buy for what they cost.
    issue, not defects.
 8. **Fix the test comment** at `parity_system_gathering_test.cc:236–238`,
    which inverts when `skipped_uncitable_chain` can be non-zero.
+9. **Measure the retirement default's cost, after #1386.** The tripwire
+   settles strength only. Once #1386's costs are fixed (the quadratic
+   justification of a unit chain, and the cubic support and elimination costs
+   paid with proofs off too, a change to `parity.md`'s machinery), compare
+   proof bytes, VeriPB time and instructions with the donors kept and retired,
+   on the corpus models through the local switch as well as on chains. On this
+   audit's instances, the retired proof ranged from about 6% smaller to about
+   260 times larger.
 
 ## Prior art
 
@@ -1299,10 +1472,15 @@ yet portable to cake's encoding.
   eligibility rules.
 - [`parity-system.md`](../parity-system.md): the long design note. Its "The
   presolver" half covers the two donor families, components, why donors are
-  retired by default, the tripwire and strength tables, and the API the
-  presolver needed. §2 derives the slack rows from the chain, and "What
+  retired by default (its claim that a gathered donor is "pure overhead" is
+  contradicted here, under [Options](#options)), the tripwire and strength
+  tables, and the API the presolver needed. §2 derives the slack rows from the chain, and "What
   mutation testing says" has the seven mutations.
-- [`difference_logic.md`](difference_logic.md): the other presolver that
-  retires donors, and the template this one was built to.
+- [`difference_logic.md`](difference_logic.md): the other presolver that can
+  retire donors (`disabling_lifted_donors()`, off by default), and the template
+  this one was built to. Its measurements lean the other way on its
+  `Equals`-seeded chains, where retiring made the proof 36.5% to 47.0%
+  smaller, because there kept donors write pushes that the global
+  propagator's final pushes supersede.
 - [`equals.md`](../constraints/equals.md): the Boolean donors' encoding and
   propagators.
