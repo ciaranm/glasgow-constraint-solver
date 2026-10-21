@@ -25,7 +25,12 @@
 > trigger count, from either entry point), #816 (initialisers, root
 > simplification's included, do not observe `--timeout`), and the sibling
 > #1298 (reified linear
-> inequalities, the same class of overflow). Tracked under #871.
+> inequalities, the same class of overflow). Filed since, from the review of
+> this document: #1384 (a negative cycle's or a root witness's reason
+> deduplicates its conditions by linear search, `k(k−1)/2` comparisons for `k`
+> distinct conditions, proofs on or off) and #1385 (root simplification counts
+> isolated nodes as removed, but the propagator still seeds, scans and wakes
+> on them). Tracked under #871.
 
 One posted class, `DifferenceConstraints`, holds a list of edges
 `x − y ≤ d`, each optionally half-reified as `cond → x − y ≤ d`, and
@@ -133,15 +138,23 @@ combinations of `--simplify` and `--incremental` (measured at `86caad24`).
   stage (Johnson's all-pairs pass, `difference_simplify.cc`) from the root
   initialiser: drops edges a shorter path implies, fixes conditions whose edge
   would close a negative cycle (rule 8), drops edges whose condition is
-  already false, and drops isolated nodes. On by default because the paper
+  already false, and lowers the from-scratch passes' round bound to the
+  number of nodes that still have an edge. It reports the other nodes as
+  `isolated_nodes_removed`, but they stay in the propagator: it still seeds
+  them (on the incremental route's first call, and on every call from
+  scratch), scans them on every wake and is woken by their bounds (#1385).
+  On by default because the paper
   calls it "an important part of the practical success of difference logic"
   (by its Tables 1–3, in MiniZinc-challenge points against Huub without
   difference logic, simplification is 73% of the gain on the MiniZinc set and
   66% on ProdCons, but 43% on RCPSP/max), and it is what refutes this tree's own
   RCPSP/max fixtures at the root; it is a large loss on dense unconditional
   systems ([CPU performance](#cpu-performance)). Only rule 8 changes what is
-  inferred; the three removals change what is propagated *over*, never the
-  fixpoint (in this audit's fact-check, of 2,700 random instances solved with
+  inferred. The two edge removals change what is propagated *over*, and the
+  lower round bound only how soon a from-scratch pass still relaxing
+  declares a cycle (it stays above any simple path among the nodes left);
+  neither changes the fixpoint (in this audit's fact-check, of 2,700
+  random instances solved with
   simplification on and off, every one where no condition was fixed gave
   identical recursions and solution sequences; the ones with a root fix
   differed, as they should).
@@ -399,10 +412,25 @@ Four costs, kept apart.
    Each round is Bellman-Ford from an imaginary zero source, `O(n·m)`, then one
    Dijkstra on reduced costs from each node that is the tail of an edge or the
    head of a candidate. The Dijkstra is a `std::priority_queue` with lazy
-   deletion (`difference_simplify.cc:201`, `:237-255`), so each is
-   `O((n + m) log n)` and a round is `O(n·m log n)` in the worst case, plus
-   Tarjan over the zero-reduced-cost subgraph; a per-source threshold prunes
-   paths that cannot matter. It iterates while a
+   deletion (`difference_simplify.cc:201`, `:237-255`): every relaxation that
+   improves a distance pushes an entry and stale ones stay, so the queue can
+   hold one entry per arc scanned and each Dijkstra is
+   `O((n + m) log(n + m))`. A round runs at most `n` Dijkstras, each
+   reaching only what the arcs reach, so it is `O(n·m log(n + m))` in the
+   worst case, plus Tarjan
+   over the zero-reduced-cost subgraph; a per-source threshold prunes paths
+   that cannot matter. `log(n + m)` is `O(log n)` whenever `m` is polynomial
+   in `n`, as it is without parallel edges (`m < n²`), but nothing bounds the
+   parallel edges: `prepare()` and the presolver keep one arc per posted edge
+   or donor, MiniZinc (2.9.7 and 2.10.1) flattens 200 constraints
+   `x − y ≤ k` over one pair into 200 `int_lin_le`, all lifted by
+   `--difference-logic`, and this pass drops the redundant ones only after
+   its own Dijkstras have scanned them. With two nodes and `m` parallel edges
+   posted in descending weight, the source's queue held `m` entries (an
+   instrumented copy, `m = 1,000`), and the extra `instructions:u` over the
+   ascending order grew from 545 to 678 to 810 per edge at
+   `m = 10⁴, 10⁵, 10⁶`, the `m log m` shape (`86caad24`, fataepyc-08,
+   2026-10-21). It iterates while a
    round fixes a condition, so at most one round more than the conditions it
    fixes. On `difference_chain --mode fixpoint -n 640` (1,282 nodes, 206,400
    edges, unconditional) it takes **0.762 s of a 0.930 s solve** and drops 639
@@ -491,8 +519,16 @@ Everything lives in the propagator's lambda (`DifferencePropagatorMemory`,
   trail pop after a backtrack. The per-wake cost of the incremental route is
   then `O(n + s + [m])`, plus one `IncSat` repair for each newly active arc
   and the two `IncLB`/`IncUB` Dijkstras over what they reach, each
-  `O(n + (|Vl| + R) log n)` for `R` arcs reached (every seed in `Vl` goes on
-  the binary heap, and deletion is lazy), against `O(rounds·m)` from scratch.
+  `O(n + (|Vl| + R) log(n + R))` for `R` arcs reached, against
+  `O(rounds·m)` from scratch. Every seed in `Vl` and every improving
+  relaxation goes on the binary heap and deletion is lazy, so the heap holds
+  up to `|Vl| + R` entries, not one per node. With parallel arcs that is
+  real: two nodes and 1,000 parallel unconditional arcs in descending weight,
+  simplification off, put 1,001 entries on the first call's lower-bound heap,
+  and 1,000 parallel arcs on one undecided condition, which simplification
+  keeps, put 1,000 on each pass's heap when the condition became true
+  (instrumented copy, `86caad24`, fataepyc-08). Without parallel arcs
+  `log(n + R)` is `O(log n)`.
 - **What could be maintained instead**: the `O(n)` `Vl` scan and the `O(m)`
   snapshot. [`difference-logic.md`](../difference-logic.md) explains, under
   "What this does not fix", why the refined-watch inbox cannot replace the
@@ -652,7 +688,8 @@ exception that is not this family's: the bounds crawl through holes.**
    per static bound, per relaxation round (at most the number of live nodes
    plus one with simplification on, the full node count plus one with it
    off), per Dijkstra settle, or, in simplification only, per source node
-   (Johnson's, so `O(n·m log n)` per round with a binary heap). Large weights
+   (Johnson's, so `O(n·m log(n + m))` per round with a lazy binary heap;
+   `O(n·m log n)` without parallel edges). Large weights
    are arithmetic, not iteration. **The exception is a property of bounds
    reasoning on holey domains**: `y = x + 1` as two edges over the even
    numbers `0..2W` has no solution, and bounds reasoning finds that only by
@@ -678,8 +715,24 @@ exception that is not this family's: the bounds crawl through holes.**
    and the edge's condition: one or two literals. A cycle's reason is the
    cycle's distinct conditions, at most its length; rule 8's is the witness
    path's conditions. Nothing names a run or a value, and **the work of
-   finding a reason** is the predecessor walk (per node) or the cycle
-   extraction (per cycle edge). Reasons are built unguarded: the
+   finding a reason** is the predecessor walk (per node) or, for a cycle, the
+   extraction and the deduplication. The extraction is `O(n)`, not
+   `O(cycle)`: it allocates an `n`-entry `seen` vector, and its walk can pass
+   every node before it closes the cycle (a two-edge cycle with a chain of
+   `L` negative edges hanging off it walks all `L + 2` nodes, `L` up to
+   10,000, both routes). The deduplication, for a cycle and for rule 8's
+   witness path alike, is a linear `find` per conditional edge
+   (`difference_graph.cc:572`, `:313`): `O(k·c)` comparisons for `k`
+   conditional edges and `c` distinct conditions, exactly `k(k−1)/2` when
+   each has its own (#1384). In a ring of `k` such edges closed by a
+   `−1`, proofs off, that block took 0.030 s at `k = 8,000` and 0.136 s at
+   `16,000` (an instrumented copy, median of three); the whole solves take
+   0.24 s and 0.73 s, and at `16,000` installation is the larger share (54%
+   of samples, #1309 and the condition-variable `find`, against 19% for the
+   deduplication). With one shared condition it is `k − 1` comparisons and
+   0.14 ms at `k = 16,000`. Measured at `86caad24` on fataepyc-08,
+   2026-10-21. Both are paid
+   with proofs off. Reasons are built unguarded: the
    `ExplicitReason` of every push is assembled whether or not
    `want_reasons()` is true. It is one or two literals and built only when a
    bound actually moves, so it is not width-proportional; whether it costs
@@ -814,8 +867,10 @@ basis.
   from its Example 7, since lines 15–16 of its pseudocode are wrong), one
   Dijkstra on reduced costs seeded from `Vl` (nodes whose bound beat `Do`,
   plus the tails of newly active arcs), expanding only nodes that beat `Do`:
-  `O(n + (|Vl| + R) log n)` for `R` the arcs it reaches, since every seed goes
-  on the binary heap, with lazy deletion. From scratch: Bellman-Ford over the active arcs from the current
+  `O(n + (|Vl| + R) log(n + R))` for `R` the arcs it reaches, since every
+  seed and every improving relaxation goes on the binary heap, with lazy
+  deletion ([Mutable state and incrementality](#mutable-state-and-incrementality)).
+  From scratch: Bellman-Ford over the active arcs from the current
   lower bounds, `O(n·m)`, with at most one round per live node plus one when
   simplification has run (per node plus one when it is off), stopping early
   when a round changes nothing.
@@ -925,27 +980,65 @@ basis.
   is every graph-only infeasibility.
 - **Algorithm** — the pass that finds it (`O(n·m)` from scratch; `IncSat`, a
   Dijkstra over the violated region with a binary heap and lazy deletion,
-  `O((n + m) log n)` per repair, incremental, then one `O(n·m)` pass once per
-  refuted branch), then the cycle extraction, `O(cycle)`. Cotton and Maler
+  `O((n + m) log(n + m))` per repair, incremental, then one `O(n·m)` pass once
+  per refuted branch), then the cycle extraction, `O(n)`, and the reason's
+  deduplication, `O(k·c)` comparisons for `k` conditional edges and `c`
+  distinct conditions (#1384; [Interval efficiency](#interval-efficiency)
+  measures both). Cotton and Maler
   (SAT 2006) for `IncSat`, which the paper notes is the algorithm of
   Ramalingam, Song, Joskowicz and Miller (*Algorithmica* 23, 1999).
 - **Why it is true** — summing `x_i − x_{i+1} ≤ d_i` around a cycle cancels
   every variable and leaves `0 ≤ Σ d_i < 0`. With conditions, the sum holds
   only when all of them do, so the conclusion is that not all of them do.
 - **Proof technique** — `pol` then `RUP`: the cycle's rows added with unit
-  multipliers, every bit telescoping; then, if any edge is conditional, one
-  `saturate`, which turns `Σ Mᵢ·¬condᵢ ≥ −W` into the clause; then the RUP of
-  `¬reason`. **No published procedure**: this is a Farkas certificate, and the
+  multipliers, every bit telescoping, which leaves `Σ Mᵢ·¬condᵢ ≥ −W`, a
+  condition on several edges taking the sum of their `Mᵢ`; then, if any edge
+  is conditional, one `saturate`, which caps every coefficient at the degree
+  `−W`; then the RUP of `¬reason`. The saturated line is the clause
+  `¬cond₁ ∨ … ∨ ¬cond_k` scaled by `−W` exactly when every coefficient
+  reaches `−W`: equivalent to the clause, and the clause itself only when
+  `−W = 1`. Otherwise it is a PB constraint strictly stronger than the
+  clause: saturation lowers a coefficient but cannot raise one, and `Mᵢ`,
+  the row's big-M, is `max(maxposᵢ − dᵢ, 1)`, for `maxposᵢ` the largest
+  value of `xᵢ − yᵢ` over the bits the row is written in and `dᵢ` the
+  deviewed weight (`names_and_ids_tracker.cc:3034`; a presolver donor row
+  over a registered view uses the view's own bits), which can fall short of
+  `−W`. For
+  `x, y ∈ 0..1`, `b → x − y ≤ −2` and `c → y − x ≤ −2`, conditions forced
+  true, the rows are `-1 x 1 y 3 ~b >= 2` and `-1 y 1 x 3 ~c >= 2` (writing
+  each variable's one bit as its name), and the line is `3 ~b 3 ~c >= 4`,
+  which says both conditions are false. Either way the reason's literals
+  falsify it, so the closing RUP derives the clause, whatever the saturated
+  line's shape. Of the fixtures run, only `x, y ∈ 0..10` with
+  `b → x − y ≤ −1` and `c → y − x ≤ 0` (`−W = 1`) gives literally
+  `1 ~b 1 ~c >= 1`. VeriPB 3.0.2, with
+  `--force-checked-deletion`, verifies that proof and the three-variable one
+  under *Reason* (`86caad24`, fataepyc-08, 2026-10-21). **No published
+  procedure**: this is a Farkas certificate, and the
   node-arc incidence matrix being totally unimodular is why unit multipliers
   always suffice; argued under *Why it is true*. Precondition: consecutive rows
   share a representation for the shared node (canonicalisation, or deview mode
   for donor rows).
 - **Reason** — the distinct conditions on the cycle; empty for an
-  unconditional cycle. Minimal for that cycle: dropping any condition makes the
-  cited rows not entail the clause, and the code comment records VeriPB
-  rejecting exactly that mutation. Not minimal over cycles — another negative
-  cycle might need fewer conditions, and the first one found is the one cited.
-  Deduplicated, so a Boolean on several edges appears once.
+  unconditional cycle. **Sufficient, not minimal.** It is irredundant for the
+  cycle as a graph: without the domains, the cycle less the edges of any one
+  condition is acyclic, so it has a solution. But the rows also carry the
+  variables' encoding ranges, and against those fewer conditions can
+  already be contradictory:
+  - in the example under *Proof technique*, each row alone entails its own
+    condition false (a one-row OPB verifies `rup ~b`);
+  - with `x ∈ 0..10`, `y ∈ 0..1`, `z ∈ −10..10` and `b₁ → x − y ≤ −5`,
+    `b₂ → y − z ≤ 0`, `b₃ → z − x ≤ 0`, the saturated line is
+    `5 ~b₁ 5 ~b₂ 5 ~b₃ >= 5`, the clause over all three scaled by 5, yet the
+    `b₁` row alone entails `¬b₁`.
+
+  A saturated coefficient below the degree always marks such a condition,
+  but a clause-shaped line does not rule one out. The code comment's mutation
+  result (a condition dropped from the reason fails VeriPB) is about the
+  reified fixtures. Nor is it minimal over cycles: another negative cycle
+  might need fewer conditions, and the first one found is the one cited.
+  Deduplicated, so a Boolean on several edges appears once, at the cost in
+  *Algorithm*.
 - **Assertion** — an explicit `contradiction()`, so `¬reason` with no
   attempted literal: `a >= 1;` for an unconditional cycle, and
   `a 1 ~i[b][b0] 1 ~i[c][b0] >= 1;`-shaped for a conditional one. Measured at
@@ -1106,8 +1199,13 @@ basis.
   hold together with the path's conditions.
 - **Proof technique** — `pol` then `RUP`: the candidate's row plus the path's
   rows, one `saturate`, then the RUP. The same Farkas sum as rule 3, with the
-  candidate's big-M residual as the surviving literal. No published procedure.
-- **Reason** — the path's distinct conditions, all true at the root. **Not
+  candidate's big-M residual as the surviving literal; as there, the
+  saturated line is the clause scaled by the degree exactly when every
+  coefficient reaches the degree, and the RUP derives the clause either way.
+  No published procedure.
+- **Reason** — the path's distinct conditions, all true at the root,
+  deduplicated by the same linear search as rule 3's, `p(p−1)/2` comparisons
+  for a path of `p` distinct conditions (#1384). **Not
   load-bearing in the proof** (they are root facts, so unit propagation
   recovers them), and kept because the reason is also what the state and the
   nogood machinery see.
@@ -1514,6 +1612,13 @@ Ranked by value for cost.
    issue says.
 8. **#594**, zero-weight-cycle unification. The counters say it would fire on
    tight RCPSP/max; the model-side cost is recorded there.
+9. **#1384 and #1385**, both small and both cost only. A membership mark per
+   condition (or a sort, where order does not matter) for the two
+   deduplication loops; and for the nodes simplification leaves isolated,
+   either compacting them out, which also drops their `on_bounds` triggers
+   (`difference_graph.cc:1165-1166`), or skipping them in the seeding and the
+   `Vl` scan, which leaves the triggers and their wakes; either way keeping
+   their conditional static bounds.
 
 ## Prior art
 
@@ -1558,7 +1663,10 @@ Ranked by value for cost.
   dually a feasible potential) certifies a difference system is classical
   too. What is new here is the instantiation: the negative-cycle and
   condition-fixing certificates as one `pol` over the model's own rows, the
-  half-reified rows' big-M residuals saturating into the learned clause,
+  half-reified rows' big-M residuals left as a saturated PB constraint
+  (equivalent to the clause when every coefficient, a condition's residuals
+  summed, reaches the degree, and stronger otherwise) from which one RUP
+  reads off the learned clause,
   views handled by canonicalisation and deview mode, and the root condition
   fixing certified the same way.
 
@@ -1616,8 +1724,36 @@ here. Code comments first:
   incremental route as `O(n log n + m)`, and `difference_simplify.hh:205`
   (and `difference-logic.md`, "The four sub-steps" and "This is `IncImp`")
   the simplification as `O(n² log n + nm)`: Fibonacci-heap bounds. The heaps
-  are binary with lazy deletion, so a Dijkstra is `O((n + m) log n)` and a
-  simplification round `O(n·m log n)`.
+  are binary with lazy deletion, holding an entry per improving relaxation,
+  so a Dijkstra is `O((n + m) log(n + m))` and a simplification round
+  `O(n·m log(n + m))`; `log n` needs the parallel edges bounded by a
+  polynomial in `n`.
+- The saturated sum "turns it into the clause" (`difference_graph.cc:527-531`,
+  the cycle; `:330-332`, the root witness), "saturates into exactly the
+  clause" (`difference_constraints.cc:216-219`), the root witness's
+  "Emitted anyway so the derived line *is* the clause" (`:345-346`), and
+  `difference-logic.md`, "The proof: one extra `saturate`, and that is all",
+  which also says the `saturate` "makes the derived line *be* the clause".
+  The line is equivalent to the clause only when every coefficient (a
+  condition's residuals summed) reaches the degree, and literally the clause
+  only when the degree is also 1
+  ([negative-cycle](#rule-negative-cycle)).
+- The cycle comment's minimality claim (`difference_graph.cc:531-534`):
+  "Every such condition therefore has to appear in the reason ... citing
+  fewer would claim a contradiction the model does not entail". The reason
+  is sufficient, not minimal, and in Codex's two-edge example each row alone
+  entails its own condition false ([negative-cycle](#rule-negative-cycle),
+  *Reason*).
+- The node-removal comment (`difference_graph.cc:405-409`: an isolated node
+  "neither needs seeding nor counts towards the number of relaxation
+  rounds"), `isolated_nodes_removed`'s brief ("dropped from the relaxation
+  loop and from the round bound", `difference_simplify.hh:72-73`), and
+  `difference-logic.md`, "The four sub-steps, and which are here", item 4:
+  only the round bound changes; the nodes are still seeded, scanned and
+  triggered (#1385).
+- The two arithmetic checks called "O(cycle)" (`difference_graph.cc:289-292`,
+  `:549-552`) share their loop with the condition deduplication, `O(k·c)`
+  (#1384).
 - The activation-seeding recipe is attributed to the paper's "section 4.4"
   (`difference_incremental.hh:231`, `difference_incremental.cc:204`,
   `difference_graph.cc:950-951`, `difference_constraints_test.cc:1041`, and
@@ -1661,3 +1797,7 @@ this document in the stack predates some of them):
   incremental route throws at eight. The same nine-edge example is in
   `dev_docs/integer-ranges.md` (on main) as a sum the answer "genuinely
   needs", which it does not.
+- "What this does not fix" gives the incremental route's per-wake cost as
+  `O(n + |Vl| log n + reachable arcs)`, a decrease-key bound; with the lazy
+  binary heap each pass is `O(n + (|Vl| + R) log(n + R))` for `R` arcs
+  reached ([Mutable state and incrementality](#mutable-state-and-incrementality)).
