@@ -879,14 +879,25 @@ where JP 3.3 states one value.
   - `hinted` for a tabulated constraint, as `arithmetic.md`'s tabulate-relation
     says: its rows are skipped in a hints-only proof, and the hint's
     `originator` names the relation to rebuild them from.
-  - **`search` for `AutoTable`**, whose rows are also absent and whose
-    assertion carries no hint. A reconstructor has to re-run the presolver's
-    own search over its scope, at up to the product of the scope's domains,
-    propagating every constraint of the model: one over none of the reason's
-    variables may be what refuted a tuple. With `x ∈ 0..2`, `y, w ∈ 0..1`,
-    `x ≠ y`, `x ≠ w`, `y ≠ w` and a scope of `{x}`, the table's `x ≥ 2` needs
-    `y ≠ w` ([`auto_table.md`](../presolvers/auto_table.md),
-    install-table-propagator).
+  - **`search` for `AutoTable`**, provisionally, whose rows are also absent
+    and whose assertion carries no hint. A reconstructor has to refute the reason with
+    the inference negated. Replaying the presolver's enumeration, at up to
+    the product of the scope's domains, is one sufficient way, not the only
+    one. Some assertions need only a few RUPs against the model (three, for a
+    table whose enumeration takes 1,279 nodes). Nothing names the constraints
+    that refute it, and one over none of the reason's variables may be what
+    does: with `x ∈ 0..2`, `y, w ∈ 0..1`, `x ≠ y`, `x ≠ w`, `y ≠ w` and a
+    scope of `{x}`, the table's `x ≥ 2` needs `y ≠ w`. From the model alone
+    the refutation can need a search of its own, such as a Hall argument
+    over variables outside the scope, and a split over the reason's
+    variables does not avoid that. Such a split is argued, and checked on a
+    3,000-run lane, to suffice against the subproblem's own `a` lines, which
+    stay in the proof at `Definitions`, `Links` and `Inferences`; at
+    `Inferences` the reconstructor must also add root-bound units and
+    definitions of the range literals the assertions use. Whether that
+    makes the verdict `offline` is open
+    ([`auto_table.md`](../presolvers/auto_table.md),
+    install-table-propagator, which has the examples and the evidence).
 - **Proof size** — one line per bound moved.
 - **Gaps** — `None.`
 - **Tightness** — a push one value too far (`v1 < 3` in place of `v1 < 4` in
@@ -1300,7 +1311,8 @@ domain; see [OPB encoding](#opb-encoding).
 
 - `AutoTable`'s inferences have no rows and no hint in a hints-only proof. That
   is not a gap, since the full proof justifies them, but it is the one place in
-  this family where reconstruction needs a search.
+  this family where reconstruction needs a search, provisionally (see rule 2's
+  `AutoTable` verdict).
 
 Two gaps this audit found are closed: overlapping rows made the solution line
 fail (#1115, fixed by #1202; see [OPB encoding](#opb-encoding)), and a tuple
