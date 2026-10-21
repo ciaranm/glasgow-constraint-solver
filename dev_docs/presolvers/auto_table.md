@@ -17,7 +17,9 @@
 > [`parity_system_gathering.md`](parity_system_gathering.md)'s audit).
 > Already open and touching it: #983 (no front end can add it), #1210
 > (`AssertionLevel::Links`), #1309 (installs under one unnamed constraint
-> grow its scope), #868 (cross-solver). Machinery owned by
+> grow its scope), #868 (cross-solver). Filed in review of this document:
+> #1387 (a zero-tuple run on a reused stats block keeps the previous
+> `compact_table`). Machinery owned by
 > [`table.md`](../constraints/table.md): #1116. Tracked under #871.
 
 `AutoTable{vars}` is told a scope by its caller and does no detection of its
@@ -512,9 +514,25 @@ variables (see [Rewrite: install-table-propagator](#rewrite-install-table-propag
 
 ### Mutable state and incrementality
 
-The pass keeps nothing between solves except its stats block. The search
-count is accumulated in a local, so a block shared across two solves reports
-each solve's own nodes beside its own tuples (`:128-130`). The installed
+The pass keeps nothing between solves except its stats block, which it
+fills by assignment. The search count is accumulated in a local, so a block
+shared across two solves that both reach `run` reports the later solve's own
+nodes beside its own tuples (`:128-130`). That holds for `ran`, `variables`,
+`tuples` and `search_nodes`, with two exceptions:
+
+- a run that finds no tuple returns (`:139-140`) before it assigns
+  `compact_table` (`:159`), so a reused block keeps the previous run's
+  value (#1387);
+- a solve that never reaches `run` leaves every field as the last run that
+  did left it (see [Evidence that it fired](#evidence-that-it-fired)).
+
+Two `AutoTable`s sharing one block in one solve report the later run only,
+apart from `compact_table` when the later run finds no tuple (#1387 again),
+and the solve's `Stats` lists the block once (`stats.cc:47-50`). These
+cases are `e4-stats/stats.cc`'s A to E, one of this document's review-round
+probes (at `86caad24`, fataepyc-08, 2026-10-21): A the zero-tuple exception,
+B a solve that never reaches `run`, C and E two `AutoTable`s on one block
+(E with a zero-tuple later run), and D a later run with tuples. The installed
 propagator's state is `table.md`'s, and the selector `State` variable, which
 the propagator no longer reads, costs one domain copy per epoch.
 
@@ -622,7 +640,10 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
   such definitions itself, but which tuples to define is not in the baseline
   context. It is the presolver's own search, of the cost in
   [Initialisation](#initialisation-and-global-data), rerun over the whole
-  model. Nothing in a hints-only proof points at it.
+  model. Nothing in a hints-only proof points at it. Only a reconstructor
+  that rebuilds the table needs the entries: the installed propagator's
+  assertions can be derived without them ([Rewrite:
+  install-table-propagator](#rewrite-install-table-propagator)).
 - **Proof size.** Three lines (a comment and two `red`s) of `n + 1` terms
   each, plus the `=` and `≥` atom definitions for values first named here.
 - **Gaps.** None at `Off`. Above it, the entries do not exist in the proof.
@@ -662,8 +683,11 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
   plus the branching variable's at-least-one over its values from the
   literal layer. At a dead end it is the logged refutation at that node.
   The procedure is the one every backtrack in the solver uses; what is
-  particular here is the extra disjuncts. This is a different mechanism from
-  CP 2022's, which used one flag `g ⇔ ∨ s_j` as the extra guess (see [Prior
+  particular here is the extra disjuncts, which come from assuming `¬s_j`
+  for each tuple found. This is a different mechanism from CP 2022's, which
+  used one flag `g ⇔ ∨ s_j` and an extra guess about `g` in a logged search
+  that ends in a proof of `g`. For that, the guess has to be `¬g` (no tuple
+  selected), though the paper prints a plain `g` (see [Prior
   art](#prior-art)).
 - **Neutral?** Yes, alone. The cover is what makes the next rewrite's
   propagation certifiable.
@@ -744,17 +768,117 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
   available. A solution-set tripwire is, and the probes above use it. Under
   the default `dom_then_deg` brancher it also changes the search through the
   degree count ([Can it weaken the model?](#can-it-weaken-the-model)).
-- **Offline reconstructibility.** The installed rules' verdicts are
-  `table.md`'s: `search` for `AutoTable`, because the rows are absent above
-  `Off` and the assertions carry no hint. That document describes the
-  search as re-enumerating "the model's constraints over the variables the
-  reason names". The verdict stands; the refinement is that the search must
-  be able to propagate constraints beyond those, since one over none of the
-  reason's variables may be what refuted a tuple. For example, `x ∈ 0..2`,
-  `y, w ∈ 0..1`, `x ≠ y`, `x ≠ w`, `y ≠ w`, `AutoTable{{x}}` (`fixup1/far.cc`):
-  one tuple, and at `Inferences` the installed propagator asserts
-  `a 1 i[x][ge2] 1 ~i[x][ge0] 1 i[x][ge3] >= 1;`, whose derivation needs
-  `y ≠ w`, over neither of the reason's variables.
+- **Offline reconstructibility.** `search`, provisionally (see the last
+  paragraph); `table.md`'s rules 2–5 also give `search` for this caller. The
+  assertions
+  carry no hint, and the rows the solver's own derivation uses (the
+  entries' forward halves and the cover) exist only at `Off`. What has to be derived is the assertion itself,
+  `inference ∨ ¬R`, where `R` is the generic reason over the scope: every
+  scope variable's current domain. **Rebuilding the table, by replaying this
+  presolver's enumeration, is one sufficient derivation, not a necessary
+  one.** Any refutation of `R ∧ ¬inference` from the model will do.
+  - **No tuple or selector is needed.** An assignment of the scope inside
+    `R` that falsifies the inference is in no live tuple, so the subproblem's
+    path for it ended at a dead end, refuted by the subproblem's
+    propagation. A split over the scope's variables inside `R` is therefore
+    sufficient when each case is refuted the way the subproblem refuted it:
+    by re-running the model's propagators, or by unit propagation against
+    the subproblem's own `a` lines (below). It is the subproblem's search
+    confined to that box, without the entries or the cover.
+  - **It can be far smaller than the enumeration.** In Codex's example from
+    review of this document (`e1-codex-far/far8.cc`): `x ∈ 0..2`,
+    `y, w ∈ 0..1`, `x ≠ y`, `x ≠ w`, `y ≠ w`, and eight unconstrained
+    Booleans in the scope with `x`. The subproblem finds 256 tuples in 1,279
+    nodes, and the table's `x ≥ 2` follows from the OPB and the literal
+    definitions by three RUPs, `¬[x = 0]`, `¬[x = 1]` and `[x ≥ 2]`, which
+    VeriPB 3.0.2 accepts (`s VERIFIED NO CONCLUSION`; this and the probes
+    below at `86caad24`, fataepyc-08, 2026-10-21). The Booleans never
+    appear.
+  - **But nothing in the assertion says which constraints refute the box,
+    and a refutation from the model alone can need a search of its own.**
+    The constraint may be over none of the reason's variables: with the
+    scope `{x}` alone, the same `x ≥ 2` needs `y ≠ w` (`fixup1/far.cc`).
+    It may also need an argument that no RUP finds. In `e3-split/split.cc`
+    (`AllDifferent{x, a, b, c}` over `0..3`, `a + z1 ≤ 3`, `b + z1 ≤ 3`,
+    `c − z2 ≤ 2`, `3·z2 − x ≤ 0`, scope `{x, z1, z2}`), the table removes
+    `0`, `1` and `2` from `x` under `z1 = 1`, with `z2` open. Against the
+    OPB and the definitions, `x ≠ 0` is not RUP, nor after a split on `z2`:
+    it needs a Hall argument over `a, b, c`, none of them in the scope.
+  - **The subproblem's own `a` lines carry that search's results.** At
+    `Definitions`, `Links` and `Inferences` its propagation stays in the
+    proof as assertions, and is never deleted: presolvers run at the
+    logger's initial proof level 0 (`solve.cc:377-378`,
+    `proof_logger.cc:179`), above `Off` the subproblem enters no level
+    (`auto_table.cc:46`, `:99`), and the main search forgets only deeper
+    ones. At `Backtracking` no inference is written. Once those lines are
+    justified, each case of the split should be refuted by unit propagation
+    along the subproblem's path to its dead end: argued from the subproblem
+    being exhaustive, and checked on the lane below, not proved for every
+    propagator. In `e3-split` the same `x ≠ 0` is
+    one RUP against them, and is not without the `AllDifferent`'s three
+    Hall lines.
+
+    The lane `e6-prefix/` (adapted from this round's fact-check) checks that
+    the subproblem's lines are enough. It makes 3,000 runs with an
+    `AutoTable` over 1,195 distinct random models (full encoding):
+    - 600 models under four settings, at `Definitions`, at `Links`, and at
+      `Inferences` with two branchers (ranges of 3 to 5 values, scopes of 1
+      to 3 variables);
+    - 600 more at `Inferences`, with ranges of up to 6 values and scopes of
+      up to 4 (595 of them distinct from the first 600).
+
+    Each proof is cut right after presolve, and every `AutoTable` assertion
+    of the full proof is derived from that prefix alone, by a split over the
+    scope's root ranges. The reconstructor adds two kinds of line it may
+    introduce itself:
+    - two root-bound units per variable, `[v ≥ lo]` and `¬[v ≥ hi + 1]`, each
+      RUP;
+    - the two defining `red` lines of each range literal (`i[v][inA_B]`, `v`
+      in `A..B`) that an assertion uses and nothing defines, since
+      `Inferences` writes no definitions.
+
+    An assertion is an unhinted `a` line with the generic-reason shape over
+    the scope. A regeneration with `GCS_VERBOSE_LOGGING=1`, whose stack
+    traces name the line's source, confirms the filter exactly: it matches
+    all 1,648 lines written from `auto_table.cc` and none of the 30,669
+    other unhinted `a` lines. The split derived all 1,648 assertions, in the
+    610 runs that made one, with no failure and 178,717 leaf cases. No `del`
+    in the 3,600 full proofs touches a prefix line.
+    - Both additions are needed at `Inferences`. Without the units the split
+      failed in 8, 8 and 6 runs of the three settings, and never at
+      `Definitions` or `Links`. Without the range definitions it failed in 1
+      run (`inf-dtd-3-5` `q9_25`, whose reason is `b0 ∉ −1..0`).
+    - Controls: one bare RUP per assertion against the prefix failed in 15
+      or 16 runs per setting, and the same split against the OPB alone, with
+      no prefix, failed in 28 to 35.
+    - With the inference dropped from its first assertion, the split was
+      refused in all 119 runs of one `Inferences` setting.
+
+  **Which verdict this is, is Ciaran's call: `search` is provisional.** There
+  are two readings.
+  - **On the template's letter it reads `offline`** at `Definitions`,
+    `Links` and `Inferences`. Appendix C's starting point includes the proof
+    so far, which holds the subproblem's `a` lines. The split is over the
+    variables the assertion's own clause names, within the domains it states,
+    so the assertion fixes it. Every case is guaranteed. And Appendix C
+    counts length as no objection.
+  - **Against that,** the guarantee rests on two things:
+    - lines that are themselves assertions, to be justified first, and kept
+      only at those three levels;
+    - every step of the subproblem's propagation being replayable by unit
+      propagation from them. That is argued from the subproblem being
+      exhaustive, and checked on the lane above, not proved for every
+      propagator.
+
+    The split also costs up to the product of the scope's domains for each
+    assertion, as much as the one enumeration or more, and the short
+    derivations of the first example have to be found. The template sets no
+    bound on a fixed split. That looseness would also make any implied clause
+    `offline` by a split over every variable of the model, but that split
+    names variables the clause does not, so it does not settle this case.
+
+  At `Off` the question does not arise: there the table's inferences are RUPs
+  against the entries and the cover.
 - **Proof size.** None for the install. The rules' sizes are `table.md`'s.
 - **Gaps.** None. Propagation strength does not change with proofs on.
 - **Tightness.** `table.md`'s rules have no lanes; its hand mutations were on
@@ -843,11 +967,11 @@ anything else happens (`auto_table.cc:114`), so it reaches
 
 | Entry | Meaning |
 |---|---|
-| `ran` | 1 once `run` is entered. 0 in a caller's own block whose presolver never ran, because an initialiser or an earlier presolver refuted the model first. Such a block is also not registered, and says `did not run` |
+| `ran` | 1 once `run` is entered, in this solve or in an earlier one that used the same block; nothing sets it back to 0. So 0 means "did not run" only in a fresh block, e.g. a caller's own block whose presolver never ran because an initialiser or an earlier presolver refuted the model first. A block whose presolver is not reached is not registered in that solve's `Stats` |
 | `variables` | the scope's length, counting constants and repeats |
 | `tuples` | `T` |
 | `search_nodes` | the subproblem's `N` |
-| `compact_table` | 1 when `T ≥ 64`, so the compact arm was offered. Whether `table::Auto` then takes it is decided after 32 wakes and reported nowhere |
+| `compact_table` | 1 when the run that installed a table had `T ≥ 64`, so the compact arm was offered. A run with no tuple leaves it as it was, so a reused block can say `tuples` 0 beside `compact_table` 1, in the solve's `Stats` too (#1387). Whether `table::Auto` then takes the arm is decided after 32 wakes and reported nowhere |
 
 The summary line tells the cases apart:
 
@@ -856,6 +980,17 @@ The summary line tells the cases apart:
   then unsatisfiable;
 - `T tuples over n variables, found in N nodes`, ending `, large enough for
   the compact table` when it is.
+
+That holds for a fresh block, and for the block in a solve's `Stats`, which
+only a run of this solve registers. **A caller's reused block cannot tell
+"did not run this time" from its previous run**: it keeps that run's values
+in every field, `ran` included, and its summary repeats them. As in
+[`parity_system_gathering.md`](parity_system_gathering.md#evidence-that-it-fired),
+whether the solve's `Stats` lists the block is what tells the two apart.
+Re-run here (`e4-stats/stats.cc`): a 64-tuple solve, then a solve whose first
+`AutoTable`, on its own block, refutes the model before the reused block's
+presolver is reached, leaves the reused block saying `ran` 1 and 64 tuples,
+and the second solve's `Stats` has only the first block.
 
 There is no "ran and installed nothing" case with tuples: any tuple means a
 propagator. A table equal to the product of the domains looks like any
@@ -1094,9 +1229,15 @@ carries a hint of this presolver's, because there is none.
   filed; delegating the subproblem's backtracks to `logger->backtrack` at
   every level would match the main search.
 - The installed propagator's assertions carry no hint (`NoHint`), so a
-  hints-only reconstructor has to re-run the presolver ([Rewrite:
-  install-table-propagator](#rewrite-install-table-propagator)). Whether a
-  hint naming the scope would pay is the justifier's question.
+  hints-only reconstructor has to find a refutation of the reason with the
+  inference negated. Replaying the presolver's enumeration is one way. A
+  split over the reason's box, against the subproblem's own `a` lines, is
+  argued to be another (checked on a lane, not proved for every
+  propagator), at up to the product of the scope's domains for each
+  assertion, and some assertions need only a few RUPs ([Rewrite:
+  install-table-propagator](#rewrite-install-table-propagator)). The verdict
+  is `search`, provisionally: whether that split makes it `offline` is
+  Ciaran's call. Whether a hint would pay is the justifier's question.
 - Propagation strength does not change with proofs on, and there is no
   proof-only budget.
 
@@ -1162,8 +1303,12 @@ carries a hint of this presolver's, because there is none.
    the no-tuple rejection.
 6. **Tests:** a brute-force lane with views, constants, repeats and
    partly-outside constraints (`gacbf.cc` is the shape); a no-tuple case
-   not refuted at its root, with proofs; the order dependence; and a
-   `large_domain_audit_test` row behind an `AutoTable`.
+   not refuted at its root, with proofs; the order dependence; a
+   `large_domain_audit_test` row behind an `AutoTable`; and one stats block
+   reused across a compact-table run and a zero-tuple run, which a fix to
+   #1387 needs, whether it assigns every per-run field on entry or only
+   initialises `compact_table` before the early return (the issue offers
+   both).
 7. **A front-end route** is #983's design question. It needs a way to name
    the scope as well as a switch.
 8. **Report what the table pruned.** A `max_tuples` entry, the product of the
@@ -1200,10 +1345,16 @@ carries a hint of this presolver's, because there is none.
   tabulation in VeriPB:
   - one extension variable per solution, as the selector literals here;
   - one flag `g` for "some tuple is selected";
-  - a logged search with `g` as an extra guess, ending in a proof of `g`
-    and so the at-least-one. Because `g`'s definition names every `t_s`, the
-    scheme is two-pass: the solutions are found first, and the logged search
-    is a second one.
+  - a logged search with an extra guess about `g` at every node, ending in
+    a proof of `g` and so the at-least-one. For the search to end in a proof
+    of `g`, the guess has to be `¬g`, "no tuple is selected": at a solution
+    leaf the tuple's `t_s` holds, so `g` does, and the guess is refuted. The
+    published sentence reads "we use g as an additional guessed assignment";
+    in the LIPIcs PDF (p. 25:10, rendered and checked here) that `g` carries
+    no overbar, though the page's other negations do, so the `¬` is the
+    argument's and not the printed text's. Because `g`'s definition names
+    every `t_s`, the scheme is two-pass: the solutions are found first, and
+    the logged search is a second one.
 
   McIlree's thesis (*Pseudo-Boolean Proof Logging for Constraint Propagation
   Algorithms*, ch. 4) cites it as "an auto-tabulation proof as a
@@ -1211,7 +1362,8 @@ carries a hint of this presolver's, because there is none.
   justifications (JP 3.3, 3.4) the installed propagator's rules rest on. The
   code differs from the CP 2022 description, and always has: from its first
   commit (`087a6cc1`, 2022-12-22) it has used no `g`, and adds each found
-  tuple's `¬s_j` as an extra condition instead, in one pass. That is what
+  tuple's `¬s_j` as an extra condition instead (`auto_table.cc:83`), the
+  per-tuple counterpart of `¬g`, in one pass. That is what
   makes the clauses quadratic (#1379). The published `g` keeps them short
   at the price of the second search; #1379's candidate keeps them short in
   one pass. Beyond the two adaptations above, nothing here is
