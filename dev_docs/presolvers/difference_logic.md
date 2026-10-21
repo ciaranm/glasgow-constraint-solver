@@ -17,7 +17,11 @@
 > initialiser it installs does not observe `--timeout`), #983 (no `gcspy`
 > plumbing), #582 (no runtime
 > propagator priorities), #1072, #594 and #1210 (owned by `difference.md`), and
-> #868 (cross-solver). Tracked under #871.
+> #868 (cross-solver). Filed since, in the installed machinery and owned by
+> `difference.md`: #1384 (a negative cycle's or root witness's reason
+> deduplicates its conditions quadratically) and #1385 (root simplification
+> counts isolated nodes as removed, but the propagator still seeds, scans and
+> wakes on them). Tracked under #871.
 
 `DifferenceLogic` scans a posted `Problem` for two-term difference
 constraints, `x − y ≤ d`, written either as a two-term linear inequality or
@@ -61,9 +65,10 @@ Four things to know before touching it.
   - The half-reified path is reached today only from C++ (`examples/rcpsp
     --machine difference`).
 - **It installs a default-on root pass with no budget.** The root
-  simplification stage runs Johnson's all-pairs pass. With the binary heap
-  and lazy deletion it uses, a round is `O(n·m log n)` in nodes `n` and
-  edges `m`, and it repeats while a round fixes a condition. It cost 15 s on
+  simplification stage runs Johnson's all-pairs pass. With the lazy binary
+  heap it uses, a round is `O(n·m log(n + m))` in nodes `n` and edges `m`
+  (`O(n·m log n)` while parallel edges are bounded by a polynomial in `n`), and
+  it repeats while a round fixes a condition. It cost 15 s on
   a synthetic connected graph of 10,000 nodes and 30,000 edges, and it
   ignores `--timeout` (#816). On
   `difference_chain` at `n = 640` it more than doubles the presolver's wall
@@ -244,7 +249,10 @@ The donors stay on for two reasons:
   the priorities, `IncImp` and the bound-propagation mode, and Huub's own
   component does bounds propagation and falsifies implied edges by bounds
   (section 5.4).
-- Retiring the donors is sound only for the unconditional ones.
+- Only the unconditional donors can be retired without losing propagation
+  strength. A half-reified donor also infers `¬cond` from its own bounds,
+  which the global propagator never does during search
+  ([retire-unconditional-donors](#rewrite-retire-unconditional-donors)).
 
 Simplification is on because the paper measures it as most of the win on two
 of its three benchmarks (section 6.4):
@@ -505,7 +513,8 @@ the candidate and a path of one to four. Twelve fix their condition
 (`conditions_fixed = 12`). The thirteenth infers `~i[machine_before2_3][b0]`,
 the opposite of what the tenth inferred, so the inference fails and the model is
 refuted. That is a 45-line, 1,212-byte proof, in 0 recursions, and it verifies.
-Redundant-edge, dead-edge and node removal leave no trace anywhere. The
+Redundant- and dead-edge removal, and the lower round bound, leave no trace
+anywhere. The
 derivation is `difference.md`'s.
 
 **During search.** The installed propagator's proofs are `difference.md`'s:
@@ -634,8 +643,19 @@ which `difference.md` owns:
 - each round is Bellman-Ford from the implicit `v0`, `O(n·m)`;
 - then one Dijkstra on reduced costs from each node that is the tail of an
   edge or the head of a candidate. The Dijkstra uses a `std::priority_queue`
-  with lazy deletion (`difference_simplify.cc:201`), so each is
-  `O((n + m) log n)`, and a round is `O(n·m log n)` in the worst case;
+  with lazy deletion (`difference_simplify.cc:201`), which keeps one entry
+  per improving relaxation, stale ones included, so each is
+  `O((n + m) log(n + m))`, and a round is `O(n·m log(n + m))` in the worst
+  case. That is `O(n·m log n)` when the parallel edges are bounded by a
+  polynomial in `n`, but the donor scan merges nothing: each donor is its
+  own edge, so MiniZinc's flattening of 200 constraints `x − y ≤ k` over one pair (200
+  `int_lin_le` on 2.9.7 and 2.10.1) is lifted as 200 parallel edges between
+  two nodes (`differenceLogicEdgesLifted=200`,
+  `differenceLogicNodes=2`). The stage then drops 199 as redundant, but only
+  after its Dijkstras have scanned them, and with
+  `--difference-logic-simplify off` all 200 reach the propagator, whose heaps
+  are lazy too, as `difference.md` measures. These counts were measured at
+  `86caad24` on fataepyc-08, 2026-10-21;
 - it repeats while a round fixes a condition, so there is at most one round
   more than the conditions it fixes.
 
@@ -698,7 +718,7 @@ summarise, for this presolver's configuration, the two things
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
 | global difference propagator (`install_difference_propagator`) | `on_bounds` every node; `on_change` every condition variable | derived: the condition variables (over-reported except for `!=` and `not_in_range`), including a node that is also a condition variable | `difference.md`'s bound-push and negative-cycle rules | `edges_lifted ≥ 2` | no: returns `Enable`; a bound can snap past a hole and seed a further push (`run_hole_snap_test`) | no |
-| root initialiser | none (initialiser, `InitialiserPriority::Expensive`) | n/a | [root-condition-fixing](#rewrite-root-condition-fixing); redundant-edge, dead-edge and node removal | as above; the stage only with `simplifying_at_root` | n/a | n/a |
+| root initialiser | none (initialiser, `InitialiserPriority::Expensive`) | n/a | [root-condition-fixing](#rewrite-root-condition-fixing); redundant- and dead-edge removal, a lower round bound | as above; the stage only with `simplifying_at_root` | n/a | n/a |
 
 The donors' own propagators, and their idempotence and hole sensitivity, are
 [`linear.md`](../constraints/linear.md)'s and
@@ -1052,10 +1072,40 @@ These facts hold for every entry:
     bound literals. All matched.
   - `difference_chain` matches too: 23 recursions both ways at `n = 20`;
     163 and 643 at `n = 160` and `640`.
-- **Proof size.** It shrinks the proof by what the retired donors would have
-  logged. On `difference_chain --mode refute -n 20` the proof goes from
-  44 lines to 18. In fixpoint mode it is unchanged (778 lines), because the
-  donors there have nothing to log once the global propagator has run.
+- **Proof size.** It does not just subtract what the retired donors would
+  have logged. An inference a donor made first is made by the global
+  propagator instead, with its own derivation. That is a two-row `pol` per
+  push, about what a donor writes, but a negative cycle is one `pol` over
+  every row on the cycle, where a donor may need only its own row. Measured
+  at `86caad24` on fataepyc-08, 2026-10-21, kept against retired, `.pbp`
+  bytes:
+  - `difference_chain`:
+    - refute: 1,923 against 762 at `n = 20`, and 3,935 against 2,432 at
+      `n = 160` (linear donors); 40,091 against 35,621 at `n = 160`
+      (comparison donors).
+    - fixpoint: identical for linear donors, two lines and about 30 bytes
+      larger retired for comparison donors.
+  - A chain `x_i + 1 ≤ x_{i+1}` of `L` donors whose pushes start from an
+    `Equals` posted first (at either end or the middle, or from a decision):
+    36.5% to 47.0% smaller retired, for example 2,803,417 against 1,499,017
+    at `L = 1,000` with linear donors. Kept, the donors run first and write
+    pushes, with their bound-literal definitions, that the global
+    propagator's final pushes supersede. At `L = 1,000` with the `Equals`
+    on `x_0`, the kept proof has 3,997
+    `rup`s, 7,990 `pol`s and 9,998 `red` definitions, against 2,001, 3,000
+    and 6,006 retired. Among the kept `rup`s are 999 units restating an
+    upper bound that the retired proof never writes.
+  - A ring of `L + 1` edges closed by one edge that its own domains already
+    refute (`x_0 − x_1 ≤ −(2L + 1)` over `0..2L`): larger retired once the
+    ring is long. With linear donors that holds from `L = 100` (1,050
+    against 1,195). With comparison donors `L = 100` is still smaller
+    retired (2,263 against 1,389). At `L = 1,000` both are larger retired:
+    1,267 against 11,097 (linear) and 2,741 against 11,294 (comparison).
+    Kept, that edge's donor refutes the model from its own row. Retired,
+    the global propagator's `pol` cites all 1,001 rows.
+
+  Every proof sampled from these verifies with VeriPB 3.0.2
+  `--force-checked-deletion`; proofs were capped at 2 GB.
 - **Gaps.** None.
 - **Tightness.** Not applicable: there is no derivation. The tripwire's
   failure messages are the guard against a half-reified donor being retired,
@@ -1073,9 +1123,14 @@ These facts hold for every entry:
   This needs a half-reified donor, so from a front end it never fires.
 - **Posts.** `¬b`, inferred at the root by the installed initialiser
   (`difference_graph.cc:361`). That is permanent, since it is a root fact. The
-  same stage also drops redundant edges, dead edges and isolated nodes from the
-  propagator's internal graph. That is a decision about what to propagate, with
-  no trace in the OPB or the proof, and it is `difference.md`'s.
+  same stage also drops redundant and dead edges from the propagator's
+  internal graph, and lowers the from-scratch passes' round bound to the
+  number of nodes that still have an edge. It reports the others as
+  `isolated_nodes_removed`, but they are not removed: the propagator still
+  seeds them (on the incremental route's first call, and on every call from
+  scratch), scans them on every wake and is woken by their bounds (#1385).
+  That is a decision about what to propagate, with no trace in the OPB or the
+  proof, and it is `difference.md`'s.
 - **Derived mode.** Yes: an inference, certified in the proof.
 - **Why it is true.** If `b` held, the edge and the witness path would form a
   cycle of negative total weight. A system of difference constraints with a
@@ -1522,11 +1577,25 @@ On 20 challenge instances (`aircraft-disassembly`, `cable-tree-wiring`,
 counts and answers are read. The solution counts printed and the best
 objectives that were compared (`cable-tree-wiring`, `carpet-cutting`) were the
 same. Fewer nodes were explored in the 60 s on `aircraft-disassembly`, for
-example 2.28 M against 1.43 M on `B737NG-600-01`, which means each node cost
-more. Elsewhere the node counts moved both ways. They were higher with the
+example 2.28 M against 1.43 M on `B737NG-600-01`. Concurrent runs show only
+node throughput, so that instance was rerun under control. The runs follow
+each model's search annotation (no `-f`), and every one of the 20 has one:
+`input_order` for `aircraft-disassembly` and `carpet-cutting`, `first_fail`
+for the other two, which `fzn-glasgow` maps to plain smallest domain. The
+degree tie-break of [Can it weaken the model?](#can-it-weaken-the-model)
+enters only through the default `dom_then_deg` fallback for variables an
+annotation leaves unfixed. On `B737NG-600-01` the tree is the same both ways:
+run to its 18 solutions (`-n 18`), both explore 894,522 nodes with 890,135
+failures and print identical solutions. Serial, pinned to one core, three runs
+each, the solve takes 22.53 s and 168.77 G `instructions:u` without the
+presolver against 36.37 s and 280.23 G with it (medians; `86caad24`,
+fataepyc-08, 2026-10-21). So each node of the same tree costs 1.6 times the
+wall time and 1.66 times the instructions there. Where that cost goes was not
+measured. Elsewhere the node counts moved both ways. They were higher with the
 presolver on `cable-tree-wiring` A046 (47,206 against 32,017) and on
 `EchoSched` 12-12 and 15-15 (38% and 26%), and within about 4% on the rest.
-These are 60 s runs under load, so they are not cost measurements.
+Those are 60 s runs under load, whose trees were not compared, so they are not
+cost measurements.
 
 No identical-tree comparison against another solver was made (#868). This
 audit ran no other solver with difference logic. It knows of detection of
@@ -1573,7 +1642,7 @@ Own against shared:
   The cause is the view scaffolding: 62 of the 63 `pol`s in the donors-off
   refutation involve `@c[view_of_…][viewge|viewle]` deview lines, because the
   comparison spelling's rows are over offset views. Retiring the donors
-  removes 56 of the 202 lines on the refutation, and nothing on the
+  removes 56 of the 202 lines on the refutation, and adds two on the
   fixpoint.
 - **The assertion levels.** On those shapes, at `Inferences`, the
   refutation is 13 lines with 6 `a` lines. None of them carries a constraint
@@ -1662,8 +1731,9 @@ These are phrased as a user meets them:
    there is.
    - The pass already starts a Dijkstra only from tails of edges and heads
      of candidates, and prunes by a distance threshold.
-   - Its worst case is still one `O((n + m) log n)` Dijkstra per source, per
-     round.
+   - Its worst case is still one `O((n + m) log(n + m))` Dijkstra per
+     source, per round (`log n` while parallel edges are bounded by a
+     polynomial in `n`).
    - Making that cheaper is `difference.md`'s to do.
    - Until then, #816 applies.
 5. **Report what the scan does not read.** Medium. Count the posted
