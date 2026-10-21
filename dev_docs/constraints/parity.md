@@ -14,7 +14,16 @@
 > takes a Boolean donor's polarity from `enforces_equality()`, so a
 > `ReifiedEquals` whose `neq` flag disagrees with its condition, such as every
 > unreified `not_equals` that `read_scp` builds, gives wrong answers when the
-> presolver gathers it. Tracked under #871.
+> presolver gathers it. Filed since, in the system: #1386, a chain is
+> expensive for the system. A chain of unit inferences made in one call has a
+> justification quadratic in the chain's length. Finding the units' supports,
+> and the elimination in every order measured except with the chain's first
+> column fixed, cost of order `n³` word operations (about `n³/128` for the
+> supports, `n³/64` for the elimination's worst case), with proofs off too.
+> This holds for `ParitySystem` posted directly as well (rule 5). The
+> presolver's measurements are in
+> [`parity_system_gathering.md`](../presolvers/parity_system_gathering.md#proof-performance).
+> Tracked under #871.
 
 `ParityOdd(lits)` says that an odd number of the literals hold: an XOR. It is
 one class with one propagator, and it is generalised arc consistent on one XOR
@@ -309,9 +318,11 @@ two undecided ones.
 **The system**: nothing persists either. Each call reads every atom's state,
 **copies every row**, substitutes, and runs Gauss-Jordan from scratch:
 `O(rows² · (atoms + rows) / 64)` word operations, the `rows` term being each
-row's origin bitset, which is XORed alongside its atoms. `parity-system.md` records why it
-started from scratch (elimination creates non-zero cells, so a reduced form does
-not trail cleanly) and names incremental maintenance as the residue.
+row's origin bitset, which is XORed alongside its atoms. Each unit row's
+support is then a further sum over its origin (rule 5, **Algorithm**).
+`parity-system.md` records why it started from scratch (elimination creates
+non-zero cells, so a reduced form does not trail cleanly) and names
+incremental maintenance as the residue.
 
 **What maintaining it would buy.** On `parity-learning` 2012, with 111 rows over
 134 atoms, the system made each node about four times as expensive as the
@@ -336,9 +347,11 @@ interiors.
 - **Degenerate shapes**: see [Semantics](#semantics).
 - **Overflow.** None: the only arithmetic is parity and bitsets. The `pol`
   coefficients are small integers.
-- **Large systems.** The system's per-call cost grows with rows squared, and
-  its root scaffolding with the total row length: `2n + 2` lines per chain row
-  left at `Top`, where every later unhinted RUP pays for it (#666).
+- **Large systems.** The system's per-call cost is
+  `O(rows² · (atoms + rows) / 64)` plus the supports. That is cubic on a chain
+  (#1386; rule 5). Its root scaffolding grows with the total row length:
+  `2n + 2` lines per chain row left at `Top`, where every later unhinted RUP
+  pays for it (#666).
 
 ### Interval efficiency
 
@@ -485,7 +498,26 @@ term the OPB pins anyway.
 - **Strength** — `GAC` on the PB relaxation of the system, with rule 6; which is
   `GAC` on the conjunction when each variable contributes one atom.
 - **Algorithm** — Gauss-Jordan over bitset rows, from scratch every call:
-  `O(rows² · (atoms + rows) / 64)`.
+  `O(rows² · (atoms + rows) / 64)`. A chain meets that worst case in one call
+  in every order measured except with its first column fixed. That includes
+  a chain whose known end is its last column, and a chain with nothing fixed.
+  On a free chain over 4,096 variables, one `gauss_jordan` call costs 5.7 G
+  instructions, against 0.17 G with a unit row for the first column pivoted
+  first. Each unit row's support is then
+  found by XORing the atoms of every row in its origin (`support_of`,
+  `gf2_system.cc:259–264`). This runs with proofs off too, because the reason
+  is built from the support. On a chain of `n` rows inferred in one call, the
+  origins run up to the whole chain, so this costs about `n³/128` words. At
+  `86caad24` (fataepyc-08, 2026-10-21, `instructions:u`), `ParitySystem`
+  posted directly over a chain of 4,096 variables, with proofs off, took:
+  - 3.4 G with its first variable fixed, 80% of it in the propagator's body
+    (the supports) and 9% in `gauss_jordan`;
+  - 9.0 G with its last variable fixed, 65% in `gauss_jordan`;
+  - 12.3 G with nothing fixed, for the two solutions.
+
+  The same chain as separate `NotEquals` takes 0.18 G (#1386; the
+  presolver's arms are profiled in
+  [`parity_system_gathering.md`](../presolvers/parity_system_gathering.md#proof-performance)).
 - **Why it is true** — the unit row is a sum over GF(2) of posted rows, so it
   holds, and with the other atoms of its support fixed it fixes this one.
 - **Proof technique** — `pol` then `RUP`, by Gocht and Nordström's §4.3: the
@@ -587,7 +619,13 @@ term the OPB pins anyway.
   replace the elimination with a sum. Whether that is worth its size is a
   question for the justifier as it develops.
 - **Proof size** — one `pol` over (donors in the origin) × 2 slack rows plus one
-  axiom per support atom, and one RUP; plus the root scaffolding it cites.
+  axiom per support atom, and one RUP; plus the root scaffolding it cites. An
+  origin can be as long as the component. On a chain of `n` two-literal rows
+  inferred in one call, the units' origins run from one row to the whole
+  chain, so the call's `pol`s total about `2n²` tokens (#1386). At the same
+  commit, `ParitySystem` posted directly over a chain of 1,024 variables with
+  its first variable fixed writes 10.5 MB, which VeriPB takes 3.8 s to
+  check. The same chain as separate `NotEquals` writes 53 KB.
 - **Gaps** — `None.`
 - **Tightness** — see the catalogue preamble.
 
@@ -728,8 +766,10 @@ decided has at most one undecided input, which unit propagation has already
 settled, and a row whose output is undecided constrains nothing. Propagator
 calls of all kinds fall to an eighth, one system replacing 111 donors, but the
 solve takes four times as long. Where the time goes was not profiled; the
-from-scratch elimination and the row copies are the obvious candidates. `ParityOdd` itself is 7.4 times
-slower than Gecode, at the same count (on the unmodified build).
+from-scratch elimination and the row copies are the obvious candidates. On a
+different shape, the unit chains of #1386, a profile does name two costs: the
+elimination, and each unit's support (rule 5, **Algorithm**). `ParityOdd`
+itself is 7.4 times slower than Gecode, at the same count (on the unmodified build).
 
 **What this benchmark exercises**: rules 1–3 without the presolver, rules 5 and
 6 with it. Rule 4 only in the tests, and rule 7 nowhere.
@@ -788,6 +828,10 @@ elimination, per assertion.
   `parity-learning`.
 - **Root scaffolding is never deleted**: `2n + 2` lines per chain row stay at
   `Top`.
+- **A chain is expensive for the system** (#1386). A unit chain inferred in
+  one call has a justification quadratic in the chain's length. Its supports,
+  and the elimination in every order measured except with the first column
+  fixed, are cubic, with proofs off too (rule 5).
 - **A range literal throws with proofs on** (#310; #1225 is the
   reification-condition case).
 
@@ -802,7 +846,11 @@ Ranked by what they buy for what they cost.
 2. **Make each call cheaper, or rarer.** Profile the system propagator on
    `parity-learning` first; incremental elimination is the design note's
    residue, and skipping elimination when no row can have become unit is a
-   cheaper test. No structural check at gathering time would have predicted
+   cheaper test. Neither addresses the supports or the quadratic `pol` of
+   #1386: on chains a fix has to address those as well as the elimination's
+   cost (rule 5;
+   [`parity_system_gathering.md`](../presolvers/parity_system_gathering.md#proof-performance)).
+   No structural check at gathering time would have predicted
    this model's result: the rows do interact once the objective's bound
    decides their outputs, and it is the search's depth, not the system's shape,
    that leaves nothing to find. Unfiled; the evidence is one model.
