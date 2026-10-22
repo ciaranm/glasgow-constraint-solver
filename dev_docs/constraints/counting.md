@@ -12,7 +12,11 @@
 > (at `GAC` on an unsorted open cover), is fixed by #1030. Filed since and open:
 > #1193 (workflow 2 only: `GlobalCardinality`'s Hall `pol`s and `Among`'s `pol`s
 > over its sum row fail cake's chain on a {0,1} variable with both its values in
-> the set). **Fixed since the audit**: #1053 (`NValue`'s count-only wakes and
+> the set); #1304 (`Count` with `n` and `y` one variable can lose solutions,
+> proofs off too; fix open as #1364) and #1308 (`Among` with `n` among the
+> positions over a definition range wider than 100 values: VeriPB can reject
+> the proof; fix open as #1365), both from a random sweep of `Among` after
+> #1205. **Fixed since the audit**: #1053 (`NValue`'s count-only wakes and
 > its idempotence), filed by review; #1046 (`GlobalCardinality` proofs aborted
 > or were rejected when its array held a constant), filed by the `inverse`
 > audit; #1191 and #1197 (`GlobalCardinality` proofs rejected under aliasing),
@@ -134,7 +138,11 @@ Three things to know before touching it.
   and #1201 were one shape, a justification that reads the state running after
   its own push; #1197 and #1200 were a view spelled two ways in one proof.
   This audit's own wrong answer, solutions lost at `GAC` on an open constraint
-  whose cover was not ascending (#1026), is fixed by #1030.
+  whose cover was not ascending (#1026), is fixed by #1030. Two more bugs,
+  found since by a random sweep of `Among`, are open: `Count` with `n` and `y`
+  one variable can lose solutions, with proofs off too (#1304), and `Among`
+  with `n` among its positions over a definition range wider than 100 values
+  can write proofs VeriPB rejects (#1308).
 
 ## What it is
 
@@ -146,6 +154,8 @@ Three things to know before touching it.
   shapes could be rejected until #1205 (#1201). Since then `count_test` posts
   `y` among the positions, `n` among the positions, and `n` as `y` or as a view
   of it, but not `y` among the positions through a view (see [Tests](#tests)).
+  With `n` and `y` one variable, `Count` can still lose solutions, with proofs
+  off too (#1304; [Known limitations](#known-limitations)).
 - **`Among(vars, S, n)`** — `n = |{i : vars[i] ∈ S}|`, `S` a set of constants.
   The constructor sorts `S` and removes duplicates, and since `3435a4e1`
   refuses a value outside the bounded integer range with `IntegerOverflow`
@@ -338,12 +348,14 @@ the propagator itself.
 family: `Among`'s root initialiser and both `GlobalCardinality` arms' demand
 pols. At the audit `Inverse` called it too; #1089 made `Inverse`'s at-most-ones
 lazy, and it no longer does. `all_different`, `disjunctive`, `min_distance`,
-`sort` and `subcircuit` fold their at-most-ones with a different helper,
-`recover_am1_from_pairs` (`innards/proofs/am1_from_pairs.hh`). Both callers
+`regular`, `sort`, `subcircuit` and the `inferred_disjunctive` presolver fold
+their at-most-ones with a different helper, `recover_am1_from_pairs`
+(`innards/proofs/am1_from_pairs.hh`). Both callers
 pass it negated atoms `x ≠ v`, GCC since #1187. `recover_am1`'s
 complementary-pair derivation exists because of this family (#557), and both
 of its callers can reach it: GCC with several values of one variable, and
-`Among` with one variable's `x ≠ v` over the values of interest. `NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover`
+`Among` with one variable's `x ≠ v` over the values of interest.
+`NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover`
 is used by `Among` and both GCC arms, as well as by `all_different`,
 `bin_packing` and `min_distance`. `global_cardinality/justify.{hh,cc}` is shared
 between the two GCC arms only.
@@ -554,9 +566,9 @@ never saw #1026.
   - **`Count`**: since #1205, with a logger, the five explicit pushing sites
     (rules 1, 3, 5, 6, 7) go through `infer_before_push_or_stop` (`count.cc:61`),
     a one-literal `infer_all`; rule 8 has been an `infer_all` since #996 added
-    it. Without a
-    logger they take the non-throwing `_or_stop` calls as before. The reason is
-    still the whole-scope `generic_reason`, which is materialised before the
+    it. Without a logger they take the non-throwing `_or_stop` calls as before.
+    The reason is still the whole-scope `generic_reason`, which is materialised
+    before the
     push when a proof is being written. Before #1205 a push could move a
     position or `y` that the justification then read, when `n` was `y` or
     either was among the positions, and VeriPB rejected the proof (#1201).
@@ -569,7 +581,14 @@ never saw #1026.
     when `n` is itself a must-match position, directly or through a view.
     #1205's static audit named `n` among the positions as a suspect, and its
     random sweep of `Among` found nothing. `run_self_ref_among_test` posts
-    `Among([s, s], S, s)` and verifies. Nothing shows it safe in general.
+    `Among([s, s], S, s)` and verifies. It is not safe in general (#1308, found
+    since): when that variable's definition range is wider than 100 values,
+    the tracker's at-least-one is a cover keyed on the values the push left,
+    so once the push has taken values of `S` from it the `pol` no longer
+    collapses to `n ≥ k`, and VeriPB rejects the closing RUP. At 100 values or
+    fewer the tracker's per-value line names every value. That is why the test,
+    over `0..4` and `0..3`, saw nothing, and probably why the sweep did not.
+    The answers are right.
 
 ## The implementation
 
@@ -646,8 +665,9 @@ variable appears twice across their scope, and since #1109 one of them,
   the same bounds.
 
 The other two of those return `Enable`, not `EnableButIdempotent`, so no claim
-reaches the engine for them. The last three are not idempotent. `Count`'s array pruning (rule 8) can fix variables that rule
-2 then counts on the next call. Both GCC arms count before they prune: the
+reaches the engine for them. The last three are not idempotent. `Count`'s
+array pruning (rule 8) can fix variables that rule 2 then counts on the next
+call. Both GCC arms count before they prune: the
 bounds arm runs rules 16–19 value by value and then the Hall rules, and the flow
 arm runs rules 16 and 17 before the flow. So a variable fixed later in the
 call, by rule 18 or 19 or by a Hall or flow removal, can be missed by a count
@@ -836,8 +856,9 @@ class.
   against the cover's interval set (#877). `Clean`.
 - **GCC bounds.** Part 1 asks `in_domain` per cover value per variable, bounded
   by the cover. Rule 19 removes everything but the value as ranges, one more
-  than the domain has intervals (#860). Part 2's `domain_subset_of_hall` walks a domain with an early exit at
-  the first value outside the Hall set, so it is bounded by `|H| + 1`. **Rule
+  than the domain has intervals (#860). Part 2's `domain_subset_of_hall` walks
+  a domain with an early exit at the first value outside the Hall set, so it
+  is bounded by `|H| + 1`. **Rule
   25 is not bounded**: `for (val : each_value_mutable(var)) if (! hall_contains(val)) infer(var != val)`
   removes a potential variable's non-Hall values **one at a time over its whole
   domain**. That is the `GlobalCardinality/hall` row's `KnownTrip`. Its
@@ -1019,7 +1040,8 @@ the harness's levels): `Count` is `GAC` on `y` and the array and `bounds(Z)` on
 `n`; `Among` is `GAC` on everything; `NValue` is checked by no test; the GCC
 bounds arm is `bounds(Z)` on the array and the counts; the GCC flow arm is
 `GAC` on the array **relative to the counts' bounds** by construction, but its
-test checks the array only at `bounds(Z)`, and the counts not at all. Each rule's **Strength** is what that rule contributes.
+test checks the array only at `bounds(Z)`, and the counts not at all. Each
+rule's **Strength** is what that rule contributes.
 
 ### Rule: count-upper-by-candidates
 
@@ -1236,7 +1258,13 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   reason; the batching is an optimisation.
 - **Proof size** — per value of `y`, per pruning, up to three lines, plus the
   flag zeroing once per value. `O(|D(y)| · (n + prunings))`.
-- **Gaps** — `None.`
+- **Gaps** — `None.` The rule itself, though, is wrong when `n` and `y` are
+  one variable, directly or through views: the per-value loop's bookkeeping it
+  decides from can be made stale by pushes after it was gathered (that loop's
+  later removals from `y`, and rules 6 and 7's pushes on `n`, which also move
+  `y`), so it can remove supported values, and the `GAC` claim above fails
+  there (#1304, proofs off too; see [Known limitations](#known-limitations)).
+  VeriPB rejects the proof, correctly.
 - **Tightness** — `Not shown.`
 
 ### Rule: among-lower
@@ -1267,7 +1295,10 @@ test checks the array only at `bounds(Z)`, and the counts not at all. Each rule'
   whose domain in the reason lies inside `S`, which the `.scp` gives.
 - **Proof size** — one `pol` over `1 + k` rows, one RUP; the at-least-ones are
   cached by the tracker.
-- **Gaps** — `None.`
+- **Gaps** — the steps run after the push and read the state, so when `n` is
+  itself a must-match position over a definition range wider than 100 values,
+  VeriPB can reject the proof (#1308; see [Proof-time
+  state](#proof-time-state)). The answers are right.
 - **Tightness** — `Not shown.`
 
 ### Rule: among-upper
@@ -1936,7 +1967,9 @@ unreachable; see their entries.
   differential (3,000 plus 300 verified, as itself, an offset view or its
   negation) was clean and not in the tree; #1201 was found later, with `n` as
   `y`. `run_aliased_count_test` now posts `y` among the positions as itself
-  only, `n` among the positions, and `n` as `y` or a view of it.
+  only, `n` among the positions, and `n` as `y` or a view of it, but none of
+  its rows with `n` as `y` hits #1304. No `Among` lane posts `n` among the
+  positions over a range wider than 100 values (#1308).
 - **`NValue` has no consistency check at all**, and no test would notice if it
   pruned less. It prunes little enough that this is not much of a gap.
 - **The flow arm's scale.** At the audit every `GAC` test instance had at most
@@ -2162,8 +2195,13 @@ solution) were not checked.
 
 ### Proof-logging gaps
 
-`None` known at `0a5b4ec6`. Five were found after this audit, and all are
-fixed: #1046 (a constant in `GlobalCardinality`'s array, #1187), #1191 and
+`None` was known at `0a5b4ec6`. One found since is open: #1308, rule 9's
+lower bound on `n` when `n` is a position over a range wider than 100 values
+(see [Proof-time state](#proof-time-state)). #1304's rejected proofs are not a
+gap: the pruning itself is wrong there, and VeriPB is right to refuse it (see
+[Known limitations](#known-limitations)). Five found after this audit and
+before `0a5b4ec6` are fixed: #1046 (a constant in `GlobalCardinality`'s array,
+#1187), #1191 and
 #1197 (`GlobalCardinality` under aliasing, #1196 and #1199), #1200 (a view
 registered by a later constraint, #1208) and #1201 (`Count` under aliasing,
 #1205); see [Variable kinds and views](#variable-kinds-and-views) and
@@ -2187,10 +2225,17 @@ asserted". Both date from before `ce47d70a` (2026-06-04), which removed the
 family's last assertion. A third stale comment, in the flow arm's
 closed-deferral branch, says "the per-variable In constraint certifies this";
 no `In` has been posted since `76c8eeab`, and it is the closed propagator
-(rule 15) that does.
+(rule 15) that does. All three corrected by #1396, open.
 
 ### Known limitations
 
+- **`Count` with `n` and `y` one variable can lose solutions** (#1304), with
+  proofs off as well as on: rule 8 prunes from bookkeeping taken before a push
+  that moved `y`. MiniZinc reaches it (`count(x, y) = y`). VeriPB rejects the
+  proof, correctly.
+- **`Among` with `n` among its positions can write proofs VeriPB rejects**
+  when that variable's definition range is wider than 100 values (#1308, rule
+  9). The answers are right. MiniZinc reaches it.
 - **Workflow 2 fails on a {0,1} variable** (#1193): `GlobalCardinality`'s Hall
   `pol`s over one with both its values in the set, and `Among`'s `pol`s over a
   sum row holding one with both its values in `S`, verify against our OPB but
@@ -2252,12 +2297,12 @@ Ranked by what they buy for what they cost.
    `define_proof_model`, not `prepare()`, which removes all its per-value work
    with proofs off. Take rule 13's count from an interval union rather than a
    `std::set` of values. The whole propagator was 31–42% of propagation time on
-   `gfd-schedule` before #1109; how much of that the `std::set` is was not profiled, so no
-   speedup is claimed. And say, in the class comment at least, how weak it is.
-   #1053, filed by review, added two more, both done by #1109: it no longer
-   wakes on `n`, and it claims idempotence. A real propagator (Bessiere et al.'s bounds, or Beldiceanu's
-   pruning for the at-most side) is a project, not a fix; the encoding is
-   #843.
+   `gfd-schedule` before #1109; how much of that the `std::set` is was not
+   profiled, so no speedup is claimed. And say, in the class comment at least,
+   how weak it is. #1053, filed by review, added two more, both done by #1109:
+   it no longer wakes on `n`, and it claims idempotence. A real propagator
+   (Bessiere et al.'s bounds, or Beldiceanu's pruning for the at-most side) is
+   a project, not a fix; the encoding is #843.
 5. **`Among`, two cheap fixes, unfiled.** Build the per-call reason lazily over
    a prebuilt `generic_reason`, as `Count` and `NValue` do, and stop copying the
    scope to partition it. On `ptv` with proofs off, `materialise_generic` is
@@ -2270,8 +2315,10 @@ Ranked by what they buy for what they cost.
    low priority for all its size.
 6. **`GlobalCardinality` tidying, unfiled.** Delete rules 22 and 24, or reduce
    each to a comment saying why it cannot happen, and correct the three stale
-   comments under [Proof-logging gaps](#proof-logging-gaps). Make rules 23 and 28 one `infer_all` per Hall set or cut
-   instead of one `pol` per removal. Make rules 25 and 30 remove ranges rather
+   comments under [Proof-logging gaps](#proof-logging-gaps) (done by #1396,
+   open). Make rules 23 and 28 one `infer_all` per Hall set or cut instead of
+   one `pol` per removal.
+   Make rules 25 and 30 remove ranges rather
    than values (#876, and the `GlobalCardinality/hall` `KnownTrip`); both need
    a range-shaped justification, which is why #860 left them.
 7. **Tests.** Add a GCC view and aliasing lane: **partly done** by #1196 and
