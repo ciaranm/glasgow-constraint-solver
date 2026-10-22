@@ -2204,7 +2204,7 @@ model, so it wants measuring as its own piece of work.
   coefficient reaches the degree (and a stronger line otherwise) — but the
   paper's own configuration study says to leave it **off**: on RCPSP/max every
   configuration with it on scored below every configuration with it off. The
-  RCPSP/max measurement below made this deferral visible: without it, a system
+  RCPSP/max measurement above made this deferral visible: without it, a system
   whose infeasibility depends on edges nobody has fixed yet was invisible at the
   root. The root-only version ("This is `IncImp`, restricted to the root") now
   refutes those; the search cost left on the pairwise machine models is the
