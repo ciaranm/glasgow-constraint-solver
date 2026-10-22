@@ -121,10 +121,10 @@ Three things to know before touching it.
   **number of terms**, never to domain width. That includes the proof: a bound
   push names every other term's bound except those already true at the top,
   because the bits imply them or the declared bound is pinned (above
-  `AssertionLevel::Links`, would be) (#1055). Until then it named every term, which is how a 0.92 s
-  `shortest_path` search wrote a 15 GB proof (#1035); it now writes 617 MB.
-  **The number of sweeps is another matter**: an
-  equality alternates two sweeps until one of them moves nothing, and on
+  `AssertionLevel::Links`, would be) (#1055). Until then it named every term,
+  which is how a 0.92 s `shortest_path` search wrote a 15 GB proof (#1035); it
+  now writes 617 MB. **The number of sweeps is another matter**: an equality
+  alternates two sweeps until one of them moves nothing, and on
   `2x − 2y = 1` over `0..N` that takes a number linear in `N`, inside one call
   (#1091). And with coefficients other than ±1 the equality's bounds are only
   `bounds(R)`: an endpoint can survive with no integer support.
@@ -274,8 +274,9 @@ dispatcher can reach gets a backtrackable fold state and the incremental
 propagator, which folds fixed terms out of the sum. Below it, the stateless
 sweep runs. The two are designed to make identical inferences, so this picks
 a strategy and never a model. What has been checked is weaker: identical
-solution sequences on 23 corpus models ([CPU performance](#cpu-performance)). What it costs either way is under [CPU
-performance](#cpu-performance) and #1034.
+solution sequences on 23 corpus models ([CPU performance](#cpu-performance)).
+What it costs either way is under [CPU performance](#cpu-performance) and
+#1034.
 
 **Slack-based waking**, `GCS_LINEAR_SLACK_WATCH_THRESHOLD` (default: off) and
 `GCS_LINEAR_SLACK_WATCH_COVER_PERCENT` (default 15). This is for an inequality
@@ -348,8 +349,9 @@ hands off to one, which is `Tabulated` on small domains (see
 **Shared code.**
 
 - `propagate_linear` is called by `linear_stages.hh` (`propagate_stages`), so
-  the linear stages of `divide`/`modulus` and `power` run this sweep. They pass `hints::LinearEquality{owner}`, so those inferences arrive on
-  the wire as `linear_equality` **under the arithmetic constraint's id**. That
+  the linear stages of `divide`/`modulus` and `power` run this sweep. They
+  pass `hints::LinearEquality{owner}`, so those inferences arrive on the wire
+  as `linear_equality` **under the arithmetic constraint's id**. That
   is the hint naming the procedure, not the family, as `element` found for
   `equals`.
 - `justify_linear_contrapositive` is used only by the gated stages. #1055's
@@ -454,8 +456,10 @@ lane covers `If`, `NotIf` or a reified not-equals.
   four 0/1 variables `LinearNotEquals` and `LinearEqualityIff` still
   introduce and cite `x ≥ 0` (measured at `0a5b4ec6`).
 - **The `Tabulated` arm** introduces its selector flags in the proof, at
-  install, through `install_tabulation`. It shares the extensional family's
-  machinery, which `table.md` will own.
+  install, through `install_tabulation`. It shares that helper with the
+  arithmetic family's tabulated arms: the derivation is `arithmetic.md`'s
+  tabulate-relation, and the propagator over the table is
+  [`table.md`](table.md)'s.
 - **Justifications read `state`**, in rules 8 and 9 (`justify_cond` asks
   `state.upper_bound`/`lower_bound`). The bound pushes read the propagator's
   own bounds snapshot, which the reason also states. The caveat about
@@ -635,8 +639,9 @@ undecided reified equality or a `Tabulated` equality does not.
   zero coefficient is dropped by `tidy_up_linear`.
 - **Degenerate shapes**: an empty sum is a constant check (rules 4 and 5).
   `linear_constant_test` posts empty equality and not-equals sums; the
-  inequality's empty sum is one data row in `linear_test`. A single term is an ordinary sweep. A
-  repeated variable is merged, so `x − x ≤ 3` is empty. A constant term moves
+  inequality's empty sum is one data row in `linear_test`. A single term is an
+  ordinary sweep. A repeated variable is merged, so `x − x ≤ 3` is empty. A
+  constant term moves
   to the right-hand side. A two-term `±1` constraint from MiniZinc never
   arrives here (it becomes `Equals`, `NotEquals` or `LessThanEqual`).
 - **A constant condition** on the equality's reified forms: resolved per form
@@ -738,7 +743,10 @@ no hint"), so in hints-only mode their assertions are bare `a <clause> >= 1;`
 lines: 173 of them in `linear_constraint_le`'s proofs at seed 1, and 203 in
 `ge`'s. `hints::LinearInequality` exists, and is used only as the base of the
 `cond` hint. **None of the five earlier family documents records an
-unattributed assertion.** An external justifier has to find the row that licenses one by
+unattributed assertion**; [`difference.md`](difference.md),
+[`min_distance.md`](min_distance.md) and [`nogoods.md`](nogoods.md), written
+later, do (every assertion of each). An external justifier has to find the
+row that licenses one by
 searching the model's inequalities for one whose scope covers the clause's
 variables and whose JP 3.15 step yields the clause. The row is in the model, so
 this is a search, not missing information: the verdict is `search`, not
@@ -999,8 +1007,9 @@ the same instances, the same verified proofs.
 - **Proof technique** — `pol` then `RUP`, ours (`justify_cond`): the `c → S ≤ v`
   row plus every term's contributing bound, except one the term's bits imply,
   and no `pol` when nothing is added (#1055; `linear_inequality.cc:68-93`). It
-  is JP 3.15's shape with the condition left over. It reads `state`. `If` reaches this rule as well as
-  `Iff` (`linear_constraint_le_if` does 22 times at seed 1), and it licenses
+  is JP 3.15's shape with the condition left over. It reads `state`. `If`
+  reaches this rule as well as `Iff` (`linear_constraint_le_if` does 22 times
+  at seed 1), and it licenses
   `¬c` (`set_not_cond_if_must_not_hold`), citing its own row. The comment
   above the verdict said otherwise until #1075 corrected it; the code was
   always right.
@@ -1106,10 +1115,13 @@ the same instances, the same verified proofs.
   the extensional family's propagator. The cost is the product of the domain
   sizes.
 - **Why it is true** — a value is supported iff some solution tuple uses it.
-- **Proof technique** — the extensional family's, over the in-proof selector
-  flags `install_tabulation` introduces. `table.md` will own it.
-- **Reason, Assertion, Offline reconstructibility, Proof size** — the
-  extensional family's.
+- **Proof technique** — `redundance` and `RUP` for the table: the shared
+  `install_tabulation` derivation of the in-proof selector flags, as
+  [`arithmetic.md`](arithmetic.md)'s
+  [tabulate-relation](arithmetic.md#rule-tabulate-relation) describes it. The
+  prunings over the table are [`table.md`](table.md)'s rules 2–5.
+- **Reason, Assertion, Offline reconstructibility, Proof size** — as those
+  rules: tabulate-relation's for the table, `table.md`'s for the prunings.
 - **Hint** — `hints::LinearEquality`, passed to `install_tabulation`.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
@@ -1194,10 +1206,11 @@ slack-watched wake were not counted; the slack lanes force that path on.
 - **In-repo**: `benchmarks/linear_prop_cost` (per-propagation cost of the two
   sweeps), `benchmarks/linear_slack_bench` and `slack_watch` (the slack
   design's measurements), `benchmarks/wake_cost`, and
-  `benchmarks/tabulated_linear_random`. Among the examples, `money` (one long equality with large coefficients)
-  and `knapsack` are small. minicp's `magic_series` (default options, `00797a97`) has
-  90,301 propagators over two types, and `equals` takes 66% of its
-  propagation time, so `lin_equals` takes the rest. No example is dominated by the family.
+  `benchmarks/tabulated_linear_random`. Among the examples, `money` (one long
+  equality with large coefficients) and `knapsack` are small. minicp's
+  `magic_series` (default options, `00797a97`) has 90,301 propagators over two
+  types, and `equals` takes 66% of its propagation time, so `lin_equals` takes
+  the rest. No example is dominated by the family.
 - **The corpus is where the family lives.** Linear is 100% of propagation time
   on `triangular` (2015, 2019, 2022, 2024), `multi-knapsack` 2014, `vrp`
   (2011–2013), `wmsmc-int` 2021 and `shortest_path` 2008, and over 90% on
@@ -1403,8 +1416,9 @@ Ranked by what they buy for what they cost. The audit's first three (#1032,
 
 1. **#1035** — **Done by #1055**, both halves and for this family only: the
    reason leaves out a declared bound that the bits imply, that a pin already
-   states, or, above `AssertionLevel::Links`, that would have been pinned, and the `pol` leaves out a bound the bits imply and no longer
-   divides. Both halves went to proofs consultants. On `shortest_path` it was
+   states, or, above `AssertionLevel::Links`, that would have been pinned, and
+   the `pol` leaves out a bound the bits imply and no longer divides. Both
+   halves went to proofs consultants. On `shortest_path` it was
    24× in bytes, more than the order of magnitude this item guessed. Doing it
    centrally, for every constraint's rendered reasons, broke 41 tests. The
    same filter restricted to the lines `ProofLogger::infer` writes passed all
@@ -1475,8 +1489,8 @@ until then it divided by the changed variable's coefficient to close by RUP).
 - [`reification.md`](../reification.md) and the reified dispatcher's header:
   which forms infer what from each verdict.
 - `subset-sum-strengthening.md` is *not* this family's. It is an
-  `innards/proofs` helper that `knapsack` and `cumulative` use for tighter
-  derived lines.
+  `innards/proofs` helper that `cumulative` and the `cumulative_strengthening`
+  presolver use for tighter derived lines; `knapsack` does not call it.
 
 ## Developer commentary
 
