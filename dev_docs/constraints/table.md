@@ -879,7 +879,8 @@ where JP 3.3 states one value.
   - `hinted` for a tabulated constraint, as `arithmetic.md`'s tabulate-relation
     says: its rows are skipped in a hints-only proof, and the hint's
     `originator` names the relation to rebuild them from.
-  - **`search` for `AutoTable`**, provisionally, whose rows are also absent
+  - **`search` for `AutoTable`**, pending the external justifier's design,
+    whose rows are also absent
     and whose assertion carries no hint. A reconstructor has to refute the reason with
     the inference negated. Replaying the presolver's enumeration, at up to
     the product of the scope's domains, is one sufficient way, not the only
@@ -895,7 +896,7 @@ where JP 3.3 states one value.
     stay in the proof at `Definitions`, `Links` and `Inferences`; at
     `Inferences` the reconstructor must also add root-bound units and
     definitions of the range literals the assertions use. Whether that
-    makes the verdict `offline` is open
+    makes the verdict `offline` waits for the external justifier's design
     ([`auto_table.md`](../presolvers/auto_table.md),
     install-table-propagator, which has the examples and the evidence).
 - **Proof size** — one line per bound moved.
@@ -1311,8 +1312,8 @@ domain; see [OPB encoding](#opb-encoding).
 
 - `AutoTable`'s inferences have no rows and no hint in a hints-only proof. That
   is not a gap, since the full proof justifies them, but it is the one place in
-  this family where reconstruction needs a search, provisionally (see rule 2's
-  `AutoTable` verdict).
+  this family where reconstruction needs a search, pending the external
+  justifier's design (see rule 2's `AutoTable` verdict).
 
 Two gaps this audit found are closed: overlapping rows made the solution line
 fail (#1115, fixed by #1202; see [OPB encoding](#opb-encoding)), and a tuple
