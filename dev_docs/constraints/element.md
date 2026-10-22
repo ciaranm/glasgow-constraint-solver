@@ -243,9 +243,10 @@ and called from `element.cc` once the index is fully determined, to tie
 `result` to the selected entry. Three consequences, in increasing order of how
 surprising they are:
 
-1. `equals`'s rules 1–4 *are* this family's rule 5. Their strength, their
-   reasons, their proof techniques and their view degradations are inherited
-   wholesale, and a change to any of them is an `Element` change.
+1. `equals`'s rules 1–3, its must-hold pass, *are* this family's rule 5.
+   Their strength, their reasons and their proof techniques are inherited
+   wholesale (and their view degradations were, until #904 deleted them), and
+   a change to any of them is an `Element` change.
 2. The inferences arrive in the proof under the **`equals` hint**, carrying
    `Element`'s constraint id.
 3. On the family's own benchmark that is **93% of the assertions it is
@@ -395,7 +396,10 @@ skips the variant deview. A mixed scope falls back to the general
 branch, and it is the only place in the arc so far where a family does this.
 
 Argument validation is `check_array_dimensions` in the constructor, so a ragged
-array throws at `post`.
+array throws at `post`, and since #1215 every index start and every constant
+array entry must lie in the bounded range
+([integer-ranges.md](../integer-ranges.md)), or the constructor throws
+`IntegerOverflow`.
 
 ### Propagator inventory
 
@@ -677,9 +681,8 @@ thing in the arithmetic family (#931), which is what turned it from an incident
 into the standing rule.
 
 **4. Where the family stands in the audit lane.** Five rows in
-`gcs/large_domain_audit_test.cc`, all pinned `Clean` — more than any other
-family in the arc, and the reasoning behind the set is the most careful in the
-lane:
+`gcs/large_domain_audit_test.cc`, all pinned `Clean`, and the reasoning behind
+the set is the most careful in the lane:
 
 | Row | Shape | Why it is a distinct row |
 |---|---|---|
@@ -730,8 +733,9 @@ is how a cell's guarded equality carries a value from entry to result) and the
 collapse on **Theorem 3.2** (an emptied defined domain unit-propagates to
 conflict). See
 [`justification-techniques.md`](../justification-techniques.md); the published
-procedures are **JP 3.9, 3.10 and 3.11**, and this family instantiates all
-three.
+procedures are **JP 3.9, 3.10 and 3.11**. This family instantiates the last
+two, and instantiated JP 3.9 too until #929 moved rule 1 onto the interval
+walk.
 
 **The reason is a `generic_reason` over the whole scope**, concatenated with
 per-rule literals, and assembled only when `inference.want_reasons()` — every
@@ -824,9 +828,10 @@ the constraint family**, and on this family's own benchmark the
   a 1 ~i[_17][eq11] 1 ~i[_33][eq1] 1 ~i[_24][eq3] >= 1::element:((constraint_id _3));
   ```
 - **Hint** — `hints::Element{owner}`.
-- **Offline reconstructibility** — `hinted`. The procedure is published and the
-  reason names every variable the walk ranges over, so a justifier can rebuild
-  it — but it must locate the cells' equality rows positionally, because this
+- **Offline reconstructibility** — `hinted`. Since #929 the procedure is our
+  own disjointness walk rather than a published one, but the rule fixes it and
+  the reason names every variable the walk ranges over, so a justifier can
+  rebuild it. It must locate the cells' equality rows positionally, because this
   family labels none of them ([Labels](#labels)).
 - **Proof size** — per index tuple, a few lines per **run** of the two domains
   rather than per value, plus one per collapsed dimension. Independent of either
@@ -983,8 +988,8 @@ line of code is a correctness condition and the argument for a design.
 - **Fires when** — every index is a singleton, and the array has non-constants.
 - **Strength** — as `equals`: `GAC` for two distinct operands.
 - **Algorithm** — `enforce_equality(result, entry, …)` with the index equality
-  literals as the base reason. See [`equals.md`](equals.md) rules 1–4 for the
-  four inferences and their costs.
+  literals as the base reason. See [`equals.md`](equals.md) rules 1–3 for the
+  three inferences and their costs.
 - **Why it is true** — with the index fixed, the constraint *is* an equality.
 - **Proof technique** — `RUP` or `RUP sequence` per the `equals` rule that
   fires, by **JP 3.12** and **JP 3.2**; **JP 3.11 (single value for Element)**
@@ -1096,7 +1101,8 @@ enumeration test at all.
   `.opb` files of `GAC`, `BC` and `Auto` byte for byte, which is how the
   "propagation strength only" claim in [Options](#options) is enforced rather
   than asserted.
-- **VeriPB really runs**, for every case. Seeded, all five modes:
+- **VeriPB really runs**, for every case. Seeded, the five modes there were
+  before #967 added the three `*auto` ones:
   **96 proofs, all verifying, in 7.14 s** — 20 for `const`, 20 for `constgac`,
   16 for `const2d`, 25 for `var`, 15 for `var2d`. Note the shape of that against
   the other families: `comparison` verifies 1,356 proofs in 3.35 s. An `Element`
@@ -1226,7 +1232,8 @@ narrow trigger sets are doing real work.
 
 **The recursion and solution counts are the same both ways** — 123,333 and
 4,285,745 recursions — while `GAC` makes **62% more effectful inferences** on
-`qap`. That is what was compared; the two trees were not traced node by node. Every one of those extra prunings was unobserved. `tsp`
+`qap`. That is what was compared; the two trees were not traced node by node.
+Every one of those extra prunings was unobserved. `tsp`
 shows the same thing from the other side: `GAC` does **fewer** propagations
 (57.7M against 83.4M) and is still slower, because it prunes harder per call and
 none of it pays.
@@ -1427,8 +1434,8 @@ dominated the other two families' proofs — is under 13% here.
 
 **Nothing is left unjustified, and no rule is weakened when proofs are
 enabled.** There is no `a`-oracle use and no unlogged inference. Every one of
-the six rules emits a real derivation, and three of them instantiate a published
-justification procedure exactly.
+the six rules emits a real derivation, and two of them instantiate a published
+justification procedure exactly (three did until #929).
 
 `None.` on cost gaps in the propagation direction, since #897: the last
 width-proportional path that ran with proofs off was the holey-entry
@@ -1577,7 +1584,9 @@ than positions.
   best-covered in the arc: **JP 3.9** (empty intersection), **JP 3.10** (missing
   value) and **JP 3.11** (single value) from McIlree's thesis (2026) are rules
   1, 4 and 5 respectively, resting on **Theorem 2.8** for the per-tuple lines
-  and **Theorem 3.2** for the collapse. Two rules are ours: the interval
+  and **Theorem 3.2** for the collapse — rule 1 as gcs emitted it until #929,
+  which replaced JP 3.9's per-value lines with `equals`'s interval walk, so
+  that rule's certificate is now ours. Two more rules are ours: the interval
   result-union rule (rule 3), which states JP 3.10's fact over a run instead of
   a value at the cost of two bridge lemmas per tuple, and the bounds arm (rule
   2), which is JP 3.10's walk with a bound as the conclusion and is better
@@ -1598,16 +1607,18 @@ than positions.
 
 - [`dev_docs/justification-techniques.md`](../justification-techniques.md) —
   what licenses this family's derivations: Theorems 2.8 and 3.2, the three
-  Element justification procedures, and the two places this family departs from
-  them.
-- [`equals.md`](equals.md) — rule 5 *is* that family's rules 1–4, via the
+  Element justification procedures, and the places this family departs from
+  them. Its table records rule 1 leaving JP 3.9 in #929; its list of departures
+  does not yet include that rule's interval walk.
+- [`equals.md`](equals.md) — rule 5 *is* that family's rules 1–3, via the
   exported `enforce_equality`, and its interval bridge is the same construction
   as rule 3's. Read its catalogue alongside this one.
 - [`comparison.md`](comparison.md) — the contrast worth drawing: one
   definitional row against two per cell, one wire form against two, no options
   against one, no idempotence claim against three, and a proof this family's
   outsizes by three orders of magnitude.
-- `dev_docs/large-domains.md` — the three audit rows, why they are three, and
+- `dev_docs/large-domains.md` — the family's audit rows, how three of them
+  came to be added, and
   the #878 story in full, including why a hazard that costs 4.2 s and 5.5 MB is
   harder to find than one that costs 78 GB.
 - `dev_docs/constraints.md` — the generic three-phase structure, `ArrayParam`,
