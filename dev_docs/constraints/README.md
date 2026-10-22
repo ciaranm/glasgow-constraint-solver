@@ -1007,7 +1007,8 @@ constraints and do not restate it.
   MiniCP benchmarks (#1391); the refined
   propagator never adopted #506's `scope_only`, so under dom/wdeg its
   conflicts weight no variable, one cause of refined and scan diverging there
-  but not the only one (#1392); a store grown by user code mid-search is
+  (#1392; with it fixed they still charge some failures to different
+  constraints, which dom/wdeg reads); a store grown by user code mid-search is
   enforced on the refined path only at the next root propagation (so never,
   without restarts) and gets a rejected proof on the scan path (#1393); and
   the engine's refined-watch undo, a linear search per removed watch, takes

@@ -88,9 +88,13 @@ Five things to know before touching it.
   with restarts the refined store delays its catch-up whenever the root is
   seeded by an improved objective bound (#1390), and its empty
   scope means its conflicts weight no variable under dom/wdeg (#1392). With both
-  fixed in a scratch build the two agree on random CSPs
-  under every brancher, but not on `langford --branch dom-wdeg --restarts=1`,
-  so the empty scope is one cause of the dom/wdeg difference, not the only one.
+  fixed in a scratch build the two still differ under dom/wdeg, on
+  `langford --branch dom-wdeg --restarts=1` and on some random optimisation
+  instances. In every case traced, a failed node charged to a different
+  constraint comes before the first different decision: the two paths order
+  propagation differently, and dom/wdeg weights the constraint charged. Given
+  the same decisions (Langford sizes 7 to 10), both paths reach the same
+  domains at every branch callback.
 - **Every learned nogood is a RUP line at `Top`**, derived during the restart
   unwind while the ancestors' backtrack clauses are still live, and moved to
   core when the abandoned level held a solution's blocking clause. Proofs
@@ -280,7 +284,9 @@ the reader, by enumerating one instance and round-tripping another
   ([`solution-clause-deletion.md`](../solution-clause-deletion.md), "Restarts").
   On Langford 7's enumeration with `--restarts=1`, 44 of 109 were moved.
 - **Deleted:** never. Learned lines live at `Top` for the rest of the proof, as
-  the store keeps every nogood for the rest of the search.
+  the store keeps every nogood for the rest of the search. Under enumeration
+  some of them are what excludes the solutions already reported, so deleting
+  any would have to meet the conditions under [Next steps](#next-steps), item 7.
 - **Naming:** no label; a learned line is found by the `% learned nogood`
   comment before it, or by its line number. Its literals are atoms the shared
   layer has already defined, since they were branching decisions.
@@ -355,6 +361,45 @@ missing degree is a uniform shift and leaves `dom_then_deg` unchanged; for a
 posted store it can change the tree under `dom_then_deg`, the solver's default
 brancher (47 of 500 random fixed stores whose nogoods use only the first half
 of the variables, `tmp/fd-nogoods/nogoods/fixeddeg/`).
+
+**Which constraint a failure is charged to.** With the scope declared, the
+two paths still branch differently under dom/wdeg, through the conflicts the
+weighting is told about rather than through what is propagated. The scan
+propagator subscribes to every variable, so any inference queues it for the
+next round, where it also sees what that round has inferred before it runs.
+The refined one is queued only by the inference that entails one of its
+watched literals, when the round boundary replays it
+(`propagators.cc:1002-1029`, `:1226-1297`). So at one node the store's unit
+inferences land at different points in the propagation. Propagation stops
+at the first propagator to meet a wipeout, and the conflict observers are
+told that propagator's constraint (`:1336-1341`, `:1382-1390`). `classic`
+and `chs` weight that constraint (`variable_weighting.cc:155-178`); `ia`,
+`ca`, `id`, `cd` and `ca.cd` weight its scope's unfixed variables, at the
+partly propagated domains of that moment (`:213-240`). In a scratch build of
+`86caad24` that adds `scope_only` behind an environment switch
+(`tmp/fd-nogoods/codex/c3-attribution/`, fataepyc-08, 2026-10-22), on
+`langford --branch dom-wdeg --restarts=1 8` (default `chs`, refined with
+`scope_only` against scan), every branch state and decision agrees, and every
+conflict is charged to the same constraint, up to the 16th conflict, at
+`position[7] = 9`, `position[6] = 10`, `position[2] = 12`. There the scan
+store, queued a round earlier, makes a unit inference, and in the next round
+the tabulated `Plus` over `position[3]` and `position[11]` fails. On the
+refined path the store is queued a round later, behind the `AllDifferent`,
+which fails before the store runs. The first decision to differ is at the
+60th branch callback. Sizes 7, 9 and 10 also first differ at such a
+conflict, not always one the store is charged with. With scan's and the
+scope-fixed path's decisions each replayed on the other, and scan's on
+unfixed refined, at sizes 7 to 10, all three reach the same domains at every
+branch callback, with the same restarts, learned nogoods and solutions, and
+charge 2.8% to 4.9% of conflicts to a different constraint (35 of 956 at
+size 8, scan's tree replayed on the scope-fixed path). On the random
+differential with both scratch fixes (the end-to-end harness on
+`tmp/fd-nogoods/nogoods/src-rootfix`; seeds 1 to 40, intervals and value
+lists, `dom_wdeg` with `smallest_in`), no restarting pair of the 1,392 in
+enumeration and find-one differs in recursions or learned nogoods, and 14 of
+7,891 in optimisation do; in each of the 14 the first difference in the
+trace is a conflict charged to a different constraint. Lee, Schulte and Zhu
+report the same effect in Gecode ([Prior art](#prior-art)).
 
 **Idempotence.** Neither path claims it, and one call is not a fixpoint in
 general. With `c0 = {y = 1, z = 1}` and `c1 = {x = 1, y ≠ 1}`, fixing `x = 1`
@@ -522,8 +567,11 @@ Facts that hold for rules 1 and 2:
   `O(f log f + f · k)` for `f` fired watches, plus the engine's firing loop over
   the watches on each changed variable and its undo of every watch moved (see
   [CPU performance](#cpu-performance)). Two watched literals is Moskewicz et
-  al.'s scheme; entailment-based watching of non-Boolean literals is ours in
-  this form ([Prior art](#prior-art)).
+  al.'s scheme. Gecode's nogoods from restarts already subscribe to
+  non-Boolean nogood literals and test them by entailment, bound overshoot
+  included, and a watch that is restored on backtrack is what Gent, Jefferson
+  and Miguel call a dynamic trigger rather than a watched one; what this path
+  chose is listed under [Prior art](#prior-art).
 - **Why it is true** — the clause says at least one literal of the nogood is
   false; every literal but `ℓ_i` holds, so `ℓ_i` does not.
 - **Proof technique** — `RUP`, against the clause row or line, by Theorem 3.3
@@ -594,7 +642,17 @@ Facts that hold for rules 1 and 2:
   sibling `f` that an ancestor frame on the same path had already refuted, so
   the ancestor's kept decisions imply `¬f`. By induction from the root, `P`
   implies every dropped decision, so `P ∧ s` implies `path ∧ s`, which is
-  refuted (Lecoutre et al.'s argument).
+  refuted (Lecoutre et al.'s argument). What the subtree is refuted against
+  depends on the mode. A decision run stops at its first solution, so nothing
+  has been excluded when a nogood is learned, and it follows from the model.
+  Under enumeration a subtree counts as refuted once it is fully explored, its
+  solutions reported: the nogood holds in the model with the solutions reported
+  so far excluded, and need not hold in the model itself. Under optimisation it
+  holds in the model with the objective below the incumbent when it is learned,
+  a bound that only tightens. The search posts no blocking clause, so the store
+  is what keeps a later pass out of an explored subtree, and under enumeration
+  what stops a solution being reported twice (examples under [Next
+  steps](#next-steps), item 7).
 - **Proof technique** — `RUP`, against everything live at that moment: the
   sibling's own backtrack clause and the ancestors' backtrack clauses, still at
   their levels because the unwind is deep first, re-derive the dropped negative
@@ -811,9 +869,12 @@ tree, and its rows are the same-tree comparison.
   58.4 s refined against a 55.6 s floor, 2026-07, to the end of the search) is
   a different series on an older tree and should not be mixed with these.
 - **What this does not exercise:** fixed stores, long clauses, `≠` and range
-  literals, and dom/wdeg. No comparison with Gecode, Choco or ACE was made:
-  none of them shares this search (#868), and the published comparator for
-  reduced nld-nogoods is Lecoutre et al.'s own solver.
+  literals, and dom/wdeg. No comparison with Gecode, Choco or ACE was made
+  (#868). Gecode records nogoods from restarts after Lecoutre et al. too (see
+  [Prior art](#prior-art)), and Lee, Schulte and Zhu's comparison of nogood
+  propagators ran in Gecode 4.3.2; comparing with it would need Gecode's
+  brancher and restart schedule matched to this search's, which was not
+  attempted.
 
 ### Proof performance
 
@@ -864,13 +925,16 @@ Restart use:
   instance whose root propagation alone would refute it, since the root never
   propagates (#1391).
 - **Store conflicts do not inform dom/wdeg** on the refined path, and the
-  refined and scan paths branch differently under it (#1392; the
-  scope fix removes one cause, not all).
-- **The store grows without bound**: no deletion and no minimisation (the
-  reduction is Lecoutre et al.'s first one only), and a long restart run slows
-  with it; `tsp --restarts=100` runs at about a sixth of the node rate of the
-  same search without restarts, most of it in the engine's watch undo (see
-  [CPU performance](#cpu-performance); #1394).
+  refined and scan paths branch differently under it (#1392). The scope fix
+  removes that cause; the paths still charge some failures to different
+  constraints, which dom/wdeg reads (see [Propagator
+  inventory](#propagator-inventory)).
+- **The store grows without bound**: no deletion (under enumeration it has
+  conditions of its own, [Next steps](#next-steps), item 7) and no
+  minimisation (the reduction is Lecoutre et al.'s first one only), so a long
+  restart run slows with it; `tsp --restarts=100` runs at about a sixth of the
+  node rate of the same search without restarts, most of it in the engine's
+  watch undo (see [CPU performance](#cpu-performance); #1394).
 - **Two literals on one variable** are propagated as atoms, so
   `{x ≥ 3, x < 6}` removes nothing until search or other propagation entails
   one of them. Learned nogoods have such pairs too (bound-split branching keeps
@@ -903,15 +967,16 @@ Anything else, which would need work first:
    random differential. Needs the suite and a timing check.
 2. **Reject or neutralise a scale of 0** (#1391), and read the abort
    flag in the restart driver loop. Trivial.
-3. **Declare the refined propagator's scope** (#1392): `scope_only =
-   trigger_vars`, as #506 intended. One line; on random CSPs it makes refined
-   and scan agree under every brancher (for optimisation, together with step
-   1's fix), but `langford --branch dom-wdeg
-   --restarts=1` still differs (at size 8, 3,055 and 3,114 recursions refined
-   without and with it, 2,928 scan), so something else, not yet found, also
-   separates them under dom/wdeg. Whether a store conflict should weight every
-   variable or only the failing clause's is a heuristic question to settle with
-   it.
+3. **Declare the refined propagator's scope** (#1392):
+   `scope_only = trigger_vars`, as #506 intended. One line. It does not make
+   the two paths one search under dom/wdeg, since they charge some failures to
+   different constraints (`langford --branch dom-wdeg --restarts=1 8`: 3,055
+   and 3,114 recursions refined without and with it, 2,928 scan; see
+   [Propagator inventory](#propagator-inventory)). The test for it is
+   solutions, verifying proofs and the domains at each branch callback under
+   replayed decisions, not equal node counts. Whether a store conflict should
+   weight every variable or only the failing clause's is a heuristic question
+   to settle with it.
 4. **Make the refined-watch undo cheap** (#1394, the engine's).
    Searching the watch list from the back in `on_backtrack` halves
    `tsp --restarts=100`'s time on the same tree, and saves about a fifth at
@@ -928,8 +993,52 @@ Anything else, which would need work first:
    reconstructible; whether it pays waits for the external justifier's design.
 7. **Store management**, if restart runs get long: deletion of learned nogoods
    (with a proof `del`), Lecoutre et al.'s minimisation, or Lee, Schulte and
-   Zhu's increasing-nogood propagator. Each is a design choice with a
-   search-shape cost to measure, not a fix.
+   Zhu's increasing-nogood propagator, whose subscription set Gecode's
+   `NoGoodsProp` also has ([Prior art](#prior-art)). Each is a design choice
+   with a search-shape cost to measure, not a fix. Deletion has two conditions
+   under enumeration, one from the search and one from the proof (see [Rule:
+   learned-nogood](#rule-learned-nogood), *Why it is true*). Measured on the
+   example below and with the end-to-end differential's harness (seeds 1 and 2,
+   30 instances each, intervals and value lists), in a scratch build of
+   `86caad24` that forgets nogoods by class
+   (`tmp/fd-nogoods/codex/c1-deletion/`, fataepyc-08, 2026-10-22):
+   - **Search.** At each restart the store has to keep, for each solution
+     reported so far, a nogood that forbids it, or a later pass can report it
+     again. Forgetting, in the store only, every nogood learned at a frame
+     whose subtree held a solution re-reported solutions in 630 of the 746
+     restarting enumeration runs, each with the right solution set and too
+     high a count; forgetting only those learned at the root, in 394.
+     Forgetting every other nogood, in the store and with a `del` of its line,
+     changed no answer, and the proofs of all 746 verify at `Off`.
+   - **Proof.** A line the store still propagates cannot safely be deleted,
+     since a later inference can cite it. A line moved to core can be deleted
+     only when the core that is left implies it, and checked deletion consults
+     core alone.
+   - **They are separate.** A deletion that checks can still drop an exclusion
+     the search needs: VeriPB then refuses the proof only at the repeated
+     solution, and with proofs off nothing reports it.
+
+   Under optimisation and in a decision run no learned line is moved to core,
+   and under optimisation the objective bound is imposed at every node
+   (`solve.cc:100-112`): forgetting every nogood, with a `del` of each line,
+   gave the right optimum or verdict in all 3,441 and 212 restarting runs, and
+   every proof verifies at `Off`.
+
+   The example: `a ∈ 1..4`, `b, c, d ∈ 1..3`, all six `≠`, and `e ∈ 0..1`; `e`
+   first with `smallest_in`, then `variable_order::random(p, 1234)` with
+   `value_order::random_out(5678)`; `luby(1)`. On the audit build it reports 12
+   solutions, each once, in 39 recursions, 4 restarts and 5 learned nogoods, and
+   its `Off` proof verifies. With a `del` inserted after a learned line:
+   `{e = 0, a ≠ 2}`, learned once the first pass has reported the six solutions
+   with `e = 0`, and moved to core, is refused by checked deletion; the third
+   pass's root unit `{d ≠ 2}` deletes, since a core backtrack clause with the
+   same literal is live at the kept root level, yet forgetting it in the store
+   re-reports a solution in the next pass, and VeriPB refuses that repeat;
+   `{e = 0, d ≠ 3}`, not in core, forbids four reported solutions, and deletes
+   only when the store forgets it too. Minimising `3a + 2b + c − d + 5e` under
+   the same brancher, `{e = 0, b ≠ 1}` is learned after the solution of
+   objective 14 with `b = 2`, which it forbids: it holds only below that
+   incumbent.
 8. **An audit-lane row for the learned store**, and one for a `≠` literal over a
    holey wide variable on the fixed form. Small.
 9. **Correct the stale text** listed under [Developer
@@ -955,17 +1064,65 @@ Anything else, which would need work first:
   GAC on each nogood while subscribing to fewer decisions, and an approximate
   nogood minimisation; the two together trade a little pruning for speed. Not
   implemented; it is the published alternative to the store's per-clause
-  propagation.
+  propagation. Their experiments (Gecode 4.3.2) also record that, with the
+  nogoods' own weight left out, two nogood propagators of equal pruning gave
+  different dom/wdeg trees on several instances, which they put down to the
+  order filtering runs in when more than one constraint can fail, while
+  dom/ddeg gave identical trees; the two paths here do the same (under
+  [Propagator inventory](#propagator-inventory)).
+- **Nogoods from restarts in Gecode.** Gecode has recorded nogoods at restarts
+  since release 4.2.0 (dated 2013-07-19 in its `changelog.in`), off unless a
+  search sets `nogoods_limit` above zero (the driver's `-nogoods` option, with
+  `-nogoods-limit`, the depth limit, defaulting to 128). *Modeling and
+  Programming with Gecode* (Schulte, Tack and Lagerkvist), §9.6 in the edition
+  for Gecode 6.2.0, says
+  they follow Lecoutre et al.'s JSAT paper with a different implementation,
+  that a nogood literal may be any constraint, and that choices may have any
+  arity. In Gecode 6.3.0 (tag `release-6.3.0`, commit `a658ba49`), the integer
+  branchers' literals are `x = v`, `x ≤ v` and `x ≥ v` (`x > v` becomes
+  `x ≥ v + 1`), and the set branchers' are inclusion and exclusion; these
+  branchers give a binary choice's second alternative no literal, since it
+  negates the first, which is the reduced nld-nogoods' drop of negative
+  decisions. Each literal subscribes on the matching event (assignment for `=`,
+  bounds for `≤` and `≥`) and reports itself subsumed by entailment: the
+  literal `x ≥ 10` is subsumed once `x.min() >= 10`, so a lower bound of 12
+  subsumes it (`GqNGL`, `gecode/int/branch/ngl.hpp:122-149`). One
+  `Search::NoGoodsProp` per restart holds that restart's path as a list and
+  subscribes to the first two path literals not yet entailed and the refuted
+  alternatives between them, advancing along the path as path literals become
+  entailed; on each wake it re-tests every literal it subscribes to
+  (`gecode/search/nogoods.hpp:49-70`, `nogoods.cpp:99-193`). That is the
+  subscription set Lee, Schulte and Zhu's Lemma 3 gives for their LightFilter.
+  It drops satisfied nogoods from its list, and the list is restored by
+  Gecode's copying and recomputation, not by a trail.
 - **Two watched literals.** Moskewicz, Madigan, Zhao, Zhang and Malik, *Chaff:
   Engineering an Efficient SAT Solver*, DAC 2001. Gent, Jefferson and Miguel,
   *Watched Literals for Constraint Propagation in Minion*, CP 2006 (LNCS 4204,
-  pp. 182–197), bring watches to CP propagators and note that their watches
-  need no restoration on backtrack. This family's refined path does restore
-  them, by the engine's trail, which is what lets its unit case leave a watch
-  consumed; it is also what costs the time under [CPU
-  performance](#cpu-performance). Watching non-Boolean literals by
-  *entailment* (a watch on `x ≥ 10` fires on `x ≥ 12`) is ours in this form,
-  as far as this audit looked.
+  pp. 182–197), bring watches to CP propagators. In their terms (§2) a
+  *dynamic* trigger is one the constraint may move, add or delete when it
+  fires, and a *watched* one is dynamic and also stable on backtracking, so it
+  needs no restoration; they note that removing a watch when the constraint
+  prunes its value is correct for a dynamic trigger but not for a watched one.
+  Lee, Schulte and Zhu draw the same line, calling the restored kind dynamic
+  subscriptions. This family's refined watches are of the restored kind: the
+  engine trails every watch edit, which is what lets the unit case leave a
+  fired watch consumed, and the undo is what costs the time under
+  [CPU performance](#cpu-performance).
+- **What the refined path chose, against these.** One propagator for the whole
+  store, every restart's nogoods in it, and the restart unwind records every
+  refuted sibling on the abandoned path, with no depth limit
+  (`solve.cc:245-275`); each clause is watched on two literals of its own (one
+  once it is unit at first sight), not structured on the path; literals `=`,
+  `≠`, `≥`, `<`, `∈` and `∉` over variables, views and constants, where a
+  learned `x ≠ v` or `x ∉ I` comes from a kept first sibling. Each watch is the
+  engine's, armed on one literal with the clause's index as its payload: on a
+  change to the variable, the engine tests the literal's entailment, gated by
+  the operator's event mask (`propagators.cc:343-370`, `:1008-1027`), and
+  delivers the payload, so the propagator visits only the clauses that fired.
+  Watch edits and the clauses' watched positions are trailed and undone on
+  backtrack (`:1072-1098`), and a satisfied clause keeps its watches. This audit
+  claims none of it as new; it compared against Gecode's source, Gent, Jefferson
+  and Miguel, and Lee, Schulte and Zhu only.
 - **Proof logging.** McIlree's thesis (§3.3.2) gives the backtracking
   justification, `∑ ¬d_i ≥ 1` over the path's decisions, after Gocht, McCreesh
   and Nordström, *An Auditable Constraint Programming Solver*, CP 2022 (LIPIcs
