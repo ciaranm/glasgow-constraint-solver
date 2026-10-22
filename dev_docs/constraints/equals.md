@@ -297,9 +297,10 @@ change here is felt there and not the reverse.
 parallel hierarchy of twelve classes over `ReifiedCompareLessThanOrMaybeEqual`,
 with the same reified-dispatcher shape and the same cosmetic-negation-flag
 design — but a separate encoding, separate propagator and separate `hints.hh`.
-The template's family list flags `comparison`+`equals` as a candidate merge;
-**this audit says keep them separate.** They share a pattern, not code, and
-merging the documents would bury two distinct OPB encodings in one section.
+The template's family list flagged `comparison`+`equals` as a candidate merge;
+**this audit says keep them separate**, and the list's `comparison.md` row now
+records that. They share a pattern, not code, and merging the documents would
+bury two distinct OPB encodings in one section.
 
 ## The proof model
 
@@ -447,7 +448,9 @@ machinery rather than by anything here.
 and stores the result; that is all. No auxiliary variables, no backtrackable
 state, no precomputation, and no root cost worth measuring.
 
-No constructor validates anything. `NotEquals` used to reject aliased
+The constructor validates one thing: since #1215 it throws `IntegerOverflow`
+unless the value in the condition lies in the bounded range or one past its top
+([integer-ranges.md](../integer-ranges.md)). `NotEquals` used to reject aliased
 operands; since #1088 it accepts them and the propagator contradicts instead
 (rule 9).
 
@@ -627,10 +630,12 @@ decides outright on the one call every propagator gets when search starts.
 
 **Overflow.** Checked, not merely unlikely. `Integer` arithmetic throws
 `IntegerOverflow` rather than wrapping — `operator+` goes through
-`add_overflows`, and `operator++`/`--` guard the extremes — so the
-`bounds.second + 1_i` pattern in rule 3 would throw a diagnosable exception if
-an operand's upper bound were `Integer::max_value()`, not silently wrap.
-Verified UBSan-clean with both operands at `LLONG_MAX/2`.
+`add_overflows`, and `operator++`/`--` guard the extremes. Since #1214 the
+`bounds.second + 1_i` pattern in rule 3 cannot get near the edge at all: a
+declared domain or constant lies within ±(2⁶⁰ − 1) and a view at most one bit
+further ([integer-ranges.md](../integer-ranges.md)). Before that policy it was
+verified UBSan-clean with both operands at `LLONG_MAX/2`, a domain
+`create_integer_variable` now refuses with `IntegerOverflow`.
 
 ### Interval efficiency
 
@@ -1066,12 +1071,12 @@ alias" bug the dup tests were added for.
 - **Algorithm** — one `optional_single_value` and one `in_domain`. O(1) or
   O(log intervals) depending on the domain representation.
 - **Why it is true** — the fixed value has no partner.
-- **Reason** — `{v1 = *value1, v2 ≠ *value1}`. Minimal.
 - **Proof technique** — `RUP`, by **JP 3.12** against the `cond ->` equality
   half: `v1 = v` fixes `BinEnc(v1)` by **Theorem 2.8**, the half-reified rows
   would fix `BinEnc(v2)` to `v` under `cond`, and `v2 ≠ v` contradicts that —
   so `cond` cannot hold. **Theorem 2.6** is doing the reified step here rather
   than riding along.
+- **Reason** — `{v1 = *value1, v2 ≠ *value1}`. Minimal.
 - **Assertion** — `¬cond ∨ ¬(v1 = v) ∨ ¬(v2 ≠ v)`.
 - **Hint** — `hints::Equals{owner}`.
 - **Offline reconstructibility** — `offline`.
@@ -1320,7 +1325,7 @@ five of the six exist for a reason that will recur in the next family:
 | `run_wide_no_overlap_equals_test` | width 10⁹, proofs off. Every other domain in the file is inside `[-10, 10]`; `range_infer_test` works inside `[0, 40]`. It pins the **answer**, not the cost — it would have passed before #873 too, slowly — and says so. |
 | `run_wide_proved_no_overlap_equals_test` | the same shape at 10⁶, **proved**, asserting the proof is under a thousand lines before handing it to veripb. This is the lane that pins the cost. The bound is deliberately loose and not a pinned figure: most of a proof this small is fixed overhead, and any threshold separates a constant from a million lines. 10⁶ rather than 10⁹ so that a regression fails rather than filling the disk. |
 | `run_holey_no_overlap_equals_test`, both orders | interleaved disjoint domains, which is the only shape reaching the two moves that carry a range literal. Both orders, because the walk climbs `v1`'s domain and so is not symmetric; between them they reach all six moves. |
-| `run_holey_no_overlap_view_equals_test` | one operand a **view**, with a deliberately non-zero offset so that it does not deview onto the underlying variable and borrow its literals. Written when this was the one shape whose witness was *not* spelled entirely in intervals; since #904 it is, and what the lane now pins is that a wrapped run costs the same as a bare one. Note that it checks solutions, not proof shape — the degradation it was written against verified perfectly well, nine lines longer, so a green lane never said anything about it either way. Its in-file comment still describes the per-value spelling and is stale. |
+| `run_holey_no_overlap_view_equals_test` | one operand a **view**, with a deliberately non-zero offset so that it does not deview onto the underlying variable and borrow its literals. Written when this was the one shape whose witness was *not* spelled entirely in intervals; since #904 it is, and what the lane now pins is that a wrapped run costs the same as a bare one. Note that it checks solutions, not proof shape — the degradation it was written against verified perfectly well, nine lines longer, so a green lane never said anything about it either way. Its in-file comment still describes the per-value spelling and is stale (corrected by #1396, open). |
 | `run_value_indicator_equals_test` | the `nmseq` shape in miniature — one reified equality per (variable, value) — with a **driver** that punches a value out of the interior on its own. Every other lane posts a single constraint over its operands, so nothing removes an interior value and a trigger that sees only instantiations passes. Checked as consistency at every node, since a missed wake loses no solutions. |
 | `run_hint_inventory_equals_test` | the wire inventory, read off two real proofs at `AssertionLevel::Inferences`, failing on a subhint outside the family's closed list. |
 
@@ -1333,8 +1338,9 @@ same instances, uncorrupted, verified. Without it a lane could be green because
 its instance does not verify either.
 
 That is evidence about those five corruptions on those fixtures, and no more.
-Rules 3–7 have no lane, and their **Tightness** fields say `Not shown`. Even
-for the three rules that have lanes, that every step is a RUP does not make a
+Rules 3–7 and 9 have no lane, and their **Tightness** fields say `Not shown`.
+Even for the three rules that have lanes, that every step is a RUP does not
+make a
 finite set of mutations exhaustive over the steps' premises, their literals or
 the cases they apply to. The catalogue records which rule has which evidence.
 
@@ -1567,9 +1573,9 @@ width does not enter even when proofs are on.
 
 And **a view had no range literal** (#882), so rule 2 fell back wholesale to
 per-value pruning when either operand was a view and rule 8 spelled a view's
-runs out value by value — this family holding two of the eight such detours in
-the solver. #904 closed it for all ten at once, by giving a registered view its
-own range literals rather than by working around the gap a ninth time. The
+runs out value by value — this family holding two of the ten such detours #882
+inventoried. #904 closed it for all ten at once, by giving a registered view its
+own range literals rather than by working around the gap once more. The
 family now carries no view detour at all, and the fallback rule that existed
 only to cover for one is deleted.
 
@@ -1651,9 +1657,10 @@ both of the top two items are cheap.
    the argument for not leaving it that way: a probe's table and a lane's table
    read identically and reproduce differently. The shape is already written; it
    needs pinning.
-3. **A stale comment in `equals_test.cc`.** `run_holey_no_overlap_view_equals_test`
-   explains its non-zero offset by saying it is needed to exercise the per-value
-   spelling, which #904 deleted. The offset is still the right choice, for a
+3. **A stale comment in `equals_test.cc`** (done by #1396, open).
+   `run_holey_no_overlap_view_equals_test` explains its non-zero offset by
+   saying it is needed to exercise the per-value spelling, which #904 deleted.
+   The offset is still the right choice, for a
    different reason — a `v + 0` view deviews onto the underlying variable and
    borrows its literals, so it would not exercise a view's *own* range literals
    at all — so this is a comment fix and not a test change. Left out of this
@@ -1672,7 +1679,7 @@ That was the fallback the first audit proposed in case an interval-wise
 certificate did not exist. It does exist (#881), so a deliberate strength loss
 buys nothing.
 
-*Filling in the five `Not shown.` tightness fields.* Mutation coverage is a
+*Filling in the six `Not shown.` tightness fields.* Mutation coverage is a
 development tool, not a completeness target — it earns its keep while a rule's
 derivation is being written or changed, and mutating the other six rules for
 the sake of the tally would not. So the fields say which rules have the
