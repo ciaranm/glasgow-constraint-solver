@@ -216,8 +216,11 @@ namespace gcs
          * were lifted. Subsumption fails for them in one direction: a
          * `LinearLessThanEqualIf` also infers `!cond` when its bounds make the
          * inequality impossible, and the global propagator makes no inference
-         * about a condition at all (that is the paper's `IncImp`, deliberately
-         * not implemented). Retiring one would lose that inference, which is a
+         * about a condition during search: neither the paper's section 5.4
+         * bounds check nor its `IncImp` is implemented, and root simplification
+         * fixes a condition only once, at the root, from the negative cycle its
+         * edge would close with the edges that hold there, rather than from
+         * bounds. Retiring one would lose that inference, which is a
          * completeness loss no proof could catch.
          */
         auto disabling_lifted_donors(bool = true) -> DifferenceLogic &;

@@ -182,7 +182,10 @@ namespace gcs
          * propagator subsumes a single XOR's unit propagation outright (a donor
          * row with one literal left becomes a unit row of the reduced system, so
          * the system infers exactly what the donor would have), and a donor
-         * whose rows have been gathered is then pure overhead on every wake.
+         * whose rows have been gathered then adds no inference of its own. That
+         * is an argument about strength, not cost: retiring changes which
+         * propagator explains each inference, and it is not a saving in general
+         * (#1386).
          *
          * This exists so that the subsumption claim can be checked rather than
          * assumed, and it is a strong check: disabling a propagator changes

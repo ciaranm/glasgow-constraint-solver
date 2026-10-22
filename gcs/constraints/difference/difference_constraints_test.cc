@@ -664,8 +664,9 @@ namespace
     // sub-step and would otherwise have to restate every other count.
     //
     // These assertions are the whole reason the counters exist. Redundant-edge
-    // removal, node removal and zero-cycle detection are all invisible from
-    // outside: they change no solution, no proof and no search tree. A stage
+    // removal, the lower round bound (node removal, which keeps the nodes:
+    // #1385) and zero-cycle detection are all invisible from outside: they
+    // change no solution, no proof and no search tree. A stage
     // that quietly did nothing at all would pass the solution-equivalence check,
     // the recursion check, the OPB byte-diff and VeriPB. So "the counters say it
     // fired" is the only thing standing between a working stage and a shipped
@@ -700,8 +701,9 @@ namespace
     // and once with it off, and insist that the only thing that changed is how
     // much searching it took.
     //
-    // Redundant-edge removal, node removal and zero-cycle detection are
-    // propagation-neutral by construction, so on a fixture where no condition is
+    // Redundant-edge removal, the lower round bound (node removal, which keeps
+    // the nodes: #1385) and zero-cycle detection are propagation-neutral by
+    // construction, so on a fixture where no condition is
     // fixed the recursion counts must be *equal*: a difference means an edge was
     // dropped that was carrying propagation. Fixing a condition is strictly
     // stronger, so on those fixtures the count may fall, and the fixture says so
@@ -815,7 +817,7 @@ namespace
             SimplifyExpectation{.ran = true, .redundant_edges_removed = 3});
 
         // A node that is only ever a static bound has no arcs at all, so it
-        // drops out of the relaxation loop and out of the round bound.
+        // drops out of the round bound (it stays in the propagator: #1385).
         run_simplify_test(proofs, "isolated_node", {{0, 8}, {0, 8}, {0, 8}}, {{v(0), c(4), 3}, {v(1), v(2), -1}},
             SimplifyExpectation{.ran = true, .isolated_nodes_removed = 1});
 

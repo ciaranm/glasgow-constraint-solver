@@ -348,8 +348,11 @@ it the moment `x` is decided.
 
 Unlike `DifferenceLogic`'s equivalent, which ships off. The system propagator
 subsumes a single XOR's unit propagation outright — a donor row with one literal
-left is a unit row of the reduced system — so a gathered donor is pure overhead
-on every wake. `keeping_donor_propagators()` exists so the subsumption claim can
+left is a unit row of the reduced system — so a gathered donor adds no inference
+the system would not make, and that is why it is retired. That is an argument
+about strength, not cost: retiring changes which propagator explains each
+inference, and it is not a saving in general, with proofs on or off (#1386).
+`keeping_donor_propagators()` exists so the subsumption claim can
 be checked rather than assumed, and it is a strong check: disabling a propagator
 changes neither degrees nor adjacency, so the search must find **the same
 number of solutions in the same number of recursions**, which is what the

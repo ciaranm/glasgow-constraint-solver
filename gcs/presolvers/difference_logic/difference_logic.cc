@@ -224,8 +224,10 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
         else {
             // Only unconditional donors are candidates for retirement. A
             // half-reified donor also infers `!cond' from its own bounds, and
-            // the global propagator infers nothing about a condition at all, so
-            // retiring one would silently lose propagation.
+            // the global propagator infers nothing about a condition during
+            // search (root simplification fixes some, once, from the negative
+            // cycle each one's edge would close), so retiring one would
+            // silently lose propagation.
             lifted_donors.push_back(id);
         }
 

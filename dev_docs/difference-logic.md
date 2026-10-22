@@ -258,14 +258,19 @@ An edge may carry a reification condition. The semantics are deliberately
 one-directional:
 
 > **An edge with a condition participates in the graph exactly while that
-> condition currently holds.** Nothing is ever inferred the other way — the
-> propagator never fixes a condition because of what the graph says.
+> condition currently holds.** Nothing is inferred the other way during search
+> — the propagator never fixes a condition because of what the graph says.
+> (At the root two things do: a degenerate edge's condition is fixed false, the
+> last row of the table below, and so is one whose edge would close a negative
+> cycle, under "Root simplification".)
 
 That second half is the paper's `IncImp`, and leaving it out is not laziness: it
 is the paper's own most strongly supported configuration finding. On RCPSP/max
 *every* configuration with `IncImp` on scored below *every* configuration with
 it off. The proof shape for it is already understood (below), so it is a small
-addition if it is ever wanted; the measurements say not to want it.
+addition if it is ever wanted; the measurements say not to want it. The paper's
+section 5.4 bounds check (an edge the bounds falsify fixes its condition false)
+is absent too, and the paper keeps that one; see "Switching that mechanism on".
 
 Three shapes fall out of the same canonicalisation as before:
 
@@ -314,8 +319,14 @@ whose edges are conditional on `b_1 … b_k` leaves
     Σ M_i·¬b_i  >=  -W        (with -W >= 1)
 ```
 
-and one `saturate` turns that into the clause `¬b_1 ∨ … ∨ ¬b_k` — the learned
-clause. The emitted line is
+(a condition on several edges taking the sum of their `M_i`), and one `saturate`
+caps every coefficient at the degree `-W`. When every coefficient reaches `-W`,
+the line is the clause `¬b_1 ∨ … ∨ ¬b_k` — the learned clause — scaled by `-W`,
+and so equivalent to it (literally the clause when `-W = 1`). When some
+coefficient falls short of `-W`, it is a line strictly stronger than the clause,
+since saturation lowers a coefficient but cannot raise one. Either way the
+reason's literals falsify it, so the closing RUP derives the clause. The emitted
+line is
 
 ```
 pol  <edge row>  <edge row> +  <edge row> +  s ;
@@ -343,9 +354,9 @@ Two honest notes on that `s`:
   Removing the `saturate` does **not** — the closing RUP assumes every condition,
   which drives each `M·¬b` to zero and falsifies the unsaturated line just as
   well (also confirmed by mutation, every reified fixture still verifies). It is
-  emitted anyway because it makes the derived line *be* the clause rather than a
-  big-M encoding of it, which is what a reader, an assertion hint, or a
-  longer-lived `ProofLevel` would want.
+  emitted anyway because it gives the derived line the clause's shape whenever
+  the coefficients allow (above), rather than a big-M encoding of it, which is
+  what a reader, an assertion hint, or a longer-lived `ProofLevel` would want.
 - **The bound push does not saturate.** Its residual is harmless under the
   closing RUP for the same reason, while saturating would clamp `BinEnc(v)`'s own
   coefficients against the degree for no gain.
@@ -1327,24 +1338,34 @@ root propagation:
 |---|---|---|---:|---:|
 | `--size 10 --seed 5 --machine-fraction 0.7 --deadline 17` | pairwise | decomposed | 836 | 45,777 |
 | | difference | decomposed | 689 | 36,145 |
-| | difference | **global** | **6,353** | **11,321** |
+| | difference | **global**, `--simplify=off` | **6,353** | **11,321** |
+| | difference | global | 5,885 | 10,853 |
 | `--size 12 --seed 2 --machine-fraction 0.8 --deadline 18` | pairwise | decomposed | 316 | 11,498 |
 | | difference | decomposed | 47 | 2,355 |
-| | difference | **global** | **329** | **720** |
+| | difference | **global**, `--simplify=off` | **329** | **720** |
+| | difference | global | 295 | 686 |
+
+(The bold rows are `--simplify=off`, which reproduces the figures first recorded
+here exactly; the default rows are re-runs at `86caad24`, fataepyc-08,
+2026-10-22.)
 
 **And the global propagator loses that search.** Nine times the nodes on the
-first instance, seven on the second, for a third of the propagations. The cause
-is `IncImp`'s absence, stated above and now measured: the reified linear forms
+first instance, seven on the second (eight and six with simplification on), for
+a third of the propagations. The cause is a missing inference, now measured,
+which this note first put down to `IncImp`'s absence: the reified linear forms
 infer their own condition — a violated `LinearGreaterThanEqualIf` fixes its
-Boolean false — and `DifferenceConstraints` infers nothing about a condition at
-all, so it explores orderings the decomposition has already refuted. Propagations
-are the wrong metric here; nodes are what the model is paying.
+Boolean false — and `DifferenceConstraints` infers nothing about a condition
+during search, so it explores orderings the decomposition has already refuted.
+Inferring a condition from bounds is the paper's section 5.4 bounds check, not
+`IncImp`, which is a check on graph paths. Propagations are the wrong metric
+here; nodes are what the model is paying.
 
-This is the concrete argument for reconsidering `IncImp` for gcs specifically,
-against the paper's own configuration study, which found every configuration with
-it on scoring below every configuration with it off. Their baseline is a
-lazy-clause-generation solver that learns from a failed ordering; gcs is not, so
-what `IncImp` would buy here is not what it bought there.
+This is the concrete argument for reconsidering in-search condition inference
+for gcs specifically. For `IncImp` that goes against the paper's own
+configuration study, which found every configuration with it on scoring below
+every configuration with it off. Their baseline is a lazy-clause-generation
+solver that learns from a failed ordering; gcs is not, so what `IncImp` would
+buy here is not what it bought there.
 
 Two consequences worth stating for anyone writing a model against this
 propagator:
@@ -1451,7 +1472,11 @@ stage moving back into the propagator.
 Johnson's all-pairs shortest paths first: Bellman-Ford from the paper's imaginary
 source `v0` (seeding every potential at zero *is* that source's edge set, exactly
 as in the propagator's own passes), then one Dijkstra per node on the
-reduced-cost graph. `O(n² log n + nm)`, paid once. The pass computes nothing that
+reduced-cost graph. The Dijkstras use a binary heap with lazy deletion, which
+holds an entry per improving relaxation rather than one per node, so each is
+`O((n + m) log(n + m))` and the pass `O(n·m log(n + m))`, paid at the root, once
+per round of the fixpoint below; `log(n + m)` is `O(log n)` only while the
+parallel edges are bounded by a polynomial in `n`. The pass computes nothing that
 needs certifying; only its four conclusions do, and only one of them turns out to
 need anything at all.
 
@@ -1481,10 +1506,14 @@ it is the deliverable of this PR.
 **3. Zero-weight-cycle unification — not implemented, but detected and counted.**
 See below.
 
-**4. Node removal — implemented, internal.** A node with no incident edge left
-cannot send or receive a bound, so it is dropped from the relaxation loop and,
-more usefully, from the round bound. In practice these are nodes that only ever
-appeared in a static bound.
+**4. Node removal — implemented in part, internal.** A node with no incident
+edge left cannot send or receive a bound, so it is dropped from the round bound,
+which falls to the number of nodes that still have an edge. That is all it
+does: the propagator still seeds the isolated nodes (all of them on the
+incremental route's first call and on every call from scratch, and one whose
+bound has moved on a later incremental call), scans them on every wake and is
+woken by their bounds, although `isolated_nodes_removed` counts them as removed
+(#1385). In practice these are nodes that only ever appeared in a static bound.
 
 ### The proof for condition fixing
 
@@ -1515,7 +1544,9 @@ Two mutation results, both measured:
 
 * **the `saturate` is not load-bearing** — removing it leaves every fixture
   verifying, because the closing RUP assumes every condition and drives each
-  residual to zero. It is emitted anyway so the derived line *is* the clause;
+  residual to zero. It is emitted anyway, which gives the derived line the
+  clause's shape when the coefficients allow (as for a negative cycle, above);
+  the closing RUP derives the inferred clause regardless;
 * **neither, here, are the path's conditions in the reason.** That is specific to
   running at the root: a path condition is definitely true only because it is a
   *globally derived* fact, so unit propagation recovers it and the RUP passes
@@ -1526,8 +1557,9 @@ Two mutation results, both measured:
 Emitted inside a `JustifyExplicitly` at `ProofLevel::Temporary`, like every other
 justification here. Nothing is emitted at `ProofLevel::Top`, and nothing needed
 to be: the inference itself is recorded by the inference tracker, and the
-redundant-edge and node removals leave no trace anywhere. **No new OPB content
-from either entry point**, which is enforced by byte-diff tests on both.
+redundant-edge removal and the lower round bound leave no trace anywhere. **No
+new OPB content from either entry point**, which is enforced by byte-diff tests
+on both.
 
 ### The fixpoint, and how the refutation actually happens
 
@@ -1557,11 +1589,17 @@ paper's `IncImp`, which its own configuration study says to leave off — on
 RCPSP/max every configuration with it on scored below every configuration with it
 off. That is not a contradiction: what the study measures is running it on **every
 wake**, and what this is is running it **once**, at the root, where its cost is
-`O(n² log n + nm)` in total rather than per propagation. The section above on
-half-reified resources noted that `IncImp`'s absence shows up in gcs as a
-*search-tree* cost, since `--variant=global` has no donors to infer `!cond` from
-bounds; the root-only version removes most of that without paying the per-wake
-price. Whether the in-search version pays for itself in gcs remains open.
+`O(n·m log(n + m))` a round of the root fixpoint rather than per propagation.
+The section above on half-reified resources put a *search-tree* cost in gcs down
+to `IncImp`'s absence, since `--variant=global` has no donors to infer `!cond`
+from bounds. Inferring from bounds is the paper's section 5.4 bounds check,
+though, not `IncImp`, and the global propagator lacks both during search. On
+the tight-max-lag instances below the root-only version removes all of that cost
+(every seed is refuted at the root), and pays no per-wake price for it. On the
+pairwise machine instances of that section it removes about a tenth of the gap
+(5,885 recursions against 6,353 without it and 689 decomposed; 295 against 329
+and 47), because what they lack is the in-search bounds check. Whether the
+in-search version pays for itself in gcs remains open.
 
 ### RCPSP/max: the headline reproduces
 
@@ -1587,7 +1625,8 @@ propagator could see it.
 (recursions; seed 5 was already refuted at the root by the temporal network
 alone.) Two things to read off it. The no-simplification global column is
 *worse* than decomposed in every row where the search is non-trivial — 4,149
-against 1,525 on seed 6 — which is `IncImp`'s absence again. And the
+against 1,525 on seed 6 — which is the missing in-search bounds inference (the
+section 5.4 check that the decomposition's donors make) again. And the
 simplification column is 1 everywhere, whatever the row above it was.
 
 Proofs shrink accordingly, and all of them verify:
@@ -1624,12 +1663,12 @@ worth stating plainly. `--variant=global --order unlucky --mode fixpoint`:
 | 640 | 1,283 | 1,287 | 0.312 | 0.474 | 0.164 | 639 |
 
 `recursions` and `propagations` are identical down every column — which is the
-point, since redundant-edge removal and node removal are propagation-neutral by
-construction — and the entire wall-time difference is the Johnson's pass. It
-drops `n - 1` edges out of `n(n+5)/2`, i.e. essentially nothing, and costs 30 to
-50 % of the solve. `--mode refute` is the same, with the Johnson's pass accounting
-for the whole of a 0.117 s → 0.239 s regression at `n = 640` and nothing at all
-dropped.
+point, since redundant-edge removal and the lower round bound (node removal,
+which keeps the nodes: #1385) are propagation-neutral by construction — and the
+entire wall-time difference is the Johnson's pass. It drops `n - 1` edges out of
+`n(n+5)/2`, i.e. essentially nothing, and costs 30 to 50 % of the solve.
+`--mode refute` is the same, with the Johnson's pass accounting for the whole
+of a 0.117 s → 0.239 s regression at `n = 640` and nothing at all dropped.
 
 The pure-temporal scaling curve says the same more precisely
 (`--resources 0 --max-lag-density 0 --variant=global`, satisfiable, so Johnson's
@@ -2081,16 +2120,20 @@ argument for `--simplify=off` being easy to reach, which it is.
 
 ### What this does not fix
 
-The per-wake cost is now `O(n + |Vl| log n + reachable arcs)` rather than
-`O(rounds × |E|)`, but the `O(n)` term is unavoidable without advisors: `Vl` is
-built by scanning every node's bounds against `Do`. The refined-watch inbox could
-supply it directly, but `propagators.cc` drops undelivered payloads when a
-contradiction cuts a round short, so it could only ever be an optimisation on top
-of the scan and never the sole source of truth. On a small, sparse graph — 21
-nodes and a few dozen arcs, which is what `examples/rcpsp` is at the smaller
-`--size` values — that `O(n)` term
-plus a heap is not much cheaper than a Bellman-Ford pass that early-exits after
-two rounds, and the win is correspondingly modest. The win is large exactly where
+The per-wake cost is now `O(n + s + [m])` (the `Vl` scan, the static bounds,
+and the active-arc snapshot when anything is conditional), plus an `IncSat`
+repair for each newly active arc and two bounds passes, each
+`O(n + (|Vl| + R) log(n + R))` for the `R` arcs it reaches (the heap is binary
+with lazy deletion, so it holds an entry per improving relaxation, not one per
+node), rather than `O(rounds × |E|)`, but the `O(n)` term is unavoidable without
+advisors: `Vl` is built by scanning every node's bounds against `Do`. The
+refined-watch inbox could supply it directly, but `propagators.cc` drops
+undelivered payloads when a contradiction cuts a round short, so it could only
+ever be an optimisation on top of the scan and never the sole source of truth.
+On a small, sparse graph — 21 nodes and a few dozen arcs, which is what
+`examples/rcpsp` is at the smaller `--size` values — that `O(n)` term plus a heap
+is not much cheaper than a Bellman-Ford pass that early-exits after two rounds,
+and the win is correspondingly modest. The win is large exactly where
 the asymptotics say it should be: `|E| >> n`, or long chains.
 
 ## Frontends
@@ -2157,12 +2200,15 @@ model, so it wants measuring as its own piece of work.
   no new proof machinery — "shortest path `x ⇝ y` of weight `<= d'`" plus the
   candidate edge `y --(-d'-1)--(b)--> x` is a negative cycle, so it is proof
   shape 1 with `b` the sole surviving residual, and the `saturate` already in
-  place produces exactly that unit clause — but the paper's own configuration
-  study says to leave it **off**: on RCPSP/max every configuration with it on
-  scored below every configuration with it off. **This is the one deferral the
-  RCPSP/max measurement below now costs something visible**: without it, a system
-  whose infeasibility depends on edges nobody has fixed yet is invisible at the
-  root.
+  place produces that unit clause, scaled by the degree, whenever the residual's
+  coefficient reaches the degree (and a stronger line otherwise) — but the
+  paper's own configuration study says to leave it **off**: on RCPSP/max every
+  configuration with it on scored below every configuration with it off. The
+  RCPSP/max measurement below made this deferral visible: without it, a system
+  whose infeasibility depends on edges nobody has fixed yet was invisible at the
+  root. The root-only version ("This is `IncImp`, restricted to the root") now
+  refutes those; the search cost left on the pairwise machine models is the
+  section 5.4 bounds check's ("Switching that mechanism on").
 - **Lifting `Iff` donors** of either family, which needs the `r` and `f` rows
   rather than the empty-role row the two supported kinds share. This one is a
   real obstacle, not a choice.

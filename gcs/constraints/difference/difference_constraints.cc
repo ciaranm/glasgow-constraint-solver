@@ -215,9 +215,13 @@ auto DifferenceConstraints::define_proof_model(ProofModel & model, const State &
         // A half-reified edge's row is emitted under HalfReifyOnConjunctionOf,
         // so it says `cond -> X - Y <= d' and carries a big-M term on `~cond'.
         // That term does not telescope, which is the point: it survives every
-        // sum as a residual and saturates into exactly the clause the propagator
-        // is entitled to learn. An unconditional edge passes nullopt and its row
-        // is byte-for-byte what it was before conditions existed.
+        // sum as a residual, and a saturate caps each coefficient at the degree.
+        // When every condition's coefficient reaches the degree, the line is the
+        // clause the propagator is entitled to learn, scaled by the degree
+        // (literally the clause when the degree is 1); when some coefficient
+        // falls short, it is strictly stronger. The closing RUP derives the
+        // clause either way. An unconditional edge passes nullopt and its row is
+        // byte-for-byte what it was before conditions existed.
         optional<HalfReifyOnConjunctionOf> half_reif;
         if (e.cond)
             half_reif = HalfReifyOnConjunctionOf{*e.cond};
