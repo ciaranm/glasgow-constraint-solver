@@ -128,8 +128,8 @@ namespace gcs
             const CurrentState & state, const innards::Propagators & propagators, IntegerVariableID var) const -> double = 0;
 
         /**
-         * Called at each restart boundary (for smoothing / decay schemes).
-         * Inert until restarts land.
+         * Called by solve_with at each restart boundary (for smoothing / decay
+         * schemes).
          */
         virtual auto on_restart() -> void override = 0;
 
@@ -217,8 +217,7 @@ namespace gcs
      * r(c), where alpha starts at 0.4 and decays towards 0.06 over conflicts.
      * weighted_degree_of(x) sums q(c) + delta over x's constraints with at least
      * two unassigned variables, so early on (all q(c) = 0) it orders by degree.
-     * on_restart resets alpha and smooths the scores; it is inert until restarts
-     * land.
+     * on_restart, called at each restart, resets alpha and smooths the scores.
      *
      * \ingroup SearchHeuristics
      */

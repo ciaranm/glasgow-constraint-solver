@@ -51,8 +51,9 @@ namespace gcs
             /// the constraint's meaning and its OPB encoding unchanged, and only
             /// weakens propagation --- which is worth measuring, because each forcing
             /// made while the root is still undecided costs one proof line per
-            /// candidate root. No effect on the directed spelling, whose analogue is
-            /// a different algorithm (see dev_docs/connectivity-proofs.md).
+            /// candidate root. The directed spelling's analogue is a different
+            /// algorithm, a search per candidate root, and this switches it too (see
+            /// dev_docs/connectivity-proofs.md).
             auto with_cut_forcing(std::optional<bool> enable = true) -> ReachableBase &;
 
             /// Testing only: corrupt one part of every reason this constraint gives,

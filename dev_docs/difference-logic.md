@@ -74,7 +74,10 @@ inferences until the state stops moving.
 With `n` nodes, a shortest path from `v0` is simple, and the seeding *is* the
 `v0` edge set, so at most `n - 1` real edges remain and `n - 1` relaxation
 rounds always suffice. The loop runs rounds `0 .. n - 1` — one more than needed
-— and then round `n` purely to detect: a relaxation that still succeeds there is
+— and then round `n` purely to detect (after root simplification the code's `n`
+is the number of nodes that still have an edge, which the same argument covers,
+and a pass also stops earlier at the limit described under "Extreme weights"):
+a relaxation that still succeeds there is
 sound evidence that the system has a negative cycle.
 
 The extraction then walks `pred` back from the node just relaxed, marking as it
@@ -155,8 +158,10 @@ the list the user gave, so a proof line traces back to the edge that was
 written. Rows are emitted even for edges that contribute no graph edge: an
 aliased edge leaves the same variable in the sum twice with opposite
 coefficients, and a two-constant edge leaves the sum empty, and both render as a
-row whose left hand side is zero — which is what `0 <= d` says, and which VeriPB
-reads as trivially true or directly false according to `d`'s sign. A false one
+row whose left hand side is zero in value (the aliased one is written with both
+copies of the variable's bits, which cancel) — which is what `0 <= d` says, and
+which VeriPB reads as trivially true or directly false according to `d`'s sign.
+A false one
 is a root contradiction that RUPs straight from the model, via
 `Propagators::install_initial_contradiction`.
 
@@ -396,9 +401,12 @@ domains, and a domain shrunk to empty is a contradiction, which ends the call. S
 a condition true at snapshot time is still true at every inference made from it.
 
 Across calls the edge set does change — it grows as conditions become true down a
-branch and shrinks on backtrack — and nothing needs to be trailed for that,
-because nothing about the graph is stored between calls. This version recomputes
-from scratch every wake anyway.
+branch and shrinks on backtrack. The from-scratch route stores nothing about the
+graph between calls, so nothing needs trailing. The incremental route, now the
+default, does keep state: its potential function needs no trailing either,
+because backtracking only removes arcs, and the rest (`Do`, and which arcs the
+invariants have been established for) is restored exactly on backtrack (see
+"Incremental propagation" below).
 
 ### Two things that cost 3× until they were measured
 
@@ -502,7 +510,7 @@ belong to are not implemented yet:
   Loosening it is always sound, tightening it silently loses propagation — and
   a lost propagation is invisible to proof logging. See "Incremental
   propagation" below, which is where this bites and where the answer is.
-- **Section 5.4 describes half of what section 4.4 requires on edge addition.**
+- **Section 5.4 describes half of what section 4.2 requires on edge addition.**
   Transcribing the during-search section alone loses every push a reification
   delivers. Also below.
 - Theorem 2 assumes **range** domains. gcs domains have holes. The propagator
@@ -630,8 +638,9 @@ The other three reification kinds are *also* difference constraints:
 
 - `reif::Iff` emits its two halves under the roles `r` and `f` rather than under
   the empty role — and both halves are edges, one on `cond` and one on `¬cond` —
-  so neither is the row a lifted edge cites. It **cannot** be lifted as things
-  stand.
+  so neither is the row a lifted edge cites. It is not lifted, because the donor
+  publishes neither half as a citable role; that is an API gap rather than a
+  proof obstacle (#1373).
 - `reif::MustNotHold` and `reif::NotIf` state the integer negation,
   `y - x <= -d-1`. For a comparison, and for a linear `MustNotHold`, that row
   goes out under the same empty role and so *is* citable. These are therefore a
@@ -640,15 +649,14 @@ The other three reification kinds are *also* difference constraints:
   `s_expr()` throws on both, so they have no `.scp` spelling), and closing the
   gap is worth doing for both donor families at once rather than for one of them.
 
-  A linear `NotIf` is a special case and not a citable one. Its row goes out
-  under the role `ltn`, but what that row *says* is `cond -> sum <= value` —
-  which is the thing the constraint states must **not** hold. Nothing constructs
-  a `ReifiedLinearInequality` with `NotIf` (the six derived classes cover
-  `MustHold`, `If` and `Iff`, and `scp_reader` builds only those), so the branch
-  is unreachable and the discrepancy has never been observable; it is recorded
-  here rather than fixed because fixing an unreachable proof path belongs with
-  whatever first makes it reachable. `ConstraintProofModelData` publishes nothing
-  for it, so the presolver cannot cite it by accident.
+  A linear `NotIf` is the same gap. Its row once went out under the role `ltn`
+  saying `cond -> sum <= value`, the opposite of what the constraint means; since
+  #644 it states the integer negation under `cond`, and since #908 (`f85e63bf`)
+  under the empty role, like `MustNotHold`'s. Nothing constructs a
+  `ReifiedLinearInequality` with `NotIf` (the six derived classes cover
+  `MustHold`, `If` and `Iff`, and `scp_reader` builds only those), and
+  `ConstraintProofModelData` publishes nothing for it, so the presolver cannot
+  cite it by accident.
 
 All three are counted in `skipped_reified` rather than guessed at. Two exclusions
 remain soundness requirements rather than mere incompleteness:
@@ -867,7 +875,8 @@ situation, and same fix, as `linear/justify.cc`.
 
 ### Turning the donors off, and why `DisableUntilBacktrack` could not be reused as is
 
-The hybrid is what the paper measures as best and is the default, but the
+The hybrid is the default (the paper describes it in section 4.4, without
+measuring it against retiring the donors), but the
 redundant donors should be measurable, so `disabling_lifted_donors()` exists and
 ships off.
 
@@ -982,16 +991,16 @@ the whole guard. And un-labelling the rows is caught **only** by the `.opb` labe
 check and by VeriPB, which is why that check exists rather than being left
 implicit in "the proofs pass".
 
-The cross-check is on unconditionally, rather than being an opt-in strict mode,
-and it is deliberately *not* "throw if nothing was lifted". Lifting nothing is a
-perfectly ordinary outcome — most models contain plenty of `lin_less_equal`
-constraints and no two-term `+1`/`-1` ones — so that version would fire on
-legitimate models and would have to be off by default, which is to say it would
-never be on when it mattered. The condition that cannot legitimately hold is the
-narrower one: a constraint reporting a donor family's `constraint_type()` that
-the typed enumeration did not yield. That is exactly the regression, it is free
-of false positives, and it costs one pass over the posted constraints per
-solve.
+The removed cross-check was on unconditionally, rather than being an opt-in
+strict mode, and it was deliberately *not* "throw if nothing was lifted".
+Lifting nothing is a perfectly ordinary outcome — most models contain plenty of
+`lin_less_equal` constraints and no two-term `+1`/`-1` ones — so that version
+would have fired on legitimate models and would have had to be off by default,
+which is to say it would never have been on when it mattered. The condition that
+cannot legitimately hold is the narrower one: a constraint reporting a donor
+family's `constraint_type()` that the typed enumeration did not yield. That was
+exactly the regression, it was free of false positives, and it cost one pass
+over the posted constraints per solve.
 
 ### Gating
 
@@ -1151,11 +1160,11 @@ they self-skip — and `difference_test` threads a `ViewWrapConfig` through
 assigned with the underlying domain inverted, so the visible domain and hence the
 oracle are unchanged.
 
-**Ten of the nineteen canonical wraps negate, and the constraint refuses a
+**Nine of the nineteen canonical wraps negate, and the constraint refuses a
 negated operand by design.** Rather than skipping those, the test inverts its
 obligation: under a negating wrap it asserts that constructing
 `DifferenceConstraints` throws `InvalidProblemDefinitionException`. That turns
-what would have been ten-nineteenths of the sweep into a real check that the
+what would have been nine-nineteenths of the sweep into a real check that the
 rejection is *total* — every fixture, every edge shape, every operand position —
 instead of a hole. Conditions are exempt: a condition is a literal, not a
 difference operand, and `b == 1` over a negated view is perfectly well-formed.
@@ -1259,9 +1268,9 @@ Measured on fataepyc-10, release, `taskset`-pinned, medians of 3, never with
 | `--size 20 --seed 5 --max-lag-density 0.3` | unsat at root | 1 | 1,155 | 56 | **1** |
 
 The `--size 22` row is the honest one: 3.3× fewer propagations, and **8 % slower**
-in wall time (0.0771 s decomposed against 0.0828 s global). That is the
-non-incrementality caveat under "Deliberately deferred" showing up on a real
-model — every wake re-runs the whole Bellman-Ford pass. The presolved column
+in wall time (0.0771 s decomposed against 0.0828 s global). That was
+non-incrementality showing up on a real model — every wake re-ran the whole
+Bellman-Ford pass, before "Incremental propagation" below. The presolved column
 sits between the two throughout because it leaves the donor linears installed
 alongside the lifted global unless they are explicitly retired.
 
@@ -1363,7 +1372,7 @@ propagator:
 ## Root simplification
 
 The paper's section 5.2 runs a one-off pass over the graph before search, and its
-section 6.3 measures that pass as most of the difference-logic win: 320.95 against
+section 6.4 measures that pass as most of the difference-logic win: 320.95 against
 312.94 on the MiniZinc challenge set, 637.50 against 573.40 on `ProdCons`, and on
 `RCPSP/max` an average unsatisfiability time *below 0.01 s* because "most of these
 instances are identified during simplification". The section above on half-reified
@@ -1841,7 +1850,7 @@ last run, and a reification becoming true can deliver one **with no node bound
 changing anywhere**. `Vl` is then empty, `IncLB` does nothing, and the push the
 arc delivers is lost.
 
-The paper's section 4.4 gives the right recipe — on adding `(u, v, d)`, compute
+The paper's section 4.2 gives the right recipe — on adding `(u, v, d)`, compute
 the possibly-new bounds `lb(v) := lb(u) − d` and `ub(u) := ub(v) + d` and feed
 them through `IncLB` / `IncUB` — but **its section 5.4, which is the
 during-search description one would naturally transcribe, mentions only `IncSat`
@@ -2106,8 +2115,9 @@ nothing it cannot ask for anyway. See
 
 **MiniZinc** needed nothing else. MiniZinc 2.10's flattener emits
 `int_lin_le([1,-1],[x,y],d)` for `x - y <= d`, for `x + k <= y`, and even for a
-bare `x <= y`, which is exactly the two-term `LinearLessThanEqual` the presolver
-lifts. `minizinc/tests/differencelogic.mzn` gets four edges over four nodes out
+bare `x <= y`, which the FlatZinc reader recovers as a `LessThanEqual`
+(`8c6cb43d`), a comparison donor the presolver lifts.
+`minizinc/tests/differencelogic.mzn` gets four edges over four nodes out
 of a four-event time-lag network, with the two deliberately non-difference
 constraints landing in `skipped_not_two_terms` and `skipped_coefficients`.
 
@@ -2164,16 +2174,18 @@ model, so it wants measuring as its own piece of work.
   whose infeasibility depends on edges nobody has fixed yet is invisible at the
   root.
 - **Lifting `Iff` donors** of either family, which needs the `r` and `f` rows
-  rather than the empty-role row the two supported kinds share. This one is a
-  real obstacle, not a choice.
+  rather than the empty-role row the two supported kinds share. That is an API
+  gap (`primary_row_role` publishes at most one row per donor, and none for an
+  `Iff`), not a proof obstacle: a prototype that lifts the two halves as
+  half-reified edges verifies (#1373).
 - **Lifting `MustNotHold` and `NotIf` donors** of either family. A comparison's
   rows, and a linear `MustNotHold`'s, state the integer negation under the empty
   role and are citable, so this is a gap rather than an obstacle — deferred so
   that it is closed for both families at once, and because nothing in gcs
-  currently constructs either form. A linear `NotIf` needs its row looked at
-  first: see the presolver section above for why the `ltn` row does not say what
-  a citer would want it to. Doing any of this means publishing the extra roles
-  through `ConstraintProofModelData`, which is where the decision now belongs.
+  currently constructs either form. A linear `NotIf`'s row is citable in the
+  same way since #908 (see the presolver section above). Doing any of this
+  means publishing the extra roles through `ConstraintProofModelData`, which is
+  where the decision now belongs.
 - **Zero-weight-cycle unification**, the fourth of the root simplification
   stage's sub-steps. The other three are implemented; see the section on it
   above, which also reports how often a zero-weight cycle actually turns up.

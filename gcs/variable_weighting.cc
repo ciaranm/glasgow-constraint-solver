@@ -185,8 +185,8 @@ auto ConflictHistorySearch::contribution_of(int constraint_index) const -> doubl
 
 auto ConflictHistorySearch::on_restart() -> void
 {
-    // Smooth scores towards 0 by their staleness, and reset alpha. Inert until
-    // restarts exist (nothing calls this yet).
+    // Smooth scores towards 0 by their staleness, and reset alpha. Called by
+    // solve_with at each restart.
     for (size_t c = 0; c < _weights.size(); ++c)
         _weights[c] *= pow(chs_smoothing_base, static_cast<double>(_number_of_conflicts - _conflict_of[c]));
     _alpha = chs_alpha_initial;

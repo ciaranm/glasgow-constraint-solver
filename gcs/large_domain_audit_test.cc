@@ -435,18 +435,18 @@ namespace
         add("SymmetricAllDifferent", Expect::NoWidePosition, [](Problem & p) { p.post(SymmetricAllDifferent{narrow(p, 4, 0_i, 3_i)}); });
         add("AllEqual", Expect::Clean, [](Problem & p) { p.post(AllEqual{wide(p, 3)}); });
         add("AllEqual/holes", Expect::Clean, [](Problem & p) {
-            // all_equal.cc:114 prunes every variable to the intersection of all
-            // the domains once any of them has holes. It takes the difference as
-            // intervals (each_interval_minus) but then walks each interval a
-            // value at a time, so it needs a *large* difference as well as a
-            // hole. Bounds propagation runs first and would collapse a merely
+            // all_equal.cc:116 prunes every variable to the intersection of all
+            // the domains once any of them has holes. It used to walk each
+            // interval of the difference a value at a time, so it needed a
+            // *large* difference as well as a hole; it now removes each range in
+            // one go. Bounds propagation runs first and would collapse a merely
             // narrow partner, so the hole has to be spread across the full width:
             // a two-value domain at the extremes leaves the whole middle of the
             // other variable to remove -- which is now one range removal.
             //
             // Note this row used to trip on the `In` that create_integer_variable
-            // posts to carve the hole, rather than on AllEqual at all. With that
-            // fixed the row still trips, but now on the site the comment describes.
+            // posts to carve the hole, rather than on AllEqual at all, and then on
+            // the per-value walk; with both gone it is Clean.
             auto holey = p.create_integer_variable(vector<Integer>{wide_lo, probe_width});
             auto full = wide_var(p);
             p.post(AllEqual{vector<IntegerVariableID>{holey, full}});
@@ -496,8 +496,9 @@ namespace
             p.post(NValue{p.create_integer_variable(1_i, 3_i), v});
         });
         add("AtMostOne", Expect::KnownTrip, [](Problem & p) {
-            // The value variable has to be distinct from the scope: an aliased
-            // one is rejected at post time, so it would probe nothing.
+            // The value variable is distinct from the scope, so the row is about
+            // width alone. (An aliased one is not rejected at post time: AtMostOne
+            // accepts it, and AtMostOneSmartTable refuses it from solve_with.)
             auto v = wide(p, 3);
             p.post(AtMostOne{v, wide_var(p)});
         });
@@ -599,7 +600,8 @@ namespace
 
         // --- Min / max / element.
         add("ArrayMinMax", Expect::KnownTrip, [](Problem & p) {
-            // H1b (a missing hull bound) and H1a (the union scan) at once.
+            // The per-value entry pass, which walks the wide domains on every
+            // call (#1166). The union scan has been interval-level since #815.
             auto v = wide(p, 4);
             p.post(ArrayMax{vector<IntegerVariableID>{v[0], v[1], v[2]}, v[3]});
         });

@@ -336,9 +336,10 @@ TEST_CASE("Learned nogoods: refined matches scan under restarts")
 // Same rules as above: deterministic branching, so the trees can only differ
 // through propagation, and the instance has to restart and learn or the
 // differential says nothing. dom_then_deg is safe here despite reading degree,
-// because a refined-watch literal puts its variable in the propagator's scope
-// exactly as a coarse trigger does -- which is also why the two paths agree on
-// every count once the engine is fixed.
+// because the two paths' scopes differ uniformly: the scan path's coarse triggers
+// cover every variable, and the refined path's watches, armed by ctx.watch, put
+// none in its scope, so every variable's degree differs by the same one -- which
+// is also why the two paths agree on every count once the engine is fixed.
 TEST_CASE("Learned nogoods: refined matches scan under restarts, with a claimant")
 {
     auto run = [](bool scan) -> Stats {

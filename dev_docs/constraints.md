@@ -416,10 +416,11 @@ against a constant `c` is the small case — instantiation plus `x != c` is the
 whole of what it reads, where `on_change` woke it once per value in `x`'s domain
 (issue #889) — and the learned-nogood store is the large one.
 
-A refined-watch literal puts its variable in the propagator's **scope** (so
-degree and adjacency are unchanged) without arming a coarse trigger; use
+A refined-watch literal declared in `Triggers::refined` puts its variable in the
+propagator's **scope** (so degree and adjacency are unchanged) without arming a
+coarse trigger; one armed at run time with `ctx.watch` does not. Use
 `Triggers::scope_only` to declare scope for a variable that neither mechanism
-mentions.
+mentions, and for every variable a propagator only ever watches at run time.
 
 ### install_initialiser
 

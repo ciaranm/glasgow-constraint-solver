@@ -21,7 +21,8 @@ namespace gcs
      * arc consistency (the stronger default — the Stage 2 bounds pass followed
      * by the Stage 3 partial-load DAG sweep), or bounds consistency (the
      * cheaper Stage 2 pass alone). Joint GAC is NP-hard, so consistency::GAC
-     * here means per-bin GAC. The choice selects propagation strength only and
+     * here means per-bin GAC, and it stops short of committing an item to a
+     * bin (#1346). The choice selects propagation strength only and
      * never changes the OPB encoding.
      *
      * \ingroup Consistency
@@ -34,9 +35,10 @@ namespace gcs
      * flags at Top, and each piece of chain scaffolding an inference needs
      * derived at Top the first time it is needed) or proof_strategy::Upfront
      * (derive the full forward/backward chain scaffolding at Top at the
-     * start). Both draw the same inferences; PerCall's proofs are smaller and
+     * start). Both reach the same fixpoint; PerCall's proofs are smaller and
      * verify faster on the in-tree benchmarks. No effect under consistency::BC
-     * (no Stage 3 sweep) or with proof logging off.
+     * (no Stage 3 sweep); with proof logging off it still picks the Stage 3
+     * code path, which can differ greatly in cost.
      *
      * \ingroup ProofStrategy
      */
@@ -102,16 +104,18 @@ namespace gcs
      *
      * Item sizes must be non-negative. By default the propagator runs the
      * per-bin Stage 2 bounds pass followed by a Stage 3 partial-load DAG
-     * sweep that achieves *per-bin* GAC on the item variables (joint GAC
-     * is NP-hard for BinPacking, so we settle for per-bin). Pass
-     * `bounds_only = true` to skip the DAG and use the bounds pass alone
-     * — cheaper, recommended when the per-bin capacity is much larger
-     * than the number of items. See `dev_docs/bin-packing.md`.
+     * sweep that achieves *per-bin* GAC on the items' bin values and the
+     * loads, short of committing an item to a bin (#1346); joint GAC is
+     * NP-hard for BinPacking, so we settle for per-bin. Pass
+     * `consistency::BC` to with_consistency() to skip the DAG and use
+     * the bounds pass alone — cheaper, recommended when the per-bin
+     * capacity is much larger than the number of items. See
+     * `dev_docs/bin-packing.md`.
      *
      * The Stage 3 DAG sweep supports two proof-emission strategies,
-     * selected by `upfront_proof`:
+     * selected by with_proof_strategy():
      *
-     * - `upfront_proof = false` (the default): only the reified per-node
+     * - proof_strategy::PerCall (the default): only the reified per-node
      *   state flags are defined at `ProofLevel::Top` at the start. The
      *   per-call sweep derives the rest at Top the first time an inference
      *   needs it --- a reachable node's forward chains and its split into
@@ -120,7 +124,7 @@ namespace gcs
      *   load's domain ruled out under the reason first. This wins on both
      *   proof size and VeriPB verify time on the `bin_packing_bench`
      *   instances, so it is the default.
-     * - `upfront_proof = true`: an off-by-default opt-in that additionally
+     * - proof_strategy::Upfront: an off-by-default opt-in that additionally
      *   derives the full forward/backward chain scaffolding (per-coord
      *   and joint chains, phantom closures, statically-dead-node lines)
      *   once at `ProofLevel::Top`. It produces larger, slower-to-verify
@@ -171,16 +175,16 @@ namespace gcs
          */
         explicit BinPacking(std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<Integer> capacities);
 
-        /// Select the consistency level: consistency::GAC (per-bin GAC, the
-        /// default) or consistency::BC (the cheaper bounds pass alone). The
-        /// choice selects propagation strength only and never changes the OPB
-        /// encoding.
+        /// Select the consistency level: consistency::GAC (per-bin GAC short of
+        /// committing items, #1346; the default) or consistency::BC (the cheaper
+        /// bounds pass alone). The choice selects propagation strength only and
+        /// never changes the OPB encoding.
         auto with_consistency(BinPackingConsistency level) -> BinPacking &;
 
         /// Select the Stage 3 proof-logging strategy: proof_strategy::PerCall
-        /// (the default) or proof_strategy::Upfront. Proof-only: it never
-        /// changes the inferences drawn or the solutions found, and has no
-        /// effect under consistency::BC or with proof logging off.
+        /// (the default) or proof_strategy::Upfront. It never changes the
+        /// fixpoint or the solutions found, though it picks the Stage 3 code path
+        /// even with proof logging off; it has no effect under consistency::BC.
         auto with_proof_strategy(BinPackingProofStrategy strategy) -> BinPacking &;
 
         /// Select the cross-bin reasoning: bin_packing::NoCardinality (the

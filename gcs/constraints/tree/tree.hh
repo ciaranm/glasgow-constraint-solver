@@ -88,7 +88,8 @@ namespace gcs
      * The stdlib's `fzn_dtree` says the same thing with a parent function, which
      * is where its distance labelling comes from.
      *
-     * Not generalised-arc-consistent, for the reason given on Tree.
+     * Not generalised-arc-consistent, for the reason given on Tree and, mostly,
+     * because no rule says that nothing enters the root (#1314).
      *
      * \ingroup Constraints
      */

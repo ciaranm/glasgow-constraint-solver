@@ -3,7 +3,7 @@ predicate glasgow_dag(array[int] of int: from, array[int] of int: to,
 
 % glasgow_dag numbers nodes from zero and takes edge e's tail and head as from[e]
 % and to[e]. FlatZinc's nodes are index_set(ns), which need not start at one, so
-% shift the endpoints by the same offset, as fzn_subgraph.mzn does. The endpoint
+% shift the endpoints by the same offset, as fzn_subgraph_enum.mzn does. The endpoint
 % arrays are parameters, so the shift is free.
 %
 % Unlike the rest of globals.graph there is no _int / _enum pair to override:

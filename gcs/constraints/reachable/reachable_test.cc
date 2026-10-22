@@ -177,7 +177,7 @@ auto run_dup_reachable_test(bool proofs, bool directed, const Edges & edges, siz
 // reason and stop, for run_test_and_expect_verify_failure.bash to hand to
 // veripb.
 //
-// The fixture is six free nodes, enumerated. Two things about it were arrived at
+// The fixture is seven free nodes, enumerated. Two things about it were arrived at
 // the hard way, and both are the "margin of one" discipline in
 // dev_docs/constraints.md:
 //

@@ -248,10 +248,10 @@ namespace
                 auto outcome = simplify_difference_graph(n, simplify_edges, roles);
                 if (outcome.base_negative_cycle) {
                     // The unconditional part of the system is already
-                    // infeasible. Stop and let the from-scratch pass
-                    // below refute it: that is where the cycle
-                    // extraction and the telescoping pol live, and
-                    // duplicating them here would buy nothing.
+                    // infeasible. Stop and let the propagator refute it
+                    // on its first call, after this initialiser: that is
+                    // where the cycle extraction and the telescoping pol
+                    // live, and duplicating them here would buy nothing.
                     stats.base_negative_cycle = true;
                     break;
                 }
@@ -948,7 +948,7 @@ namespace
             else if (! memory.changed_arcs.empty()) {
                 // Arcs whose activity has changed since the last run. Each
                 // newly active one needs *both* halves of the paper's section
-                // 4.4 treatment, and its section 5.4's during-search description
+                // 4.2 treatment, and its section 5.4's during-search description
                 // gives only the first: repair the potential function (or find
                 // that the arc closes a negative cycle), *and* seed bound
                 // propagation across it. Without the second, a condition becoming true with no node

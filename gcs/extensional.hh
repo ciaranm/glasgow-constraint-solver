@@ -100,9 +100,13 @@ namespace gcs
          * a call does real work, and a live set dense enough in its words that a
          * bitset is the right shape for it.
          *
-         * The default, and the only setting without a significant regression on
-         * this project's suite -- it is within 2% of the better of the other two
-         * everywhere except `srch_bin_d10_n20_s2`, where it is 4% behind.
+         * The default. When it was chosen (#804) it was the only setting without
+         * a significant regression on this project's suite, within 2% of the
+         * better of the other two everywhere except `srch_bin_d10_n20_s2`, where
+         * it was 4% behind. Re-measured since, a forced table::CompactTable is
+         * 2.2-2.3x faster on two of the three Renault instances, which wake a
+         * table too few times for this to switch, and 5-15% faster on six of the
+         * thirteen `srch_*` ones (#1118).
          *
          * \ingroup Extensional
          */

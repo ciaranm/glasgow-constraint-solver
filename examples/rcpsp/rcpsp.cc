@@ -480,7 +480,8 @@ auto main(int argc, char * argv[]) -> int
                 "Push a detectable precedence to the set's earliest completion time rather than " //
                 "to the latest single predecessor's earliest end, and the mirror --- Vilim's "    //
                 "rule rather than the pairwise one. Worth 0.386x the median recursions on its "   //
-                "own, and better on 23 of 36 on top of edge-finding. Certified over a window "    //
+                "own, and better on 23 of 36 on top of edge-finding, as measured before #1275 "   //
+                "fixed its fixed-task skip (#1243). Certified over a window "                     //
                 "the negated conclusion derives; off by default because those windows share "     //
                 "nothing with the energetic sweep's, which has not been measured (#754)")         //
             ("disjunctive-overload",

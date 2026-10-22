@@ -270,13 +270,10 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
 
             // The per-value capacity lines Sum_i x_{i=v} <= ub_v and
             // Sum_i x_{i=v} >= lb_v. Each is a direct consequence of the
-            // count line (Sum_i x_{i=v} = c_v) and the count bound, but
-            // combining them in a pol is blocked because the count line
-            // carries c_v in its bit encoding while the bound is an
-            // order-encoding atom (and is vacuous at the bit-width
-            // boundary). These two true facts are asserted; everything
-            // built on top of them is real, so the surrounding Hall
-            // combinatorics is genuinely checked.
+            // count line (Sum_i x_{i=v} = c_v) and the count bound, and the
+            // pols below derive it: add_for_literal resolves the
+            // order-encoded bound against c_v's bits, so they cancel. Nothing
+            // here is asserted (the last assertion went in ce47d70a).
             auto demand_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> ReasonLiterals {
                 ReasonLiterals r;
                 for (const auto & var : vars)

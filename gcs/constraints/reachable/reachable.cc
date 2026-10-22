@@ -152,7 +152,7 @@ auto ReachableBase::define_proof_model(ProofModel & model, const State &) -> voi
     // whatever the propagator concluded. See dev_docs/connectivity-proofs.md.
     //
     // The cost is size: the unfolding needs one level per possible step, so it
-    // is O(nodes * edges) rows rather than the decomposition's O(edges).
+    // is O(nodes * (nodes + edges)) rows rather than the decomposition's O(edges).
 
     // Level zero: reach[v][0] is "the root is v". These flags are also what pins
     // the root down for the proof: exactly one of them holds, whatever encoding

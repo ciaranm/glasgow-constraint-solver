@@ -293,8 +293,10 @@ add_scp_chain_test(circuit_aliased_unsat  none)
 # solver's encoding matches cake's exactly once its selector is named x[id][i]
 # (the create_proof_flag(ConstraintID, {i}) two-level form, as for all_different)
 # instead of the old f[idx][arrayminmax] -- the propagator's RUP steps reference
-# it by name, so the names must agree for enumeration to verify. Stays none (the
-# eq/ge literal variable encoding still diverges, #358).
+# it by name, so the names must agree for enumeration to verify. Stays none
+# because the solver writes these rows unlabelled and in a different order from
+# cake's, so opbdiff --match-labels falls back to position and fails;
+# opbdiff --unordered finds the two OPBs equivalent.
 add_scp_chain_test(array_min_sat    none)
 add_scp_chain_test(array_max_sat    none)
 add_scp_chain_test(array_min_unsat  none)
@@ -505,16 +507,14 @@ add_scp_chain_test(negative_table_unsat   none)
 # none (chain-only): smart_table, a disjunction over rows, each row a conjunction
 # of entries -- (v1 op v2) (binary), (v op c) (unary value) or (v in|notin (c...))
 # (unary set), with op one of < <= = != > >=. The solver and cake_pb_cp agree on
-# this row-delimited s-expr shape. Stays none: the per-row selector flags are not
-# named like cake's, and the entry encodings reference the variables' eq/ge
-# literals, which diverge from cake's eager variable encoding (#358). The
-# refutation (unsat) verifies regardless (RUP). The enumeration (sat) is the
-# narrow case: only order-comparison entries verify, because their proof cites
-# just the forward ge literals cake defines; equality / set entries additionally
-# need cake's reverse-reified eq/ge literal labels, which the solver does not
-# emit, so a richer sat table is #358-blocked. sat is therefore a single A <= B
-# row (enumerating the ordered pairs); unsat is two rows whose only entries force
-# a variable out of its domain.
+# this row-delimited s-expr shape. Stays none, and the cases stay narrow, for two
+# reasons. The solver's row and entry flags are not named like cake's (f[N][t<i>]
+# against x[_1][k]), so any proof step that cites one, such as a tree-filtering
+# lemma, fails against cake's OPB; and the consolidated unary entries cite
+# literal definitions (i[V][ge<k>] and their reverse halves) that our OPB writes
+# and cake's does not (#358's divergence). Either can fail an unsat case as well
+# as a sat one. sat is therefore a single A <= B row (enumerating the ordered
+# pairs); unsat is two rows whose only entries force a variable out of its domain.
 add_scp_chain_test(smart_table_sat        none)
 add_scp_chain_test(smart_table_unsat      none)
 # A row whose entry names C, which the scope (A B) does not list. cake_pb_cp
@@ -541,8 +541,11 @@ add_scp_chain_test(lex_smart_table_empty_left_unsat  none)
 #   at_most_one (vars) val -- at most one variable equals val.
 #   among (vars) (values) how_many -- exactly how_many variables take a
 #     value-of-interest.
-# All stay none: their per-value / per-pair encodings reference the variables'
-# eq/ge literals, which diverge from cake's eager variable encoding (#358). The
+# All stay none. all_different_except's and among's per-value / per-pair
+# encodings reference the variables' eq/ge literals, which diverge from cake's
+# eager variable encoding (#358); at_most_one's rows reference no order or
+# equality literal, and differ from cake's in polarity, labels and one
+# coefficient of two rows per position. The
 # refutation (unsat) cases verify via RUP; the enumeration (sat) cases verify
 # because the clauses use the eq literals cake also provides. all_different_except
 # sat exempts a value from distinctness (off-diagonal plus the exempt diagonal),
@@ -584,11 +587,8 @@ add_scp_chain_test(symmetric_all_different_unsat  none)
 # variable-encoding reason (#358) but chain-verifies: sat enumerates the four
 # cells of a constant 2x2 array; unsat forces the result outside every cell.
 # (Binary min/max need no new case: Min/Max are written as a two-element
-# array_min/array_max, already covered. knapsack reads and round-trips but does
-# not chain -- cake decomposes it into per-row linear equalities with their own
-# constraint ids (@c[_1N][le]/[ge]), where the solver keeps them under one id
-# with row-indexed roles (@c[_1][le0]) that its proof cites by label, so it needs
-# a label/structural conform, not just a reader.)
+# array_min/array_max, already covered. knapsack chains too, now that the
+# solver labels its rows as cake does; see its own case below.)
 add_scp_chain_test(element_2d_sat              none)
 add_scp_chain_test(element_2d_unsat            none)
 
@@ -639,8 +639,9 @@ add_scp_chain_test(seq_precede_chain_unsat          none)
 
 # none (chain-only): knapsack. Per coefficient row the encoding is a single linear
 # equality sum_i coeffs[row][i]*vars[i] = totals[row] -- arithmetically identical to
-# cake's. cake labels each row's equality under its own constraint id `name ^ row`
-# (@c[_1<row>][le]/[ge]); the solver now matches that (was a row-indexed role
+# cake's. cake labels each row's equality under the constraint's own id, with
+# the row in the tag (@c[<id>][<row>_le]/[<row>_ge]); the solver now matches that
+# (was a row-indexed role
 # @c[_1][le<row>] on one id), so the DP propagator's pol steps -- which cite these
 # rows by label -- resolve against cake's OPB. sat enumerates the {0,1} item picks
 # whose weighted sums hit the totals; unsat fixes a total beyond any achievable sum.

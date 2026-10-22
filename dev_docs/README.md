@@ -245,9 +245,9 @@ library. For an introduction to *using* the solver, start with the top-level
   the per-term potential, the margin that decides how many to watch, and what
   it is measured to be worth. Companion to
   [refined-triggers.md](refined-triggers.md).
-- [`Knapsack`](knapsack.md) — the default per-call DP `Knapsack` (chosen
-  for fastest proof verification) and the opt-in upfront-DAG
-  `KnapsackUpfront` (#200), the *k*-coordinate generalisation of
+- [`Knapsack`](knapsack.md) — `Knapsack`'s default per-call DP strategy
+  (chosen for fastest proof verification) and its opt-in upfront-DAG
+  strategy, `proof_strategy::Upfront` (#200), the *k*-coordinate generalisation of
   `BinPacking` Stage 3. Covers the `define_proof_model` /
   `install_initialiser` split, the paper-style reified scaffolding, the
   per-call proof chain, and the measured default-vs-opt-in trade-off.
@@ -331,9 +331,9 @@ library. For an introduction to *using* the solver, start with the top-level
   one Tarjan pass undirected and a search per candidate root directed) and how
   the tests check that, why a forcing made before search has decided the root
   costs a proof line per candidate root while one made after costs one line
-  (measured, not assumed), the `O(nodes × edges)` size that is the price,
-  and the measured hitori comparison — 815 MB / 796 s of decomposition proof
-  against 0.25 MB / 0.14 s. Also covers `Subgraph` and the tree-and-path family
+  (measured, not assumed), the `Θ(nodes × (nodes + edges))` size that is the
+  price, and the measured hitori comparison — 815 MB / 796 s of decomposition
+  proof against 0.25 MB / 0.14 s. Also covers `Subgraph` and the tree-and-path family
   built on top (`Tree`, `DTree`, `Path`, `DPath`, and so `steiner`, `dsteiner`,
   `bounded_path`, `bounded_dpath` and `weighted_spanning_tree`): one reachability
   encoding plus counting rows rather than the stdlib's doubled edges and second

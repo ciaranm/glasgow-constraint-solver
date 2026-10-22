@@ -42,8 +42,8 @@ namespace
      * Complete: the subtree was fully explored; carry on with siblings/parent.
      * Stop: stop the whole search (abort flag, or a callback returned false) ---
      * the proof is abandoned, so we return immediately without balancing levels.
-     * RestartCutoffHit is unused here and is produced once the restart loop lands;
-     * unlike Stop it must unwind through the normal backtrack/forget logging so
+     * RestartCutoffHit: the restart cutoff was reached, so abandon this pass; unlike
+     * Stop it must unwind through the normal backtrack/forget logging so
      * the proof stays balanced for the restart that follows.
      */
     enum class SearchResult

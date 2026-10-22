@@ -307,23 +307,16 @@ auto run_holey_no_overlap_equals_test(bool proofs, bool swapped) -> void
     check_results(proof_name, expected, actual);
 }
 
-// The same interleaved shape with a *view* as the second operand, which is the
-// one instance here whose witness is not spelled entirely in intervals.
-//
-// A view has no range literal (#882), so a run of values it cannot take is
-// spelled out value by value in the reason -- and the second operand is the one
-// whose runs cost lemmas. The witness has to recognise those single-value
-// literals as one run again, or it pays two lemmas per value instead of two per
-// run; the proof still verifies either way, which is why this is checked by
-// diffing proof bytes against the interval spelling rather than by a lane going
-// red. Measured on this instance: putting the run back together saves nine
-// proof lines -- 759 against 768 at --seed=1, 755 against 764 at 424242, 742
-// against 751 at 999. The absolute size moves with the seed, since this test
-// enumerates under a randomised branching order; the nine lines do not.
-//
-// It matters more than a handful of lines because it is the only coverage of the
-// witness reading a run out of literals it did not write as a range: everything
-// else in this file hands it interval literals.
+// The same interleaved shape with a *view* as the second operand. It was written
+// when this was the one instance here whose witness was not spelled entirely in
+// intervals: a view had no range literal, so a run of values it could not take
+// was spelled out value by value in the reason, and the witness had to recognise
+// those single-value literals as one run again or pay two lemmas per value
+// instead of two per run (nine proof lines on this instance). Since #882 and #904
+// a view owns its range literals and the walk states its runs as ranges, so a
+// run through a view now costs what a bare one does. The test checks solutions
+// and that the proof verifies, not the proof's shape: the old per-value spelling
+// verified too.
 auto run_holey_no_overlap_view_equals_test(bool proofs) -> void
 {
     print(cerr, "holey no overlap equals with a view operand{}", proofs ? " with proofs:" : ":");
@@ -347,7 +340,7 @@ auto run_holey_no_overlap_view_equals_test(bool proofs) -> void
 
     // A non-zero offset, deliberately: `v + 0` deviews onto the underlying
     // variable in the proof and gets that variable's range literals, so it would
-    // not exercise the per-value spelling at all.
+    // not exercise the view's own range literals at all.
     vector<Integer> shifted;
     for (const auto & v : lower_first)
         shifted.push_back(v - 1_i);

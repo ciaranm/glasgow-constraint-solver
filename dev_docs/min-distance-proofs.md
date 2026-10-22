@@ -277,15 +277,18 @@ the rest of propagation lands `z` on an achievable level anyway.
 ## Costs and measured numbers
 
 Per strict matching tightening the certificate is `O(|M| p^2)` RUP lines (each
-edge's at-most-one has `<= 2p` literals, hence `O(p^2)` pairwise clauses) plus
-`O(|M|)` pol lines; all are `Temporary`, forgotten when the justification scope
-closes, so they never enter the live database (VeriPB's hinted-RUP cost model).
-The directed test `min_distance_matching_test.cc` pins the smallest instance
-that exercises it: `p=4`, `|A|=5`, and a matching of two edges leaving one site
-unmatched. Its root refutation is 66 rup lines — 62 guarded pairwise clauses
-(two edge at-most-ones over eight literals each, `C(8,2)` apiece, plus the
-unmatched site's four literals, `C(4,2)`) and one at-least-one per position —
-combined by 4 pol lines, three closing the at-most-ones and one summing them.
+edge's at-most-one has `<= 2p` literals, hence `O(p^2)` pairwise clauses) plus,
+since #805's shared fold, a fold's worth of `pol`s and one `ia` pin per
+at-most-one and one summing `pol`. All of those are `Temporary`, forgotten when
+the justification scope closes, so they never enter the live database (VeriPB's
+hinted-RUP cost model); the at-least-ones are the tracker's, written on first
+use and cached. The directed test `min_distance_matching_test.cc` pins the
+smallest instance that exercises it: `p=4`, `|A|=5`, and a matching of two edges
+leaving one site unmatched. Its root refutation, the first use, is 85 lines — 62
+guarded pairwise clauses (two edge at-most-ones over eight literals each,
+`C(8,2)` apiece, plus the unmatched site's four literals, `C(4,2)`), one
+at-least-one per position, 14 fold `pol`s, three `ia` pins, one summing `pol`
+and the closing RUP. (Before #805 it was 66 rup lines combined by 4 pol lines.)
 
 The grid measurements below bear out the trade. Each is reproducible from a
 checkout with

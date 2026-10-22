@@ -9,15 +9,15 @@
 namespace gcs
 {
     /**
-     * \brief For every positive value v that appears in `vars`, the value
-     * v-1 must appear at a strictly earlier position.
+     * \brief For every value v >= 2 that appears in `vars`, the value v-1
+     * must appear at a strictly earlier position. 1 may appear anywhere.
      *
      * Equivalent to `ValuePrecede` with the implicit chain
      * `[1, 2, ..., max_possible]`. Non-positive values (zero and negatives)
      * are unconstrained — they may appear at any position.
      *
      * In an array of length n, no element can take a value greater than n,
-     * because the chain forces v distinct earlier positions to host
+     * because the chain forces v-1 distinct earlier positions to host
      * 1, 2, ..., v-1 before any v can appear. To exploit this, the
      * implementation clamps the chain at min(max_possible_value, n) and
      * adds explicit upper-bound enforcement on each variable when the

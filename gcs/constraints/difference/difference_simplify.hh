@@ -13,7 +13,8 @@ namespace gcs
 {
     /**
      * \brief What the difference-logic root simplification stage did, filled in
-     * the first time the propagator runs.
+     * when the stage runs, from the root initialiser installed alongside the
+     * propagator.
      *
      * A simplification stage that silently does nothing preserves the solution
      * set, adds no OPB content, leaves every proof verifying and leaves every

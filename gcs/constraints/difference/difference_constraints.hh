@@ -59,9 +59,11 @@ namespace gcs
      * work, because bounds crawl along the graph one propagator wake at a time
      * (the paper's Example 8, measured in `examples/difference_chain`).
      *
-     * This propagator is bounds consistent for the system as a whole: it runs
-     * Bellman-Ford from the current lower bounds over the graph and from the
-     * current upper bounds over its reverse, and pushes every bound the system
+     * This propagator is bounds consistent on the node variables with respect to
+     * the edges whose conditions currently hold (so for the system as a whole
+     * when every edge is unconditional): from the current lower bounds over the
+     * graph and from the current upper bounds over its reverse, by default
+     * incrementally (see incrementally()), it pushes every bound that sub-system
      * implies in one pass. It reads and writes bounds only, so it never removes
      * an interior value, and gcs domains may have holes where the paper's
      * Theorem 2 assumes ranges.
@@ -147,7 +149,7 @@ namespace gcs
          * certify), which conditions would close a negative cycle if they held
          * (they are fixed false, which is an inference and is proved), and which
          * nodes are left with no edges. It is the paper's section 5.2, and its
-         * section 6.3 measures it as most of the difference-logic win --- but
+         * section 6.4 measures it as most of the difference-logic win --- but
          * that is a claim about their solver, so it can be switched off here and
          * checked rather than inherited.
          */
@@ -158,9 +160,10 @@ namespace gcs
          * it runs.
          *
          * Shared, not copied, so it survives Problem::post cloning the
-         * constraint, and it is filled in during the first propagation rather
-         * than at post time. A stage that silently did nothing would pass every
-         * other check there is, so these counters are what the tests assert on.
+         * constraint, and it is filled in by the root initialiser, before
+         * search, rather than at post time. A stage that silently did nothing
+         * would pass every other check there is, so these counters are what the
+         * tests assert on.
          */
         auto reporting_simplification_to(std::shared_ptr<DifferenceSimplificationStats>) -> DifferenceConstraints &;
 

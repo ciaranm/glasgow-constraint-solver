@@ -20,8 +20,9 @@ namespace gcs
      * \brief A live, growable set of nogoods, shared between the Nogoods
      * constraint's propagator and whoever appends to it during search (the
      * restart loop). Held by shared_ptr so a nogood can be added mid-search while
-     * the propagator reads the same store; the propagator initialises a newly
-     * added nogood's watches lazily on its next fire.
+     * the propagator reads the same store. The scan path initialises a newly
+     * added nogood's watches lazily on its next wake; the refined path does so only
+     * at its next root re-propagation (normally the next restart; see issue #1390).
      *
      * It is owned by the search driver (or, later, a per-thread parallel worker),
      * never by user code --- restart nogoods are an internal mechanism.
@@ -50,9 +51,10 @@ namespace gcs
      * \brief Forbid each of a set of nogoods --- for every nogood, at least one
      * of its literals must be false.
      *
-     * Each nogood is a conjunction of `=` / `≠` / `≥` / `≤` literals (the
-     * decisions on a refuted branch); the constraint asserts the negation of each
-     * conjunction, i.e. the clause of the negated literals. Propagation is
+     * Each nogood is a conjunction of `=` / `≠` / `≥` / `<` / `∈ [lo, hi]` /
+     * `∉ [lo, hi]` literals (the decisions on a refuted branch); the constraint
+     * asserts the negation of each conjunction, i.e. the clause of the negated
+     * literals. Propagation is
      * per-clause unit propagation by two watched literals with *entailment-based*
      * watching: a literal `x ≥ 10` counts as held once `lower(x) ≥ 10`, so an
      * `x ≥ 12` bound makes it hold too. The maintained consistency is unit
@@ -74,8 +76,8 @@ namespace gcs
         // Whether to use refined per-literal watches (true) or the coarse
         // wake-on-every-trigger-var-and-scan-the-whole-store path (false). The
         // fixed-nogoods constructor defaults to refined; the growable-store
-        // constructor (used by the restart loop) stays coarse until the
-        // growable catch-up is converted (issue #335, stage C-2).
+        // constructor defaults to coarse, and the restart loop asks for refined
+        // unless GCS_LEARNED_NOGOODS_SCAN is set (issue #335, stage C-2).
         bool _refined;
 
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
@@ -98,7 +100,8 @@ namespace gcs
          * since a later-learned nogood may mention any of them).
          *
          * \param refined use refined per-literal watches; defaults to false
-         * because the growable catch-up is not yet converted (stage C-2).
+         * (the coarse scan path). The restart loop passes true unless
+         * GCS_LEARNED_NOGOODS_SCAN is set (stage C-2, issue #335).
          */
         Nogoods(std::shared_ptr<NogoodStore> store, std::vector<IntegerVariableID> trigger_vars, bool refined = false);
 

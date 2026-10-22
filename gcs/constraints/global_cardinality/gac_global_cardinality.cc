@@ -331,7 +331,7 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
         // witnesses a capacity-driven Hall violator: grow a set of
         // variables confined to cover values whose total upper capacity
         // is too small. (Demand-driven infeasibility -- too much lower
-        // demand for the suppliers -- is still asserted.)
+        // demand for the suppliers -- is the demand cut's, below.)
         int unmatched = -1;
         for (std::size_t i = 0; i < n && unmatched < 0; ++i) {
             long long in = 0;
@@ -473,9 +473,9 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                                    out = gcc_demand_reason(state, vars, values, counts, demand_cut, suppliers);
                                }});
         else if (closed && unmatched >= 0)
-            // A closed variable with no cover value left: the per-variable
-            // In constraint certifies this, so leave it to that rather
-            // than raise an unjustified contradiction here.
+            // A closed variable with no cover value left: the closed
+            // restriction's own propagator certifies this, so leave it to
+            // that rather than raise an unjustified contradiction here.
             return PropagatorState::Enable;
         else
             // An infeasible flow has either an unassignable variable

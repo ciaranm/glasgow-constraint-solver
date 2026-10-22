@@ -275,10 +275,10 @@ set_tests_properties(minizinc-disjunctive-strict-opt PROPERTIES SKIP_RETURN_CODE
 # The difference-logic presolver is invisible to solution equivalence and to
 # proof verification alike, so this one also asserts on its counters: four
 # lifted edges over four nodes, and the two constraints that are not
-# difference-shaped classified rather than quietly ignored. The zero says
-# all four arrived as `int_lin_le`, which is the whole reason this needs no
-# predicate of its own; a flattener that started emitting `int_le` would
-# still lift four edges, but they would be counted here instead.
+# difference-shaped classified rather than quietly ignored. All four arrive
+# as `int_lin_le`, which is the whole reason this needs no predicate of its
+# own, and the reader recovers each as a LessThanEqual, so they are counted
+# as comparison edges (below).
 #
 # These names are also the contract between ComponentStats::entries() and the
 # generic %%%mzn-stat loop in fzn_glasgow.cc: each is component_name() and an

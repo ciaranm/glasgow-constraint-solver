@@ -231,10 +231,13 @@ way and there is nothing to fix.
 
 Not every gcs feature wants an `mznlib/` override. The difference-logic
 presolver (#571) is the worked example: it looks for two-term
-`LinearLessThanEqual`s with coefficients `+1` and `-1` and lifts them
-into one global propagator, and MiniZinc 2.10's flattener already emits
-exactly that shape — `t[i] + 2 <= t[i+1]` becomes
-`int_lin_le([1,-1],[t_i,t_i+1],-2)`, and so does a bare `x <= y`. The
+`LinearLessThanEqual`s with coefficients `+1` and `-1`, and for
+comparisons such as `LessThanEqual`, and lifts them into one global
+propagator, and MiniZinc 2.10's flattener already emits that shape —
+`t[i] + 2 <= t[i+1]` becomes `int_lin_le([1,-1],[t_i,t_i+1],-2)`, and so
+does a bare `x <= y`; `fzn-glasgow` reads each of those back as a
+`LessThanEqual` (`8c6cb43d`), which the presolver lifts as a
+comparison. The
 shape is in the model whether or not anybody asks for it, so the whole
 binding is one command-line flag:
 
