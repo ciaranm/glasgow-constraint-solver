@@ -296,7 +296,7 @@ else.
 **Nearly, but not, the same family.** Three neighbours:
 
 - `gcs/constraints/equals/` — the same reified-dispatcher pattern and the same
-  twelve-classes-over-one shape, but a separate encoding (see
+  many-classes-over-one shape (six there), but a separate encoding (see
   [Reification](#reification)), a separate propagator and a separate
   `hints.hh`. The template's family list flags them as a candidate merge and
   the `equals` audit settled it: **keep them separate.**
@@ -449,9 +449,11 @@ constant (`optional_single_value`), and the reification condition evaluated
 against the initial state. No auxiliary variables, no backtrackable state, no
 precomputation, no root cost worth measuring.
 
-No constructor validates anything. `LessThan` and `GreaterThan` used to reject
-aliased operands; since #1088 they accept them and the propagator contradicts
-instead (rule 8).
+The constructor validates one thing: since #1215 it throws `IntegerOverflow`
+unless the value in the condition lies in the bounded range or one past its top
+([integer-ranges.md](../integer-ranges.md)). `LessThan` and `GreaterThan` used
+to reject aliased operands; since #1088 they accept them and the propagator
+contradicts instead (rule 8).
 
 ### Propagator inventory
 
@@ -582,9 +584,11 @@ construction.
 
 **Overflow.** The `+ 1_i` in every pass (`v2_bounds.second + (or_equal ? 1_i :
 0_i)` and its three siblings) goes through `Integer::operator+`, which throws
-`IntegerOverflow` rather than wrapping, so an operand bounded at
-`Integer::max_value()` gives a diagnosable exception. Not separately probed
-here; the mechanism is the same one `equals` verified UBSan-clean.
+`IntegerOverflow` rather than wrapping, and since #1214 no operand gets near
+`Integer::max_value()`: a declared domain or constant lies within
+±(2⁶⁰ − 1) and a view at most one bit further
+([integer-ranges.md](../integer-ranges.md)). Not separately probed here; the
+mechanism is the same one `equals` verified UBSan-clean.
 
 ### Interval efficiency
 
@@ -936,16 +940,18 @@ ctest lanes** — one per variant, selected by an argv mode
 (`ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff le_notif lt lt_if lt_iff
 lt_not`, the last two being `LessThanEqualNotIf` and `LessThanNot`) — plus
 fourteen view-sweep lanes, for 28 of the 31 lanes matching `comparison` at
-`61112ed0`. The
-other three are `scp_chain_multi_comparison_unsat` and the two
-`difference_chain-presolved-comparison-*` lanes.
+`61112ed0`. The other three are `scp_chain_multi_comparison_unsat` and the two
+`difference_chain-presolved-comparison-*` lanes. Since #1208 each view-sweep
+lane has a `_view_mixed_late` twin, which names every view again in a vacuous
+row posted after the constraint under test, so at `86caad24` it is 42 of 45.
 
 - **Enumeration with per-node GAC assertion.** `solve_for_tests_checking_gac`
   for the whole matrix, in both the unreified and reified helpers. This is the
   evidence behind every rule's `GAC` claim: bounds pruning achieving domain
   consistency is a *property* of a binary comparison rather than an obvious
   fact, and it is checked at every node rather than argued.
-- **VeriPB really runs**, for every case. Seeded, all twelve modes:
+- **VeriPB really runs**, for every case. Seeded, the twelve modes there were
+  before #915 added `le_notif` and `lt_not`:
   **1,356 proofs, all verifying, in 3.35 s total** — 51 for each of `ge` and
   `le`, 47 for each of `gt` and `lt`, and 145 for each of the eight reified
   modes.
@@ -1219,7 +1225,8 @@ rules is a bare RUP against a row the OPB carries under a label the presolver
 and cake both agree on.
 
 `None.` on cost gaps in the proof direction, too: the family emits one line per
-inference and no lemmas, and there is no interval degradation anywhere ([Variable kinds and views](#variable-kinds-and-views)).
+inference and no lemmas, and there is no interval degradation anywhere
+([Variable kinds and views](#variable-kinds-and-views)).
 
 **One model-writing gap, not this family's own**: a range-literal reification
 condition cannot be written into the OPB model at all, so a proving run throws
@@ -1393,9 +1400,9 @@ separate. There is nothing here of the kind #819 and #889 found in `equals`.
   does here.
 - [`equals.md`](equals.md) — the sibling family, and the document to read
   beside this one. The two are the same shape and differ in exactly the places
-  worth noticing: `equals` needs proof flags and this does not, `equals` has
-  two view detours and this has none, `equals` had its trigger set tuned twice
-  and this has nothing to tune.
+  worth noticing: `equals` needs proof flags and this does not, `equals` had
+  two view detours until #904 and this never had one, `equals` had its trigger
+  set tuned twice and this has nothing to tune.
 
 ## Developer commentary
 
