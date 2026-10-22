@@ -122,7 +122,7 @@ being copied into plain text and a dropped one inverts the procedure.
 |---|---|---|---|
 | **JP 3.1** (Not-Equals) | `rup x=v ∧ y=v ⇒ 0 ≥ 1` | Thm 2.8 | `equals`'s not-equal-to-fixed-operand rule; `all_different`'s value-consistency and forced-value rules, against one pair of its clique |
 | **JP 3.2** (Comparison) | `rup y≥v ∧ x<u ⇒ 0 ≥ 1` for `X − Y ≥ B`, precondition `B ∈ {0,1}` | Thm 2.9 | every bound transfer in `comparison`, and `equals`'s bounds-intersection and interval-bridge rules |
-| **JP 3.9** (Empty intersection for Element) | per `w` in the entry's domain, `rup R ⇒ y≠v + xv≠w ≥ 1`; then `rup R ⇒ y≠v ≥ 1` | Thm 2.8 per line, Thm 3.2 for the collapse | `element`'s index-support rule |
+| **JP 3.9** (Empty intersection for Element) | per `w` in the entry's domain, `rup R ⇒ y≠v + xv≠w ≥ 1`; then `rup R ⇒ y≠v ≥ 1` | Thm 2.8 per line, Thm 3.2 for the collapse | `element`'s index-support rule until #929, which states the same fact over runs with `equals`'s interval walk |
 | **JP 3.10** (Missing value for Element) | per index value `i`, `rup R ⇒ z≠v + y≠i ≥ 1`; then collapse to `rup R ⇒ z≠v ≥ 1`[^jp310] | as JP 3.9 | `element`'s result-union-value rule, for a run one value wide |
 | **JP 3.11** (Single value for Element) | one step, `rup R ⇒ xi≠v ≥ 1`, with the index a singleton | Thm 2.8 | `element`'s selected-entry rule, in the entry-pruning direction |
 | **JP 3.12** (Equality propagation) | `rup y=v ⇒ x=v ≥ 1`[^jp312] | Thm 2.8, twice | `equals`'s equal-to-fixed-operand rule |

@@ -286,8 +286,8 @@ variables' bounds with `define_bound`, which writes an OPB row and installs an
 initialiser but posts no constraint.
 
 **Shares code with, and this is the widest coupling in the arc so far.** Four
-other families run code from this directory, and a change to it is a change to
-them:
+other constraints, in three other families, run code from this directory, and a
+change to it is a change to them:
 
 | Helper | Also used by |
 |---|---|
@@ -318,12 +318,13 @@ OPBs — the clique's `NotEquals` pairs are named for `not_equals` — so they a
 two models of one fact, not two strategies for one model. The examples'
 `--all-different not-equals` arm is the clique.
 
-**Not a candidate merge, and one correction to the family list.** The list
-describes this document as "GAC and VC variants, `AllDifferentExcept`,
+**Not a candidate merge, and one correction to the family list, since made.**
+The list described this document as "GAC and VC variants, `AllDifferentExcept`,
 `ExceptZero`". It also covers the BC arm, which landed after the list was
 written (#970), and `SymmetricAllDifferent`, which lives in this directory,
 shares the encoding and the generalised arc consistent propagator, and has no
-other home. `GlobalCardinality` generalises `AllDifferent` mathematically but
+other home; the list's row now names both. `GlobalCardinality` generalises
+`AllDifferent` mathematically but
 shares no code with it and has its own Hall reasoning, so it stays in the
 counting family.
 
@@ -679,7 +680,10 @@ file, which is how the arm's fixed-at-post bug went unseen. See
 the dense table has already bounded, and the bounds consistent propagator's
 `s.bounds[nb] + 2_i` and `ub + 1_i` go through `Integer`'s checked operators,
 which throw `IntegerOverflow` rather than wrap. `SymmetricAllDifferent`'s
-`start + Integer(n) − 1_i` likewise. Not separately probed; the mechanism is the
+`start + Integer(n) − 1_i` likewise. Since #1215 the constructors also refuse,
+with `IntegerOverflow`, an excluded value or a start outside the bounded range
+([integer-ranges.md](../integer-ranges.md)), and since #1214 no domain or view
+comes near the edge of `Integer`. Not separately probed; the mechanism is the
 one `equals` verified UBSan-clean.
 
 ### Interval efficiency
@@ -1298,7 +1302,8 @@ Five binaries, and a family whose coverage is uneven in an instructive way.
 
 - **`all_different_test`**, run as three lanes — `all_different_constraint` at
   the default, `all_different_constraint_bc`, and since #999
-  `all_different_constraint_vc` — each with a mixed view lane, and the full
+  `all_different_constraint_vc` — each with a mixed view lane and, since
+  #1208, its `_view_mixed_late` twin, and the full
   per-position view sweep behind `GCS_ENABLE_VIEW_WRAP_SWEEP`. Six variables per
   instance: seven fixed rows, including #108's two constant-in-a-Hall-set
   crashes and #254's all-constant cases, and forty seeded random rows over
@@ -1314,7 +1319,8 @@ Five binaries, and a family whose coverage is uneven in an instructive way.
   is installed. Seeded and reproducible with `--seed=N`. Capped by default; see
   below.
 - **`all_different_except_test`**, one lane and a mixed view lane over four
-  positions; per-node GAC asserted; duplicate cases that exercise the forcing
+  positions, with its #1208 `_view_mixed_late` twin; per-node GAC asserted;
+  duplicate cases that exercise the forcing
   initialiser at test widths, and since #1004 six more over a repeated variable
   with holes or as a view: an excluded value in a hole between two runs, one
   outside the bounds, one in no domain, and negated and offset views.
@@ -1349,10 +1355,13 @@ Five binaries, and a family whose coverage is uneven in an instructive way.
   conformity](#cake-conformity); #1004's `all_different_except_duplicate` is the
   first to repeat a variable. **Four MiniZinc differential tests**
   (`alldifferentexcept`, `alldifferentexceptzero`, `symmetricalldifferent`, and
-  since #997 `symmetricalldifferentoffset`, the only non-1-based one) and three
-  XCSP3 ones (`all_different_matrix`, and since #1002 `all_different_except` and
-  `all_different_except_values`). Plain `all_different` has no MiniZinc test of
-  its own, being reached by a great many models.
+  since #997 `symmetricalldifferentoffset`, the first non-1-based one), four
+  #1011 shape lanes over this family's globals (`alldifferent-shapes`,
+  `alldifferentexcept-shapes`, `symmetricalldifferent-shapes` and
+  `symmetricalldifferent-negative`; see below), and three XCSP3 ones
+  (`all_different_matrix`, and since #1002 `all_different_except` and
+  `all_different_except_values`). Plain `all_different`, reached by a great
+  many models, had no MiniZinc test of its own before #1011's shape lane.
 - **`element_auto_test`** checks each level's hole-sensitivity verdict, from the
   side of an `Element` whose result only an `AllDifferent` observes (#999).
 - **Examples with proving lanes that reach the family**: `seat_moving` under its
@@ -1495,7 +1504,8 @@ these rows only.
 **The same tree with 23.1% fewer propagator calls**, 2.0% fewer instructions,
 and 2.5% faster, the two ranges not overlapping. Instructions from `perf stat`,
 three interleaved pairs, stable to 0.03%; cycles in the same runs moved by
-−0.8%, −2.5% and −2.7%, so a single cycle count would have understated it. Every call removed is a wake on an interior removal that
+−0.8%, −2.5% and −2.7%, so a single cycle count would have understated it.
+Every call removed is a wake on an interior removal that
 found nothing, which is what #819 measured for `NotEquals`; the saving in time is
 small because on this model most of the work is the other constraints'.
 
@@ -1913,4 +1923,3 @@ again, and the `.scp` is written from the unprepared originals the problem
 keeps. Nothing is wrong. It is recorded because it is the shape of #865, where a
 `clone()` did lose a member, and the next person to reach for `_vars` after
 `prepare` in either class should know which of the two they are in.
-
