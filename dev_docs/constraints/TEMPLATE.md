@@ -923,7 +923,14 @@ entry per rewrite, with fields: what pattern is matched; what is posted or
 strengthened; whether the rewrite is posted in derived mode; the soundness
 argument; the proof technique that certifies the rewrite; and whether the
 rewrite is *neutral* with respect to the propagators that consume it (which is
-what makes a node-for-node soundness tripwire available).
+what makes a node-for-node soundness tripwire available). Two more fields
+carry over from the rule entry, because the paper's proof-size column and the
+mutation-lane inventory need them per rewrite: **Proof size** and
+**Tightness**. A bound the presolver pins at the root, such as a makespan
+bound, is a rewrite too, and gets an entry. What the installed machinery's
+assertions carry in hints-only mode (it is installed under
+`CurrentlyUnnamedConstraint`, so its hints say `constraint_id unnamed`) goes in
+**Proof-time state**.
 
 **Added, and these are the ones that matter.** Three sections with no analogue
 in a constraint document:
@@ -948,7 +955,22 @@ interval efficiency, tests, benchmarks, both performance sections, gaps, next
 steps, prior art — carries over unchanged. **Interval efficiency** carries over
 because a donor scan is exactly the shape that walks values without looking
 like a propagator: it runs once, over the whole model, and a scan proportional
-to a domain's width is the same hazard wherever it sits.
+to a domain's width is the same hazard wherever it sits. For a scheduling
+presolver the same question is asked of the **horizon**, on the proof side as
+well as the scan: a pass that walks every time point, or a pinned bound whose
+certificate sums rows over a window, is proportional to that span. Keep four
+costs apart there and in **Initialisation and global data**: the presolver's
+own discovery pass; the initialisers it installs, which run once at the root
+and may cost CPU with proofs off too; the installed machinery's propagation
+during search; and certificate generation. They need not scale alike. An
+installed makespan initialiser can scan the whole candidate horizon while the
+pass is horizon-free and the certificate covers a short window (#1267). Three
+smaller adjustments: the frontend table lists **entry points** (the option or
+flag that turns the presolver on, per frontend), with `frontend gap (#nnn)`
+where a frontend has none; a budget that applies only with proofs on is a
+strength change with proofs on, and goes in **Proof-logging gaps**; and a
+presolver whose answer depends on the presolvers run before it says so under
+**Relation to other families**.
 
 ---
 
