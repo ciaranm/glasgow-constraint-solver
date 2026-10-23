@@ -6,7 +6,8 @@
 > **Audited** 2026-10-09 at `86caad24` ·
 > **Open issues** filed by this audit: #1307 (a `Circuit` over an empty
 > array crashes), #1306 (with `with_prune_skip(false)`, VeriPB can reject the
-> `SCC` proof, because two rules' certificates need prune skip to have run),
+> `SCC` proof, because two rules' certificates need prune skip to have run;
+> fix open as #1367),
 > #1317 (the `SCC` propagator builds its whole-scope reason on every call,
 > proofs off too, and with proofs defines a short-reason flag on every call),
 > #1318 (three of `Circuit`'s setters do nothing, and several `SubCircuit`
@@ -1204,8 +1205,8 @@ carrying the reason or `sr`; on the 12-node enumeration, 857 firings wrote
 - **Algorithm** — as rule 7, plus a pass over the root's domain.
 - **Why it is true** — `w` can reach only its own subtree and earlier ones, and
   with the root's edge spent on `w` nothing reaches the later subtrees.
-- **Proof technique** — JP 6.5, `ReachTooSmall` from node 0 under the assumed
-  edge.
+- **Proof technique** — as rule 7, JP 6.5, `ReachTooSmall` from node 0 under
+  the assumed edge.
 - **Reason** — the whole-scope reason, through `sr`, at every level.
 - **Assertion** — `a 1 ~i[_1][eq1] 1 ~f[15][sr] >= 1
   ::circuit:((constraint_id _7));` (`fire/circuit_prune_root_test_inf.pbp`).
@@ -1842,8 +1843,9 @@ different harness. They are not re-measured here.
    `explore` and the coroutine domain walks. A profile item, worth measuring
    against Gecode's propagator, which does the same work in about a sixth of
    the time per node.
-11. **Name only the node values in `SubCircuit`'s pigeonhole** (#1326): the counting needs every node value, not every declared
-    value, so either the range `0..n-1` or #939's cover form keyed on the node
+11. **Name only the node values in `SubCircuit`'s pigeonhole** (#1326): the
+    counting needs every node value, not every declared value, so either the
+    range `0..n-1` or #939's cover form keyed on the node
     values. Small; when done, the comment at `subcircuit.cc:546–548` and
     `large-domains.md`'s `subcircuit` paragraph change with it, and a
     proof-size lane over a wide-declared successor under `subcircuit::SCC`,
