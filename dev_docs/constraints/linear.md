@@ -367,6 +367,9 @@ hands off to one, which is `Tabulated` on small domains (see
   `pol`s on the row named by
   `ConstraintProofModelData<ReifiedLinearInequality>::primary_row_role`.
   That role is public API: changing which row it names breaks the presolver.
+  With `disabling_lifted_donors()` (off by default) it also disables the
+  propagators of the unconditional donors it lifted
+  ([`difference_logic.md`](../presolvers/difference_logic.md)).
 - `makespan_links` reads the same donors for `start + d ≤ makespan` links.
 - None rewrites into this family.
 

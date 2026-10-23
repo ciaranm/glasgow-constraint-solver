@@ -343,8 +343,9 @@ else.
 - `gcs/constraints/equals/` — the same reified-dispatcher pattern and the same
   many-classes-over-one shape (six there), but a separate encoding (see
   [Reification](#reification)), a separate propagator and a separate
-  `hints.hh`. The template's family list flags them as a candidate merge and
-  the `equals` audit settled it: **keep them separate.**
+  `hints.hh`. The template's family list flagged them as a candidate merge,
+  and the `equals` audit settled it: **keep them separate**, as the list's row
+  now records.
 - `gcs/constraints/linear/` — a two-term `LinearLessThanEqual` expresses
   exactly what this family does, emits the same labelled row when both operands
   are plain, and is lifted by the same presolver. With a view operand the

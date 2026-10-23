@@ -325,7 +325,7 @@ reasons keep them out:
     - On `aircraft-disassembly` 06 it fixes 3,154 conditions at the root,
       and the proof verifies.
     - The design note calls this "a real obstacle, not a choice" ("Deliberately
-      deferred"); that overstates it (#1373).
+      deferred"); that overstates it (#1373; corrected by #1396, open).
   - This is the gap that matters, because it is how MiniZinc delivers every
     conditional difference.
   - Lifting it would open MiniZinc routes to two shapes of #1371:
@@ -341,7 +341,8 @@ reasons keep them out:
     invented `ltn` role. So all four are citable. `primary_row_role` publishes
     none of them, because the row is not the `sum ≤ value` a citer asks for. Two
     code comments still say the linear `NotIf` row is under `ltn`
-    (`difference_logic.cc:248`, `linear_inequality.hh:151`). Both are stale.
+    (`difference_logic.cc:248`, `linear_inequality.hh:151`). Both are stale
+    (corrected by #1396, open).
   - Nothing in gcs constructs these forms except through the base classes'
     constructors.
   - The issue's argument for closing both families together still holds, and
@@ -660,7 +661,8 @@ which `difference.md` owns:
   more than the conditions it fixes.
 
 A per-source distance threshold prunes paths that cannot matter. The design
-note's `O(n² log n + nm)` is the Fibonacci-heap bound. The pass has no
+note's `O(n² log n + nm)` is the Fibonacci-heap bound (corrected by #1389,
+open). The pass has no
 budget, and it does not observe `--timeout`: #816 is about initialisers in
 general, and a `--timeout 0.05` run took 1.32 s at the root in the
 fact-check. Measured in the same runs:
@@ -1484,8 +1486,8 @@ the equivalence lanes and the tripwire catch those.
 - **The `±(2⁶⁰ − 1)` chain** of [Robustness](#robustness-and-limits). The
   presolver tests' weights are small; `difference.md`'s `run_overflow_test`
   covers the posted constraint only.
-- **A mutation lane.** There is none, as there is in the scheduling
-  presolvers. Every mutation result in the design note was a one-off at
+- **A mutation lane.** There is none, though the scheduling presolvers have
+  one. Every mutation result in the design note was a one-off at
   bring-up, and the tightness claims rest on them.
 - **Assertion levels.** No test runs the presolver above
   `AssertionLevel::Off`.
@@ -1854,44 +1856,55 @@ literature.
     - The section "Why the tests assert on counts" says, in its last
       paragraph, that "the cross-check is on unconditionally". Its own
       earlier paragraph, and `941a7837`, say the runtime self-audit was
-      removed.
+      removed. Corrected by #1396, open.
     - "Frontends" says MiniZinc's `int_lin_le` is "exactly the two-term
       `LinearLessThanEqual` the presolver lifts". The FlatZinc reader now
       recovers it as `LessThanEqual`, and `minizinc-differencelogic` pins
-      `differenceLogicComparisonEdgesLifted=4`.
+      `differenceLogicComparisonEdgesLifted=4`. Corrected by #1396, open.
     - "Deliberately deferred" refers to "the RCPSP/max measurement below",
-      which is above it.
+      which is above it (corrected by #1389, open).
     - "Deliberately deferred" also calls `Iff` lifting "a real obstacle, not a
       choice", and "What is lifted" says it "cannot be lifted as things stand".
-      The obstacle is the one-role-per-donor API (#1373).
+      The obstacle is the one-role-per-donor API (#1373). Both corrected by
+      #1396, open.
     - "Deliberately deferred" says a linear `NotIf`'s "`ltn` row" does not say
       what a citer wants. Since #908 (`f85e63bf`) that row is under the empty
-      role and states the integer negation.
+      role and states the integer negation. Corrected by #1396, open.
     - ":870" says "the hybrid is what the paper measures as best", and so
       does `difference_logic.hh`. That comparison is not in the paper (see
-      [Options](#options)).
+      [Options](#options)). Both corrected by #1396, open.
     - Its measurement tables predate incremental propagation and this audit
       (see [CPU performance](#cpu-performance)).
 - **Stale text in code and other notes at `86caad24`, out of this stack:**
   - **The `ltn` role.** `difference_logic.cc:248` and `linear_inequality.hh:151`
     still put a linear `NotIf`'s row under `ltn`; it has been under the empty
-    role since #908 (`f85e63bf`).
+    role since #908 (`f85e63bf`). Corrected by #1396, open.
   - **`difference_logic.hh`.**
     - `:62–64` says half-reified edges are "where the paper's scheduling wins
       come from". The paper does not say that. Its RCPSPmax gain comes from
-      unconditional precedences and simplification.
+      unconditional precedences and simplification. Corrected by #1396,
+      open.
     - `:230` cites "section 6.3" for simplification being most of the win;
-      the figures are section 6.4's, and do not hold for RCPSPmax.
+      the figures are section 6.4's, and do not hold for RCPSPmax. Corrected by
+      #1396, open.
+    - `:216–220`, and `difference_logic.cc:226–228`, say the global
+      propagator infers nothing about a condition "at all", the `.hh` calling
+      that the paper's `IncImp`. Root simplification fixes some conditions,
+      and inferring one from bounds is section 5.4's check (corrected by
+      #1389, open; the same words in the failure message at
+      `difference_logic_test.cc:391` are corrected by #1396, open).
   - **The difference sources.**
     - `difference_graph.hh:146–148` cites "section 6.3" for 320.95 against
-      312.94; that is Table 1 in section 6.4.
+      312.94; that is Table 1 in section 6.4. Corrected by #1396, open.
     - `difference_graph.cc:249–253` says "let the from-scratch pass below
-      refute it"; the stage now runs in an initialiser.
+      refute it"; the stage now runs in an initialiser. Corrected by #1396,
+      open.
   - **The presolver's test.** `difference_logic_test.cc:16–17` names a
-    "`differential` mode"; the differential runs inside `detection`.
+    "`differential` mode"; the differential runs inside `detection`. Corrected
+    by #1396, open.
   - **The int_lin_le shape.** The FlatZinc reader recovers it as
     `LessThanEqual` (`8c6cb43d`), but these still say it arrives as a
-    two-term `LinearLessThanEqual`:
+    two-term `LinearLessThanEqual` (all four corrected by #1396, open):
     - `minizinc/fzn_glasgow.cc:375–380`, the option comment;
     - `minizinc/CMakeLists.txt:277–281` ("The zero says all four arrived as
       `int_lin_le`", above a pin of `ComparisonEdgesLifted=4`);
