@@ -93,7 +93,8 @@ namespace gcs
         /// would be picked up --- and counted rather than guessed at.
         std::size_t skipped_reified = 0;
 
-        /// A Boolean donor with an operand whose declared domain reaches outside
+        /// A Boolean donor with an operand whose bounds, as the presolver sees them
+        /// after the root initialisers, reach outside
         /// `{0, 1}`. Over wider operands equality is not a parity constraint at
         /// all: `x = y` says far more than "the same number of them are
         /// non-zero", so lifting it would be unsound rather than merely weak.
@@ -132,7 +133,8 @@ namespace gcs
      * \par What is gathered
      *
      * Two donor families. A ParityOdd is a row directly. A Boolean `Equals` or
-     * `NotEquals` --- both operands' declared domains within `{0, 1}` --- is a
+     * `NotEquals` --- both operands' bounds within `{0, 1}` once the root
+     * initialisers have run --- is a
      * 2-XOR: `x != y` is `[x != 0] XOR [y != 0] = 1`, and `x = y` is the same
      * with one literal negated, since `!p` is `p XOR 1`. The second family is
      * where a MiniZinc model's `bool_eq` and `bool_not` rows come from, and it is

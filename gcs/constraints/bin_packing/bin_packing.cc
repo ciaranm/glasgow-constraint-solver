@@ -366,7 +366,7 @@ namespace
         logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_s + 1_i * branch_neg + 1_i * succ_s >= 1_i, ProofLevel::Top);
     }
 
-    // Emit one bin's Top-level scaffolding. Mirrors knapsack.cc
+    // Emit one bin's Top-level scaffolding. Mirrors knapsack_upfront.cc
     // `emit_scaffolding` specialised to k=1.
     //
     // Order is load-bearing for RUP closure: per-coord forward chains are
@@ -805,9 +805,10 @@ namespace
         // the surviving layer-n set. Emit ~S for dead intermediates; for
         // each item i, if the "items[i] == b" branch is never taken in any
         // surviving path, infer items[i] != b. (Note: we don't infer
-        // items[i] == b from this pass — that direction needs a separate
-        // argument involving all OTHER bins, which the per-bin sweep can't
-        // see. Per-bin GAC is one direction only.)
+        // items[i] == b from this pass, though bin b's constraint alone
+        // forces it when every surviving path takes the "items[i] == b"
+        // branch: #1346. This pass is one direction only, so it stops short
+        // of per-bin GAC.)
         int var_number = static_cast<int>(n) - 1;
         for (auto layer = completed_layers.rbegin(); layer != completed_layers.rend() && next(layer) != completed_layers.rend();
             ++layer, --var_number) {
@@ -990,9 +991,10 @@ namespace
     // backward reachability restricted to the static DAG, where a terminal
     // counts only if loads[b]'s domain allows its load. Then prune
     // items[i] != b wherever the "in bin b" edge has no alive support, and cut
-    // loads[b] down to the alive terminals. That is per-bin GAC, and the same
-    // inferences the upfront sweep (propagate_bin) draws: the two strategies
-    // differ only in the proof. Before issue #995 this sweep read no load, so
+    // loads[b] down to the alive terminals. That is per-bin GAC short of
+    // committing an item (#1346), and reaches the same fixpoint as the upfront
+    // sweep (propagate_bin), though within a call the two can draw different
+    // inferences; the proofs differ. Before issue #995 this sweep read no load, so
     // it pruned nothing at all.
     //
     // Proof: see justify below. It does not rely on the reified state flags

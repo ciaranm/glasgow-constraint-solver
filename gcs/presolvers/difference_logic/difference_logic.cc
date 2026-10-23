@@ -246,8 +246,8 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
         // Iff needs a *different* row of the donor's output: its two halves go
         // out under the roles r and f rather than under the empty role.
         // MustNotHold and NotIf state the integer negation, `y - x <= -d-1',
-        // which is still a difference row --- MustNotHold's even under the
-        // same empty role, NotIf's under `ltn' --- so those two are a
+        // which is still a difference row, and both go out under the same
+        // empty role --- so those two are a
         // deliberate gap rather than an impossibility, and one to close for
         // the comparison family at the same time. Counted rather than guessed
         // at.

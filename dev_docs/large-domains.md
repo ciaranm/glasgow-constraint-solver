@@ -660,10 +660,13 @@ Two kinds of check, and the difference matters:
   build an `IntervalSet` of its own and walk that, or take an interval and expand
   it with a plain `for (Integer v = lo; v <= hi; ++v)`. `State` sees neither, so
   each such loop needs its own counter declared at the loop. Four constraints
-  carry one, over five sites: `element.cc`'s sweep over unsupported result values
-  (now only on its per-value view path), `all_equal.cc`'s expansion of the
+  carried one, over five sites: `element.cc`'s sweep over unsupported result values
+  (later only on its per-value view path), `all_equal.cc`'s expansion of the
   intersection difference, `equals.cc`'s no-overlap reason, and `abs.cc`'s two
-  interior hole loops. The counter does not belong in `IntervalSet::each()`
+  interior hole loops. #924 and #882 have since removed the first two loops, and
+  their counters with them, and `plus_minus/gac.cc` (#192) and `reason.cc`'s
+  generic-reason materialisation (#935) carry counters of their own. The counter
+  does not belong in `IntervalSet::each()`
   itself, which is a general container used for deliberate enumeration —
   tabulation, and the tests.
 
@@ -917,10 +920,11 @@ now a `KnownTrip`:
   erases everything in one `erase_range` and leaves no remainder — the original
   probe made the hazard disappear by being too wide. (And a narrow entry reaches
   only half of that sweep; see below.)
-* `AllEqual` needs holes *and* a large difference. Bounds propagation runs first
-  (`all_equal.cc:95`) and collapses a merely narrow partner, so the hole has to
-  be spread across the full width: a two-value domain at the extremes leaves the
-  whole middle of the other variable to be removed one value at a time.
+* `AllEqual` needed holes *and* a large difference. Bounds propagation runs first
+  (`all_equal.cc:97-104`) and collapses a merely narrow partner, so the hole has
+  to be spread across the full width: a two-value domain at the extremes leaves
+  the whole middle of the other variable to be removed, which was one value at a
+  time and is now one range removal.
 
 **Three were not hazards at all**, and the entry in #833's source list was about
 a sibling rather than the constraint itself. Each is now `Clean`:
@@ -1345,9 +1349,10 @@ propagation work in #833.
 | #845 | `Power`, `PowerTable` | O(D) | a row of an enumerated relation | no — it *is* a table |
 
 **`Regular` and `MDD` are the easy ones, and the fix needs no checker feature.**
-Both deliberately widen their OPB alphabet to the union of the transition keys
-*and every value of every variable's initial domain*
-(`regular.cc:581-584`, `mdd.cc:465-471`), purely so that a value with no
+Both deliberately widen their OPB alphabet beyond the transition keys to the
+variables' initial domains — `Regular` to *every value of every variable's
+initial domain* (`regular.cc:602-605`), `MDD` per layer, to that layer's own
+variable's domain (`mdd.cc:470-477`) — purely so that a value with no
 transition gets an explicit `(x_i ≠ val) ∨ ¬(state_i = q)` row — the comment says
 it is "what veripb needs to verify the propagator's RUP-justified pruning of
 those values". But a value outside the transition keys entirely has no transition

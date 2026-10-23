@@ -3,8 +3,9 @@
 Working-design note for the `Regular` propagator. The high-level
 approach mirrors [`mdd.md`](mdd.md) (when written) and
 [`knapsack.md`](knapsack.md) (when written) — build the layered graph
-once in `prepare()`, emit the proof scaffolding (per-val backward
-chains, statically-dead-state lines) once at `ProofLevel::Top` via
+at the first propagator call and maintain it from then on, emit the
+proof scaffolding (per-val backward chains, statically-dead-state lines)
+once at `ProofLevel::Top` via
 `install_initialiser`, and run a slim per-call sweep that emits at
 most one cache-gated `~state[i][q]` line at `ProofLevel::Current`
 per state-death.
@@ -23,8 +24,9 @@ strategy is selected with the fluent
 | `Upfront` (default) | Upfront per-val backward chains + statically-dead-state lines at Top, then per-call cache-gated `~state[i][q]` lines for dynamic state-deaths. | `gcs/constraints/regular/regular.{cc,hh}` |
 | `Bacchus`          | Upfront Bacchus encoding (per-(i, q, v) transition extension variables + AL1s) derived from the natural OPB at Top; per-call propagator emits no proof. Deterministic automata only (not regex/NFA input). | `gcs/constraints/regular/regular_bacchus.{cc,hh}` |
 
-The OPB is identical across all three — automaton semantics, no propagator
-internals (see [Constraint definition](#constraint-definition) and
+The OPB says the same thing under all three — automaton semantics, no
+propagator internals, though `Bacchus` names its state flags and labels its
+forward chains differently (see [Constraint definition](#constraint-definition) and
 [OPB encoding](#opb-encoding) below). What differs is what each strategy
 derives in its initialiser at search root, and what its per-call
 propagator emits; the choice never changes the inferences drawn or the
@@ -34,8 +36,10 @@ The public `Regular` front-end (`gcs/constraints/regular/regular.{cc,hh}`)
 *is* the `Upfront` implementation; for `PerCall` and `Bacchus` its
 `prepare()` constructs the sibling implementation, installs it in full,
 and returns false so none of `Regular`'s own phases run. Those siblings
-are internal to the constraint (not part of the public API — they are no
-longer named in `gcs/constraints/regular.hh`). Everything posts
+are not meant to be posted directly (they are no longer named in
+`gcs/constraints/regular.hh`), though their headers are installed with the
+rest and a few tests post them (the large-domain audit lane,
+`integer_ranges_test`, `scp_reader_test`). Everything posts
 `Regular`; benchmarking picks a strategy with `with_proof_strategy(...)`.
 
 ## Default: `proof_strategy::Upfront`
@@ -235,7 +239,9 @@ derived constraints too.
 
 ### Cost
 
-The flags and lines grow as `n` times the live edges per layer. The
+The flags grow as `n` times the live edges per layer; the co-reachability
+lemmas and the rows over the run's flags add one line per live state per root
+value, whatever the edges. The
 pairwise at-most-one adds about the live states times the edges into
 them, per layer. Measured on 2026-10-05 with VeriPB 3.0.2, with a second,
 deterministic `Regular` posted to keep the solution count small:
@@ -252,7 +258,9 @@ deterministic `Regular` posted to keep the solution count small:
 ## `Regular`'s Top-level scaffolding
 
 `install_initialiser` emits, **once** at search root and only if proof
-logging is enabled:
+logging is enabled at `AssertionLevel::Off` (above `Off` it emits only an
+ambiguous automaton's canonical run, since the per-call inferences are
+asserted; #1332 is what that leaves out):
 
 1. **Per-val backward chains.** For each `(i, q', val)` with
    `val ∈ initial dom(vars[i])`:
@@ -274,8 +282,10 @@ no-op.
 
 ### `Regular`'s per-call propagator
 
-For each propagation call: build the per-call support graph (forward,
-backward), prune values whose support set is empty (`JustifyUsingRUP`),
+For each propagation call: build the support graph (forward, backward) on
+the first call, and after that update it by removing the edges on values
+that have left the domains; prune values whose support set is empty
+(`JustifyUsingRUP`),
 and emit a cache-gated `~state_i_is_q >= 1` at Current for each newly
 dead state. With the Top-level scaffolding plus the cached lines, both
 the state-death RUPs and the value-pruning RUPs close on the proof DB.
@@ -318,8 +328,8 @@ and the per-(q, v) pol lines from step 2.
 The graph maintenance (forward/backward sweeps, `decrement_outdeg` /
 `decrement_indeg`) is unchanged — still needed to *decide* which
 values to prune — but every `infer_not_equal` call uses
-`NoJustificationNeeded` and is passed `logger = nullptr`. No proof
-line is written per call.
+`NoJustificationNeeded` (it is passed the logger, which writes no line for
+it). No proof line is written per call.
 
 ## Benchmark (regular_random)
 

@@ -369,15 +369,15 @@ auto main(int argc, char * argv[]) -> int
             ("statistics,s", "Print statistics")                                                       //
             ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())                       //
             ("restarts",
-                "Restart on a Luby schedule with the given conflict scale (find-one / " //
-                "optimisation only); learns nogoods across restarts",                   //
+                "Restart on a Luby schedule with the given conflict scale (0 is off); " //
+                "learns nogoods across restarts",                                       //
                 cxxopts::value<unsigned long long>())                                   //
             // A FlatZinc `x - y <= d` arrives here as int_lin_le([1,-1],[x,y],d),
-            // which is exactly the two-term LinearLessThanEqual the presolver
-            // detects, so no new predicate or mznlib redefinition is needed: the
-            // shape is already in the model. Off by default, matching the
-            // presolver's own opt-in default and the paper's near-noise
-            // MiniZinc-wide result.
+            // which the reader recovers as a LessThanEqual, a comparison donor
+            // the presolver detects, so no new predicate or mznlib redefinition
+            // is needed: the shape is already in the model. Off by default,
+            // matching the presolver's own opt-in default and the paper's
+            // near-noise MiniZinc-wide result.
             ("difference-logic",                                                                        //
                 "Lift difference-shaped constraints (x - y <= d) into one global difference-logic "     //
                 "propagator, alongside their own propagators")                                          //

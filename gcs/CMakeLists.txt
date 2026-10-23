@@ -982,7 +982,7 @@ if(GCS_BUILD_TESTS)
     foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff le_notif lt lt_if lt_iff lt_not)
         add_view_tests(comparison_constraint_${mode} comparison_test 2 ${mode})
     endforeach()
-    # Ten of the nineteen wraps negate, and DifferenceConstraints rejects a
+    # Nine of the nineteen wraps negate, and DifferenceConstraints rejects a
     # negated operand by design; the test turns those into a rejection check
     # rather than skipping them. The two hand-built modes (incremental,
     # simplify) take no wrap and self-skip.

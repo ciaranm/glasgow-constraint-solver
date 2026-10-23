@@ -129,8 +129,9 @@ namespace
     }
 
     // The coarse path: wake on every change to any nogood variable and re-scan the
-    // whole store. Correct but does O(store) work per wake; kept for the growable
-    // restart-learning store until that is converted to refined watches (C-2).
+    // whole store. Correct but does O(store) work per wake; kept as the oracle
+    // the refined path is checked against, and run on the learned store only when
+    // GCS_LEARNED_NOGOODS_SCAN is set (C-2).
     auto install_scan_nogoods(Propagators & propagators, const ConstraintID & id, shared_ptr<vector<Nogood>> nogoods,
         shared_ptr<vector<vector<IntegerVariableID>>> nogood_vars, const vector<IntegerVariableID> & trigger_vars) -> void
     {
@@ -369,9 +370,9 @@ namespace
             },
             // No triggers at all: every watch is armed at run time, on whatever
             // literals the store holds by then, so nothing here says what can
-            // affect the propagator. A nogood may hold x == v, which a hole in
-            // x falsifies, so say so explicitly: the nogoods to come may
-            // mention any variable they could be learned over.
+            // affect the propagator. A nogood may hold x != v or x not in I,
+            // which a hole in x can entail, so say so explicitly: the nogoods to
+            // come may mention any variable they could be learned over.
             Triggers{.holes_affect_propagation = trigger_vars});
     }
 }

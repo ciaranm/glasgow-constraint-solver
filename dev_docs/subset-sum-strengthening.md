@@ -18,9 +18,10 @@ this buys no propagation on its own. What it buys is a tighter *inequality*, and
 that matters as soon as the line is added to another one: `Σ c_i x_i ≤ B` plus
 `Σ c_i x_i ≥ B′ + 1` is perfectly consistent over the rationals, while the
 strengthened form contradicts it in one `pol` step. That is the shape all three
-consumers need — the knapsack-augmented overload check's availability bound
-(#550), Schulz's capacity reduction (#547), and cover lifting
-certificates (#549).
+consumers need — `Cumulative`'s knapsack-augmented overload check's availability
+bound (#550), Schulz's capacity reduction (#547), and cover lifting
+certificates (#549). The first two call this helper; `lifted_cover_cut`
+derives its certificates through a layered programme of its own.
 
 ## The two derivations
 

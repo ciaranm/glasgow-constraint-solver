@@ -11,9 +11,9 @@ namespace gcs::innards::hints
      * \brief The tree family's assertion hint: just the owning constraint, no
      * subhint.
      *
-     * Both spellings use it, as Reachable and DReachable share theirs: the
-     * originator pins down which constraint, and the `.scp` says whether that
-     * one is a `tree` or a `dtree`.
+     * Only DTree emits it, for its in-degree rows: Tree writes no rows of its own,
+     * so its inferences come from its children. The originator pins down which
+     * constraint.
      *
      * \ingroup Innards
      */

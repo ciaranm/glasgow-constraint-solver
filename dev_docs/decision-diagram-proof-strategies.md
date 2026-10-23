@@ -2,32 +2,44 @@
 
 Cross-cutting design note for the four "decision-diagram-shaped" propagators —
 `Regular`, `MDD`, `Knapsack`, and `BinPacking`. All four prune a
-layered/partial-sum diagram, and each has *two* proof-logging strategies for the
-same propagation. This note records which strategy is the default for each, the
+layered/partial-sum diagram. `Knapsack` and `BinPacking` have *two*
+proof-logging strategies for the same propagation, `Regular` three (with
+`Bacchus`), and `MDD` only the upfront one (see "Note on the MDD per-call
+opt-in" below). This note records which strategy is the default for each, the
 cost model that explains why, a predictive rule a propagator author can apply
 *before* implementing, and the (both negative) results of probing scaffold
 deletion and solver-side RUP hinting.
 
-The measurements behind every number here were taken this session against the
-rebased decision-diagram PR stack (VeriPB 3.0.2, veripb wall = median of 3). The
-raw data and harness live in `~/claude/tmp/ddpr-analysis/` (the strategy
-comparison) and `~/claude/tmp/ddpr-deletion-probe/` (the deletion / hinting
-probe). The per-propagator PRs are #210 (Knapsack), #211 (MDD), #212
+The measurements behind every number here were taken against the rebased
+decision-diagram PR stack, merged in July 2026 (VeriPB 3.0.2, veripb wall =
+median of 3; no machine recorded), and BinPacking's again for #995. They are a
+dated record, not current figures. The raw data and harness were kept in
+`~/claude/tmp/ddpr-analysis/` (the strategy comparison) and
+`~/claude/tmp/ddpr-deletion-probe/` (the deletion / hinting probe); neither can
+now be found. The per-propagator PRs are #210 (Knapsack), #211 (MDD), #212
 (BinPacking) and #213 (Regular); the hinting prototype is #497.
 
 ## The two strategies
 
 Both strategies certify the *same* GAC pruning against the *same* natural OPB
-encoding (per-`(state, val)` forward chains + per-layer exactly-one). They
-differ only in **where** the proof-supporting intermediate lines are emitted.
+encoding: for `Regular` and `MDD`, per-`(state, val)` forward chains + per-layer
+exactly-one; for `Knapsack` and `BinPacking`, the sum rows alone, with the
+diagram's flags defined in the proof. They differ only in **where** the
+proof-supporting intermediate lines are emitted.
 
 - **Upfront** (`ProofLevel::Top` scaffolding). Once, before search, via
   `install_initialiser`, the constraint emits everything that does not depend on
-  the runtime domain: forward/backward chains, per-state implications, per-layer
-  at-least-one (ALO) clauses, phantom-node closures, and the statically-dead
-  node lines. Each per-`propagate()` inference is then a *slim* sweep: at most
-  one cache-gated `~state[i][q]` line, and the final `vars[i] != val` closes by
-  RUP against the standing scaffold. Little or nothing is re-emitted per call.
+  the runtime domain. For `Knapsack` (and `BinPacking`'s `k = 1` copy) that is
+  forward/backward chains, per-state implications, per-layer at-least-one (ALO)
+  clauses, phantom-node closures, and the statically-dead node lines; for
+  `Regular` and `MDD`, whose forward chains are OPB rows, it is the backward
+  chains and the statically-dead node lines (and, for an ambiguous automaton,
+  `Regular`'s canonical run). Each per-`propagate()` inference is then a sweep
+  against the standing scaffold: `Regular` and `MDD` write one cache-gated
+  `~state[i][q]` lemma per newly dead state, `Knapsack` its dead-state lemmas
+  plus cap-exceeded `pol` steps and terminal and bound lines, and the final
+  `vars[i] != val` closes by RUP. These per-call lines can be most of the
+  proof's bytes (the `MDD` family document measures them on a nonogram).
 
 - **Per-call** (`ProofLevel::Current`/`Temporary`, leaning on RUP). The OPB
   encoding and reified flags carry the definitional content; each
@@ -76,7 +88,11 @@ upfront proof that is *slower* to verify (Knapsack, below).
 
 Representative largest instance for each; search shape verified identical to the
 digit between the two strategies (only the propagator is toggled — the tree does
-not change). All proofs verified (`s VERIFIED`, zero failures).
+not change). All proofs verified (`s VERIFIED`, zero failures). These are the PR
+stack's figures, kept as history and not re-taken here; the `Knapsack` family
+document (`dev_docs/constraints/knapsack.md`) re-measures `Knapsack`'s two
+strategies at `86caad24`, and its figures supersede this note's `Knapsack` row
+and per-line figures.
 
 | Propagator | Proof size (upfront vs per-call) | Verify time (upfront vs per-call) | Default | Opt-in |
 |---|---|---|---|---|
@@ -85,9 +101,10 @@ not change). All proofs verified (`s VERIFIED`, zero failures).
 | **Knapsack** (#210) | upfront **3–6× smaller** (20.7 MB vs 121 MB) | upfront **3.6–18× SLOWER** (6.68 s vs 1.85 s) | **`proof_strategy::PerCall`** | `proof_strategy::Upfront` |
 | **BinPacking** (#212, re-measured for #995) | upfront **4.5–21× BIGGER** (309 MB vs 16.4 MB) | upfront **2.8–5.6× SLOWER** (80.0 s vs 21.8 s) | **`proof_strategy::PerCall`** | `proof_strategy::Upfront` |
 
-All four expose the choice through the fluent `with_proof_strategy(...)`
-setter over the shared `gcs::proof_strategy` tags (`PerCall`, `Upfront`,
-and, for Regular, `Bacchus`); BinPacking additionally selects Stage 2-only
+`Regular`, `Knapsack` and `BinPacking` expose the choice through the fluent
+`with_proof_strategy(...)` setter over the shared `gcs::proof_strategy` tags
+(`PerCall`, `Upfront`, and, for Regular, `Bacchus`); `MDD`, with one strategy,
+has no setter. BinPacking additionally selects Stage 2-only
 bounds via `with_consistency(consistency::BC{})`.
 
 The per-line cost (`us/line`) is the DB-tax signature: Regular upfront 6.8–16 vs
@@ -114,17 +131,23 @@ Why each lands where it does:
 - **Regular / MDD — upfront wins both, and the advantage *grows* with search.**
   The per-call baseline re-runs a forward+backward DP sweep on *every*
   `propagate()` and emits `O(states² · |Σ|)` hint-free lines to kill each state
-  — enormous repeated volume (displacement 4–27×). The automaton/MDD is
-  *narrow*, so the permanent Top scaffold is tiny (`red` ≈ 28–48 flags) → DB-tax
-  ≈ 1–2×. Displacement ≫ tax → wins size and time.
-- **Knapsack — split: wins size, loses time.** `KnapsackLegacy` rebuilds the
-  partial-sum DP proof at `Temporary` each call — verbose, but only ~2–3× more
-  lines than upfront (modest displacement). The upfront scaffold is a
-  *k-dimensional* partial-sum DAG with phantom nodes — huge and permanent (`red`
-  ≈ 11k–33k at root; ≈ 60% of upfront's lines). DB-tax ≈ 10–15× ≫ displacement
-  (2–3×) → the proof shrinks in bytes but verifies 3.6–18× slower. So the
-  default is **per-call**; `proof_strategy::Upfront` remains the opt-in when byte size
-  is the priority.
+  — enormous repeated volume (displacement 4–27×). The permanent Top scaffold
+  is backward chains and static dead lines, with no `red` lines (except
+  `Regular`'s canonical run, for an ambiguous automaton), and it is not always
+  small: on a large nonogram it is most of `Regular` `Upfront`'s lines (the
+  `Regular` family document, `dev_docs/constraints/regular.md`, has the count).
+  Upfront still wins there, by writing far fewer lines than the per-call
+  baseline at about the same cost per line. Displacement ≫ tax → wins size and
+  time.
+- **Knapsack — split: wins size, loses time.** Under `proof_strategy::PerCall`,
+  `Knapsack` rebuilds the partial-sum DP proof at `Temporary` each call —
+  verbose, but only ~2–3× more lines than upfront (modest displacement). The
+  upfront scaffold is a *k-dimensional* partial-sum DAG with phantom nodes —
+  huge and permanent (`red` ≈ 11k–33k at root; ≈ 60% of upfront's lines). DB-tax
+  ≈ 10–15× ≫ displacement (2–3×) → the proof shrinks in bytes but verified
+  3.6–18× slower in the PR stack's measurement (the `Knapsack` family document
+  re-measures the gap). So the default is **per-call**; `proof_strategy::Upfront`
+  remains the opt-in when byte size is the priority.
 - **BinPacking — per-call wins both.** Stage 3's per-call strategy writes
   almost nothing per call. The `bpup/bpdn/bpat` reifications are defined once
   at Top. The rest of what it needs is state-independent: an edge's forward

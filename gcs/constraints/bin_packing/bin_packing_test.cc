@@ -158,10 +158,11 @@ namespace
             star.emplace_back(0, i + 1);
 
         // With proofs, only the two items: the pinned shape and the star put
-        // nine items of the largest size in one bin's rows, whose coefficients
-        // then sum past 2^63, so their proofs cannot be written in an Integer
-        // and throw IntegerOverflow, which the range rule allows. Any shape
-        // whose sizes summed past 2^63, as the wrap needed, has the same rows.
+        // nine items of the largest size in one bin's rows. The rows themselves
+        // are written and verify under BC, but under GAC Stage 3 throws
+        // IntegerOverflow (the star from its static diagram's partial sums, the
+        // pinned shape from its Top flags' reification at AssertionLevel::Off),
+        // which the range rule allows.
         for (bool shaw : {false, true}) {
             for (bool gac : {true, false})
                 for (bool load_form : {false, true}) {
@@ -225,12 +226,12 @@ namespace
                     cardinality ? BinPackingCardinality{bin_packing::Shaw{}} : BinPackingCardinality{bin_packing::NoCardinality{}}));
 
         auto proof_name = proofs ? make_optional("bin_packing_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-        // Enumeration only — Stage 3 achieves per-bin GAC, not joint GAC
-        // (joint GAC for BinPacking is NP-hard, classic subset-sum). For the
-        // constant-cap form per-bin GAC is structurally identical to Stage
-        // 2's floor check, so Stage 3 strengthens only the variable-load
-        // form's load-pruning side. A per-bin-GAC reference checker can be
-        // added later if regressions appear.
+        // Enumeration only — Stage 3 is per-bin GAC short of committing items
+        // (#1346), not joint GAC (joint GAC for BinPacking is NP-hard, classic
+        // subset-sum). For the constant-cap form per-bin GAC is structurally
+        // identical to Stage 2's floor check, so Stage 3 strengthens only the
+        // variable-load form (its load pruning and items' bin values). A
+        // per-bin-GAC reference checker can be added later if regressions appear.
         solve_for_tests(p, proof_name, actual, tuple{items});
         auto recursions = last_run_recursions();
 

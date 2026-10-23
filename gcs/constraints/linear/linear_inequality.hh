@@ -148,7 +148,7 @@ namespace gcs
          * MustHold and If both use the empty role, so both come out as
          * `@c[<id>]`. The other three publish nothing, because none of their
          * rows is the one a citer asking for `sum <= value` means: MustNotHold's
-         * empty-role row and NotIf's `ltn` row both state the integer negation
+         * and NotIf's empty-role rows both state the integer negation
          * `sum >= value + 1` (that being what those forms make the propagator
          * enforce), and Iff's `r` / `f` halves state the two directions of the
          * equivalence.
