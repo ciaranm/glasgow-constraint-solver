@@ -9,21 +9,20 @@
 > unchanged), #1391 (a restart scale of 0 never terminates and ignores the
 > abort flag, and the own `--timeout` of XCSP3, the examples and the MiniCP
 > benchmarks, which accept it), #1392 (the refined propagator declares no
-> scope: it never adopted #506's `scope_only`, so under dom/wdeg with
-> restarts the store's
-> conflicts weight no variable), #1393 (a `NogoodStore` grown by user code
-> mid-search: the two paths disagree, and the scan path's proof is rejected)
-> and #1394 (the engine's refined-watch undo, 59% of the profile samples of
-> `tsp --restarts=100`). Already open and touching this family: #131 (a
-> generic watched-clause propagator, the natural
-> home for this one, `NegativeTable`'s and the logical family's), #310 (range
-> literals cannot be written into the model, so a range literal in a posted
-> nogood throws with proofs on), #1210 (the generic `Links`-level
-> solution-line rejection for range-declared variables, which restart proofs
-> meet too), #1085 (deep search overflows the stack in `solve_with_state`,
-> the recursion the restart loop drives), #1309 (`install_returning_id` is
-> quadratic in a propagator's trigger count; the scan path subscribes to every
-> variable) and #868 (cross-solver comparison). Tracked under #871.
+> scope: it never adopted #506's `scope_only`, so under dom/wdeg with restarts
+> the store's conflicts weight no variable), #1393 (a `NogoodStore` grown by
+> user code mid-search: the two paths disagree, and the scan path's proof is
+> rejected) and #1394 (the engine's refined-watch undo, 59% of the profile
+> samples of `tsp --restarts=100`). Already open and touching this family: #131
+> (a generic watched-clause propagator, the natural home for this one,
+> `NegativeTable`'s and the logical family's), #310 (range literals cannot be
+> written into the model, so a range literal in a posted nogood throws with
+> proofs on), #1210 (the generic `Links`-level solution-line rejection for
+> range-declared variables, which restart proofs meet too), #1085 (deep search
+> overflows the stack in `solve_with_state`, the recursion the restart loop
+> drives), #1309 (`install_returning_id` is quadratic in a propagator's trigger
+> count; the scan path subscribes to every variable) and #868 (cross-solver
+> comparison). Tracked under #871.
 
 ## What this is, and what it is not
 
@@ -77,7 +76,7 @@ Five things to know before touching it.
   the source's comments that the learned store "stays coarse until ... stage
   C-2" (`nogoods.hh:74-79`, `:95-102`, `nogoods.cc:131-133`) are stale on
   arrival: the commit that wrote them, 9c2a0500, also made `solve.cc` pass
-  `refined = true`.
+  `refined = true`. Corrected by #1396, open.
 - **Strength is unit propagation on each clause separately**, which is GAC on
   that clause when its literals are over different variables, and weaker when
   two of them share one. Checked by brute force on 26,000 random instances,
@@ -178,16 +177,14 @@ same `s` line and solution count as the no-restart run
 (`tmp/fd-nogoods/nogoods/xcsp/xdiff.txt`); the fact-check's re-run compared the
 sorted solution sets, duplicates, the last `o` line and the exit code too, and
 found no difference (`tmp/fd-nogoods/factcheck/doc/xcsp/xd.sh`). MiniZinc 2.9.7
-through
-`fzn-glasgow -a`: 7-queens (40 solutions, 29, 14, 9 and 2 restarts at scales 1,
-2, 4 and 16) gives the same solution set; a QAP-like minimisation
+through `fzn-glasgow -a`: 7-queens (40 solutions, 29, 14, 9 and 2 restarts at
+scales 1, 2, 4 and 16) gives the same solution set; a QAP-like minimisation
 (`qapm.mzn`, 7,163, 3,978, 2,045 and 588 restarts at the same scales) gives the
 same three solutions, and a smaller one (`opt.mzn`, 3, 2, 2 and 0 restarts) the
-same final optimum, with fewer intermediates at the three scales that
-restart; and
-`==========` throughout (`tmp/fd-nogoods/nogoods/fzn/fzndiff.sh`). No Gecode
-comparison was run; the C++ differential below compares against brute force
-instead.
+same final optimum, with fewer intermediates at the three scales that restart;
+and `==========` throughout (`tmp/fd-nogoods/nogoods/fzn/fzndiff.sh`). No
+Gecode comparison was run; the C++ differential below compares against brute
+force instead.
 
 ### Options
 
@@ -334,33 +331,33 @@ says "A nogood may hold x == v, which a hole in x falsifies", but falsifying a
 nogood's literal satisfies its clause and allows no new inference; it is
 `x ≠ v` in a nogood that a hole entails.
 [`optional-interior-pruning.md`](../optional-interior-pruning.md) says, at
-`:52-54` on `86caad24`, only "a nogood may hold `x == v`", and at `:301-306`
+`:52-54` on `86caad24`, only "a nogood may hold `x == v`", and at `:301-307`
 that "a nogood holds the negation of each decision on a path, so any brancher
 that can decide `x != v` --- `smallest_in`'s right branch does --- can put
 `x == v` in a nogood". A nogood holds the kept decisions themselves, not their
 negations, and `smallest_in`'s right branch `x ≠ v` is exactly the negative
-decision that is dropped (`solve.cc:196-198`).
+decision that is dropped (`solve.cc:196-198`). All corrected by #1396, open.
 
 **Scope.** The refined propagator declares none: no coarse trigger, no
 `Triggers::refined` and no `scope_only` (`nogoods.cc:375`).
-`propagators.hh:388-401`
-describes this case (a propagator arming its watches at run time "would
-otherwise have an empty scope and so be invisible to degree-based heuristics")
-and says to list the variables in `scope_only`, which #506 added for exactly
-this; `NegativeTable` adopted it, `Nogoods` did not. `refined-triggers.md`
-says the same at `:80-84`, two lines after describing this client as arming
-everything at run time and leaving `Triggers` empty (`:76-78`), and asks
-clients to "watch only variables declared in scope" (`:55-57`), which this one
-does not. So the propagator adds nothing to any variable's degree or to the
-variable-to-constraint adjacency. Under dom/wdeg's `classic` and default `chs`
-schemes the weighting credits its conflicts to the constraint, but a variable's
-weighted degree is summed over its adjacent constraints, so the credit never
-reaches a variable; the other schemes return early on the empty scope (#1392).
-For the learned store, whose scan path watches every variable, the
-missing degree is a uniform shift and leaves `dom_then_deg` unchanged; for a
-posted store it can change the tree under `dom_then_deg`, the solver's default
-brancher (47 of 500 random fixed stores whose nogoods use only the first half
-of the variables, `tmp/fd-nogoods/nogoods/fixeddeg/`).
+`propagators.hh:388-401` describes this case (a propagator arming its watches
+at run time "would otherwise have an empty scope and so be invisible to
+degree-based heuristics") and says to list the variables in `scope_only`, which
+#506 added for exactly this; `NegativeTable` adopted it, `Nogoods` did not.
+`refined-triggers.md` says the same at `:80-84`, two lines after describing
+this client as arming everything at run time and leaving `Triggers` empty
+(`:76-78`), and asks clients to "watch only variables declared in scope"
+(`:55-57`), which this one does not. So the propagator adds nothing to any
+variable's degree or to the variable-to-constraint adjacency. Under dom/wdeg's
+`classic` and default `chs` schemes the weighting credits its conflicts to the
+constraint, but a variable's weighted degree is summed over its adjacent
+constraints, so the credit never reaches a variable; the other schemes return
+early on the empty scope (#1392). For the learned store, whose scan path
+watches every variable, the missing degree is a uniform shift and leaves
+`dom_then_deg` unchanged; for a posted store it can change the tree under
+`dom_then_deg`, the solver's default brancher (47 of 500 random fixed stores
+whose nogoods use only the first half of the variables,
+`tmp/fd-nogoods/nogoods/fixeddeg/`).
 
 **Which constraint a failure is charged to.** With the scope declared, the
 two paths still branch differently under dom/wdeg, through the conflicts the
@@ -546,21 +543,20 @@ Facts that hold for rules 1 and 2:
   `{x ≥ 3, x < 6}` over `x ∈ 0..10` removes nothing, where GAC on the clause
   would remove `3..5`. It is not GAC on the conjunction of the clauses, which
   the header rightly says would be co-NP-hard. The claim covers every variable
-  of every clause. Checked by
-  brute force (`tmp/fd-nogoods/nogoods/strength/strength.cc`): 14,000 random
-  instances with the four scalar operators and 12,000 with the range operators
-  as well, one to four variables over holey value-list domains in `−2..5`, one
-  to five nogoods of zero to four literals on variables, views (`x + c`,
-  `−x + c`) and constants, refined and scan (scalar operators: seed 1 at 2,000
-  instances and seeds 2 to 5 at 3,000; range operators: seeds 2 to 5 at 3,000).
-  On both paths and
-  every instance, the root fixpoint equals the unit-propagation fixpoint of the
-  clauses computed independently over explicit value sets, every search node is
-  closed under it, and the solutions equal brute force. The unit-propagation
-  fixpoint differs from the fixpoint of per-clause GAC on 426 instances, every
-  one with a repeated underlying variable in some nogood, and on none of the
-  6,040 without one. This covers the fixed form; the learned store runs the
-  same code, and the differential below covers it end to end.
+  of every clause. Checked by brute force
+  (`tmp/fd-nogoods/nogoods/strength/strength.cc`): 14,000 random instances with
+  the four scalar operators and 12,000 with the range operators as well, one to
+  four variables over holey value-list domains in `−2..5`, one to five nogoods
+  of zero to four literals on variables, views (`x + c`, `−x + c`) and
+  constants, refined and scan (scalar operators: seed 1 at 2,000 instances and
+  seeds 2 to 5 at 3,000; range operators: seeds 2 to 5 at 3,000). On both paths
+  and every instance, the root fixpoint equals the unit-propagation fixpoint of
+  the clauses computed independently over explicit value sets, every search
+  node is closed under it, and the solutions equal brute force. The
+  unit-propagation fixpoint differs from the fixpoint of per-clause GAC on 426
+  instances, every one with a repeated underlying variable in some nogood, and
+  on none of the 6,040 without one. This covers the fixed form; the learned
+  store runs the same code, and the differential below covers it end to end.
 - **Algorithm** — scan: every clause, two literal tests unless a watch is
   entailed, then a search for a replacement: `O(N + moved · k)` per wake for
   `N` nogoods of up to `k` literals. Refined: the fired clauses only,
@@ -894,12 +890,11 @@ tree, and its rows are the same-tree comparison.
 literals. The propagator's inferences are 367 of `qap 8`'s 35,507 assertions
 at `Inferences` (1.0%; the same run without restarts has no unannotated
 assertion, so the 367 are this family's); at `Off` they are `rup` lines
-indistinguishable by
-form from other constraints' and were not separated. The rest is the other
-constraints, the backtracking and the shared literal layer, as in any proof.
-How many learned lines a restart run writes depends on how often it restarts,
-not on the store's propagation: it is one per refuted sibling on each
-abandoned path.
+indistinguishable by form from other constraints' and were not separated. The
+rest is the other constraints, the backtracking and the shared literal layer,
+as in any proof. How many learned lines a restart run writes depends on how
+often it restarts, not on the store's propagation: it is one per refuted
+sibling on each abandoned path.
 
 ## Status, gaps, and next steps
 
@@ -1042,7 +1037,8 @@ Anything else, which would need work first:
 8. **An audit-lane row for the learned store**, and one for a `≠` literal over a
    holey wide variable on the fixed form. Small.
 9. **Correct the stale text** listed under [Developer
-   commentary](#developer-commentary).
+   commentary](#developer-commentary) (done by #1396, open, except the
+   `tsp` table in `refined-triggers.md`, which is not re-measured).
 
 ## Prior art
 
@@ -1075,18 +1071,17 @@ Anything else, which would need work first:
   search sets `nogoods_limit` above zero (the driver's `-nogoods` option, with
   `-nogoods-limit`, the depth limit, defaulting to 128). *Modeling and
   Programming with Gecode* (Schulte, Tack and Lagerkvist), §9.6 in the edition
-  for Gecode 6.2.0, says
-  they follow Lecoutre et al.'s JSAT paper with a different implementation,
-  that a nogood literal may be any constraint, and that choices may have any
-  arity. In Gecode 6.3.0 (tag `release-6.3.0`, commit `a658ba49`), the integer
-  branchers' literals are `x = v`, `x ≤ v` and `x ≥ v` (`x > v` becomes
-  `x ≥ v + 1`), and the set branchers' are inclusion and exclusion; these
-  branchers give a binary choice's second alternative no literal, since it
-  negates the first, which is the reduced nld-nogoods' drop of negative
-  decisions. Each literal subscribes on the matching event (assignment for `=`,
-  bounds for `≤` and `≥`) and reports itself subsumed by entailment: the
-  literal `x ≥ 10` is subsumed once `x.min() >= 10`, so a lower bound of 12
-  subsumes it (`GqNGL`, `gecode/int/branch/ngl.hpp:122-149`). One
+  for Gecode 6.2.0, says they follow Lecoutre et al.'s JSAT paper with a
+  different implementation, that a nogood literal may be any constraint, and
+  that choices may have any arity. In Gecode 6.3.0 (tag `release-6.3.0`, commit
+  `a658ba49`), the integer branchers' literals are `x = v`, `x ≤ v` and `x ≥ v`
+  (`x > v` becomes `x ≥ v + 1`), and the set branchers' are inclusion and
+  exclusion; these branchers give a binary choice's second alternative no
+  literal, since it negates the first, which is the reduced nld-nogoods' drop
+  of negative decisions. Each literal subscribes on the matching event
+  (assignment for `=`, bounds for `≤` and `≥`) and reports itself subsumed by
+  entailment: the literal `x ≥ 10` is subsumed once `x.min() >= 10`, so a lower
+  bound of 12 subsumes it (`GqNGL`, `gecode/int/branch/ngl.hpp:122-149`). One
   `Search::NoGoodsProp` per restart holds that restart's path as a list and
   subscribes to the first two path literals not yet entailed and the refuted
   alternatives between them, advancing along the path as path literals become
@@ -1155,19 +1150,20 @@ Anything else, which would need work first:
 
 - `nogoods.hh:74-79`, `:95-102` and `nogoods.cc:131-133`: the learned store
   "stays coarse until ... stage C-2" (#335); it has been refined since the
-  commit that wrote them.
+  commit that wrote them. Corrected by #1396, open.
 - `nogoods.hh:20-24`: "initialises a newly added nogood's watches lazily on its
   next fire" is the scan path's behaviour; the refined path does so only at a
-  root propagation.
+  root propagation. Corrected by #1396, open.
 - `nogoods.hh:53`, and `restarts-nogoods-weighting.md:163` and `:168`: the
   literals are listed as `=` / `≠` / `≥` / `≤`; the fourth operator is `<` (and
-  the two range operators are missing).
+  the two range operators are missing). All corrected by #1396, open.
 - `nogoods.cc:370-374`: "A nogood may hold x == v, which a hole in x
   falsifies"; holes matter through `x ≠ v` and `x ∉ I` literals.
   `optional-interior-pruning.md:52-54` repeats the `x == v` reason, and
   `:301-307` says a nogood holds the negations of the path's decisions and that
   `smallest_in`'s right branch puts `x == v` in one; it holds the kept decisions,
-  and that right branch is the dropped negative decision.
+  and that right branch is the dropped negative decision. All corrected by
+  #1396, open.
 - `restarts.hh:23-26`: restarts with all-solution enumeration are "rejected at
   runtime (gcs::solve_with throws UnimplementedException)";
   `difference_constraints_test.cc:1132-1134` says the same. `solve.hh:133-134`
@@ -1175,15 +1171,17 @@ Anything else, which would need work first:
   Both are stale: enumeration with restarts is supported, and `solve.cc` throws
   nothing. `fzn_glasgow.cc:371-373`'s help and `minizinc/glasgow.msc.in:10`'s
   flag text (and the generated `.msc` files) say "find-one / optimisation only".
+  All corrected by #1396, open.
 - `restarts.hh:18-20` ("eventually exceed any tree's size") and
   `restarts-nogoods-weighting.md:67-69` ("Completeness holds because the cutoff
-  grows without bound"): not at scale 0 (#1391).
+  grows without bound"): not at scale 0 (#1391). Both corrected by #1396,
+  open.
 - `solve.cc:45-47`: "`RestartCutoffHit` is unused here and is produced once the
-  restart loop lands"; it is produced and used.
+  restart loop lands"; it is produced and used. Corrected by #1396, open.
 - `solve_test.cc:338-341` and `constraints.md:419-422`: "a refined-watch literal
   puts its variable in the propagator's scope" holds for `Triggers::refined`,
   not for `ctx.watch`; `solve_test`'s differential agrees because the learned
-  store's degree shift is uniform.
+  store's degree shift is uniform. Both corrected by #1396, open.
 - `restarts-nogoods-weighting.md`: the code map's
   `gcs/constraints/nogoods.{hh,cc}`
   and `gcs/constraints/nogoods_test.cc` are now under `nogoods/`; entailment is
@@ -1193,14 +1191,15 @@ Anything else, which would need work first:
   exists (`value_order::reject_random_interval`, tested in `solve_test.cc:226`),
   PR #303 merged on 2026-06-16, and a learned `x ∉ I` reaches the proof; the
   "not-a-plain-condition guard" is now `solve.cc:266-270`, which skips only
-  proof-scaffolding literals.
+  proof-scaffolding literals. All corrected by #1396, open.
 - `refined-triggers.md:18`, `:229` and `:481` cite `gcs/constraints/nogoods.cc`,
   now under `nogoods/`. `:233-236` says the scan path is "used by the
   growable-store constructor only when `GCS_LEARNED_NOGOODS_SCAN` is set";
   that constructor defaults to scan (`nogoods.hh:103`), and it is `solve_with`
   that picks refined. `:245-247`: catch-up at "`propagate(nullopt)`, depth 0,
   which the restart loop re-enters once per pass"; under optimisation the root
-  is seeded by the objective bound instead (#1390).
+  is seeded by the objective bound instead (#1390). All corrected by #1396,
+  open.
 - `restarts-nogoods-weighting.md` and `refined-triggers.md`: "semantics-preserving
   (identical tree, nogoods and proof)". For the learned store, satisfaction and
   enumeration give the same tree and the same learned nogoods on both paths under
@@ -1208,7 +1207,8 @@ Anything else, which would need work first:
   `langford --restarts=1 --prove 7` both paths take 527 recursions and learn the
   same 109 nogoods, and the proofs are 26,705 and 26,661 lines, the inference
   lines differing with the propagation order. Optimisation differs in the tree
-  too (#1390 and #1392). The `tsp --restarts=10000`
+  too (#1390 and #1392). Both notes' wording is corrected by #1396, open.
+  The `tsp --restarts=10000`
   table in `refined-triggers.md` is from 2026-07 and was not re-measured as
   such; the figures under [CPU performance](#cpu-performance) are a different
   series.
