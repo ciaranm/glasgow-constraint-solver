@@ -807,6 +807,41 @@ constraints and do not restate it.
   propagator runs 3.3 to 6 times fewer instructions on equal trees. No cake
   rule exists for `binpacking`. `dev_docs/bin-packing.md` stays as the long
   note.
+- [`difference.md`](difference.md) — `DifferenceConstraints`, a system of
+  `x − y ≤ d` edges, each optionally half-reified as `cond → x − y ≤ d`,
+  propagated as one graph; and the machinery `install_difference_propagator`
+  installs for it and for the `difference_logic` presolver, which this
+  document owns: the root initialiser (static bounds, disallowed conditions,
+  Johnson's root simplification), an incremental route (a never-trailed
+  potential, `IncSat`, one Dijkstra per direction, `Do` restored exactly by an
+  undo trail under one trailed number) and a from-scratch Bellman-Ford route
+  kept as its oracle. One definitional row per posted edge over the deviewed
+  variables, no flags, eight rules — rules 1–3 and 8 certified by one `pol`
+  over the model's own rows (rules 1–2 adding one bound-literal definition;
+  three proof lines), rules 4–7 by a single RUP — and no
+  hint on any assertion, so
+  four rules are `search` for a justifier. Reached from no front end except
+  through the presolver and the `.scp` reader; `cake_pb_cp` has no keyword for
+  it and exits 0 on refusing one. A brute force over 1.07 million search nodes
+  per route finds the fixpoint `bounds(D)` and range consistent on the
+  sub-system of edges whose conditions hold, `bounds(D)` on the whole
+  constraint whenever the conditions are separate one-polarity variables that
+  are not nodes (sufficient, not necessary), not `GAC`, and nothing on a
+  condition during search; 3,060 random `.scp` systems agree with a brute
+  force, 770 of them also with proofs, all verifying. The
+  audit's two defects are overflows on values nothing needs, with weights
+  near the range's edge (#1371 and #1372): the shortest-path
+  arithmetic of the incremental route and root simplification (potentials,
+  reduced weights, keys, distances, and an untrailed potential that drifts
+  down without bound) is plain `Integer`, and so are `difference_graph.cc`'s
+  Bellman-Ford bounds and cycle sums. Heavy chains, a
+  chain with one redundant edge and a heavy negative cycle throw where the
+  same rows as linears are refuted at once, through `--difference-logic`'s
+  default too (`=====ERROR=====` from MiniZinc). Each issue lists the sites
+  found so far and asks for an audit of its files.
+  Root simplification is 82% of the solve on a dense unconditional
+  `difference_chain` and the whole of a tight RCPSP/max refutation;
+  `dev_docs/difference-logic.md` stays as the long note.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
