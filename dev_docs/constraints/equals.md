@@ -4,9 +4,10 @@
 > **Audited** 2026-09-07 at `7d014207`; re-audited 2026-09-08 at `76bfd836`;
 > re-audited 2026-09-21 at `6b220c79`; re-audited 2026-09-25 at `61112ed0` ·
 > **Open issues** `None.` own to this family. #868, an audit-wide
-> cross-solver prerequisite, is still open and still half done. #310, already
-> open, reaches in from outside: a range-literal reification condition cannot
-> be written into the model. The first pass
+> cross-solver prerequisite, is still open and still half done. #1225, already
+> open, reaches in from outside: a range-literal reification condition throws
+> with proofs on, because it cannot be written into the model (#310 is the
+> encoding fix). The first pass
 > filed #864–#870 and six of those seven are fixed; the two that reached in
 > from outside — #882 and #895 — have both closed since the second pass. What
 > this audit would file, it has instead put in [Next
@@ -27,7 +28,7 @@ re-measured.
 | Landed | What it changed here |
 |---|---|
 | #1047 → #1088 | `NotEquals(x, x)` on a non-constant `x` is **accepted** rather than rejected at construction, and the must-not-hold pass contradicts as soon as it runs on aliased operands. That is a new rule, [rule 9](#rule-not-equals-aliased-operands), and a tenth cake chain case, `not_equals_aliased_unsat`. XCSP3's `ne(x,x)` reaches it; MiniZinc simplifies the shape away |
-| #310, not a fix | a reified form whose condition is a range literal (`in_range`, `not_in_range`) is right with proofs off and throws with proofs on, when the model is written. Measured at `61112ed0`; see [Reification](#reification) |
+| #1225 (#310 is the encoding fix), not a fix | a reified form whose condition is a range literal (`in_range`, `not_in_range`) is right with proofs off and throws with proofs on, when the model is written. Measured at `61112ed0`; see [Reification](#reification) |
 
 **What the third pass changed.** A narrower pass than the second: two solver
 mechanisms arrived that every family document now has to answer for, and two
@@ -238,13 +239,14 @@ Two things are specific to this family:
   always take, and it is also what a FlatZinc-generated constraint with an
   already-fixed reification literal takes.
 
-**A range-literal condition works only with proofs off** (#310). The condition
-is an `IntegerVariableCondition`, which includes `in_range` and `not_in_range`.
-With `x, y ∈ 0..3`, `z ∈ 0..4` and the condition `z ∈ 1..3`, `EqualsIff`,
-`EqualsIf` and `NotEqualsIff` (the last over `not_in_range`) find the right 36,
-44 and 36 solutions. With proofs on, each throws `range literals during model
-writing are not yet supported` from `NamesAndIDsTracker::need_invar` when the
-model is written. Measured at `61112ed0`. No front end posts one: MiniZinc
+**A range-literal condition works only with proofs off** (#1225; #310 is the
+encoding fix). The condition is an `IntegerVariableCondition`, which includes
+`in_range` and `not_in_range`. With `x, y ∈ 0..3`, `z ∈ 0..4` and the
+condition `z ∈ 1..3`, `EqualsIff`, `EqualsIf` and `NotEqualsIff` (the last
+over `not_in_range`) find the right 36, 44 and 36 solutions. With proofs on,
+each throws `range literals during model writing are not yet supported` from
+`NamesAndIDsTracker::need_invar` when the model is written. Measured at
+`61112ed0`. No front end posts one: MiniZinc
 passes `b = 1` or `b ≠ 1`, XCSP3 `b = 1` or `b = 0`, `gcspy` `b ≠ 0`, and the
 `.scp` reader's conditions are `=`, `!=`, `>=` and `<` against one value.
 Every one is a single-value condition.
@@ -1387,7 +1389,8 @@ What the tests do **not** cover:
   means the reason is not built at all, so a regression to a per-value reason
   would be caught by the large-domain audit lane rather than by this file.
 - **A range-literal reification condition.** No lane posts one, which is how
-  #310's reach into this family went unrecorded.
+  its throw with proofs on (#1225; #310 is the encoding fix) went unrecorded
+  here.
 - **`ortho_latin`, the family's own benchmark, exercises two of the nine
   rules.** See [Proof performance](#proof-performance) — worth knowing before
   reading any conclusion off it.
@@ -1564,7 +1567,8 @@ audits, and the two that were are now both closed.
 
 **One model-writing gap, not this family's own**: a range-literal reification
 condition cannot be written into the OPB model at all, so a proving run throws
-before search (#310; see [Reification](#reification)).
+before search (#1225, with #310 the encoding fix; see
+[Reification](#reification)).
 
 Rule 8 assembled a `2 + width` reason unconditionally, so that with proofs off
 it was built, never read and thrown away. Fixed twice over: #873 guarded the
@@ -1581,8 +1585,9 @@ only to cover for one is deleted.
 
 ### Known limitations
 
-**A range-literal condition throws with proofs on** (#310). It gives the right
-answers without proofs. No front end posts one.
+**A range-literal condition throws with proofs on** (#1225; #310 is the
+encoding fix). It gives the right answers without proofs. No front end posts
+one.
 
 **Aliased operands are not GAC**, deliberately: a GAC algorithm for distinct
 variables does not generally give GAC under aliasing, and the dup tests check

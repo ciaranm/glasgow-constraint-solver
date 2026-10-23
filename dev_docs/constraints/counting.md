@@ -331,7 +331,8 @@ that is how the audit missed it; both GCC tests now mix them (see
 fall through to the standard library's decompositions, and none of the four is
 listed with a reified binding in `minizinc/mznlib/`. Nobody has asked for one.
 No constructor takes a literal either, so the range-literal limitation that
-other families' conditions hit with proofs on (#310) cannot reach this one.
+other families' conditions hit with proofs on (#1225; #310 is the encoding
+fix) cannot reach this one.
 
 ### Relation to other families
 

@@ -320,7 +320,17 @@ None. A reified "these tasks are pairwise exclusive" has no use here.
   initialiser's bound changes, as above, and through the makespan links.
   `find_makespan_links` reads the posted rows, and their labels stay in the
   `.opb` whichever propagators `DifferenceLogic` disables. This audit did not
-  test that second combination.
+  test that second combination. `difference_logic.md`'s probe
+  (`tmp/fd-diff/difference_logic/order/mk2.cc`, `86caad24`, re-run
+  2026-10-20) has since tested it: three pairwise-disjoint length-2 tasks,
+  with all three makespan links. Run first, `DifferenceLogic` lifts the three
+  links, and with `disabling_lifted_donors()` it retires their propagators
+  too. This presolver still certifies `M ≥ 6`, as it does without
+  `DifferenceLogic` and with it run after, and so does `InferredCumulative`.
+  Every configuration explores 270 recursions, and all eight proofs verify
+  their enumeration of 160 solutions (VeriPB 3.0.2,
+  `--force-checked-deletion`). The probe's links are two-term linears, so a
+  comparison link was not tested.
 - **Candidate merge.** With `InferredCumulative`: no. That presolver lifts
   covers to non-unit coefficients by a knapsack per resource. This one merges
   pairwise at-most-ones, which is scale-free and so works only at unit
@@ -834,8 +844,9 @@ it enables is certified in the proof, and nothing it writes is an assertion.
       is no member's start);
     - `m = max(ends)` posted as `ArrayMax`;
     - a scaled row (`2s − 2m ≤ −2d`);
-    - the precedences lifted into one `DifferenceConstraints`
-      (`rcpsp --variant=global`).
+    - the precedences posted as one `DifferenceConstraints`
+      (`rcpsp --variant=global`; not `--variant=presolved`, whose donors stay
+      posted).
   - **Spellings that leave the member uncounted:**
     - a view start;
     - a three-term row with a variable duration, since the duration is a

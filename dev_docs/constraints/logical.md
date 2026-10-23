@@ -5,8 +5,9 @@
 > **Open issues** filed by this audit: none left open. #1060 is fixed; see
 > [Re-audit, 2026-09-26](#re-audit-2026-09-26). Already open and touching this
 > family: #310 (range literals cannot be written into the model, so a range
-> literal here throws with proofs on), #868 (cross-solver). `cake_pb_cp` has no
-> rule for `and_if` / `or_if` (#1100; #953, which asked for `AndIf` and `OrIf`,
+> literal here throws with proofs on; #1225 is the same throw, filed for
+> reification conditions), #868 (cross-solver).
+> `cake_pb_cp` has no rule for `and_if` / `or_if` (#1100; #953, which asked for `AndIf` and `OrIf`,
 > closed on 2026-09-18 when #958 added them). Tracked under #871.
 
 Four classes over one template and two propagators. `And(lits, r)` says `r ⇔ ∧ lits`, and
@@ -81,8 +82,8 @@ A literal is any `IntegerVariableCondition` (`=`, `≠`, `<`, `≥` and the rang
 forms) or a constant `TrueLiteral` / `FalseLiteral`, so the family is not
 confined to Booleans: MiniZinc's `set_in` glue posts `Or{x < l, x ≥ u}` over
 integer variables. **A range literal throws with proofs on**: the model cannot
-yet write one (#310), and nothing here avoids it. With proofs off it is
-correct.
+yet write one (#310; the same throw for a reification condition is #1225), and
+nothing here avoids it. With proofs off it is correct.
 
 Degenerate shapes:
 
@@ -697,7 +698,8 @@ disabling is shown instead by #1105's mutations, each of which they catch.
 - **Consistency on the aliased rows**, which use plain enumeration. Neither
   propagator is `GAC` there; see rule 1.
 - **Range literals**, which the literal-form rows never draw, so nothing shows
-  that they throw with proofs on (#310).
+  that they throw with proofs on (#310; #1225 is the reification-condition
+  case).
 - **`and` or `or` inside an XCSP3 expression.**
 - **The `gcspy` path to the half-reified forms**: `python_test.py` has
   `test_and_if` and `test_or_if`, but they are commented out of
@@ -864,13 +866,14 @@ Booleans.
 
 ### Proof-logging gaps
 
-**One, already filed: #310.** A range literal (`x ∈ [l, u]` or its negation)
-in any of the four classes throws `UnimplementedException` from model writing
-when proofs are on, because the names-and-IDs tracker cannot yet state one in
-the OPB. With proofs off the answers are right. No front end posts a range
-literal here; the C++ API can. Otherwise every inference is one justified RUP,
-nothing is asserted at `AssertionLevel::Off`, and each propagator infers the same
-with proofs on and off. Only whether it builds reasons differs.
+**One, already filed: #310** (the same throw, filed for reification conditions,
+is #1225). A range literal (`x ∈ [l, u]` or its negation) in any of the four
+classes throws `UnimplementedException` from model writing when proofs are on,
+because the names-and-IDs tracker cannot yet state one in the OPB. With proofs
+off the answers are right. No front end posts a range literal here; the C++ API
+can. Otherwise every inference is one justified RUP, nothing is asserted at
+`AssertionLevel::Off`, and each propagator infers the same with proofs on and
+off. Only whether it builds reasons differs.
 
 ### Known limitations
 
@@ -882,7 +885,8 @@ with proofs on and off. Only whether it builds reasons differs.
   `network_50_cstr` hit, but not this one.
 - **Not generalised arc consistent over two literals on one variable**, which
   is the shape MiniZinc's `set_in` glue posts.
-- **A range literal throws with proofs on** (#310).
+- **A range literal throws with proofs on** (#310; #1225 is the
+  reification-condition case).
 - **`AndIf` and `OrIf` do not chain through `cake_pb_cp`**, which has no rule
   for either keyword (#1100; #953, which asked for them, is closed, and #958
   added them). No front end but CPMpy posts them.

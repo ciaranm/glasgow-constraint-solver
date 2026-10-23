@@ -363,9 +363,13 @@ hands off to one, which is `Tabulated` on small domains (see
 **Presolvers.**
 
 - `difference_logic` enumerates `ReifiedLinearInequality` donors, recognises
-  two-term `±1` rows as difference edges, and builds `pol`s on the row named by
+  two-term `±1` rows as difference edges, and the propagator it installs builds
+  `pol`s on the row named by
   `ConstraintProofModelData<ReifiedLinearInequality>::primary_row_role`.
   That role is public API: changing which row it names breaks the presolver.
+  With `disabling_lifted_donors()` (off by default) it also disables the
+  propagators of the unconditional donors it lifted
+  ([`difference_logic.md`](../presolvers/difference_logic.md)).
 - `makespan_links` reads the same donors for `start + d ≤ makespan` links.
 - None rewrites into this family.
 
@@ -415,8 +419,9 @@ label. The labels are cake's, and matter to `opbdiff`, except for two:
 
 - **`primary_row_role`** is public API. `ConstraintProofModelData<ReifiedLinearInequality>`
   names the `S ≤ v` row as the empty role for `MustHold` and `If`, and
-  nothing for the other three forms. The difference-logic presolver builds
-  `pol`s on it, so changing which row it names breaks a caller.
+  nothing for the other three forms. The propagator the difference-logic
+  presolver installs builds `pol`s on it, so changing which row it names
+  breaks a caller.
 - The `If` equality's `le`/`ge` labels are marked as invented, because no
   chain lane covers them.
 

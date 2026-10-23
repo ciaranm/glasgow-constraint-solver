@@ -8,8 +8,9 @@
 > system on `parity-learning` is posted on #983. Already open and touching
 > this family: #983 (the system and its presolver are reachable from no
 > front end), #310 (range literals cannot be written into the model, so a
-> range literal in either class throws with proofs on), #649 (implied
-> equivalences have nowhere to live), #868 (cross-solver). Tracked under #871.
+> range literal in either class throws with proofs on; #1225 is the same throw,
+> filed for reification conditions), #649 (implied equivalences have nowhere
+> to live), #868 (cross-solver). Tracked under #871.
 
 `ParityOdd(lits)` says that an odd number of the literals hold: an XOR. It is
 one class with one propagator, and it is generalised arc consistent on one XOR
@@ -108,10 +109,11 @@ system subsumes them, by comparing trees node for node.
 ### Variable kinds and views
 
 Any literal over any `IntegerVariableID`, with one exception when proofs are
-on. **A range literal throws with proofs on**, in both classes: the model cannot
-yet write one (#310), and nothing here avoids it. `ParityOdd{{in_range(x, 1,
-3)}}` and `ParitySystem` over the same one-literal row, with `x ∈ 0..4`, each
-enumerate `x = 1, 2, 3` with proofs off, and with proofs on each throws
+on. **A range literal throws with proofs on**, in both classes: the model
+cannot yet write one (#310; the same throw for a reification condition is
+#1225), and nothing here avoids it.
+`ParityOdd{{in_range(x, 1, 3)}}` and `ParitySystem` over the same one-literal
+row, with `x ∈ 0..4`, each enumerate `x = 1, 2, 3` with proofs off, and with proofs on each throws
 `range literals during model writing are not yet supported` from
 `NamesAndIDsTracker::need_invar` (checked at `61112ed0`). No front end posts
 one; the C++ API can, as `logical.md` records for its own classes. Otherwise,
@@ -638,7 +640,7 @@ derives 38 slack rows; and in the presolver test, 50 slack rows, 121 units and
 - **XCSP3's `xor` inside an expression**, and the `gcspy` path (`test_xor` in
   `python_test.py` is commented out of `python/CMakeLists.txt`).
 - **Range literals**, in either class. No row draws one, so nothing shows that
-  they throw with proofs on (#310).
+  they throw with proofs on (#310; #1225 is the reification-condition case).
 - **A system unit whose inference fails** because an earlier unit in the same
   call decided a shared variable (rule 5's conflict case). This review's probe
   reached it; no fixture does.
@@ -722,12 +724,13 @@ scale.
 
 ### Proof-logging gaps
 
-**One, already filed: #310.** A range literal (`x ∈ [l, u]` or its negation)
-in `ParityOdd` or `ParitySystem` throws `UnimplementedException` from model
-writing when proofs are on, because the names-and-IDs tracker cannot yet state
-one in the OPB. With proofs off the answers are right. No front end posts a
-range literal here; the C++ API can. Otherwise every inference is justified,
-and nothing is asserted at `AssertionLevel::Off`.
+**One, already filed: #310** (the same throw, filed for reification conditions,
+is #1225). A range literal (`x ∈ [l, u]` or its negation) in `ParityOdd` or
+`ParitySystem` throws `UnimplementedException` from model writing when proofs
+are on, because the names-and-IDs tracker cannot yet state one in the OPB. With
+proofs off the answers are right. No front end posts a range literal here; the
+C++ API can. Otherwise every inference is justified, and nothing is asserted at
+`AssertionLevel::Off`.
 
 For a presolver-installed system, the hints name `CurrentlyUnnamedConstraint`
 and carry no origin rows (rules 5 and 6). That is **not** an information gap:
@@ -746,7 +749,8 @@ elimination, per assertion.
   `parity-learning`.
 - **Root scaffolding is never deleted**: `2n + 2` lines per chain row stay at
   `Top`.
-- **A range literal throws with proofs on** (#310).
+- **A range literal throws with proofs on** (#310; #1225 is the
+  reification-condition case).
 
 ### Next steps
 
