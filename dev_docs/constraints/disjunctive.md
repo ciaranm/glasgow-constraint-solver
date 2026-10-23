@@ -177,15 +177,15 @@ Degenerate cases:
 - **Two tasks sharing one start variable:** UNSAT when both have positive
   length, which `disjunctive_test`'s `dup` runs check.
 
-The header's class comment says that in non-strict mode "durations must
-currently be constant (variable non-strict durations are future work)". That
-is stale. `prepare()` gives every variable duration in a non-strict
-constraint a zero-length escape flag, and the `disjunctive_var_sat` chain case
-is exactly that shape. Two more comments are stale: `DisjunctiveRules`' "Both
-are on by default", from when there were two switches, and `with_rules`'
-"(all of them, by default)" (`disjunctive.hh:514-515`). All three are
-stale at `0a5b4ec6`; #1265, a comments-only PR merged after it, rewrites
-them.
+At `0a5b4ec6` the header's class comment said that in non-strict mode
+"durations must currently be constant (variable non-strict durations are
+future work)". That was stale. `prepare()` gives every variable duration in a
+non-strict constraint a zero-length escape flag, and the `disjunctive_var_sat`
+chain case is exactly that shape. Two more comments were stale there:
+`DisjunctiveRules`' "Both are on by default", from when there were two
+switches, and `with_rules`' "(all of them, by default)"
+(`disjunctive.hh:514-515`). #1265, a comments-only PR merged after
+`0a5b4ec6`, rewrote all three.
 
 ### Concrete constraints and frontend coverage
 
@@ -264,7 +264,8 @@ detection's summed recursions are 0.984× the sweep detection's (median
 1.000×) over the 64 instances both close (`tmp/pr1301-factcheck/sweep/`).
 The set rule is off pending #762. #1243 and #1244 changed the measured value
 of the set rule and of edge-finding, and #1275 has fixed both, but the
-design note's tables, which predate it, have not been re-taken.
+design note's tables, which predate it, have not been re-taken; #1301
+(open) labels them as predating #1275.
 
 The last four fields only change the proof, never the inferences.
 `overload_max_window` does change the inferences: it declines conflicts, with
@@ -327,8 +328,8 @@ is the nearest thing, a task-level half-reification, and it is native.
     (`cumulative.md`).
   - `recover_am1_from_pairs` (`innards/proofs/am1_from_pairs.hh`): the
     per-time fold. Its other callers are `all_different`'s justification,
-    `SubCircuit`, `MinDistance`, `Sort`, `InferredDisjunctive` and the
-    `recover_am1` helpers.
+    `SubCircuit`, `MinDistance`, `Sort`, `Regular`'s canonical run and
+    `InferredDisjunctive`.
   - `ComparatorNetwork` (`innards/proofs/comparator_network.{hh,cc}`): the
     sorting-network certificate. **This document owns its description**
     ([Developer commentary](#developer-commentary)). `Disjunctive2D`'s
@@ -346,9 +347,10 @@ is the nearest thing, a task-level half-reification, and it is native.
     presolver actually installs something.
   - **Over a `Disjunctive2D` projection donor**, `InferredDisjunctive` and
     `InferredCumulative` silently decline. At `Definitions`, `Inferences` and
-    `Backtracking` the proof then verifies. At `Links` it is rejected, because
-    there every proof of a satisfiable model is rejected at its first `solx`
-    (#1210) and the projection fixtures are satisfiable.
+    `Backtracking` the proof then verifies. At `Links` it is rejected at its
+    first `solx`, for #1210: the projection fixtures are satisfiable and
+    declare their variables by range, which #1210 needs (a range wider than
+    `{0, 1}`, though that alone is not always enough).
     `CumulativeStrengthening` throws, but only where it would
     strengthen something (the fact-check's `bars` instance); where it has
     nothing to strengthen (`strip`) it posts nothing and the proof verifies.
@@ -468,7 +470,8 @@ mismatch.
   - one `l_i ≥ declared lb` RUP per variable-duration task, and one `¬zw_i`
     RUP.
   - guarded window-energy rows, one per (task, window, guards, duration).
-- **Everything else is at `Temporary`** and is deleted on backtrack: every
+- **Everything else is at `Temporary`** and is deleted once the firing's
+  conclusion is derived: every
   pairwise pol, every energy telescope, every fold when
   `overload_cache_bridge` is off, and every sorting-network wire, comparator
   and lemma.
@@ -936,8 +939,9 @@ Facts that hold for every rule:
   time-tabling off. At `0a5b4ec6`, in `jss_gcs.cc`, the
   recursion count is again 5,450,366 both ways.
   With optional tasks the counts do differ (130 of 1,000 four-task instances
-  at seed 1 in the fact-check's `ttdp2`, and 190 to 217 at five tasks over seeds 1 to 5), because `time_table` also switches presence
-  falsification, which this rule does not replace.
+  at seed 1 in the fact-check's `ttdp2`, and 190 to 217 at five tasks over
+  seeds 1 to 5), because `time_table` also switches presence falsification,
+  which this rule does not replace.
 - **Algorithm** — one `O(n)` scan per task, so `O(n²)` per call. Pairwise,
   pushing to the latest single predecessor's end, rather than Vilím's
   Θ-tree `ect(Ω)` (Vilím 2004).
