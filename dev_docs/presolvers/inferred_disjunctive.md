@@ -99,8 +99,9 @@ Four things to know before touching it.
   that contains a derived Cumulative over a posted donor, because the donor's
   per-time flag definitions are never emitted: at `Inferences` and
   `Backtracking` as a parse error, and at `Definitions`, since #1290's chain
-  recovery, at a recovery `rup` the missing definitions leave unimplied. Over a `Disjunctive2D`
-  projection the presolver installs nothing at those levels (#1234). Those levels are the mode the external justifier is meant to
+  recovery, at a recovery `rup` the missing definitions leave unimplied. Over
+  a `Disjunctive2D` projection the presolver installs nothing at those levels
+  (#1234). Those levels are the mode the external justifier is meant to
   consume. Under `GCS_CUMULATIVE_ENCODING=time-indexed` or `both-recovering`,
   `sample.dzn` verifies `UNDER ASSERTIONS` at `Inferences`.
 
@@ -197,7 +198,8 @@ the installed constraint runs.
 - **`with_rules(CumulativeRules)`**, default `time_table = false,
   overload = true, profile_overload = true`. Time-tabling is off because it
   is redundant: every conflicting pair is already kept apart by its witness.
-  The test asserts that redundancy node for node. What the derived constraint
+  The test asserts that redundancy as the same solution set and recursion
+  count. What the derived constraint
   adds is energy over the clique.
 - **`with_makespan(v)`**: names a makespan. Each posted clique then also
   derives a lower bound on `v` at the root, from the model's
@@ -268,7 +270,8 @@ None. A reified "these tasks are pairwise exclusive" has no use here.
   `recover_conjunction_flag_bridge` (`innards/proofs/flag_bridge.hh`, shared
   with `InferredCumulative`), `recover_am1_from_pairs`
   (`innards/proofs/am1_from_pairs.hh`, also used by `all_different`,
-  `disjunctive`, `sort`, `min_distance` and `subcircuit`), and `find_makespan_links`
+  `disjunctive`, `sort`, `min_distance`, `regular` and `subcircuit`), and
+  `find_makespan_links`
   (`presolvers/innards/makespan_links.hh`, shared with `InferredCumulative`).
 - **Other presolvers, and order.** It runs in the order the presolvers were
   added. `examples/rcpsp` adds it before `InferredCumulative`. A derived
@@ -659,8 +662,9 @@ it enables is certified in the proof, and nothing it writes is an assertion.
   that pair's at-most-one; the pin checks the conclusion's shape, not those.
 - **Neutral?** Time-table neutral, which is why time-tabling is off. A pair is
   already apart on its witness, so the derived profile adds nothing. The test
-  asserts node-for-node equality with energy rules off everywhere (17 nodes
-  either way on its fixture). It is not neutral for energy, which is the point
+  asserts the same solution set and recursion count with energy rules off
+  everywhere (17 recursions either way on its fixture). It is not neutral for
+  energy, which is the point
   of it.
 - **Offline reconstructibility** — the derivation is present at every level,
   so nothing is asserted to reconstruct. The derived constraint's *own*
@@ -899,7 +903,10 @@ not), and `Disjunctive2D` per-axis projections, which are published when their
 window fits (#973). Over a projection, at an assertion level above `Off`,
 the cliques are found but none is installed (#1234's second
 symptom). At `Definitions`, `Inferences` and `Backtracking` the proof
-verifies. At `Links` it is rejected for an unrelated reason: there every proof of a satisfiable model is rejected at its first `solx` (#1210), and the fixture is satisfiable. The stats do say so: `cliques_found = 1`,
+verifies. At `Links` it is rejected at its first `solx`, for an unrelated
+reason, #1210: the fixture is satisfiable and declares its variables by range,
+which #1210 needs (a range wider than `{0, 1}`, though that alone is not
+always enough). The stats do say so: `cliques_found = 1`,
 `cliques_posted = 0`, `declined_by_install = 1`, with the summary `nothing
 inferred` (the fact-check's `d2.cc`, at `definitions` and `inferences`). No
 note is raised. The scan does not recognise anything else, and fails silently
@@ -1066,7 +1073,8 @@ against.
     `ClaimHigherMakespanBound` rejected;
   - the sharp twin and three solution-preservation shapes, all against brute
     force (the `k = 4` shape posts no clique);
-  - neutrality (node-for-node equality under time-tabling);
+  - neutrality (the same solution set and recursion count under
+    time-tabling);
   - budgets, and two disjoint edges giving `dropped_too_small = 2`;
   - optional tasks, all-optional and mixed (the mixed case posts no clique),
     plus `ForgetPresence` rejected;
@@ -1085,7 +1093,7 @@ against.
   - the OPB byte-identical with and without the presolver;
   - the camouflage fixture's three mutations, the proof markers, the
     scaffolding being deleted, and the undefined-flags regression (#1111).
-  
+
   VeriPB runs on every proof the test writes. The enumerations use
   `solve_with` with brute-force comparison, not
   `solve_for_tests_checking_gac`. The test sets no caps of its own, and
