@@ -587,6 +587,24 @@ constraints and do not restate it.
     window**: a 133 MB root proof on Pack_d `pack008` that checks in 8 s,
     against 2.3 MB without it. At the audit, before #1290, it was 822 MB and
     did not check in 30 minutes.
+- [`reachable.md`](reachable.md) — `Reachable` and `DReachable`, MiniZinc's
+  `reachable` and `dreachable` and, through the stdlib's wrappers, `connected`
+  and `dconnected`; also the child that `Tree` and `Path` post. One propagator
+  over a breadth-first unfolding of reachability, `reach[v][k]`, against which
+  every removal is a single RUP because unit propagation replays the
+  propagator's own search. Generalised arc consistent on nodes, edges and root
+  in both spellings with its cut-vertex and bridge forcing on (no unsupported
+  value in 12,000 random root states per spelling); with it off, only the
+  0-values lose support. The costs are on the proof side and in one algorithm:
+  the encoding is `Θ(nodes × (nodes + edges))` rows, 136,395 for an 11-by-11 grid, and it
+  taxes every proof line, this family's or not; a forcing made while the root
+  is open pins a lemma per candidate root, 96.5% of `hitori` `h11-1`'s 673 MB
+  proof, mostly each lemma's own piece's border (narrowing each lemma to its
+  piece saves 23.5% and leaves them 95%; #1312); and the directed forcing searches once per candidate per
+  node and per edge on every call, 3.3 ms a call at 400 nodes against 0.16 ms
+  undirected (#1316). An empty node set is a solver error rather than unsatisfiable
+  through MiniZinc's int spelling (#1305, shared with `tree` and `path`). The design note's "not implemented" section
+  is stale.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
