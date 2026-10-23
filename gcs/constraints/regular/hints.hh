@@ -28,6 +28,17 @@ namespace gcs::innards::hints
         ConstraintID originator;
         static constexpr std::string_view hint_name = "regular_legacy";
     };
+
+    /**
+     * \brief RegularBacchus's assertion hint: just the owning constraint.
+     *
+     * \ingroup Innards
+     */
+    struct RegularBacchus
+    {
+        ConstraintID originator;
+        static constexpr std::string_view hint_name = "regular_bacchus";
+    };
 }
 
 #endif

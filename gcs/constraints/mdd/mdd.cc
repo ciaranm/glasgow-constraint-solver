@@ -18,6 +18,7 @@
 #include <fmt/core.h>
 #endif
 
+#include <algorithm>
 #include <any>
 #include <memory>
 #include <set>
@@ -43,6 +44,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using std::ranges::find;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -520,6 +522,20 @@ auto MDD::define_proof_model(ProofModel & model, const State &) -> void
 
 auto MDD::install_propagators(Propagators & propagators) -> void
 {
+    // No variables (#1329): the empty sequence is accepted exactly when the root,
+    // the only node of layer 0, is an accepting terminal. The propagator has no
+    // triggers and only removes values, so it could never fail here. prepare() still
+    // returned true, so the OPB has the accepting row, and with the root the only
+    // node of layer 0 and not accepting, that row is `0 >= 1`: the contradiction is
+    // RUP. (A terminal other than 0 would be out of range, which is #1333.)
+    if (_vars.empty()) {
+        if (find(_accepting_terminals, 0L) == _accepting_terminals.end())
+            propagators.install_initial_contradiction(constraint_id(), constraint_type(),
+                "An MDD constraint was posted over no variables with a root that is not an accepting terminal",
+                JustifyUsingRUP{hints::MDD{constraint_id()}});
+        return;
+    }
+
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
