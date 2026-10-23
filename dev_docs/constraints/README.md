@@ -275,6 +275,23 @@ constraints and do not restate it.
     leave a hole, 5.5 s at width 10⁹, where no current guard can see it;
   - the proof costs `Θ(n³)` lines at the root, 118 s to check at `n = 80`, plus
     `Θ(n²)` lines per order-statistic inference.
+- [`all_equal.md`](all_equal.md) — `AllEqual`: one propagator that intersects
+  every domain in a call, bounds first and then holes, over a chain of
+  consecutive-pair equalities matching `cake_pb_cp`'s label for label. It is
+  generalised arc consistent on distinct variables, holes and views included,
+  and holes affect every variable. The audit's headline, wrong answers, is
+  fixed by #1180: the propagator disabled itself when `vars[0]` was
+  single-valued after its own pruning, but `vars[0]` could become fixed during
+  the call while another position was left unequal to it, so
+  `AllEqual{x, y}` with `x ∈ {1, 3}`, `y ∈ {2, 4}` reported `(3, 2)`, from
+  the C++ API, the `.scp` reader, XCSP3 and, under search, MiniZinc; it now
+  disables only when the entry bounds meet. A same-sign repeat with offsets
+  (`{x, x + 1}`) takes W/2 calls to fail, and an opposite-sign one is
+  not `bounds(Z)`; both need a view, which only the C++ API can post. On an
+  identical enumeration it makes 4.0 to 15.0 times fewer calls than the
+  `n − 1` `Equals` it replaces, but is no faster, and takes 4.6 to 10.5 times
+  Gecode's time. Bounds and values are one RUP each, a removed interval three;
+  a bound moved across more than one equality is checked, not argued.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
