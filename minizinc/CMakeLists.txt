@@ -210,6 +210,16 @@ set_tests_properties(minizinc-subgraph PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-dag COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dag $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dagtest true true)
 set_tests_properties(minizinc-dag PROPERTIES SKIP_RETURN_CODE 66)
 
+# dag and the four-argument subgraph over an empty node set are true, so these
+# models keep the solutions of their free variable (#1303). Nothing reaches a
+# builtin, so there is no --fzn-pattern; --reference-std is the standard
+# library's reading of the empty case.
+add_test(NAME minizinc-dag-empty COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dagempty true true)
+set_tests_properties(minizinc-dag-empty PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-subgraph-empty COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ subgraphempty true true)
+set_tests_properties(minizinc-subgraph-empty PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-tree COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_tree $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ treetest true true)
 set_tests_properties(minizinc-tree PROPERTIES SKIP_RETURN_CODE 66)
 
