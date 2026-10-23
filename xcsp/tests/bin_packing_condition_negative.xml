@@ -1,0 +1,14 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="x0"> -1..1 </var>
+        <var id="x1"> 0..1 </var>
+        <var id="x2"> 0..1 </var>
+    </variables>
+    <constraints>
+        <binPacking>
+            <list> x0 x1 x2 </list>
+            <sizes> 2 3 1 </sizes>
+            <condition> (le,4) </condition>
+        </binPacking>
+    </constraints>
+</instance>

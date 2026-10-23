@@ -675,20 +675,7 @@ namespace
             post_cumulative(origins, need_variables(lengths), need_variables(heights), cond);
         }
 
-        // Helpers: infer the bin index range from item-variable bounds, and
-        // build a load-vars vector with the given per-bin upper bound.
-        auto bin_packing_num_bins(const vector<XVariable *> & x_vars, const string & ctx) -> size_t
-        {
-            long long num_bins = 0;
-            for (auto * x : x_vars) {
-                auto & mv = find_variable(x->id);
-                if (mv.lower < 0_i)
-                    report_unsupported(ctx, "item bin index must be non-negative");
-                num_bins = max(num_bins, mv.upper.raw_value + 1);
-            }
-            return static_cast<size_t>(num_bins);
-        }
-
+        // The total of the item sizes, an upper bound on any bin's load.
         auto bin_packing_total_size(const vector<int> & sizes) -> Integer
         {
             long long total = 0;
@@ -699,11 +686,43 @@ namespace
 
         auto buildConstraintBinPacking(string, vector<XVariable *> & x_vars, vector<int> & sizes, XCondition & cond) -> void override
         {
-            // Single shared XCondition over every bin's load. We materialise
-            // per-bin load variables (bounded by total size) and apply the
-            // condition uniformly. Bin indices are inferred from item bounds.
-            auto items = need_variables(x_vars);
-            auto num_bins = bin_packing_num_bins(x_vars, "binPacking");
+            // Single shared XCondition over every bin's load. The bins are the
+            // values the items' domains can take, as ACE reads it: the
+            // specification (Semantics 40) quantifies over the bins the items
+            // take, which differs only in that ACE also constrains a bin some
+            // item could take but none does. A value in v_min..v_max that no
+            // item's domain contains is not a bin, so it gets a constant zero
+            // load and no condition: posting the condition there turned a
+            // condition that rejects 0 into a wrong UNSATISFIABLE (#1345).
+            // Bin b is BinPacking's bin b - v_min, which also lets an item
+            // domain reach below zero.
+            if (x_vars.empty())
+                return;
+
+            optional<Integer> v_min, v_max;
+            for (auto * x : x_vars) {
+                auto & mv = find_variable(x->id);
+                v_min = v_min ? min(*v_min, mv.lower) : mv.lower;
+                v_max = v_max ? max(*v_max, mv.upper) : mv.upper;
+            }
+
+            auto num_bins = static_cast<size_t>((*v_max - *v_min).raw_value + 1);
+            vector<bool> is_bin(num_bins, false);
+            for (auto * x : x_vars) {
+                auto & mv = find_variable(x->id);
+                if (mv.values)
+                    for (auto v : *mv.values)
+                        is_bin[static_cast<size_t>((Integer{v} - *v_min).raw_value)] = true;
+                else
+                    for (auto v = mv.lower; v <= mv.upper; ++v)
+                        is_bin[static_cast<size_t>((v - *v_min).raw_value)] = true;
+            }
+
+            vector<IntegerVariableID> items;
+            items.reserve(x_vars.size());
+            for (auto & item : need_variables(x_vars))
+                items.push_back(*v_min == 0_i ? item : item - *v_min);
+
             auto total = bin_packing_total_size(sizes);
 
             vector<Integer> sizes_i;
@@ -714,12 +733,13 @@ namespace
             vector<IntegerVariableID> loads;
             loads.reserve(num_bins);
             for (size_t b = 0; b < num_bins; ++b)
-                loads.push_back(create_aux_variable(0_i, total, "binpack_load"));
+                loads.push_back(is_bin[b] ? create_aux_variable(0_i, total, "binpack_load") : constant_variable(0_i));
 
             _problem.post(BinPacking{items, std::move(sizes_i), loads});
 
-            for (auto & l : loads)
-                apply_count_condition(l, cond, "binPacking");
+            for (size_t b = 0; b < num_bins; ++b)
+                if (is_bin[b])
+                    apply_count_condition(loads[b], cond, "binPacking");
         }
 
         auto buildConstraintBinPacking(string, vector<XVariable *> & x_vars, vector<int> & sizes, vector<int> & capacities_or_loads, bool load)
