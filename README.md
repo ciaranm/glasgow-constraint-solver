@@ -362,7 +362,10 @@ autotuner) without recompiling. Each is read once, on first use.
   ``ProofOptions`` passed to ``solve_with()`` does not set one explicitly (an option set in code
   takes precedence). Accepts ``Off``, ``Definitions``, ``Links``, ``Inferences``, or
   ``Backtracking`` (case-insensitive), or the numeric values ``0`` to ``4``; an unrecognised
-  value is ignored with a warning.
+  value is ignored with a warning. It applies to every proof the solver writes, including
+  those from ``fzn-glasgow``, the XCSP3 and ``.scp`` solvers and ``gcspy``, none of which
+  sets a level itself. Every level other than ``Off`` is work in progress and is not
+  expected to work in every case yet (see ``AssertionLevel`` in ``gcs/proof.hh``).
 
 * ``GCS_VERBOSE_LOGGING``: if set to anything, every proof log line is preceded by comment lines
   giving a C++ stacktrace of the solver code that emitted it, which is very useful for figuring
