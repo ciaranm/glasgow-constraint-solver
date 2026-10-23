@@ -27,7 +27,8 @@ it.
 ### Re-audit, 2026-09-25
 
 Two of the three issues this audit filed against the family itself have been
-fixed; #1048 (the CPU gap to Gecode) is still open. Every section below has been brought into line with `61112ed0`. **Figures not marked
+fixed; #1048 (the CPU gap to Gecode) is still open. Every section below has
+been brought into line with `61112ed0`. **Figures not marked
 as re-measured are still from `00797a97`**, the first audit's commit; that
 covers the CPU and Gecode comparison, the `perf` profile and the corpus survey,
 none of which the two fixes touch.
@@ -56,7 +57,8 @@ here; see [Propagator inventory](#propagator-inventory) for the first.
 One fix has merged that this document described as open: #1046, which this
 audit found in another family. Nothing under `gcs/constraints/inverse/` has
 changed since `61112ed0` except the integer-range check on its two starts
-(`3435a4e1`, #1117, #1168, #1188), which this pass does not cover. In CMake,
+(`3435a4e1`, #1117, #1168, #1188), which this pass does not cover (it is now
+under [Robustness and limits](#robustness-and-limits)). In CMake,
 #1208 added an `inverse_constraint_view_mixed_late` lane, now listed under
 [Tests](#tests).
 
@@ -234,7 +236,8 @@ aliased shapes itself, seven of them in its bare configuration (no `GAC`
 check): a repeat in `x` in both forms, a repeat in `y` in both forms, an
 involution, and two and three offset views of one variable in the injection
 form's `x`. The constructor's repeat check compares handles, so two views of
-one variable that differ in offset or negation are not caught by it. They need not be for soundness: answers and
+one variable that differ in offset or negation are not caught by it. They need
+not be for soundness: answers and
 proofs are right. But propagation is no longer `GAC`, because the matching
 treats the two positions as independent; see rule 5. The needed-value rule
 guards against the same thing: two views can delete a matched edge behind the
@@ -400,8 +403,9 @@ cake's OPB as well as ours.
 
 ### Initialisation and global data
 
-- **The constructor** rejects a first array longer than the second, and looks
-  for a repeated non-constant handle within `x`, and within `y` in the
+- **The constructor** refuses a start outside the integer range with
+  `IntegerOverflow` (#1215), rejects a first array longer than the second, and
+  looks for a repeated non-constant handle within `x`, and within `y` in the
   bijection form. That is a pair loop, `O(n²)`, once. A repeat is remembered,
   not rejected.
 - **`prepare()`** calls `define_bound` twice per variable of `x`, and of `y` in
@@ -464,7 +468,8 @@ stage, which overwrites it every run, only in the injection form.
 and, in the bijection form, every `y[j]`, `Θ(Σ|D|)`, and asks one `in_domain`
 each. Then it runs the whole `GAC` stage. In the injection form the
 needed-value rule follows: a union-find over the needed values, then for each
-one a scan of `x` for the entries that can take it, `O(m)` per needed value. Any pass that changes anything is followed by another, and a
+one a scan of `x` for the entries that can take it, `O(m)` per needed value.
+Any pass that changes anything is followed by another, and a
 `GAC` removal from `x` needs a further channel pass to reach `y`. On `black-hole`
 2013/12 the propagator ran 33,693 times, made 80,550 passes, and ran the `GAC`
 stage 77,445 times.
@@ -480,8 +485,8 @@ present (#1048, and the general question is #364).
 `consistency::Auto`.
 
 **What this family observes:** holes in every variable, as the inventory says.
-This is the opposite of [`linear`](linear.md) and
-[`comparison`](comparison.md): a variable in an `Inverse` keeps any neighbour's
+This is the opposite of [`comparison`](comparison.md) and of most of
+[`linear`](linear.md)'s forms: a variable in an `Inverse` keeps any neighbour's
 optional interior pruning alive, and rightly, because removing a value from
 `y[j]` removes a value from `x[i]`.
 
@@ -502,9 +507,11 @@ optional interior pruning alive, and rightly, because removing a value from
 - **Degenerate shapes**: see [Semantics](#semantics). A constant outside the
   index range fails at the root through its bound row, and the `UNSATISFIABLE`
   verifies against cake's OPB too.
-- **Overflow**: the only arithmetic is on `Integer`s (`n + start − 1`, the value
-  offsets), and `Integer` arithmetic throws on overflow rather than wrapping. So
-  an absurd start fails loudly.
+- **Overflow**: the constructor refuses a start outside the integer range
+  (`dev_docs/integer-ranges.md`) with `IntegerOverflow` (#1215), and the
+  `integer_ranges` lane has a case for the `x` start. After that the only
+  arithmetic is on `Integer`s (`n + start − 1`, the value offsets), which
+  throws on overflow rather than wrapping, and in-range starts cannot reach it.
 - **Aliasing**: see [Variable kinds and views](#variable-kinds-and-views), and
   the strength caveat under rule 5.
 
@@ -581,7 +588,8 @@ all.
 **What licenses them.** Rules 1 and 2 assert one of the model's own rows, so
 unit propagation on that row alone refutes the negation, and no theorem is
 needed. Rule 6 asserts an order literal against a bound row over the bit sum,
-which also needs the literal's definition: **Theorem 2.7**. Rules 3–5 are `all_different`'s JP 3.1, **JP 3.16** and **JP 3.17**,
+which also needs the literal's definition: **Theorem 2.7**. Rules 3–5 are
+`all_different`'s JP 3.1, **JP 3.16** and **JP 3.17**,
 with that document's departures and one more of our own. The pairwise clause
 `x[a] ≠ v ∨ x[b] ≠ v`, which JP 3.1 takes from a not-equals row and JP 3.16 and
 3.17 sum into at-most-ones, has no row here. It is RUP through **two**
@@ -645,7 +653,7 @@ were not re-run for this re-audit.
   `j + y_start ∉ D(x[w − x_start])`. **The bijection form only**: the injection
   form has no rows from `y` to `x` to justify it, and nothing to enforce, since
   `y[j] = w` does not require `x[w] = j` there. Rule 7 does its job.
-- **Strength** — as rule 1, mirrored.
+- **Strength** — `partial`, as rule 1, mirrored.
 - **Algorithm** — as rule 1, over `y`.
 - **Why it is true** — as rule 1, mirrored.
 - **Proof technique** — `RUP` against the other row of the pair.
@@ -929,6 +937,7 @@ only, as the one every caller uses (`innards/recover_am1.hh:17-35`), so
 | `inverse_constraint_view_mixed` | the same, positions wrapped in views of fresh variables; the aliased cases run in the bare configuration only |
 | `inverse_constraint_view_mixed_late` | from #1208: the view-wrapped run with every view registered by a constraint posted after `Inverse` (`--late-view-registration`) |
 | `exception_test` | a first array longer than the second throws at construction |
+| `integer_ranges` | from #1215: an `x` start just outside the integer range is refused with `IntegerOverflow` |
 | `solve_test` | a repeated variable in `x` reports its `StatsNote` |
 | `scp_chain_inverse_sat`, `scp_chain_inverse_offsets_sat`, `scp_chain_inverse_aliased_unsat` | see [Cake conformity](#cake-conformity) |
 | `xcsp_channel_self`, `xcsp_channel_two` | the two XCSP3 list forms, three variables each |
@@ -941,7 +950,8 @@ At `61112ed0` the 16 lanes that `ctest -R 'inverse|channel'` selects all pass,
 and so does `talent`. That run had default caps, MiniZinc 2.9.7, and
 `cake_pb_cp` and `opbdiff` on the path. The chain case was confirmed to run
 cake's verified step rather than the fallback. VeriPB runs in both data-driven
-lanes. At `--seed=1`, `inverse_test` checks 85 proofs (39 instances twice, plus the 7 aliased cases), and all verify. Both
+lanes. At `--seed=1`, `inverse_test` checks 85 proofs (39 instances twice,
+plus the 7 aliased cases), and all verify. Both
 lanes are seeded (`establish_and_announce_seed`) and byte-reproducible with
 `--seed=N`. (At `00797a97`, the first audit's 12 lanes passed with caps off,
 and `--seed=1` checked 42 proofs.)
@@ -1045,7 +1055,8 @@ loop), as a local switch: 2.463, 2.470 and 2.476 s against 3.011, 2.995 and
 the same shape as ours: channel, domain-consistent `distinct` on `x` only,
 channel back. But it keeps each view's last-propagated size, visits only views
 whose size changed, and walks the complement of their domain within the
-bounds it last saw, pruning the partner. It makes one ordered pass rather than looping, keeps its `distinct`
+bounds it last saw, pruning the partner. It makes one ordered pass rather than
+looping, keeps its `distinct`
 graph between calls, and handles an assignment-only event by value propagation
 alone. Ours re-checks every value still present, at least twice per effectful
 call, and rebuilds the `AllDifferent` components each time (#522). #1048 has the
@@ -1104,7 +1115,8 @@ The `61112ed0` column is exactly the first audit's figure with the root
 at-most-ones taken away, as #1089's own measurement also found. It is
 `1.5·n(n − 1)` lines of this family's own inferences (rules 1–3), plus the
 shared literal layers, `4n² + 8n` (`2n²` order-literal `pol`s, `2n² + 4n`
-`core` moves, `4n` unit bounds), plus 6 fixed header and footer lines. The at-most-ones had added exactly
+`core` moves, `4n` unit bounds), plus 6 fixed header and footer lines. The
+at-most-ones had added exactly
 `n·C(n, 2) + 2n` (pairwise RUPs, folds and deletions), 85% of the proof at
 `n = 64`. On `black-hole`, where the search needs 32 of the 52 at-most-ones
 eventually, removing them saved only 1.8% of the lines. At `00797a97` a local
