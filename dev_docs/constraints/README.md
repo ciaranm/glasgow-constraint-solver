@@ -605,6 +605,25 @@ constraints and do not restate it.
   undirected (#1316). An empty node set is a solver error rather than unsatisfiable
   through MiniZinc's int spelling (#1305, shared with `tree` and `path`). The design note's "not implemented" section
   is stale.
+- [`dag.md`](dag.md) — `Dag`, MiniZinc's `dag`: the selected part of a fixed
+  digraph has no directed cycle and every selected edge has both endpoints
+  selected. That is stricter than the stdlib decomposition, deliberately:
+  six solutions to five on one edge, and Chuffed has four. One propagator,
+  five rules, each **one RUP** against `Reachable`'s level unfolding with the
+  root taken out and restricted to the input's strongly connected components.
+  It is generalised arc consistent by downward closure, and 10,000 random
+  graphs found no unsupported value. Repeated variables lose that, but no
+  solutions. The audit's findings: through MiniZinc, an **empty node set is
+  unsatisfiable**, because `fzn_dag.mzn` takes `min` of an empty index set,
+  which its sibling files guard (#1303, and the four-argument `subgraph`
+  has the same defect). The propagator rebuilds everything on every call and
+  searches edges that cannot close a cycle; two changes that keep every
+  inference cut 29% of the instructions on `maximum-dag` `25_04` (#1310).
+  Installing any one-propagator constraint is quadratic in its trigger count,
+  about 11 s at the root of a 100,000-node path (#1309, engine). The encoding costs
+  nodes × (nodes + edges) per strongly connected component, so even one
+  400-node cycle is 52 MB of OPB. `connectivity-proofs.md` stays as the design note, shared with
+  `reachable.md`.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
