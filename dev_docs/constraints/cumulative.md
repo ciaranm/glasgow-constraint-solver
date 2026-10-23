@@ -25,7 +25,8 @@
 ### Re-audit, 2026-10-08
 
 Seven `Cumulative` PRs merged between the audit and `0a5b4ec6`, closing five of
-the six issues it filed (#1234 is still open), #1223, and #1254. This pass brings the text into line with them.
+the six issues it filed (#1234 is still open), #1223, and #1254. This pass
+brings the text into line with them.
 
 | Issue | Fixed by | What changed here |
 |---|---|---|
@@ -140,8 +141,8 @@ Five things to know before touching it.
   rejects the proof. On `sample.dzn` at `0a5b4ec6` that is a syntax error (an
   undefined `@v[..][ca][r]` label) at `Inferences` and `Backtracking`, and at
   `Definitions` (and `Links`) a rejected `rup ~cact ∨ cb` in the chain base
-  at `t = 0` of #1290's recovery (`recover_by_chain` with no previous row). At `7e1c4178` the audit recorded a syntax error
-  at all three levels.
+  at `t = 0` of #1290's recovery (`recover_by_chain` with no previous row).
+  At `7e1c4178` the audit recorded a syntax error at all three levels.
   - Under the test-only `time-indexed` encoding the derived rows build on the
     donor's model rows instead, and the same runs verify `UNDER ASSERTIONS`.
   - A presolver that strengthens nothing installs nothing, and its proof
@@ -960,13 +961,14 @@ Facts true of every rule:
 - **Tightness.** 53 ctest lanes run a corrupted derivation and expect VeriPB to
   reject it (41 at `7e1c4178`). Nine of them are twins on the `BothRecovering`
   arm, and one
-  (`cumulative_overload_mutation_recover_wrong_checkpoint_recovering`) runs only there. They are listed
-  per rule. Two of the 53, added by #1290, corrupt the recovery's chain step
-  under the overload certificate, and are listed under `overload`. **Seven lanes were deleted at the encoding flip** (2026-09-12),
-  because under the shipped encoding the corrupted step is no longer
-  load-bearing: unit propagation over the checkpoint rows supplies what the
-  step did (`gcs/CMakeLists.txt:717-733`). The certificates still emit those
-  steps.
+  (`cumulative_overload_mutation_recover_wrong_checkpoint_recovering`) runs
+  only there. They are listed per rule. Two of the 53, added by #1290,
+  corrupt the recovery's chain step under the overload certificate, and are
+  listed under `overload`. **Seven lanes were deleted at the encoding flip**
+  (2026-09-12), because under the shipped encoding the corrupted step is no
+  longer load-bearing: unit propagation over the checkpoint rows supplies what
+  the step did (`gcs/CMakeLists.txt:717-733`). The certificates still emit
+  those steps.
 
 ### Rule: time-table-overflow
 
@@ -1351,9 +1353,10 @@ New since the audit (#1284, for #1239).
 - **Infers** — a contradiction: (KAOC), the knapsack-augmented overload check
   (Cloutier and Quimper, CP 2026).
 - **Fires when** — `knapsack_overload` and `overload` on, and `capacity ≤
-  4096`. The knapsack flag turns the elastic machinery on by itself. As `overload-elastic`, with each time point's supply
-  further capped by the largest subset sum of the candidate heights at most
-  what the profile leaves.
+  4096`. The knapsack flag turns the elastic machinery on by itself. As
+  `overload-elastic`, with each time point's supply further capped by the
+  largest subset sum of the candidate heights at most what the profile
+  leaves.
 - **Strength** — `partial`: dominates (TTHE-OC).
 - **Algorithm** — a `capacity + 1`-bit reachability bitset per time point,
   shift-or per task (their Algorithm 3). That is `O(n² · span · C/64)`. The
@@ -1748,11 +1751,13 @@ New since the audit (#1284, for #1239).
   and the link rows. The presolver documents give that search's cost.
 - **Proof size** — one `pol` over `|window|` rows, plus at most `n`
   window-energy derivations and at most `n` confinement `pol`s. The window
-  runs from `rows_lo` to `μ`. `rows_lo` is the minimum window start over **all** the derived constraint's
-  active tasks, counted or not (`derived_cumulative.cc:137-139`, `:355`). So
-  the cost is linear in `μ − rows_lo`, the bound measured from the earliest
-  active window, and so in the task lengths, not in the horizon. Each of those rows is a donor row recovered at its first citation,
-  at `Top`; on [`inferred_cumulative.md`](../presolvers/inferred_cumulative.md)'s
+  runs from `rows_lo` to `μ`. `rows_lo` is the minimum window start over
+  **all** the derived constraint's active tasks, counted or not
+  (`derived_cumulative.cc:137-139`, `:355`). So the cost is linear in
+  `μ − rows_lo`, the bound measured from the earliest active window, and so in
+  the task lengths, not in the horizon. Each of those rows is a donor row
+  recovered at its first citation, at `Top`; on
+  [`inferred_cumulative.md`](../presolvers/inferred_cumulative.md)'s
   scaled fixture (`hz2.cc`) the whole root proof grows by about 297 lines per
   time unit of the bound at `0a5b4ec6`: 31,361 lines at a bound of 105 and
   311,891 at 1,050, both verifying. It was about 357 at `7e1c4178`, before
@@ -1912,8 +1917,11 @@ the part a reader of the presolver documents needs.
     `ProofError` on `bars`.
   - **At `Links`,** a posted-donor proof with an install fails at #1234's
     undefined flags: a parse error at `7e1c4178`, and at `0a5b4ec6` on
-    `sample.dzn` a rejected `rup` in the recovery's chain base. Otherwise every proof of a satisfiable model is rejected at its first `solx` (#1210), including the
-    projection runs where nothing was posted; unsatisfiable models verify.
+    `sample.dzn` a rejected `rup` in the recovery's chain base. Otherwise a
+    satisfiable model can be rejected at its first `solx` (#1210, which needs
+    a variable declared as a range wider than `{0, 1}`, though that alone is
+    not always enough), and the projection runs where nothing was posted are;
+    unsatisfiable models verify.
 
   No lane sets `GCS_ASSERTION_LEVEL`.
 - **Wide horizons, other than the name count and the run steps.**
@@ -2343,7 +2351,7 @@ Ranked by what they buy against what they cost.
    `__int128` (Ciaran, 2026-10-06). The sites still throw, now with a message
    naming the quantities, `integer_ranges_test` pins each, and
    `integer-ranges.md` records the exception. Revisit if an application meets
-   the limit. #1292's fifth site has no lane yet.
+   the limit. #1292's fifth site has no lane yet (#1300, open, adds one).
 3. **Count the elastic and knapsack conflicts** in
    `GCS_SCHEDULING_RULE_STATS` (#1236). **Done by #1273**, as two rows of
    their own, `overload_elastic` and `overload_knapsack`, listed in
@@ -2395,8 +2403,9 @@ Ranked by what they buy against what they cost.
     the time-indexed block" and "Nothing cites these yet"
     (`cumulative.cc:734-769`), both from before the flip. **Done by #1265**
     for all three, the `cumulative.hh` comment included, merged after
-    `0a5b4ec6` (`86caad24`). Still open, in
-    `gcs/CMakeLists.txt`, which #1265 did not touch: the comment above
+    `0a5b4ec6` (`86caad24`). Still open on `main`, in `gcs/CMakeLists.txt`,
+    which #1265 did not touch, are two comments that #1301 (open) rewrites:
+    the comment above
     `add_cumulative_test_with_recovery`, which still says "no solve and no
     .scp can select it" (`:325-326`) after #1278 corrected its twin at
     `:276-278`; and "Mutation lanes do not get the arm … The one exception is
@@ -2456,8 +2465,9 @@ Both were an out-of-stack docs fix, and #1265 made both after `0a5b4ec6`
   derived constraints, optional tasks, each rung of the overload ladder and
   edge-finding family, the published not-first / not-last over every `Ω`
   ("Which Ω: every one"), the start-checkpoint encoding and its recovery by
-  scan and by chain (with line costs), and the open follow-ups. At `0a5b4ec6` its opening section is format-mangled and
-  partly stale; #1265 (`86caad24`) restored it (see Next steps).
+  scan and by chain (with line costs), and the open follow-ups. At `0a5b4ec6`
+  its opening section is format-mangled and partly stale; #1265 (`86caad24`)
+  restored it (see Next steps).
 - [`certified-makespan-bounds.md`](../certified-makespan-bounds.md): the
   makespan energy bound, where it differs from Sidorov's `L`, and why the
   deadline is a `pol`. Until #1265 its argument confined every task to
