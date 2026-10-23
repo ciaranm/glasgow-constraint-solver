@@ -11,7 +11,9 @@
 > construction; see [Re-audit, 2026-10-08](#re-audit-2026-10-08). Already open
 > and touching this family: #833 (the large-domain policy), #944 (interval
 > cardinality instead of an at-most-one per value, which names this family's
-> per-site at-most-ones). Tracked under #871.
+> per-site at-most-ones), #1224 (the matching bound's proof can be rejected
+> over positions declared wider than 100 values; fix open as #1362). Tracked
+> under #871.
 
 ### Re-audit, 2026-10-08
 
@@ -45,7 +47,8 @@ Minimum-Distance Constraint over Selected Points* (ModRef 2026), and it is a
 Glasgow extension with no frontend vocabulary: only the C++ API and the `.scp`
 reader post it. One definitional encoding serves five propagation modes, from a
 checker to the paper's conflict-matching bound, and every inference is
-certified. The design and the derivations are in
+certified, though over wide positions VeriPB can reject the matching bound's
+certificate (#1224). The design and the derivations are in
 [`min-distance-proofs.md`](../min-distance-proofs.md), which stays as this
 family's long note; this document audits it.
 
@@ -140,7 +143,7 @@ z = min_{0 ≤ i < j < p} D[x_i, x_j]        and, with R,   D[x_i, x_j] ≥ R_ij
     `PairSupportMatch` model read back from its `.scp` propagates differently.
     Its comment calls `Z` "a lower bound on the pairwise distance between the
     chosen sites", which is incomplete rather than wrong: `Z` is the greatest
-    such bound, the minimum itself.
+    such bound, the minimum itself (corrected by #1396, open).
 
 [^cake]: `cake_pb_cp out.scp` on a `min_distance` model prints `unsupported
     constraint: min_distance` (checked on three `.scp` files, plain, with `R`
@@ -198,8 +201,9 @@ reify one.
 - **Child constraints:** none.
 - **Shares code:** `recover_am1_from_pairs`
   (`innards/proofs/am1_from_pairs.hh`), the clique fold with a guard riding
-  through it, which `all_different`, `sort`, `subcircuit`, `disjunctive` and
-  the `inferred_disjunctive` presolver also call; its guarded shape exists for
+  through it, which `all_different`, `sort`, `subcircuit`, `disjunctive`,
+  `regular` (since #1266) and the `inferred_disjunctive` presolver also call;
+  its guarded shape exists for
   this family (#805).
   `NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value_over_cover`,
   shared with `all_different`, `bin_packing` and the counting family.
@@ -554,7 +558,8 @@ Facts that hold for every rule:
 - **Hint** — none.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: check-pair-bound
 
@@ -574,7 +579,8 @@ Facts that hold for every rule:
 - **Hint** — none.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: full-assignment-pin
 
@@ -601,7 +607,8 @@ Facts that hold for every rule:
 - **Hint** — none.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line each.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: forward-prune
 
@@ -628,7 +635,8 @@ Facts that hold for every rule:
 - **Hint** — none.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: pair-upper-bound
 
@@ -661,7 +669,8 @@ Facts that hold for every rule:
   domains and `u_ij` are in the clause, and either endpoint works as the loop.
 - **Proof size** — `|dom x_loop| + 1` lines, at most `n + 1`, each carrying the
   two-domain reason.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: pair-infeasible
 
@@ -680,7 +689,8 @@ Facts that hold for every rule:
 - **Hint** — none.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — as rule 5.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: pair-support
 
@@ -710,7 +720,8 @@ Facts that hold for every rule:
 - **Hint** — none.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: matching-bound
 
@@ -801,7 +812,18 @@ Facts that hold for every rule:
   one summing `pol`; the closing RUP. The prototype's root inference, the first
   use, is 85 lines: 62 guarded clauses, four at-least-ones, 14 fold `pol`s,
   three `ia` pins, one sum and one closing RUP.
-- **Gaps** — `None.`
+- **Gaps** — VeriPB can reject the closing RUP when a position's at-least-one
+  takes the cover form (a definition range over 100 values) and the position
+  has lost a site of its install-time domain: the cover names only the
+  still-possible sites, while the at-most-ones name every position whose
+  install-time domain held the site. Filed as #1224 by the integer-range audit
+  (with `PairSupportMatch` and a requirements matrix, at `7e1c4178`; #1362
+  finds that neither is needed); fix open as #1362. The solutions are right;
+  only the proof fails. The shipped example reaches it: at `86caad24`,
+  `p_dispersion --variant min-distance-psm --random-euclidean 120 --points 4
+  --seed 1 --span 1000 --prove` is rejected at the closing RUP
+  (`.pbp:42657`), and the same run on #1362's head verifies
+  (`tmp/fd-wrapup/fc/fc3/mine/p120/RESULTS.txt`).
 - **Tightness** — shown once, not in the tree: #805 removed the `ia` pin and
   found `DropAnAtMostOne`, `NaiveOneShot` and `SkipFinalDivision` each rejected
   at this call site (recorded in `am1_from_pairs.hh`). `am1_from_pairs_test`
@@ -826,7 +848,9 @@ Facts that hold for every rule:
 ### Tests
 
 - **`min_distance_test`** (`min_distance_constraint`, plus
-  `min_distance_constraint_view_mixed`): seven malformed-definition rejections,
+  `min_distance_constraint_view_mixed` and, since #1208, its `_view_mixed_late`
+  twin, which posts a vacuous row over each view after the constraint): seven
+  malformed-definition rejections,
   then 19 fixed specs and eight random instances (`n` up to 5, `p` up to 4,
   distances up to 4, half with `R`), each under all five modes, without and
   with proofs. The fixed specs cover `p = 2` to 4, tied distances, a zero
@@ -1013,8 +1037,11 @@ put in one table.
 
 ### Proof-logging gaps
 
-`None.` Every inference is justified at `Off`, with no `a` line, and the
-propagators are the same with proofs on or off.
+One, in the matching bound (rules 8 and 9): once a position whose declared
+range spans more than 100 values has lost a site of its install-time domain,
+VeriPB can reject the certificate (#1224; fix open as #1362). Every other
+inference is justified at `Off`, with no `a` line, and the propagators are
+the same with proofs on or off.
 
 ### Known limitations
 
@@ -1027,6 +1054,8 @@ propagators are the same with proofs on or off.
   `PairSupport` gives pairwise arc consistency only, and treats a repeated
   variable as two.
 - **The matching bound stops short of what it proves** (rule 8).
+- **The matching bound's proof can be rejected** over positions declared
+  wider than 100 values (#1224; rule 8). The answers are right.
 - **With proofs, building the model is quadratic in the site pairs** when
   most distances are distinct: 26 s at 600 sites with 82,426 distinct
   distances.
@@ -1079,18 +1108,19 @@ propagators are the same with proofs on or off.
    conclusion verify). Filed as #1171 for Ciaran to weigh, since the
    paper's use case does not need it.
 5. **A `hints.hh`,** with a subhint per rule and, for the matching, the level
-   and the matched edges. Not worth an issue on its own
-   (`gcs-hint-sufficiency-is-empirical`); the justifier will show what it needs.
+   and the matched edges. Not worth an issue on its own: which hints are
+   needed is empirical, and the justifier will show it.
 6. **Make the `p_dispersion` ctest post the constraint,** say `--variant
    min-distance-psm` on the default grid beside the `tuple` run, and add a
    repeated-variable spec to `min_distance_test`.
 7. **Bring `min-distance-proofs.md` up to date:** its prototype certificate is
    "combined by 4 pol lines", and its cost `O(|M|)` pol lines, both from before
    #805's shared fold (now 14 fold `pol`s, three `ia` pins and one sum on the
-   same instance, and a fold's worth of `pol`s per clique); its at-least-one is
-   now the tracker's cached one, a cover of the still-possible sites above 100
-   values of definition range (#939); and its figures are from another
-   machine. And correct `read_min_distance`'s comment about `Z`.
+   same instance, and a fold's worth of `pol`s per clique; corrected by
+   #1396, open); its at-least-one is now the tracker's cached one, a cover
+   of the still-possible sites above 100 values of definition range (#939);
+   and its figures are from another machine. And correct `read_min_distance`'s
+   comment about `Z` (done by #1396, open).
 
 ## Prior art
 
