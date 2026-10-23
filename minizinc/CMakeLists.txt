@@ -253,6 +253,12 @@ set_tests_properties(minizinc-countaliasedboth PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-countaliasedvoi COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_count_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countaliasedvoi true true)
 set_tests_properties(minizinc-countaliasedvoi PROPERTIES SKIP_RETURN_CODE 66)
 
+# how_many is the value of interest, and the array pruning used to decide on
+# bookkeeping from before the how_many bound that also pruned the value of
+# interest: a wrong UNSATISFIABLE (issue #1304).
+add_test(NAME minizinc-countaliasedsurvivor COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_count_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countaliasedsurvivor true true)
+set_tests_properties(minizinc-countaliasedsurvivor PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-cumulative COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativetest false true)
 set_tests_properties(minizinc-cumulative PROPERTIES SKIP_RETURN_CODE 66)
 
