@@ -207,7 +207,8 @@ negative does not reach `prepare()`'s check. On a three-task model with
 durations in `-1..2`, `glasgow.msc`, Chuffed and Gecode all report 952
 solutions (non-strict) and 829 (strict). `Disjunctive2D` does not behave this
 way: `diffn` gives `=====ERROR=====` there (#1251), which #1272 documented
-as deliberate in `frontend-support-matrix.md`'s noOverlap footnote.
+as deliberate (see [`disjunctive_2d.md`](disjunctive_2d.md)'s MiniZinc
+footnote).
 
 XCSP3 binds both `buildConstraintNoOverlap` overloads, with integer and with
 variable lengths (`xcsp_glasgow_constraint_solver.cc:561`, `:570`).
@@ -216,13 +217,6 @@ variable lengths (`xcsp_glasgow_constraint_solver.cc:561`, `:570`).
 `xcsp_glasgow_constraint_solver` and `glasgow_scp_solver` never call
 `with_rules`, so they all get `DisjunctiveRules{}`. The only route to the energetic rules is the C++ API,
 which in practice means `examples/rcpsp`'s `--disjunctive-*` flags.
-
-`frontend-support-matrix.md:90` is stale on this family. It says variable
-durations go "via the Cumulative end-proxy technique ... see #384", but there
-is no end proxy any more: the duration term cancels inside the pairwise pol
-(see [OPB encoding](#opb-encoding)). #1265, merged after `0a5b4ec6`,
-rewrites that line to say so. The matrix is being retired, so this
-document is where the row now lives.
 
 ### Options
 

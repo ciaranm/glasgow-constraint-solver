@@ -2101,8 +2101,8 @@ Both `fzn-glasgow` and `xcsp_glasgow_constraint_solver` expose the presolver as
 `simplifying_at_root`). Neither gained a predicate or a constraint tag, and that
 is the point: what the presolver detects is a shape both modelling languages
 already produce, so a Glasgow-only vocabulary for it would let a model ask for
-nothing it cannot ask for anyway. See
-[frontend-support-matrix.md](frontend-support-matrix.md).
+nothing it cannot ask for anyway. See the entry-point table in
+[presolvers/difference_logic.md](presolvers/difference_logic.md).
 
 **MiniZinc** needed nothing else. MiniZinc 2.10's flattener emits
 `int_lin_le([1,-1],[x,y],d)` for `x - y <= d`, for `x + k <= y`, and even for a
@@ -2187,9 +2187,10 @@ model, so it wants measuring as its own piece of work.
 
 - [Implementing a constraint](constraints.md) — the structural pattern this
   follows.
-- [Frontend support matrix](frontend-support-matrix.md), and the
-  [MiniZinc](minizinc.md) and [XCSP3](xcsp.md) binding notes — how each frontend
-  reaches this, and why neither gained a predicate for it.
+- [`presolvers/difference_logic.md`](presolvers/difference_logic.md)'s frontend
+  coverage table, and the [MiniZinc](minizinc.md) and [XCSP3](xcsp.md) binding
+  notes — how each frontend reaches this, and why neither gained a predicate
+  for it.
 - [View proof-logging support](view-proof-logging.md) — invariant 1 is why the
   OPB rows are canonicalised; invariant 3 is why the bound push needs an
   explicit `pol`.

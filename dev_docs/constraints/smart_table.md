@@ -154,8 +154,7 @@ verified):
 |---|---|---|---|---|---|
 | `SmartTable` | `n/a`[^mznst] | `?`[^xst] | `?`[^cst] | ✓ `smart_table` | chain-verifies only on narrow shapes; see [Cake conformity](#cake-conformity) |
 
-[^mznst]: MiniZinc has no smart-table global. The retiring
-    `frontend-support-matrix.md` row says ✓, but nothing under `minizinc/`
+[^mznst]: MiniZinc has no smart-table global, and nothing under `minizinc/`
     names `SmartTable`.
 
 [^xst]: The XCSP3-CPP-Parser the build fetches has no smart or hybrid table

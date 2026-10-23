@@ -1584,9 +1584,6 @@ steps.
 - [`proof-benchmarks.md`](../proof-benchmarks.md): the `hitori` rows, including
   the propagator against no-cuts pair kept as a label-groups candidate, with the
   same earlier-tree figures.
-- [`frontend-support-matrix.md`](../frontend-support-matrix.md): the
-  `reachable` row and its footnote, which this document's frontend table
-  supersedes.
 - [`tree.md`](tree.md), [`path.md`](path.md), [`subgraph.md`](subgraph.md),
   [`dag.md`](dag.md): the families that post this one as a child, copy its
   subgraph rows, or reuse its encoding idea.

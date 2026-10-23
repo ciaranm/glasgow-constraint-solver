@@ -1386,12 +1386,11 @@ derivation:
     for §3.3 and still names a `KnapsackUpfront` variant; the `Dag` comment at
     `knapsack_upfront.cc:75–76` says the cap is intersected with the totals,
     which `compute_caps` deliberately does not do; `knapsack.hh:25–26` and
-    `knapsack_upfront.hh:25` repeat the superseded 3.6–18× and 3–6× figures,
-    as `frontend-support-matrix.md:93` does, which also still names a
-    `KnapsackUpfront` variant (that file is being retired, so it is left to
-    rot, as TEMPLATE.md says);
-    and `TEMPLATE.md` and `linear.md` say knapsack uses subset-sum
-    strengthening.
+    `knapsack_upfront.hh:25` repeat the superseded 3.6–18× and 3–6× figures.
+    #1396 (open) corrects all of these (the benchmark table by marking it as
+    dated and pointing here), except that `dev_docs/knapsack.md:48–69` (on
+    main at `86caad24`) still speaks of "both classes" and two constructors
+    "on each class", and still gives the general constructor as XCSP3's.
 
 ## Prior art
 

@@ -144,9 +144,9 @@ Degenerate cases:
 |---|---|---|---|---|---|
 | `Equals` | ✓ `int_eq`, `bool2int`, `bool_eq`; also `decompose`[^lin] | ✓ `intension` eq (n-ary, chained pairwise), `instantiation`, top-level `iff` | ? | ✓ `equals` | |
 | `NotEquals` | ✓ `int_ne`, `bool_not`; also `decompose`[^lin] | ✓ `intension` ne | ? | ✓ `not_equals` | |
-| `EqualsIf` | frontend gap — no FlatZinc predicate maps to a half-reified equality | ✓ `ifThenElse` arms | ? | ✓ `equals_if` | |
+| `EqualsIf` | frontend gap — no FlatZinc predicate maps to a half-reified equality | ✓ `ifThenElse` arms | ✓ `gcspy`'s `post_equals_reif` with `fully_reify` false[^cpif] | ✓ `equals_if` | |
 | `EqualsIff` | ✓ `int_eq_reif`, `bool_eq_reif`, `int_ne_reif`[^neg] | ✓ `intension` reified EQ, `iff` | ? | ✓ `equals_iff` | |
-| `NotEqualsIf` | frontend gap — as `EqualsIf` | unsupported | ? | ✓ `not_equals_if` | |
+| `NotEqualsIf` | frontend gap — as `EqualsIf` | unsupported | `decompose`[^cpif] | ✓ `not_equals_if` | |
 | `NotEqualsIff` | ✓ via `EqualsIff` with a negated condition | ✓ `intension` reified NE | ? | ✓ `not_equals_iff`[^flip] | |
 
 [^lin]: MiniZinc rewrites `x = y` and `x != y` between two variables into a
@@ -172,6 +172,14 @@ Degenerate cases:
     `verified_encodings/scp_cases/not_equals_iff_sat.scp` but was never reached
     by writer output. Both halves were negated, so the two errors cancelled and
     nothing failed. See [Cake conformity](#cake-conformity).
+
+[^cpif]: `gcspy`'s `post_equals_reif` and `post_not_equals_reif` post the
+    `*If` class when `fully_reify` is false (`python/gcspy.cc:479–525`).
+    CPMpy's upstream GCS interface, as copied on 2026-09-23
+    (`tmp/linear-audit/cpmpy_gcs.py:539–560`), passes `fully_reify` false for
+    `b -> (x == y)`, so it reaches `EqualsIf`. For `b -> (x != y)` it posts
+    two fully reified orderings and an `OrIf` over them instead, so it never
+    reaches `NotEqualsIf`.
 
 ### Options
 

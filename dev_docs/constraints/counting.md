@@ -212,9 +212,7 @@ Three things to know before touching it.
     back a pointer into the model's shared constant arrays.
 
 [^xgcc]: `post_gcc` folds repeated cover values and posts `Equals` for each
-    fold. `frontend-support-matrix.md` still says `cardinality` decomposes to
-    `Count`; it has not since the binding started posting `GlobalCardinality`,
-    and the matrix is being retired rather than updated.
+    fold.
 
 `gcspy` binds `Count` (`post_count`), `GlobalCardinality` (with the closed
 flag, folding repeats) and `NValue`. `Among` has no binding. Whether the CPMpy

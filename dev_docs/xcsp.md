@@ -9,8 +9,9 @@ top-level `README.md` instead.
 
 For implementing the underlying C++ constraint that a binding exposes,
 see [constraints.md](constraints.md). For the cross-frontend picture
-(which propagators each frontend reaches), see
-[frontend-support-matrix.md](frontend-support-matrix.md).
+(which propagators each frontend reaches), see the "Concrete
+constraints and frontend coverage" table in each family document,
+indexed by [constraints/README.md](constraints/README.md).
 
 The XCSP3-core specification (v3.2, August 2024) is at
 <https://arxiv.org/abs/2009.00514>. Parser callbacks are documented
@@ -59,6 +60,18 @@ Take `<allDifferent>`:
 The same pattern applies to every supported constraint: a callback per
 constraint family, with a body that translates parser-supplied
 arguments into a `gcs::*` constraint and posts it.
+
+A `<slide>` has no build callback of its own: the parser's
+`beginSlide` / `endSlide` are notifications, which the binding does
+not override. The parser unfolds the slide into a constraint group,
+one instance of its template per window (honouring `offset` and
+`circular`), and posts each instance through the template's own
+callback, as it does for a `<group>` (an `extension` template's later
+instances go through `buildConstraintExtensionAs`, the shared-tuples
+path). So `xcsp_slide` (an `intension` slid over a list) needs
+nothing in this file. A `<slide>` over more than one list is refused
+by the parser itself ("Multiple lists in slide constraint is not yet
+supported"), which `main()` reports as `s UNSUPPORTED`.
 
 ## Code structure
 
@@ -246,12 +259,12 @@ is solved.
 
 ## Honest gaps
 
-Two XCSP3-core constraint families have no propagator yet:
-`binPacking` (#148) and `mdd` (#149). The binding overrides each of
-their callbacks with a `report_unsupported` call so the parser's
-default uncaught `runtime_error` doesn't terminate the process.
-`main()` also catches `std::runtime_error` as a safety net for any
-other unhandled callback the parser might throw on, and
+Every XCSP3-core constraint family now reaches a propagator
+(`binPacking` since #148, `mdd` since #149), though not every form of
+one does. The parser's default for a callback the binding does not
+override throws an uncaught `runtime_error`, so `main()` catches
+`std::runtime_error` as a safety net for any unhandled callback the
+parser might throw on, and
 `InvalidProblemDefinitionException` for a constraint whose constructor
 rejects what a valid instance posted (#1047): both are reported as
 `s UNSUPPORTED`, since the instance is not at fault.
@@ -381,9 +394,10 @@ and regenerating `circuit.sols` is how it was closed.
 5. **Add `add_xcsp_test(<name>)` to `xcsp/CMakeLists.txt`**, in the
    alphabetical block.
 
-6. **Update `dev_docs/frontend-support-matrix.md`** — flip the
-   relevant row from "frontend gap" to ✓ (or note the partial
-   support).
+6. **Update the family document's coverage table** — in the
+   "Concrete constraints and frontend coverage" table of the family's
+   document under `dev_docs/constraints/`, flip the XCSP3 cell from
+   "frontend gap" to ✓ (or note the partial support in a footnote).
 
 7. Run `ctest --preset release -R xcsp_<name>` to verify.
 

@@ -90,9 +90,9 @@ even if another constraint would cut it to `0..1`.
 
 [^xsub]: XCSP3-core has no subgraph constraint.
 
-[^cpsub]: `n/a`, as the frontend support matrix records it. `gcspy` binds
-    nothing in this family; whether CPMpy has a `subgraph` global was not
-    checked.
+[^cpsub]: `n/a`, as the retired frontend support matrix recorded it. `gcspy`
+    binds nothing in this family; whether CPMpy has a `subgraph` global was
+    not checked.
 
 [^reif]: There is no override for `fzn_subgraph_reif`, so
     `b <-> subgraph(...)` gets the stdlib's decomposition and never reaches this
