@@ -3,6 +3,8 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <util/overloaded.hh>
+
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -34,6 +36,7 @@ using std::nullopt;
 using std::pair;
 using std::set;
 using std::string;
+using std::to_string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::variant;
@@ -161,6 +164,120 @@ auto run_self_ref_among_test(bool proofs, pair<int, int> shared_range, const vec
     check_results(proof_name, expected, actual);
 }
 
+// A position or how_many in run_aliased_among_test: an index into the shared
+// variables, a constant, or a view of a shared variable (negated first if
+// asked, then offset).
+struct AliasedConstant
+{
+    int value;
+};
+struct AliasedView
+{
+    int index;
+    bool negate;
+    int offset;
+};
+using AliasedEntry = variant<int, AliasedConstant, AliasedView>;
+
+// how_many sharing a variable with a position, directly or through a view, over
+// shared variables built from value lists (issue #1308). The lower bound on
+// how_many is justified by an at-least-one over the values of interest each
+// must-match position can still take. Once a definition range is wider than the
+// tracker's cover threshold that line is keyed on those values, and the
+// single-literal inference used to read them after its own push had moved
+// how_many, and so the position; VeriPB then rejected the proof. Solved under the
+// harness's branching and then under the default branching, since the bad
+// inferences depend on the search path.
+auto run_aliased_among_test(bool proofs, const vector<vector<int>> & shared_domains, const vector<AliasedEntry> & positions, const vector<int> & voi,
+    AliasedEntry how_many) -> void
+{
+    auto label = [](const AliasedEntry & e) -> string {
+        return overloaded{
+            [](int i) { return "u" + to_string(i); },                                                              //
+            [](AliasedConstant c) { return to_string(c.value); },                                                  //
+            [](AliasedView v) { return (v.negate ? "-u" : "u") + to_string(v.index) + "+" + to_string(v.offset); } //
+        }
+            .visit(e);
+    };
+    string positions_label;
+    for (const auto & e : positions)
+        positions_label += (positions_label.empty() ? "" : ",") + label(e);
+    print(cerr, "among aliased domains={} positions={} voi={} how_many={}{}", shared_domains, positions_label, voi, label(how_many),
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto value_of = [](const AliasedEntry & e, const vector<int> & vals) -> int {
+        return overloaded{
+            [&](int i) { return vals.at(i); },                                                          //
+            [](AliasedConstant c) { return c.value; },                                                  //
+            [&](AliasedView v) { return (v.negate ? -vals.at(v.index) : vals.at(v.index)) + v.offset; } //
+        }
+            .visit(e);
+    };
+    vector<variant<int, pair<int, int>, vector<int>>> domain_specs(shared_domains.begin(), shared_domains.end());
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected,
+        [&](const vector<int> & vals) -> bool {
+            int counted = 0;
+            for (const auto & e : positions)
+                if (0 != count(voi.begin(), voi.end(), value_of(e, vals)))
+                    ++counted;
+            return counted == value_of(how_many, vals);
+        },
+        domain_specs);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    auto post = [&](Problem & p) -> vector<IntegerVariableID> {
+        vector<IntegerVariableID> shared;
+        for (const auto & d : shared_domains) {
+            vector<Integer> values;
+            for (auto v : d)
+                values.push_back(Integer(v));
+            shared.push_back(p.create_integer_variable(values));
+        }
+        auto var_of = [&](const AliasedEntry & e) -> IntegerVariableID {
+            return overloaded{
+                [&](int i) -> IntegerVariableID { return shared.at(i); },                                           //
+                [](AliasedConstant c) -> IntegerVariableID { return ConstantIntegerVariableID{Integer(c.value)}; }, //
+                [&](AliasedView v) -> IntegerVariableID {
+                    return v.negate ? -shared.at(v.index) + Integer(v.offset) : shared.at(v.index) + Integer(v.offset);
+                } //
+            }
+                .visit(e);
+        };
+        vector<IntegerVariableID> array;
+        for (const auto & e : positions)
+            array.push_back(var_of(e));
+        vector<Integer> voi_i;
+        for (auto v : voi)
+            voi_i.push_back(Integer(v));
+        p.post(Among{array, voi_i, var_of(how_many)});
+        return shared;
+    };
+
+    auto proof_name = proofs ? make_optional("among_test_aliased") : nullopt;
+    {
+        Problem p;
+        auto shared = post(p);
+        solve_for_tests(p, proof_name, actual, tuple{shared});
+        check_results(proof_name, expected, actual);
+    }
+    {
+        Problem p;
+        auto shared = post(p);
+        actual.clear();
+        last_run_truncated() = false;
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool { return actual.emplace(extract_from_state(s, shared)), true; }, //
+                .stats_report = silent_stats_report()                                                                            //
+            },
+            proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -227,6 +344,22 @@ auto main(int argc, char * argv[]) -> int
             // Self-reference: result var also in array.
             run_self_ref_among_test(proofs, {0, 4}, {2});
             run_self_ref_among_test(proofs, {0, 3}, {0, 2});
+
+            // how_many among the positions over a definition range wider than
+            // 100 values (issue #1308), directly and through views.
+            using C = AliasedConstant;
+            using V = AliasedView;
+            run_aliased_among_test(proofs, {{-98, 1, 2}}, {0, 0, 0}, {1, 2}, 0);
+            run_aliased_among_test(proofs, {{-98, 1, 2, 3}}, {0, 0, 0}, {1, 2, 3}, 0);
+            run_aliased_among_test(proofs, {{1, 2, 3, 103}}, {0, 0, 0}, {1, 2, 3}, 0);
+            run_aliased_among_test(proofs, {{1, 2, 3, 103}}, {0, 0, 0}, {1, 2}, 0);
+            // A range of exactly 100 values: the per-value at-least-one.
+            run_aliased_among_test(proofs, {{-97, 1, 2}}, {0, 0, 0}, {1, 2}, 0);
+            // A position is a view of how_many, or how_many a view of a position.
+            run_aliased_among_test(proofs, {{1, 2, 3, 110}}, {C{1}, V{0, false, -3}, 0, 0}, {1, 2, 3}, 0);
+            run_aliased_among_test(proofs, {{0, 1, 108}}, {V{0, true, 1}, 0, V{0, false, 1}}, {0, 1}, 0);
+            run_aliased_among_test(proofs, {{0, 1, 2, 3, 111}}, {0, C{2}, C{5}, 0}, {0, 1, 2}, V{0, true, 3});
+            run_aliased_among_test(proofs, {{-102, 2, 4}}, {0, 0, C{-1}, 0, C{-1}}, {2, 4}, V{0, false, -2});
         }
     }
 

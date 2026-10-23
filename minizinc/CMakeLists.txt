@@ -130,6 +130,12 @@ set_tests_properties(minizinc-alldifferentexcept-shapes PROPERTIES SKIP_RETURN_C
 add_test(NAME minizinc-among COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ amongtest true true)
 set_tests_properties(minizinc-among PROPERTIES SKIP_RETURN_CODE 66)
 
+# Among with how_many among the positions over a wide holey domain: the lower
+# bound's justification used to read the state after its own push, and VeriPB
+# rejected the proof (issue #1308).
+add_test(NAME minizinc-amongaliased COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_among $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ amongaliased true true)
+set_tests_properties(minizinc-amongaliased PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-arraybooland COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ arraybooland true true)
 set_tests_properties(minizinc-arraybooland PROPERTIES SKIP_RETURN_CODE 66)
 
