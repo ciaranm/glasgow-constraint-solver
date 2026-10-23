@@ -4,12 +4,12 @@
 > **Audited** 2026-09-23 at `f28fdef8`; re-audited 2026-09-25 at `61112ed0` ·
 > **Open issues** filed by this audit: none left open. #1057, #1058 and #1056
 > are fixed; see [Re-audit, 2026-09-25](#re-audit-2026-09-25). Already open and
-> touching this family: #868 (cross-solver). Filed from this re-audit: #1101. With a
-> constant operand, either one, our four rows are not `cake_pb_cp`'s, so the
+> touching this family: #868 (cross-solver). Filed from this re-audit: #1101.
+> With a constant operand, either one, our rows are not all `cake_pb_cp`'s, so the
 > strict `opbdiff` oracle fails although cake verifies the proof ([Cake
 > conformity](#cake-conformity)). Tracked under #871.
 
-## Re-audit, 2026-09-25
+### Re-audit, 2026-09-25
 
 All three issues the first pass filed were fixed and merged on 2026-09-24.
 
@@ -110,7 +110,8 @@ Any `IntegerVariableID` in either position. The proof handles views, as it has
 since the representation-consistency work that `view-proof-logging.md`
 describes. Abs and `AllDifferent` were the two hard cases there, and both now
 verify under every wrap. `abs_constraint_view_mixed` wraps both positions, and
-the hole rows run under the wrap too.
+the hole rows run under the wrap too; since #1208 `…_view_mixed_late` runs the
+same with a vacuous row over each view, posted after `Abs`.
 
 **A constant is the one kind the proof treats differently.** The range
 justifications (rules 6 and 8) resolve against an order atom of each operand,
@@ -345,7 +346,10 @@ was not isolated: on one instance we explore 4% fewer nodes, and on the other
 - **Degenerate shapes**: see [Semantics](#semantics).
 - **Overflow.** The arithmetic is `-v1_lb`, `-v2_ub`, the image and preimage
   endpoints, and `abs(val)`, all on `Integer`, which throws on overflow rather
-  than wrapping. Only a domain at the edge of the 64-bit range could reach it.
+  than wrapping. Since #1214 no input can reach it: a declared domain lies
+  within ±(2⁶⁰ − 1) and a view's values within about ±2⁶¹
+  ([`integer-ranges.md`](../integer-ranges.md)). Views at that full reach, of
+  both signs in `v1`, solve and verify at `86caad24`.
 
 ### Interval efficiency
 
@@ -381,8 +385,9 @@ was not isolated: on one instance we explore 4% fewer nodes, and on the other
    names an order atom of `v2` and a constant has none. The image loop keeps
    its range rule for two variables, and a constant operand sends it to the
    value rule. That is at most one value there: a constant `v2` is one value,
-   and under a constant `v1` the bound rules have already fixed `v2`. At `f28fdef8` a constant operand took the value
-   rule for every value, the shape #924 fixed in `Element` and #931 fixed for
+   and under a constant `v1` the bound rules have already fixed `v2`. At
+   `f28fdef8` a constant operand took the value rule for every value, the
+   shape #924 fixed in `Element` and #931 fixed for
    views here: 13 lines per removed value, so 260,030 lines at `c = 10⁴`,
    against 137 for a one-value variable. Re-measured at `61112ed0` on the same
    probe, the constant gives **86 lines at every `c`**, all verified with
@@ -656,8 +661,9 @@ it as the reason to sabotage whole justifications rather than lines.
     zero, so one of those atoms' definitions fixes `v1`'s sign bit by unit
     propagation. The halves are guarded on the atom `v1 ≥ 0`, not on the bit,
     so it takes one more step: the order chain, or that atom's own definition,
-    then sets `v1 ≥ 0` one way or the other. That enables one half. The half is a bound on `v1`'s own bits that contradicts
-    the run's, and contradictory bounds on one binary sum unit propagate.
+    then sets `v1 ≥ 0` one way or the other. That enables one half. The half
+    is a bound on `v1`'s own bits that contradicts the run's, and
+    contradictory bounds on one binary sum unit propagate.
     **The split at zero is load-bearing.** #1080's mutation, which removes a
     run straddling zero in one go, is rejected by VeriPB.
 - **Reason** — `{v2 ∉ [lo, hi]}` for a non-negative piece, `{v2 ∉ [−hi, −lo]}`
@@ -709,16 +715,20 @@ it as the reason to sabotage whole justifications rather than lines.
 
 | Lane | What it checks |
 |---|---|
-| `abs_constraint` | `abs_test`: 30 fixed rows (ranges, #446's tight domains, #254's constants, one-value variables, and since #1080 four with a wide constant `v2 = 45`) and 30 random ones (both operands ranges, `v1` constant, `v2` constant), each with and without proofs, under `solve_for_tests_checking_gac`, so `GAC` at every node; five hole rows, three for the image loop and two for the preimage loop (`preimage_far_constant`, from #1080, has a constant `v2` and runs away from zero); five `Abs(x, x)` rows under plain enumeration; nine initialiser-only proof checks: four (`bound1` to `bound4`, which are rules 1, 3, 4 and 2 here) and five over wider domains, nine in all |
+| `abs_constraint` | `abs_test`: 30 fixed rows (ranges, #446's tight domains, #254's constants, one-value variables, and since #1080 four with a wide constant `v2 = 45`) and 30 random ones (both operands ranges, `v1` constant, `v2` constant), each with and without proofs, under `solve_for_tests_checking_gac`, so `GAC` at every node; five hole rows, three for the image loop and two for the preimage loop (`preimage_far_constant`, from #1080, has a constant `v2` and runs away from zero); five `Abs(x, x)` rows under plain enumeration; nine initialiser-only proof checks: four (`bound1` to `bound4`, which are rules 1, 3, 4 and 2 here) and five over wider domains |
 | `abs_constraint_view_mixed` | the same with positions wrapped in views, minus the initialiser and dup rows |
+| `abs_constraint_view_mixed_late` | from #1208: the view-wrapped run with a vacuous row over each view, posted after `Abs` (`--late-view-registration`) |
+| `view_registration` (from #1208) | its own: `Abs{−x, z}` with `maximise(x)` and with `minimise(−x)`, against a brute-force optimum, with proofs (`view_registration_test.cc:209`) |
 | `scp_chain_abs_sat`, `scp_chain_abs_unsat` | see [Cake conformity](#cake-conformity) |
 | `xcsp_intension_arithmetic`, `xcsp_intension_basic` | `eq(abs(x), y)` and `eq(dist(x, y), 1)` |
 | `minizinc-abs` | `int_abs` against MiniZinc's default solver |
 | `crystal_maze-abs`, `crystal_maze-abs-gac` | the example with `--abs`, proof verified |
 | `large_domain_audit_test` | six `Clean` rows, `Abs/constant` among them; registered only in a build with `GCS_LARGE_DOMAIN_GUARD=ON` |
 
-The nine lanes above that post `Abs` pass at `f28fdef8`, caps off, and again
-at `61112ed0` with the default caps, with MiniZinc 2.9.7, `cake_pb_cp` and
+The nine lanes above that post `Abs`, all but #1208's two and
+`large_domain_audit_test`, pass at `f28fdef8`, caps off, and again at
+`61112ed0` with the default caps; #1208's two pass at `86caad24`. The nine
+ran with MiniZinc 2.9.7, `cake_pb_cp` and
 `opbdiff` on the path. `large_domain_audit_test` was not re-run: neither
 audit's build has the guard on, and its rows' outcomes are the ones pinned in
 the source. At `--seed=1`, `abs_test` verifies 74 proofs at `f28fdef8` and 79
@@ -783,8 +793,7 @@ fixed rows. On `{−60..60}` with `v2 = 45`, for example, the bound rules leave
   each). Constant operands appear in three: `celar` 2013 and 2016 post 16
   constraints each with a constant `v2` (`|f[x] − f[y]| = 238`, with the
   difference declared within `[−776, 776]`), and `harmony` 2024 posts 31 with a
-  constant
-  `v1`, which is harmless.
+  constant `v1`, which is harmless.
 - **Where it is the cost** (share of propagation time, 10 s each,
   `GCS_PROPAGATOR_STATS=time`, at `00797a97`, from `linear.md`'s survey). That
   was before #1076, #1080 and `87c88f2e` changed `abs/`, and only `celar` has
@@ -808,8 +817,8 @@ fixed rows. On `{−60..60}` with `v2 = 45`, for example, the bound rules leave
 
 **Re-measured at `61112ed0`**, 2026-09-25, on the same machine and FlatZinc
 files, pinned the same way, on core 20 where the first pass used core 8. The
-`f28fdef8` build was re-run in
-the same sitting. There were four runs per build, interleaved, and the first is
+`f28fdef8` build was re-run in the same sitting. There were four runs per
+build, interleaved, and the first is
 dropped as warm-up. Gecode is the same binary and files, re-run alongside.
 
 | instance | N | nodes | propagations | `f28fdef8` s | `61112ed0` s | Gecode s | ratio to Gecode |
@@ -879,8 +888,9 @@ range removals and no value removals after. The counters were not re-run.
 ### Proof performance
 
 **Re-measured at `61112ed0`.** `celar` 2013 to its 20th solution, both builds
-in one sitting, pinned. MB here is 10⁶ bytes. The four VeriPB 3.0.2 runs were concurrent, on separate
-cores, with `--force-checked-deletion`. Same 163 nodes and last objective 33,692
+in one sitting, pinned. MB here is 10⁶ bytes. The four VeriPB 3.0.2 runs were
+concurrent, on separate cores, with `--force-checked-deletion`. Same 163 nodes
+and last objective 33,692
 throughout.
 
 | | `f28fdef8` | `61112ed0` |
@@ -956,8 +966,8 @@ run, and 148 per step of `k` in the preimage direction, which is two runs. The
 ### Known limitations
 
 - **Slower than Gecode**, by 3.8 and 4.6 times on the two `celar` instances,
-  where `Abs` is the largest share of propagation, at node counts within 4% either way. It was 4.8 and 5.6
-  times before #1076.
+  where `Abs` is the largest share of propagation, at node counts within 4%
+  either way. It was 4.8 and 5.6 times before #1076.
 - **A constant operand fails the strict `opbdiff` oracle**, although cake
   verifies the proof. For a constant `v2`, the `posle` and `negle` rows' big-M
   differs. For a constant `v1`, we write all four rows folded and unguarded,
