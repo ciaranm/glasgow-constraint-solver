@@ -89,11 +89,12 @@ is that one node and no edges.
   spelling `path(0, 0, …)` prints `=====ERROR=====` where Gecode prints
   `=====UNSATISFIABLE=====`, on both MiniZinc versions. So do `dpath(0, 0, …)`,
   `bounded_path(0, 0, …)` and `bounded_dpath(0, 0, …)`
-  (`mzn/tests/{p,d,bp,bdp}_empty_int.mzn`). This is #1305. The `enum` spelling reaches `UNSATISFIABLE` only because its
-  override's `min(index_set(ns))` is undefined and becomes `false`. The message
-  says `Path` for `DPath` too, since both throw from `PathBase::prepare`. The same goes for an edge count unequal to `|es|`, an
-  edge endpoint `≥ n`, and a node or edge variable whose bounds are not inside
-  `0..1` (`path.cc:37–51`).
+  (`mzn/tests/{p,d,bp,bdp}_empty_int.mzn`). This is #1305. The `enum` spelling
+  reaches `UNSATISFIABLE` only because its override's `min(index_set(ns))` is
+  undefined and becomes `false`. The message says `Path` for `DPath` too, since
+  both throw from `PathBase::prepare`. The same goes for an edge count unequal
+  to `|es|`, an edge endpoint `≥ n`, and a node or edge variable whose bounds
+  are not inside `0..1` (`path.cc:37–51`).
 - **Endpoints outside the numbering** are not an error. `prepare()` defines
   `end`'s bounds to be `0 .. n − 1` (`path.cc:58–59`), and the reachability
   child does the same for `start`. An endpoint with no node value in its domain
@@ -552,8 +553,8 @@ no such limit.
    every firing, with proofs off too. The cost is bounded by the rule size and
    independent of width, and it is part of the per-call cost above.
 3. **The proof side.** One line per inference, of at most five literals plus
-   the inferred one (rule 6: every selected term of the row). No line is per value, and there is no width gate because none
-   is needed.
+   the inferred one (rule 6: every selected term of the row). No line is per
+   value, and there is no width gate because none is needed.
 4. **The audit lane.** Two rows in `gcs/large_domain_audit_test.cc`, `Path` and
    `DPath`, both pinned `NoWidePosition`. Each declares `r, t ∈ 0..2` on a
    three-node path. `start` and `end` **can** be declared wide, and are trimmed
@@ -803,8 +804,8 @@ is an edge selector declared over `{1}`; a selector fixed by search appears as
   only rule that prunes an endpoint's domain from inside this class, one value
   at a time.
 - **Algorithm** — as rule 4.
-- **Why it is true** — the rows of rule 5 read backwards: a node with too many
-  path edges cannot be the end the row is about.
+- **Why it is true** — rule 5's facts read backwards: a node with too many
+  path edges cannot be the end they are about.
 - **Proof technique** — `RUP` against the row; under the negated conclusion
   every condition is true, and the reason's selections overflow it.
 - **Reason** — the true conditions and the selected selectors. Minimal when the
@@ -1178,7 +1179,8 @@ occasionally prunes, so it stays.
 `connectivity-proofs.md`'s family table gives `DPath` "the end is selected" but
 not `Path`, which has the same `endin<v>` rows (`path.cc:86–87`). Its "These
 are not GAC" paragraph names cycle closure as the concrete gap; for `Path` and
-`DPath` the larger one is the missing degree lower bound.
+`DPath` the larger one is the missing degree lower bound. Both corrected by
+#1396, open.
 
 ## Prior art
 
