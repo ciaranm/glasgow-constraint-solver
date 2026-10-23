@@ -1026,7 +1026,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `seq_precede_chain.md` | `seq_precede_chain/` | **written**. Delegates to `value_precede` after a clamp; this document covers the clamp and the delegation |
 | `smart_table.md` | `smart_table/` | **written**. `SmartTable`, and the engine under `LexSmartTable` and `AtMostOneSmartTable`. The candidate merge with `table`, settled: separate. No shared code, and a flag per row and per entry against `Table`'s proof-only selector |
 | `sort.md` | `sort/` | **written**. `Sort`, `ArgSort`; `sortedness.md` stays as the long note |
-| `subgraph.md` | `subgraph/` | |
+| `subgraph.md` | `subgraph/` | **written**. One class, `Subgraph`. Not merged with `reachable` or `dag`: they carry copies of its two rows and its two rules under their own IDs and hints, and none of them calls it |
 | `table.md` | `table/`, `extensional_utils.{hh,cc}` | **written**. `Table`, `NegativeTable`, and the extensional propagator that `AutoTable` and the tabulated constraints also run. Not merged with `smart_table`; see its row |
 | `tree.md` | `tree/` | |
 | `value_precede.md` | `value_precede/` | **written**. `ValuePrecede`, for a pair or a chain; `seq_precede_chain` installs it |
