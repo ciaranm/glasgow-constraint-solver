@@ -57,7 +57,8 @@ places: "for every positive value `v` … `v − 1` must appear earlier", which
 for `v = 1` would demand a 0 first; and, there and in `seq_precede_chain.cc`,
 that `v` needs "`v` distinct earlier positions", where it is `v − 1`. The
 implementation, the MiniZinc reading and the brute-force oracle this audit used
-all let 1 appear first; it is the comment that is wrong.
+all let 1 appear first; it is the comment that is wrong (corrected by
+#1396, open).
 
 - **An empty array:** true; nothing installed.
 - **No domain reaching 1:** true; nothing installed, not even a clamp.
@@ -72,8 +73,9 @@ all let 1 appear first; it is the comment that is wrong.
 | reified | `unsupported`: the stdlib's `fzn_seq_precede_chain_int_reif` is an `abort` in 2.9.7 and 2.10.1, so `b <-> seq_precede_chain(x)` fails to flatten | n/a | — | — | |
 
 [^xnoval]: XCSP3 has no `seq_precede_chain`. Its nearest form, `precedence`
-    without a `values` list, is reported unsupported (issue #150's phase 2b);
-    see [`value_precede.md`](value_precede.md).
+    without a `values` list, is reported unsupported (the code's comment
+    says issue #150's phase 2b, but #150 is closed); see
+    [`value_precede.md`](value_precede.md).
 
 [^gcspy]: `gcspy` binds nothing in this family.
 
@@ -132,8 +134,10 @@ variables' literal layer: at `n = 80`, 25,759 rows are this family's (12,959
 labelled `@c`, 12,800 the `pge` flags' `@v` rows) and 25,920 the literal
 layer's `@i`. **Independent of width**, because the chain is capped at
 `m ≤ n`: over `−W..W` with `n = 4` it is 155 rows at `W = 10`, `10⁹` and
-`2⁶¹ − 1`, the bytes growing only with the bit width, 15 KB to 92 KB
-(`probes/spcwide.cc`).
+`2⁶⁰ − 1`, the bytes growing only with the bit width, 15 KB to 91 KB
+(`probes/spcwide.cc`, re-run at `86caad24` as
+`tmp/fd-wrapup/review/g4/probes/spcwide.cc`). At `c9ceea25` the widest was
+`2⁶¹ − 1`, at 92 KB; since #1214 a declared domain that wide is refused.
 
 ### Labels
 
@@ -192,10 +196,14 @@ truthfully, since a hole at a chain value moves the first possible occurrence.
 
 **Unbounded domains.** Fine, because the chain is capped at `m ≤ n`: however
 wide the declared domains, everything built from the chain is bounded by `n`
-(views aside: see Overflow), with or without a clamp (`−2⁶¹..3` at `n = 4` has
-none, and is fine). Checked by full enumerations with verifying proofs:
-`1..2⁶¹ − 1` at `n = 5`, 52 solutions, and `−2..2⁶¹ − 1` at `n = 4`, 372, matching
-brute force (`probes/spcfull.cc`). The `±(2⁶¹ − 1)` probe above stops at 1,000
+(views aside: see Overflow), with or without a clamp (`−(2⁶⁰ − 1)..3` at
+`n = 4` has none, and its first 1,000 solutions verify at `86caad24`,
+`tmp/fd-wrapup/fc/fc3/g4b/spcneg.cc`; `−2⁶¹..3` was fine at `c9ceea25`).
+Checked by full enumerations with verifying proofs: `1..2⁶⁰ − 1` at `n = 5`,
+52 solutions, and `−2..2⁶⁰ − 1` at `n = 4`, 372, matching brute force
+(`probes/spcfull.cc`, re-run at `86caad24`; at `c9ceea25` the same counts over
+`1..2⁶¹ − 1` and `−2..2⁶¹ − 1`, which #1214 now refuses, since a declared
+domain must lie in `±(2⁶⁰ − 1)`). The `±(2⁶⁰ − 1)` probe above stops at 1,000
 solutions, so it checks a partial proof only.
 
 **Negative values and zero.** Unconstrained, and tested: a fixed shape over
@@ -237,8 +245,8 @@ outside `±(2⁶⁰ − 1)`. Probe: `tmp/fd-codex-1005/ordering/factcheck2/spcov
    **`narrow(p, 4, 0, 3)`**: four variables in `0..3`, below the array length,
    so the row never reaches the clamp. The shape that matters for width, a wide
    declared domain, is not in the lane, and neither are holes or views; the
-   test's scale case reaches `1..1000` and the probes above reach `2⁶¹ − 1`,
-   and both pass.
+   test's scale case reaches `1..1000` and the probes above reach `2⁶⁰ − 1`
+   (`2⁶¹ − 1` at `c9ceea25`), and both pass.
 
 ## Inference catalogue
 
@@ -282,7 +290,9 @@ constraint's ID.
 ### Tests
 
 - **`seq_precede_chain_test`** (`seq_precede_chain_constraint`, plus
-  `seq_precede_chain_constraint_view_mixed`): fixed shapes (domains equal to
+  `seq_precede_chain_constraint_view_mixed` and, since #1208, its
+  `_view_mixed_late` twin, which posts a vacuous row over each view after the
+  constraint): fixed shapes (domains equal to
   and larger than the array length, one domain up to 100, a negative range,
   constants including 0 and −1, and #254's degenerate arrays) and 16 random
   shapes per run, eight in each of the no-proofs and proofs passes (the
@@ -428,9 +438,9 @@ array length, in terms.
    breaking on a set partition is where a backwards search meets it. It makes
    each pair GAC over distinct variables, not the chain: chain GAC needs an
    algorithm of its own.
-2. **Correct the class comment**: `v = 1` needs nothing, and `v` needs `v − 1`
-   earlier positions, not `v` (header and `seq_precede_chain.cc`). Trivial; not
-   worth an issue.
+2. **Correct the class comment** (done by #1396, open): `v = 1` needs
+   nothing, and `v` needs `v − 1` earlier positions, not `v` (header and
+   `seq_precede_chain.cc`). Trivial; not worth an issue.
 3. **Give the clamp a hint that names the constraint,** or label the rows as
    cake does. Small, and only for a reconstructor's benefit.
 
