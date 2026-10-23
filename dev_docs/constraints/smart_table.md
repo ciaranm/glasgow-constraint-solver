@@ -368,7 +368,8 @@ names as the reason for `none`, but puts the enumeration limit on equality and
 set entries and #358, and a table of order entries alone fails too. The same
 comment says "The refutation (unsat) verifies regardless (RUP)". That is true
 of the in-tree case but not in general: the UNSAT case in the last row fails,
-by the second cause below. The first cause is the row flags' names,
+by the second cause below (the comment is corrected on both counts by
+#1396, open). The first cause is the row flags' names,
 which matters for any proof whose steps need a row flag. The second is the
 consolidated unary encoding's literals, which is #358's divergence, closed as
 wontfix on 2026-06-30 (*chain row flags*).
@@ -768,7 +769,7 @@ no search.
 | `smart_table_constraint_wide_constants` | unary constants over `−59..58`; exact set, **truncated** by the default cap on its largest instance |
 | `smart_table_constraint_degenerate` | no rows, fixed variables both ways, one variable (#254); exact set |
 | `smart_table_constraint_dead_tuple`, `_deep_tree` | #994's two bugs; exact set and GAC at every node |
-| `smart_table_constraint_views`, `_views_view_mixed` | #238's views; exact set and GAC at every node |
+| `smart_table_constraint_views`, `_views_view_mixed`, `_views_view_mixed_late` | #238's views; exact set and GAC at every node; the late lane (from #1208) posts a vacuous row over each view after the constraint |
 | `smart_table_constraint_outside_scope` | since #1213: eight tables whose entries name a variable, a view or a constant outside the scope, an empty scope among them; exact set against brute force, GAC at every node on all three variables, in the scope or not; VeriPB |
 | `smart_table_dup` | the aliasing and cycle rejections (#1014), and `LexSmartTable({a, b}, {b, a})` rejected at solve time; since #1182 also each baseline solved at `AssertionLevel::Inferences`, requiring `smart_table` hints that name the posted constraint (`_1`) and none that says `unnamed` (`smart_table_dup_test.cc:61-89`, `:155-168`) |
 | `smart_table_{small, lex, am1, random}` | the examples, through `run_test_and_verify.bash` |
@@ -865,8 +866,9 @@ time are:
 - `_int_malloc` 3.5%
 
 Allocation (`free`, `malloc`, `operator new`, `_int_malloc`) and the hash
-lookup alone are 33%; with the map helpers and the propagator lambda, the ten are 55%. The binary-entry filtering itself,
-`filter_edge`, is 2.9% self time, so the table algorithm is a small share.
+lookup alone are 33%; with the map helpers and the propagator lambda, the ten
+are 55%. The binary-entry filtering itself, `filter_edge`, is 2.9% self time,
+so the table algorithm is a small share.
 The profile is of a run with proofs off (*per-call cost*). Each at-most-one
 row is one tree, so it copies the scope once, and #1128's extra factor is
 absent from this profile.
@@ -948,8 +950,8 @@ time at this level measures nothing useful.
 
 1. **Pass the reason in the assertion path** (*assertion reasons*). A
    one-line change here and two in `circuit_scc.cc`, and it is the one finding
-   that makes a proof wrong. The `circuit` document, when written, inherits
-   this finding for `prune_skip` and `fix_req`. Add a
+   that makes a proof wrong. [`circuit.md`](circuit.md) records the same
+   finding for its `prune_skip` and `fix_req` rules (10 to 12). Add a
    lane running `smart_table_test` at `GCS_ASSERTION_LEVEL=Inferences`, with
    a check that no asserted clause is falsified by a later `solx`.
 2. **Make the short-reason flag lazily** (#1120). Small, and
@@ -980,7 +982,7 @@ time at this level measures nothing useful.
    constraint.
 7. **The chain** (*chain row flags*): whether it is wanted, and if so cake's
    names for the row and entry flags. The chain-case comment should say what
-   limits it either way.
+   limits it either way (done by #1396, open).
 8. **Tidying.** Remove `provable_entry_member` and its commented-out call.
    Claim idempotence (it holds, and buys under 2% of calls). Do not drop the
    tree-filtering lemmas of calls that infer nothing: later calls cite earlier
