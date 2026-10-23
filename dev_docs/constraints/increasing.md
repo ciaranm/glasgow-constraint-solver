@@ -471,7 +471,9 @@ family.
 ### Tests
 
 - **`increasing_test`** (`increasing_constraint`, plus
-  `increasing_constraint_view_mixed`): for each of the four classes, a fixed
+  `increasing_constraint_view_mixed` and, since #1208, its `_view_mixed_late`
+  twin, which posts a vacuous row over each view after the constraint): for each
+  of the four classes, a fixed
   list of shapes (trivial, pairs, triples, a negative range, tight strict
   chains, length five, constants mid-chain, all-constant chains per #254) and
   five random shapes of two to five variables, each a range whose lower bound is
