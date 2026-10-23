@@ -768,6 +768,45 @@ constraints and do not restate it.
   proofs are 3.0 to 5.9 times smaller in bytes but take 1.10 to 5.9 times
   longer to check (timed solo), and with proofs off it is the slower strategy.
   `dev_docs/knapsack.md` stays as the long note.
+- [`bin_packing.md`](bin_packing.md) — `BinPacking`, each item in one bin
+  and each bin's sizes summing to its load (or within its capacity), which
+  MiniZinc's `bin_packing`, `bin_packing_capa` and `bin_packing_load` and
+  XCSP3's `<binPacking>` post. One propagator in three stages over one OPB
+  (a row per bin): Stage 2, Shaw's per-bin bounds rules, always; Stage 3, a
+  per-bin partial-load diagram (Trick's programme), under the default
+  `consistency::GAC`, with two proof strategies, `PerCall` (the default: a
+  flag per diagram node at `Top`, each state-independent chain line written
+  at `Top` on first use, every inference a bare RUP; the family's own) and
+  `Upfront` (a `k = 1` copy of `Knapsack`'s upfront diagram, which
+  `knapsack.md` owns); and Stage 4, an opt-in cross-bin counting bound in
+  the family of Martello and Toth's L2, certified by one cutting-planes
+  derivation per threshold. 128,000 random instances brute-forced at the
+  root are sound, 1,600 random and 800 tight proofs verify with the right
+  counts, the two strategies give equal node counts (800 random pairs and
+  the bench), every assertion carries its reason, and proofs are accepted at
+  every assertion level but `Links`, where the generic #1210 (commented on)
+  rejects some runs with range-declared variables. The audit found one
+  wrong-answer route, in a front end: XCSP3's single-`<condition>` form
+  constrains bins no item can take, so it proves satisfiable instances
+  `UNSATISFIABLE` and loses solutions (7 of 400 against ACE and a brute
+  force; #1345). MiniZinc errors on item domains reaching outside the bins,
+  on `var opt` models over 1-based bins and on negative load lower bounds,
+  all of which its own definition constrains away, and XCSP3 aborts on
+  negative sizes, limits and loads, variable loads included (#1347, the
+  shape of #1337). On strength, Stage 3 is not the per-bin GAC its header
+  claims: it never commits an item to a bin its load forces it into (#1346);
+  the loads are never made to sum to the total size (#1348); and in the
+  constant-capacity form Stage 3 never changes the fixpoint (and under
+  `PerCall` never infers), yet the default builds and sweeps its diagrams
+  and writes their flags at `Top` (same trees as `BC`, 2.6 to 3.3 times its
+  instructions, and 9.5 times its checking time on a bench enumeration;
+  #1349). `Upfront` carries `Knapsack`'s quadratic interior-value pass
+  (commented on #1340; 60 s in one root call for a size of 10^8), strands
+  its temporary level on failure, and its proofs are 4.5 to 20.8 times
+  `PerCall`'s and 3.7 to 6 times slower to check on the bench. Gecode's Shaw
+  propagator runs 3.3 to 6 times fewer instructions on equal trees. No cake
+  rule exists for `binpacking`. `dev_docs/bin-packing.md` stays as the long
+  note.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
