@@ -189,8 +189,9 @@ solutions, an enumeration in which it saves almost no nodes with the root
 open (1,160 against 1,193 recursions); with the root fixed it does save nodes,
 1,196 against 1,629 at 20 × 20 and 599 against 1,056 at 10 × 10 (see [CPU
 performance](#cpu-performance)). The header's comment that the switch has "no
-effect on the directed spelling" (`reachable.hh:54–55`) is stale: rules 9 and 10
-run under it, and brute force shows `DReachable` is GAC with the forcing and not
+effect on the directed spelling" (`reachable.hh:54–55`) is stale (corrected by
+#1396, open): rules 9 and 10 run under it, and brute force shows `DReachable`
+is GAC with the forcing and not
 without. Turned off, the undirected spelling is still a
 checker at every leaf, and the removals keep the 1-values and the root GAC.
 `examples/hitori --connectivity propagator-no-cuts` is the control; no frontend
@@ -366,8 +367,8 @@ one that makes the inferences RUP.
 - **During search:** one `rup` per inference, at `ProofLevel::Current`, so
   deleted when search backtracks past it. The only lines at
   `ProofLevel::Temporary` are the open-root forcing's pinned lemmas (rules 7 to
-  10), deleted by `del range` as soon as the inference is derived. Nothing a later step depends on is deleted: no inference cites
-  another's lines.
+  10), deleted by `del range` as soon as the inference is derived. Nothing a
+  later step depends on is deleted: no inference cites another's lines.
 - **Naming:** the labels and flag names above.
 - **Proof-only auxiliaries determined on a solution:** yes. On a full
   assignment, the root flags follow from the root's equality literals, then
@@ -390,8 +391,8 @@ quadratic in its trigger count, `n + |E| + 1`: `Propagators::install_returning_i
 scope with a linear `contains` per trigger (`propagators.cc:724–748`), and then
 unions it into the constraint's scope with another linear `contains` per scope
 variable (`765–769`), so fixing the first loop alone leaves it quadratic. The
-`dag` audit measured this as about two thirds of the 11 s to the first node on
-a 100,000-node path (#1309).
+`dag` audit measured about 11 s to the first node on a 100,000-node path, and
+this function as about two thirds of a 30,000-node run (#1309).
 
 ### Propagator inventory
 
@@ -1445,13 +1446,14 @@ counterpart here: every `reachable` assertion carries its reason.
    open and 3.5 ms fixed, against 0.16 ms undirected with the root open. Low priority while no corpus model
    is directed. Filed as #1316.
 4. **Fix the stale text this audit found outside this document**, as small
-   out-of-stack fixes; the long note stays where it is:
+   out-of-stack fixes; the long note stays where it is. #1396 (open) makes
+   the fixes marked so:
    - `connectivity-proofs.md`'s section "What is not one RUP" says the forcing
      is not implemented and that the propagator applies "the five rules in the
-     table"; both stopped being true in 081be4c0.
+     table"; both stopped being true in 081be4c0. Corrected by #1396, open.
    - `connectivity-proofs.md:127–130` says `reachable_test` runs every case
      through `solve_for_tests_checking_gac`; the aliased `dup` run uses plain
-     `solve_for_tests`.
+     `solve_for_tests`. Corrected by #1396, open.
    - **Reported, not proposed for a fix:** the note's `hitori` propagator /
      no-cuts figures (the section at lines 256–339, including 301, 307 and
      326) and `proof-benchmarks.md`'s rows 118–119 are from an earlier tree:
@@ -1464,12 +1466,14 @@ counterpart here: every `reachable` assertion carries its reason.
      note gets a dated note is the maintainer's call.
    - `reachable.hh:54–55` says `with_cut_forcing` has "no effect on the
      directed spelling"; it switches rules 9 and 10 (see [Options](#options)).
+     Corrected by #1396, open.
    - `reachable_test.cc:180` says the mutation fixture is "six free nodes"; it
-     has seven (`208–217`).
+     has seven (`208–217`). Corrected by #1396, open.
    - The comment at `reachable.cc:154–155` and `connectivity-proofs.md`'s
      statements of the size (lines 14, 234, 315, 378 and 625) give it as
      `O(nodes × edges)`, which drops the `n²` term (see [OPB
      encoding](#opb-encoding)); [`tree.md`](tree.md) lists the same lines.
+     All corrected by #1396, open.
 5. **The audit lane's pin.** A wide root, plain or as an offset view,
    enumerates without tripping the guard (see [Interval
    efficiency](#interval-efficiency)). PR #1302 (open) re-pins this family's
@@ -1573,7 +1577,8 @@ steps.
   against the decomposition including the DB-tax comparison with `none`, the
   tree and path family built on top, and `Dag`'s rootless variant. Its section
   "What is not one RUP" is stale: it says the forcing is not implemented, which
-  081be4c0 (in PR #784) changed; the section before it is current. Its
+  081be4c0 (in PR #784) changed (corrected by #1396, open); the section
+  before it is current. Its
   propagator and no-cuts `hitori` figures are from an earlier tree (see [Next
   steps](#next-steps) item 4).
 - [`proof-benchmarks.md`](../proof-benchmarks.md): the `hitori` rows, including
