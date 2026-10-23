@@ -773,11 +773,11 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
   available. A solution-set tripwire is, and the probes above use it. Under
   the default `dom_then_deg` brancher it also changes the search through the
   degree count ([Can it weaken the model?](#can-it-weaken-the-model)).
-- **Offline reconstructibility.** `search`, provisionally (see the last
-  paragraph); `table.md`'s rules 2–5 also give `search` for this caller. The
-  assertions
-  carry no hint, and the rows the solver's own derivation uses (the
-  entries' forward halves and the cover) exist only at `Off`. What has to be derived is the assertion itself,
+- **Offline reconstructibility.** `search`, pending the external
+  justifier's design (see the last paragraph); `table.md`'s rules 2–5 also
+  give `search` for this caller. The assertions carry no hint, and the rows
+  the solver's own derivation uses (the entries' forward halves and the
+  cover) exist only at `Off`. What has to be derived is the assertion itself,
   `inference ∨ ¬R`, where `R` is the generic reason over the scope: every
   scope variable's current domain. **Rebuilding the table, by replaying this
   presolver's enumeration, is one sufficient derivation, not a necessary
@@ -859,8 +859,9 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
     - With the inference dropped from its first assertion, the split was
       refused in all 119 runs of one `Inferences` setting.
 
-  **Which verdict this is, is Ciaran's call: `search` is provisional.** There
-  are two readings.
+  **Which verdict this is waits for the external justifier's design.** Like
+  the other hints-only questions, it will be settled once that design is
+  worked out; until then the verdict stays `search`. There are two readings.
   - **On the template's letter it reads `offline`** at `Definitions`,
     `Links` and `Inferences`. Appendix C's starting point includes the proof
     so far, which holds the subproblem's `a` lines. The split is over the
@@ -1241,8 +1242,8 @@ carries a hint of this presolver's, because there is none.
   propagator), at up to the product of the scope's domains for each
   assertion, and some assertions need only a few RUPs ([Rewrite:
   install-table-propagator](#rewrite-install-table-propagator)). The verdict
-  is `search`, provisionally: whether that split makes it `offline` is
-  Ciaran's call. Whether a hint would pay is the justifier's question.
+  is `search` for now: whether that split makes it `offline` waits for the
+  external justifier's design, and so does whether a hint would pay.
 - Propagation strength does not change with proofs on, and there is no
   proof-only budget.
 

@@ -10,7 +10,20 @@
 > front end), #310 (range literals cannot be written into the model, so a
 > range literal in either class throws with proofs on; #1225 is the same throw,
 > filed for reification conditions), #649 (implied equivalences have nowhere
-> to live), #868 (cross-solver). Tracked under #871.
+> to live), #868 (cross-solver). Filed since, in the presolver: #1381, it
+> takes a Boolean donor's polarity from `enforces_equality()`, so a
+> `ReifiedEquals` whose `neq` flag disagrees with its condition, such as every
+> unreified `not_equals` that `read_scp` builds, gives wrong answers when the
+> presolver gathers it. Filed since, in the system: #1386, a chain is
+> expensive for the system. A chain of unit inferences made in one call has a
+> justification quadratic in the chain's length. Finding the units' supports,
+> and the elimination in every order measured except with the chain's first
+> column fixed, cost of order `n³` word operations (about `n³/128` for the
+> supports, `n³/64` for the elimination's worst case), with proofs off too.
+> This holds for `ParitySystem` posted directly as well (rule 5). The
+> presolver's measurements are in
+> [`parity_system_gathering.md`](../presolvers/parity_system_gathering.md#proof-performance).
+> Tracked under #871.
 
 `ParityOdd(lits)` says that an odd number of the literals hold: an XOR. It is
 one class with one propagator, and it is generalised arc consistent on one XOR
@@ -18,8 +31,9 @@ whose literals are over different variables, because a single parity
 constraint has nothing to infer until one literal is left. All the inference a
 model's XORs offer lives in their conjunction, and over GF(2) that conjunction
 is tractable. `ParitySystem`, and the
-`parity_system_gathering` presolver that builds one from a model's posted
-`ParityOdd`s, run Gauss-Jordan elimination over the whole system with every
+`parity_system_gathering` presolver that builds one per connected component
+of two or more rows from a model's posted `ParityOdd`s and Boolean `Equals` /
+`NotEquals`, run Gauss-Jordan elimination over the whole system with every
 inference certified. The design, the proofs and their derivation are in
 [`parity-system.md`](../parity-system.md), which this document summarises rather
 than repeats.
@@ -73,11 +87,15 @@ Degenerate shapes:
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
 | `ParityOdd` | ✓ `array_bool_xor`[^mznxor] | ✓ `xor`, top level and inside an expression[^xxor] | ✓ `xor`, through `gcspy`'s `post_xor` | ✓ `parity` | |
-| `ParitySystem` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | ✓ `parity_system`, ours alone; cake has no such rule | also built by the presolver from posted `ParityOdd`s |
+| `ParitySystem` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | ✓ `parity_system`, ours alone; cake has no such rule | its propagator is also installed by the presolver, one per component, from posted `ParityOdd`s and Boolean `Equals` / `NotEquals` |
 
 [^mznxor]: `bool_xor` is **not** this class. The two-argument form posts
     `NotEquals` and the reified three-argument form `EqualsIff`. The presolver
     gathers the first as a two-literal row, and skips the second as reified.
+    But neither MiniZinc 2.9.7 nor 2.10.1 emits the two-argument form: an
+    explicit `bool_xor(a, b)` flattens to `bool_xor(a, b, true)`, posted as
+    `EqualsIff{a, b, 1 ≠ 1}` and skipped as reified, and `a xor b` to
+    `bool_not`, a `NotEquals`.
 
 [^xxor]: At the top level, `ParityOdd` over the arguments. Inside an expression,
     a result `r` and its complement `not_r` by a linear equality, and
@@ -104,7 +122,8 @@ Neither changes the OPB.
 The presolver has `keeping_donor_propagators()`, which leaves the gathered
 donors' own propagators running, the Boolean `Equals` / `NotEquals` as well as
 the `ParityOdd`s. It exists so that its tests can check the
-system subsumes them, by comparing trees node for node.
+system subsumes them, by comparing solution and recursion counts with the
+donors kept and retired, which must match because both arms carry the system.
 
 ### Variable kinds and views
 
@@ -127,10 +146,16 @@ so that a view or a lazily named atom resolves to the literal its OPB row
 carries and the `pol` cancels.
 `parity-system.md`'s "canonicalisation must go through the tracker" is about
 those axioms; its columns do not. The presolver takes a Boolean `Equals` or
-`NotEquals` as a row only when it is unconditional (the rest count as
-`skipped_reified`, checked first) and both operands are within `{0, 1}` at the
-root (the rest count as `skipped_wide_operands`); over wider operands an
-equality is not a parity.
+`NotEquals` as a row only when its condition is `MustHold` or `MustNotHold`
+(the rest count as `skipped_reified`, checked first; this is decided by the
+condition's kind, so an `Iff` over a constant condition is skipped too) and
+both operands' bounds lie within `{0, 1}` as the presolver finds them, after
+the root initialisers and before any root propagation (the rest count as
+`skipped_wide_operands`); over wider operands an equality is not a parity. It
+reads the row's parity from `enforces_equality()`, which is wrong when the
+constraint's `neq` flag disagrees with its condition, as for every unreified
+`not_equals` that `read_scp` builds; the system then enforces the opposite of
+the donor (#1381).
 
 ### Reification
 
@@ -160,9 +185,11 @@ the parent's id and collide on every row label.
 **Presolvers.** `parity_system_gathering` reads every `ParityOdd` and Boolean
 `Equals` / `NotEquals`, groups the rows into connected components by shared
 atoms, installs the system propagator over each component of two or more rows,
-and retires the donors' own propagators. Its detection and its stats belong to
-its own presolver document, when written; the machinery it installs is
-documented here, as `TEMPLATE.md`'s presolver table says.
+and by default retires the donors' own propagators. Its detection and its stats
+belong to its own presolver document,
+[`parity_system_gathering.md`](../presolvers/parity_system_gathering.md); the
+machinery it installs is documented here, as `TEMPLATE.md`'s presolver table
+says.
 
 **Reached only through a decomposition?** No. The system is reached only
 through the API and the `.scp`, or the presolver, which nothing enables.
@@ -207,6 +234,22 @@ cake writes two bound lines per such variable, the binary case of #358. The
 propagator's RUP inferences verify against cake's chain directly. `ParitySystem`
 has no case, because cake has no rule for it; `scp_reader_test` checks that its
 `.scp` form round-trips, by counting solutions.
+
+**A gathered system's slack derivation fails the chain** for a `ParityOdd`
+donor with an equality-type literal over a `{0, 1}` variable (`v = 0`, `v = 1`,
+`v ≠ 0`, `v ≠ 1`; `array_bool_xor` posts `v ≠ 0`). The chain derivation's
+subproof adds the labelled step clauses and cancels the step's literal by
+spelling, and our OPB writes `v ≠ 0` as `i[v][b0]` where cake writes
+`~i[v][eq0]`, which is #1193's mismatch. VeriPB rejects the presolved proof
+against cake's OPB at the `qed` of the first such subproof, and verifies it
+against ours. Ordering literals and wider variables pass, and so do Boolean
+`Equals` / `NotEquals` donors, whose slack rows are two RUPs. No chain lane
+can run the presolver, so only a by-hand run of the chain's steps 2 to 4 shows
+it; it is recorded on #1193. Re-run at `86caad24` on
+2026-10-20 on two `ParityOdd` rows over three `{0, 1}` variables: without the
+presolver, steps 2 to 4 give `s VERIFIED COMPLETE ENUMERATION OF 2 SOLUTIONS`;
+with it, step 3 rejects at the subproof, and over `0..2` all three pass
+(`tmp/fd-pre/older/cake/ch.cc`).
 
 ### Proof-time state
 
@@ -275,9 +318,11 @@ two undecided ones.
 **The system**: nothing persists either. Each call reads every atom's state,
 **copies every row**, substitutes, and runs Gauss-Jordan from scratch:
 `O(rows² · (atoms + rows) / 64)` word operations, the `rows` term being each
-row's origin bitset, which is XORed alongside its atoms. `parity-system.md` records why it
-started from scratch (elimination creates non-zero cells, so a reduced form does
-not trail cleanly) and names incremental maintenance as the residue.
+row's origin bitset, which is XORed alongside its atoms. Each unit row's
+support is then a further sum over its origin (rule 5, **Algorithm**).
+`parity-system.md` records why it started from scratch (elimination creates
+non-zero cells, so a reduced form does not trail cleanly) and names
+incremental maintenance as the residue.
 
 **What maintaining it would buy.** On `parity-learning` 2012, with 111 rows over
 134 atoms, the system made each node about four times as expensive as the
@@ -300,11 +345,19 @@ interiors.
 - **Negative values and zero.** `≠ 0` reads a negative value as true. Tested
   over `[−2, 2]`.
 - **Degenerate shapes**: see [Semantics](#semantics).
+- **Inputs.** Since #1214 every declared domain, constant and view offset must
+  lie in `±(2⁶⁰ − 1)`. Since #1215 so must the value in every literal of
+  either class, one past the top included (`x ≤ v` is stored as `x < v + 1`).
+  The constructors throw `IntegerOverflow` otherwise (`parity.cc:62`,
+  `parity_system.cc:57`, at `86caad24`). `integer_ranges_test` checks a
+  `ParityOdd` literal at both ends.
 - **Overflow.** None: the only arithmetic is parity and bitsets. The `pol`
   coefficients are small integers.
-- **Large systems.** The system's per-call cost grows with rows squared, and
-  its root scaffolding with the total row length: `2n + 2` lines per chain row
-  left at `Top`, where every later unhinted RUP pays for it (#666).
+- **Large systems.** The system's per-call cost is
+  `O(rows² · (atoms + rows) / 64)` plus the supports. That is cubic on a chain
+  (#1386; rule 5). Its root scaffolding grows with the total row length:
+  `2n + 2` lines per chain row left at `Top`, where every later unhinted RUP
+  pays for it (#666).
 
 ### Interval efficiency
 
@@ -451,7 +504,26 @@ term the OPB pins anyway.
 - **Strength** — `GAC` on the PB relaxation of the system, with rule 6; which is
   `GAC` on the conjunction when each variable contributes one atom.
 - **Algorithm** — Gauss-Jordan over bitset rows, from scratch every call:
-  `O(rows² · (atoms + rows) / 64)`.
+  `O(rows² · (atoms + rows) / 64)`. A chain meets that worst case in one call
+  in every order measured except with its first column fixed. That includes
+  a chain whose known end is its last column, and a chain with nothing fixed.
+  On a free chain over 4,096 variables, one `gauss_jordan` call costs 5.7 G
+  instructions, against 0.17 G with a unit row for the first column pivoted
+  first. Each unit row's support is then
+  found by XORing the atoms of every row in its origin (`support_of`,
+  `gf2_system.cc:259–264`). This runs with proofs off too, because the reason
+  is built from the support. On a chain of `n` rows inferred in one call, the
+  origins run up to the whole chain, so this costs about `n³/128` words. At
+  `86caad24` (fataepyc-08, 2026-10-21, `instructions:u`), `ParitySystem`
+  posted directly over a chain of 4,096 variables, with proofs off, took:
+  - 3.4 G with its first variable fixed, 80% of it in the propagator's body
+    (the supports) and 9% in `gauss_jordan`;
+  - 9.0 G with its last variable fixed, 65% in `gauss_jordan`;
+  - 12.3 G with nothing fixed, for the two solutions.
+
+  The same chain as separate `NotEquals` takes 0.18 G (#1386; the
+  presolver's arms are profiled in
+  [`parity_system_gathering.md`](../presolvers/parity_system_gathering.md#proof-performance)).
 - **Why it is true** — the unit row is a sum over GF(2) of posted rows, so it
   holds, and with the other atoms of its support fixed it fixes this one.
 - **Proof technique** — `pol` then `RUP`, by Gocht and Nordström's §4.3: the
@@ -553,7 +625,13 @@ term the OPB pins anyway.
   replace the elimination with a sum. Whether that is worth its size is a
   question for the justifier as it develops.
 - **Proof size** — one `pol` over (donors in the origin) × 2 slack rows plus one
-  axiom per support atom, and one RUP; plus the root scaffolding it cites.
+  axiom per support atom, and one RUP; plus the root scaffolding it cites. An
+  origin can be as long as the component. On a chain of `n` two-literal rows
+  inferred in one call, the units' origins run from one row to the whole
+  chain, so the call's `pol`s total about `2n²` tokens (#1386). At the same
+  commit, `ParitySystem` posted directly over a chain of 1,024 variables with
+  its first variable fixed writes 10.5 MB, which VeriPB takes 3.8 s to
+  check. The same chain as separate `NotEquals` writes 53 KB.
 - **Gaps** — `None.`
 - **Tightness** — see the catalogue preamble.
 
@@ -604,9 +682,9 @@ term the OPB pins anyway.
 | Lane | What it checks |
 |---|---|
 | `parity_constraint` | `parity_test`: fixed and random rows (some with constants) under `solve_for_tests_checking_gac`; five repeated-literal rows under plain enumeration; with and without proofs |
-| `parity_constraint_view_mixed` | the same, positions wrapped in views, minus the repeated-literal rows |
-| `parity_system_constraint`, `…_view_mixed` | `parity_system_test`: 15 fixed systems (no rows, one row, disjoint rows, a cycle that is unsatisfiable with no two rows in conflict, a repeated row, wider domains, constants, an empty row, a duplicate within a row) and 10 random ones, all under `solve_for_tests_checking_gac` at the default `GaussJordan` |
-| `parity_system_gathering_presolver` | the presolver: exact stats counts, node-for-node equality with and without donor retirement, and the strength differentials `parity-system.md` tabulates; its equivalence runs use plain enumeration, so the gathered system's per-node strength is not checked |
+| `parity_constraint_view_mixed`, `…_view_mixed_late` | the same, positions wrapped in views, minus the repeated-literal rows; the late lane (from #1208) posts a vacuous row over each view after the constraint |
+| `parity_system_constraint`, `…_view_mixed`, `…_view_mixed_late` | `parity_system_test`: 15 fixed systems (no rows, one row, disjoint rows, a cycle that is unsatisfiable with no two rows in conflict, a repeated row, wider domains, constants, an empty row, a duplicate within a row) and 10 random ones, all under `solve_for_tests_checking_gac` at the default `GaussJordan` |
+| `parity_system_gathering_presolver` | the presolver: exact stats counts, equal solution and recursion counts with and without donor retirement, and the strength differentials `parity-system.md` tabulates; its equivalence runs use plain enumeration, so the gathered system's per-node strength is not checked |
 | `scp_chain_parity_sat`, `scp_chain_parity_unsat` | see [Cake conformity](#cake-conformity) |
 | `scp_reader_test`, `constraint_enumeration_test` | the `parity_system` `.scp` form: solutions counted, and a separate write → read → write round trip; the presolver's class enumeration finds `ParityOdd` and `ReifiedEquals` |
 | `xcsp_intension_boolean` | `xor(a, c, d)` at the top level |
@@ -694,8 +772,10 @@ decided has at most one undecided input, which unit propagation has already
 settled, and a row whose output is undecided constrains nothing. Propagator
 calls of all kinds fall to an eighth, one system replacing 111 donors, but the
 solve takes four times as long. Where the time goes was not profiled; the
-from-scratch elimination and the row copies are the obvious candidates. `ParityOdd` itself is 7.4 times
-slower than Gecode, at the same count (on the unmodified build).
+from-scratch elimination and the row copies are the obvious candidates. On a
+different shape, the unit chains of #1386, a profile does name two costs: the
+elimination, and each unit's support (rule 5, **Algorithm**). `ParityOdd`
+itself is 7.4 times slower than Gecode, at the same count (on the unmodified build).
 
 **What this benchmark exercises**: rules 1–3 without the presolver, rules 5 and
 6 with it. Rule 4 only in the tests, and rule 7 nowhere.
@@ -729,8 +809,10 @@ is #1225). A range literal (`x ∈ [l, u]` or its negation) in `ParityOdd` or
 `ParitySystem` throws `UnimplementedException` from model writing when proofs
 are on, because the names-and-IDs tracker cannot yet state one in the OPB. With
 proofs off the answers are right. No front end posts a range literal here; the
-C++ API can. Otherwise every inference is justified, and nothing is asserted at
-`AssertionLevel::Off`.
+C++ API can. Otherwise every inference over correctly gathered rows is
+justified, and nothing is asserted at `AssertionLevel::Off`. A Boolean donor
+gathered with the wrong polarity makes VeriPB reject the system's first slack
+row for it (#1381).
 
 For a presolver-installed system, the hints name `CurrentlyUnnamedConstraint`
 and carry no origin rows (rules 5 and 6). That is **not** an information gap:
@@ -742,6 +824,9 @@ elimination, per assertion.
 ### Known limitations
 
 - **The system is reachable from no front end** (#983).
+- **The presolver can gather a Boolean donor with the wrong polarity**, and
+  then the solutions are wrong (#1381).
+  Reached from the C++ API, including a `.scp` read with `read_scp`.
 - **Gathering can cost more than it prunes**: four times slower, for nothing, on
   `parity-learning`.
 - **`ParityOdd` is not GAC over a repeated literal**; the system is.
@@ -749,6 +834,10 @@ elimination, per assertion.
   `parity-learning`.
 - **Root scaffolding is never deleted**: `2n + 2` lines per chain row stay at
   `Top`.
+- **A chain is expensive for the system** (#1386). A unit chain inferred in
+  one call has a justification quadratic in the chain's length. Its supports,
+  and the elimination in every order measured except with the first column
+  fixed, are cubic, with proofs off too (rule 5).
 - **A range literal throws with proofs on** (#310; #1225 is the
   reification-condition case).
 
@@ -763,7 +852,11 @@ Ranked by what they buy for what they cost.
 2. **Make each call cheaper, or rarer.** Profile the system propagator on
    `parity-learning` first; incremental elimination is the design note's
    residue, and skipping elimination when no row can have become unit is a
-   cheaper test. No structural check at gathering time would have predicted
+   cheaper test. Neither addresses the supports or the quadratic `pol` of
+   #1386: on chains a fix has to address those as well as the elimination's
+   cost (rule 5;
+   [`parity_system_gathering.md`](../presolvers/parity_system_gathering.md#proof-performance)).
+   No structural check at gathering time would have predicted
    this model's result: the rows do interact once the objective's bound
    decides their outputs, and it is the search's depth, not the system's shape,
    that leaves nothing to find. Unfiled; the evidence is one model.

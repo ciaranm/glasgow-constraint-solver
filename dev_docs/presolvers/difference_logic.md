@@ -17,8 +17,10 @@
 > initialiser it installs does not observe `--timeout`), #983 (no `gcspy`
 > plumbing), #582 (no runtime
 > propagator priorities), #1072, #594 and #1210 (owned by `difference.md`), and
-> #868 (cross-solver). Filed since, in the installed machinery and owned by
-> `difference.md`: #1384 (a negative cycle's or root witness's reason
+> #868 (cross-solver). Filed since: #1378, added before an `AutoTable`, in
+> its default incremental mode, it throws `UnexpectedException` whenever it
+> installs a propagator. Also filed since, in the installed machinery and
+> owned by `difference.md`: #1384 (a negative cycle's or root witness's reason
 > deduplicates its conditions quadratically) and #1385 (root simplification
 > counts isolated nodes as removed, but the propagator still seeds, scans and
 > wakes on them). Tracked under #871.
@@ -434,7 +436,20 @@ reasons keep them out:
     disabling a propagator does not remove them. That settles the
     combination `inferred_disjunctive.md` reports as untested, on that
     probe.
-  - So run it first where several are used, as `examples/rcpsp` does.
+  - **Added before an `AutoTable`, it throws** `UnexpectedException`
+    ("difference logic incremental state was initialised below a decision")
+    in its default incremental mode, whenever it installs a propagator (two
+    edges or more, `difference_logic.cc:336`). The `AutoTable`'s throwaway
+    root search guesses `TrueLiteral` and then makes the installed
+    propagator's first call
+    ([`difference.md`](../constraints/difference.md#initialisation-and-global-data),
+    item 4; #1378). With `incrementally(false)`, or added after the
+    `AutoTable`, it solves. On `x < y`, `y < z` over
+    `0..5` with `AutoTable{{x, z}}`, both give 20 solutions in 30 recursions,
+    against 29 with no `AutoTable` (`tmp/fd-pre/older/dlat/dlat.cc`,
+    `86caad24`, 2026-10-20).
+  - So run it before the scheduling presolvers, as `examples/rcpsp` does, and
+    after any `AutoTable` unless it is `incrementally(false)`.
 - **Candidate merge.** There is none. The presolver is a detection pass over
   the comparison and linear families, and its machinery is `difference`'s.
 
@@ -1207,6 +1222,17 @@ scan fails as follows, and only the first four are counted:
      `EchoSched`. All 335,160 on `products-and-shelves` are not two terms. The
      prototype fixed 13,016 conditions at the root, and 45 instances gained
      half-reified edges. See #1373.
+   - **An `Iff` whose condition is a constant literal is skipped as well**,
+     though under a true constant it is a plain unconditional donor: the scan
+     tests the condition's kind, not its value (`difference_logic.cc:252–264`,
+     `:312–323`). Two `LessThanEqualIff` or two `LinearLessThanEqualIff`
+     donors under `1 = 1` lift nothing and count `skipped_reified` 2, where
+     two `LessThanEqual`s lift 2 edges
+     (`tmp/fd-pre/parity_system_gathering/p10-boolxor/dl.cc`, re-run at
+     `86caad24` on 2026-10-20). A constant-condition `If` is lifted (below).
+     `parity_system_gathering` skips a constant-condition `Iff` the same way
+     ([`parity_system_gathering.md`](parity_system_gathering.md), Detection,
+     item 2).
 2. **The negated forms** (`MustNotHold`, `NotIf`): `skipped_reified` (#598).
 3. **Coefficients other than `±1`.** No `gcd` normalisation is done:
    - `2x − 2y ≤ 4` and `2x − y ≤ 3` give `skipped_coefficients`;
@@ -1688,6 +1714,10 @@ These are phrased as a user meets them:
   machinery's shortest-path arithmetic (#1371). In the shapes measured here,
   `--difference-logic-simplify off` avoids it while the donors are kept. It does
   not avoid the drift of conditional edges, which only C++ reaches today.
+- **"It threw `UnexpectedException` when I added an `AutoTable` as well."**
+  Only C++ can add both. Added before the `AutoTable`, in the default
+  incremental mode, with two or more edges lifted, the solve throws before
+  search (#1378). Add it after the `AutoTable`, or use `incrementally(false)`.
 - **"The search tree changed though nothing was lifted that could
   propagate."** The installed propagator raises the degree of its
   variables, and that changes `dom_then_deg`'s tie-breaks.

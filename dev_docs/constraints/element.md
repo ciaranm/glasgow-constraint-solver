@@ -263,9 +263,10 @@ recognises or rewrites it, and it publishes no citable row for one to use —
 see [Labels](#labels).
 
 **Nearly, but not, the same family.** `gcs/constraints/min_max/` shares the
-range-path view restriction and the "support across a selection" shape;
-`gcs/constraints/table/` is what an `Element` becomes under `AutoTable`. Both
-are separate families.
+range-path view restriction and the "support across a selection" shape; the
+table family's extensional propagator is what `AutoTable` installs beside an
+`Element` whose variables its caller names, and the `Element` stays posted and
+propagating. Both are separate families.
 
 ## The proof model
 

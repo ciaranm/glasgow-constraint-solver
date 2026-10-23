@@ -945,6 +945,46 @@ constraints and do not restate it.
     takes the search from 1,232,741 recursions and 35 s to one recursion
     and 0.13 s; on `shikaku human`, from 2,793 recursions to 10. On
     `skyscrapers 5` and `6` it costs 1.2–1.5× the instructions.
+- [`parity_system_gathering.md`](../presolvers/parity_system_gathering.md) — the
+  `ParitySystemGathering` presolver. It reads every `ParityOdd`, and every
+  unconditional `Equals` / `NotEquals` whose operands are within `{0, 1}` when
+  it runs, canonicalises their literals into GF(2) atoms, and installs one
+  Gauss-Jordan system propagator per connected component of two or more rows,
+  retiring the gathered donors' own propagators by default. It writes nothing
+  to the OPB; each donor's slack form is derived inside the proof from the rows
+  the donor emitted. The machinery it installs is [`parity.md`](parity.md)'s.
+  No front end and no example turns it on (#983), and `glasgow_scp_solver` has
+  no switch for it (#1374); the C++ API can, including over a
+  `.scp` read back with `read_scp`.
+  - **Detection.** A 30-shape harness, a fuzz of 9,600 random models against
+    brute force, and a MiniZinc differential through a local switch (1,200
+    models on each of 2.9.7 and 2.10.1, against Gecode) found no wrong answer
+    among the derived classes, and every `Off` proof outside #1381's
+    shapes verified.
+  - **Order.** `AutoTable` cannot change what it gathers. A `DifferenceLogic`
+    added first can, by fixing a bound-literal condition on an operand; the
+    solutions agreed.
+  - **Findings.**
+    - It takes a Boolean donor's polarity from `ReifiedEquals`' description-only
+      `_neq` flag instead of its condition. `read_scp` builds every
+      `not_equals` that way, so a `.scp` written by `fzn-glasgow` and read back
+      with the presolver gives 4 solutions where the model has 2. With proofs
+      on, VeriPB rejects the proof (#1381).
+    - Its own pass is quadratic in time and memory in the XOR structure: setup
+      to the first node takes 6.7 s and 1.4 GB on 32,000 two-row components,
+      against 0.13 s without it (#1380; #1309 adds the engine's share).
+    - Against `cake_pb_cp`'s OPB, the in-proof slack derivation fails for a
+      `ParityOdd` donor with an equality-type literal (`v ≠ 0`, `v = 1`, …)
+      over a `{0, 1}` variable, which is what `array_bool_xor` posts: the two
+      encoders spell those atoms differently, #1193's cause (commented there).
+    - A constant operand is one shared atom, so rows with no variable in
+      common are joined into one system for nothing.
+    - Through the local switch, `parity-learning` gathers 111 rows into one
+      system, with the same 1,523,353 nodes and 4.2 times the time.
+    - Three-argument `bool_xor` is skipped as reified (#983), even when its
+      condition is a constant, as an explicit MiniZinc `bool_xor(a, b)`
+      arrives. The installed system changes `dom_then_deg`'s search through
+      degree.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871

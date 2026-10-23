@@ -12,6 +12,10 @@
 > from outside — #882 and #895 — have both closed since the second pass. What
 > this audit would file, it has instead put in [Next
 > steps](#next-steps): two missing audit-lane rows, neither a suspected bug.
+> Filed since, reaching in from a presolver: #1381, `ParitySystemGathering`
+> takes a Boolean donor's polarity from `_neq`, so a `ReifiedEquals` whose
+> `_neq` disagrees with its condition, such as every unreified `not_equals`
+> that `read_scp` builds, gives wrong answers when the presolver gathers it.
 > Tracked under #871.
 
 Six posted classes over one implementation: an equality between two operands,
@@ -103,9 +107,18 @@ do **not** flip any propagation logic; they negate the condition at
 construction, so `NotEqualsIff(v1, v2, c)` is stored as `Iff{¬c}` and reaches
 the same equality-enforcing code. Read the concrete variant's constructor to
 see what a given class actually installs. The `_neq` member reaches no
-propagation at all: it picks the keyword the constraint describes itself by in
-the `.scp` and nothing else — and until #883 it did not reach that either,
-because `clone()` dropped it (see [Cake conformity](#cake-conformity)).
+propagation in this family. In the `Iff` arm only, it picks the `.scp` keyword
+and which condition is written (`equals.cc:641`, `:666`), and through the
+keyword the OPB's block comment and the propagator-type label (`problem.cc:246`,
+`constraint.cc:35`); `MustHold`, `MustNotHold`, `If` and `NotIf` take their
+keyword from the condition. Until
+#883 it did not reach even that, because `clone()` dropped it (see [Cake
+conformity](#cake-conformity)). Outside the family, `ParitySystemGathering`
+reads it, through `enforces_equality()`, as a Boolean donor's polarity. That is
+wrong whenever it disagrees with the condition, as it does for every unreified
+`not_equals` that `read_scp` builds (`MustNotHold` with `neq` false,
+`scp_reader.cc:263`), and the gathered system then enforces `x = y` for a
+donor that says `x ≠ y` (#1381).
 
 Degenerate cases:
 
@@ -292,8 +305,13 @@ posts nothing.
 Both couplings run the same way round — we export, `Element` consumes — so a
 change here is felt there and not the reverse.
 
-**Presolvers.** None rewrite or target this family. `DifferenceLogic` scans for
-`x - y ≤ d` shapes and does not recognise an `Equals`.
+**Presolvers.** `ParitySystemGathering` targets this family: it reads an
+unconditional `Equals` or `NotEquals` whose operands' bounds lie within
+`{0, 1}` as a two-literal parity row, and by default retires the propagators of
+the donors it gathers
+([`parity_system_gathering.md`](../presolvers/parity_system_gathering.md)).
+None rewrites it otherwise. `DifferenceLogic` scans for `x - y ≤ d` shapes and
+does not recognise an `Equals`.
 
 **Nearly, but not, the same family.** `gcs/constraints/comparison/` is a
 parallel hierarchy of twelve classes over `ReifiedCompareLessThanOrMaybeEqual`,
@@ -1588,6 +1606,16 @@ only to cover for one is deleted.
 **A range-literal condition throws with proofs on** (#1225; #310 is the
 encoding fix). It gives the right answers without proofs. No front end posts
 one.
+
+**Under `ParitySystemGathering`, a donor whose `_neq` disagrees with its
+condition is gathered with the opposite polarity**, and with the donors retired
+(the default) the solutions are wrong: with `ParityOdd{x, z}` and
+`ReifiedEquals{x, y, reif::MustNotHold{}}`, the solve reports `(0, 0, 1)` and
+`(1, 1, 0)` for the model's `(0, 1, 1)` and `(1, 0, 0)`
+(`tmp/fd-pre/older/neq/neq.cc`, `86caad24`, 2026-10-20; #1381). `Equals` and
+`NotEquals` themselves are unaffected; the shapes hit are the `.scp` reader's
+`not_equals`, the public constructor's `MustNotHold` with its default `neq`,
+or `MustHold` with `neq` true.
 
 **Aliased operands are not GAC**, deliberately: a GAC algorithm for distinct
 variables does not generally give GAC under aliasing, and the dup tests check
