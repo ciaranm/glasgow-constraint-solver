@@ -3,7 +3,8 @@
 > **Maturity** production ·
 > **Audited** 2026-10-10 at `86caad24` ·
 > **Open issues** filed by this audit: #1329 (a zero-variable diagram with an
-> empty accepting list reports solutions; filed with `RegularBacchus`'s twin),
+> empty accepting list reports solutions; filed with `RegularBacchus`'s twin;
+> fix open as #1366),
 > #1333 (the constructor does not check node indices; with `Regular`'s), #1336
 > (six kinds of MiniZinc shape the binding gets wrong), #1338 (the graph is
 > deep-copied at every search node; with `Regular`'s), #1339 (a wide declared
@@ -124,9 +125,11 @@ transition value against `±(2⁶⁰ − 1)` (`require_bounded`, since #1215). I
     search, and makes **every** node at depth `n` accepting. It reports
     `s UNSUPPORTED` for a non-deterministic transition set, an empty one, more
     than one source or none, a node at two depths, a path longer than the list,
-    and a diagram whose paths are
-    all shorter than the list (which is unsatisfiable rather than unsupported,
-    and which ACE 2.6 answers `UNSATISFIABLE`).
+    and a diagram whose paths are all shorter than the list (which is
+    unsatisfiable rather than unsupported, and which ACE 2.6 answers
+    `UNSATISFIABLE`). `dev_docs/xcsp.md`'s "Honest gaps" (`:249–252` at
+    `86caad24`) still says `mdd` has no propagator and is reported unsupported
+    (#1369).
 
 [^mzndec]: These fall through to the standard library: `mdd_nondet` and
     `cost_mdd` to their own decompositions, and a reified or half-reified `mdd`
@@ -463,7 +466,8 @@ and [CPU performance](#cpu-performance)); on a long sequence with few nodes and
 long cascades the reason copy below dominates instead (#1353). Recomputed per call: the
 whole-scope reason (`mdd.cc:245`), then copied once per removed value (#1353; see
 [Interval efficiency](#interval-efficiency)), and a walk over every value of
-every variable's domain (`mdd.cc:277–282`), touched or not. #1339 is a third: two lookups that insert
+every variable's domain (`mdd.cc:277–282`), touched or not. #1339 is a third:
+two lookups that insert
 an empty entry per root domain value during the first call, which every later
 copy then carries.
 
@@ -784,7 +788,8 @@ support (#1352); `MDD`'s finds the one target by `find_transition`
   lemmas; after a backtrack they are written again. At the root, the Top
   scaffolding adds `Σ_i N_{i+1} · |D_i|` backward chains of `2 + (parents on v)`
   literals (one fewer at a constant's layer) and at most `Σ_i N_i` unit
-  lemmas. On the nonogram below, the lemmas are 313,612 of the proof's 413,975 lines and 179.5 MB of its 207 MB.
+  lemmas. On the nonogram below, the lemmas are 313,612 of the proof's 413,975
+  lines and 179.5 MB of its 207 MB.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.` No mutation lane.
 
@@ -1050,7 +1055,8 @@ VeriPB rejects it (#1329).
 2. **Fix the MiniZinc binding's shapes** (#1336): post a contradiction for
    `L = 0` or `N = 0`; drop every edge whose source level is outside `1..L`,
    then every node at a level outside `1..L+1`, and the nodes other than node 1
-   at level 1 with their out-edges, since no root path uses any of them. Small, with new `minizinc/tests` lanes (#1006 is
+   at level 1 with their out-edges, since no root path uses any of them. Small,
+   with new `minizinc/tests` lanes (#1006 is
    the issue for such lanes).
 3. **Stop the per-value map entries** (#1339): `find()` at `mdd.cc:167` and
    `279`. Two lines; 66.5 s to 0.55 s on the probe. Build `prepare()`'s
@@ -1164,7 +1170,8 @@ novelty is assessed once, in [`regular.md`'s Prior art](regular.md#prior-art);
   newly dead node, not "at most one cache-gated" line (313,612 lemma lines on
   the nonogram); and `MDD` has no `with_proof_strategy` setter, which the note
   says all four constraints expose (and contradicts itself on later). For `MDD`
-  the scaffold is backward chains and static dead lines only.
+  the scaffold is backward chains and static dead lines only. All corrected by
+  #1396, open.
 - [`regular.md`](regular.md): `Regular`, whose graph code `mdd.cc` copies, and
   whose audit found the same per-node copy cost.
 - [`large-domains.md`](../large-domains.md): the encoding-growth survey and
