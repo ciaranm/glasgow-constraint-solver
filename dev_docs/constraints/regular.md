@@ -5,10 +5,11 @@
 > benchmarking only (`proof_strategy::Bacchus`) ·
 > **Audited** 2026-10-10 at `86caad24` ·
 > **Open issues** filed by this audit: #1328 (MiniZinc's `regular` with a
-> start state other than 1 gets wrong answers), #1329 (`Bacchus` accepts an
-> empty sequence whose start state is not final; shared with `MDD`), #1331
-> (`Bacchus`'s proofs are rejected because its scaffold leaves out three kinds
-> of unit clause from the published encoding), #1332 (above
+> start state other than 1 gets wrong answers; fix open as #1361), #1329
+> (`Bacchus` accepts an empty sequence whose start state is not final; shared
+> with `MDD`), #1331 (`Bacchus`'s proofs are rejected because its scaffold
+> leaves out three kinds of unit clause from the published encoding; #1366,
+> open, fixes #1329 and #1331), #1332 (above
 > `AssertionLevel::Off`, `Upfront`'s solution lines are rejected for an
 > unambiguous non-deterministic automaton), #1330 (the root scaffolding
 > `Regular` writes at every level is rejected above `Links` for a sequence
@@ -29,7 +30,9 @@
 > targets for every edge removed, so deleting many edges out of one state is
 > quadratic). #1353 (each pruning copies the whole reason) is filed for
 > `MDD`; `PerCall` has the same copy, with proofs off (or with short
-> reasons off).
+> reasons off). Filed while fixing #1331: #1368 (`Bacchus`'s scaffold also
+> leaves out the published variable-support unit `x_i ≠ v` for a symbol no
+> state reads; no proof is known to need it).
 > Already open and touching this family: #841 (the OPB alphabet includes every
 > domain value), #1227 (the regex parser expands class ranges and quantifiers
 > value by value), #489 (cake chain fails when a domain is narrower than the
@@ -49,7 +52,8 @@ lazily during search, `PerCall` re-derives McIlree's per-edge justifications
 on every call, and `Bacchus` derives Bacchus's transition-variable encoding at
 the root and writes nothing per call. All three run the same algorithm,
 Pesant's layered graph, in three copies of the code (one per strategy's
-class), so they draw the same inferences; only the proof differs. For an ambiguous automaton (#1203) the proof first pins the state
+class), so they draw the same inferences; only the proof differs. For an
+ambiguous automaton (#1203) the proof first pins the state
 flags to one canonical run.
 
 Four things to know before touching it.
@@ -58,14 +62,16 @@ Four things to know before touching it.
   strategy, and the default's proofs check.** A brute-force check at the root
   over 12,000 random automata, deterministic and not, with holey domains,
   found no unsupported value and no lost solution, and a per-node check over
-  the seed-1 half (about 6,000 automata) found none either. A repeated variable loses generalised arc consistency (163 of
+  the seed-1 half (about 6,000 automata) found none either. A repeated variable
+  loses generalised arc consistency (163 of
   3,000 instances), but never a solution.
 - **Two wrong answers: one through MiniZinc, one under an opt-in strategy.**
   Through MiniZinc, a `regular` whose start state is not state 1 is translated
   into a different automaton, so `fzn-glasgow` loses solutions or reports
   non-solutions (#1328); no Challenge model reaches it, but an
   enum-typed start state does, and so does a reified `regular` on MiniZinc
-  2.10.1, which rewrites it into a plain one with the same start state. And `Bacchus` over an empty sequence reports the empty word as
+  2.10.1, which rewrites it into a plain one with the same start state. And
+  `Bacchus` over an empty sequence reports the empty word as
   accepted even when state 0 is not final (#1329).
 - **Three shapes of rejected proof.** `Bacchus` writes no proof per pruning
   and relies on unit propagation over its root encoding, which is not complete
@@ -79,7 +85,11 @@ Four things to know before touching it.
   levels on 6 of 100 random NFAs (#1332). And the root scaffolding
   written as real steps at every level (the canonical run, `PerCall`'s static
   dead lines, `Bacchus`'s encoding) is rejected at `Inferences` and
-  `Backtracking` for a sequence variable declared as a range whose bounds unit propagation cannot recover from its bits (such as `1..2`, `-1..2` or `-5..9`), or a view whose own range is such a range (such as `x' + 1` over `x' ∈ 0..1`); a variable declared from a value list is not affected: its domain collapses need the variable's
+  `Backtracking` for a sequence variable declared as a range whose bounds unit
+  propagation cannot recover from its bits (such as `1..2`, `-1..2` or `-5..9`),
+  or a view whose own range is such a range (such as `x' + 1` over `x' ∈ 0..1`);
+  a variable declared from a value list is not affected. For the others, the
+  scaffold's domain collapses need the variable's
   declared bounds, and above `Links` the tracker emits no boundary pins
   (#1330).
 - **It is very slow per node, and the reason is the state restore, not the
@@ -113,7 +123,8 @@ initial domains, as MiniZinc does.
 The symbols are the values themselves, any integers in the bounded range: the
 two sparse constructors and the regex tokenizer check each value with
 `innards::require_bounded` (`regular.cc:480`, `:503`, `regex.cc:80`; #1215,
-and #1268 for the non-deterministic constructor). There is no requirement that the alphabet start at 0 or 1, or be
+and #1268 for the non-deterministic constructor). There is no requirement that
+the alphabet start at 0 or 1, or be
 contiguous.
 
 - **Empty sequence:** accepted exactly when state 0 is final (#254), under
@@ -219,13 +230,15 @@ is `std::variant<proof_strategy::Upfront, proof_strategy::PerCall,
 proof_strategy::Bacchus>`; the default is `Upfront`. It is proof-only: the
 three install the same algorithm (three copies of the propagator and its
 graph type, `regular.cc:94`/`:280`, `regular_legacy.cc:81`/`:285`,
-`regular_bacchus.cc:72`/`:173`) and draw the same inferences, and on every benchmark here their search statistics are identical.
+`regular_bacchus.cc:72`/`:173`) and draw the same inferences, and on every
+benchmark here their search statistics are identical.
 `Upfront` is the class's own path; for the other two, `prepare()` builds the
 sibling class (`RegularLegacy`, `RegularBacchus`), installs it in full and
 returns `false` (`regular.cc:547-570`). `Bacchus` throws
 `UnimplementedException` for a regex, and for any transition set that is not a
 singleton, which includes an empty set from the set-valued constructor. Why
-`Upfront` is the default is [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md)'s
+`Upfront` is the default is
+[`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md)'s
 argument: a narrow diagram, so a small permanent scaffold, displacing a verbose
 per-call baseline. This audit's figures agree with the conclusion, on proof
 size and checking time (see [Proof performance](#proof-performance)), but not
@@ -285,7 +298,8 @@ each position's tracked bounds, views and constants included
 
 `None.` There is no reified class. MiniZinc 2.10.1 rewrites `regular_reif`
 into a plain `regular` over a larger automaton, which reaches
-`glasgow_regular` (and #1328 when `q0 ≠ 1`); 2.9.7 refuses it. A native reified form would want its own
+`glasgow_regular` (and #1328 when `q0 ≠ 1`); 2.9.7 refuses it. A native reified
+form would want its own
 encoding (the state flags half-reified on the condition) and is not obviously
 worth it: no Challenge model posts one.
 
@@ -297,22 +311,26 @@ worth it: no Challenge model posts one.
 - **Shares code:** `canonical_run.{cc,hh}` is this family's own. It calls
   `recover_am1_from_pairs` (`innards/proofs/am1_from_pairs.hh`, whose header
   documents it; no family document owns it, and `all_different.md`,
-  `min_distance.md`, `disjunctive.md`, `counting.md` and `sort.md` describe it
-  among their callers' steps),
+  `circuit.md`, `counting.md`, `disjunctive.md`, `inverse.md`,
+  `min_distance.md`, `sort.md` and `presolvers/inferred_disjunctive.md`
+  describe it among their callers' steps),
   and `ProofScaffoldingScope`. `MDD` (`gcs/constraints/mdd/`) carries its own
   copy of the same graph-maintenance code (`RegularGraph`'s fields,
   `decrement_outdeg` / `decrement_indeg`, the cache-gated dead-state line);
   nothing is shared, so a fix to one does not reach the other; #1338 and
-  #1339 each cover both copies. `MDD` has no canonical run, since its layers are deterministic. `RegularLegacy` and
+  #1339 each cover both copies. `MDD` has no canonical run, since its layers are
+  deterministic. `RegularLegacy` and
   `RegularBacchus` are this family's own internal classes.
 - **Presolvers:** none reads or writes it.
 - **Front-end-only reachability:** no. The C++ API and the `.scp` reader post
   it directly; `regular_random` and `nonogram` exercise all three strategies.
-- **The shared design note.** [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md)
-  is shared with [`mdd.md`](mdd.md) and [`knapsack.md`](knapsack.md), and also
-  covers `BinPacking`, which [`bin-packing.md`](../bin-packing.md) documents;
-  it stays as a long note. This document describes `Regular`'s own strategies in its
-  own fields and cites it for the cost model.
+- **The shared design note.**
+  [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md)
+  is shared with [`mdd.md`](mdd.md), [`knapsack.md`](knapsack.md) and
+  [`bin_packing.md`](bin_packing.md) (`BinPacking`'s own long note is
+  [`bin-packing.md`](../bin-packing.md)), and stays as a long note. This
+  document describes `Regular`'s own strategies in its own fields and cites
+  the shared note for the cost model.
 
 ## The proof model
 
@@ -351,7 +369,8 @@ enters through `A`: over `0..W−1` with the same two symbols, the block is
 literal layer adds `4(W+1)` rows per variable: `4W + 2` definitions of the `=`
 and `≥` atoms the rows name, and the variable's two bound rows (440, 4,040,
 40,040 rows; 1,780, 22,300, 280,420 terms, the `≥` rows carrying one term per
-bit; at `W = 10` the bound rows are 20 rows and 80 terms of those). So **both the constraint's rows and the literal
+bit; at `W = 10` the bound rows are 20 rows and 80 terms of those). So **both
+the constraint's rows and the literal
 layer grow linearly with the declared width**, for an automaton whose alphabet
 is two symbols; that is #841, and [`large-domains.md`](../large-domains.md)
 measured the same split. A degenerate point: `n = 0` gives 4 rows (layer 0's
@@ -412,7 +431,10 @@ Everything here is in the proof, not the OPB, apart from the state flags.
 1. *If the automaton is ambiguous* (`regular_is_ambiguous`), the canonical
    run, written as real steps at every assertion level, before any other line
    mentions the state flags. See below. It is rejected at `Inferences` and
-   `Backtracking` for a sequence variable declared as a range whose bounds unit propagation cannot recover from its bits (such as `1..2`, `-1..2` or `-5..9`), or a view whose own range is such a range (such as `x' + 1` over `x' ∈ 0..1`); a variable declared from a value list is not affected (#1330).
+   `Backtracking` for a sequence variable declared as a range whose bounds unit
+   propagation cannot recover from its bits (such as `1..2`, `-1..2` or
+   `-5..9`), or a view whose own range is such a range (such as `x' + 1` over
+   `x' ∈ 0..1`); a variable declared from a value list is not affected (#1330).
 2. *At `AssertionLevel::Off` only*: per-value backward chains
    `¬s[i+1][q'] ∨ x_i ≠ v ∨ ⋁_{q : q' ∈ δ(q, v)} s[i][q]` for every
    `(i, q', v)` with `v` in the initial domain of `x_i`, at `ProofLevel::Top`,
@@ -447,24 +469,32 @@ at `Inferences` and `Backtracking` otherwise (#1330).
 every assertion level, and never deleted** (the deletion is commented out,
 `regular_legacy.cc:378-383`); then McIlree's per-edge lemmas, each stated
 under `f` at `Current`. So `PerCall` grows the permanent database by two lines
-per call. [`smart_table.md`](smart_table.md) (#1120) and #1317 (`Circuit`)
-record the same pattern; this audit commented on #1120 with `Regular`'s case.
+per call. [`smart_table.md`](smart_table.md) (#1120) records the same
+pattern. #1317 (`Circuit`) records a flag defined on every call too, but at
+`ProofLevel::Current`, so deleted on backtrack. This audit commented on #1120
+with `Regular`'s case.
 
 **`Bacchus`, at the root, written as real steps at every assertion level**
 (`regular_bacchus.cc:337-436`), so rejected at `Inferences` and
-`Backtracking` for a sequence variable declared as a range whose bounds unit propagation cannot recover from its bits (such as `1..2`, `-1..2` or `-5..9`), or a view whose own range is such a range (such as `x' + 1` over `x' ∈ 0..1`); a variable declared from a value list is not affected (#1330):
+`Backtracking` for a sequence variable declared as a range whose bounds unit
+propagation cannot recover from its bits (such as `1..2`, `-1..2` or `-5..9`),
+or a view whose own range is such a range (such as `x' + 1` over `x' ∈ 0..1`); a
+variable declared from a value list is not affected (#1330):
 for every transition `(i, q, v)`, a flag `t[i][q][v] ⇔ x_i = v ∧ s[i][q] ∧
 s[i+1][δ(q, v)]` by redundance (`f[k][t<i>q<q>v<v>]`), then one `pol` adding
 the labelled transition row to the flag's reverse half, then three families of
 at-least-ones by RUP: out of each `(i, q)`, into each `(i+1, q')` that has an
-incoming transition, and supporting each `(i, v)`. All at `Top`, never
-deleted. Nothing during search. **Three kinds of line the published encoding
-has are missing** (EP 5.2; #215): the outgoing at-least-one of a state with no
-outgoing transition, which would be the unit `¬s[i][q]` (skipped,
-`regular_bacchus.cc:390-391`); the incoming one of a state with no incoming
-transition (skipped, `:414`); and the last layer's `¬s[n][q]` for non-final
-`q`. Without them unit propagation does not reach GAC, and the prunings
-`Bacchus` leaves to the next backtrack are not always re-derived (#1331).
+incoming transition, and supporting each `(i, v)` that some state reads. All
+at `Top`, never deleted. Nothing during search. **Three kinds of line the
+published encoding has are missing** (EP 5.2; #215): the outgoing at-least-one
+of a state with no outgoing transition, which would be the unit `¬s[i][q]`
+(skipped, `regular_bacchus.cc:390-391`); the incoming one of a state with no
+incoming transition (skipped, `:414`); and the last layer's `¬s[n][q]` for
+non-final `q`. Without them unit propagation does not reach GAC, and the
+prunings `Bacchus` leaves to the next backtrack are not always re-derived
+(#1331). A fourth is skipped too, the variable-support at-least-one of a
+symbol no state reads, which would be the unit `x_i ≠ v` (`:432`); no proof
+is known to need it (#1368).
 
 **The canonical run** (`emit_regular_canonical_run`, `canonical_run.cc:176-370`;
 derivation in [`regular.md`](../regular.md), "Ambiguous automata"), over the
@@ -651,7 +681,8 @@ entries is `O(Σ_i |D_i⁰|)` for the **root** domains `D_i⁰`, then every valu
 every current domain to find values to prune (`O(Σ_i |D_i|)`), instead of the
 variables the trigger says changed; and it materialises the whole-scope reason first, unguarded by
 `want_reasons()` (`regular.cc:306`). With proofs off (or short reasons off),
-`PerCall` then copies that materialised reason at every pruning (see [Interval efficiency](#interval-efficiency), the
+`PerCall` then copies that materialised reason at every pruning (see [Interval
+efficiency](#interval-efficiency), the
 reason side). #364 lists `regular` under "already
 incremental (no work needed)" as "the gold standard"; that is true of the
 content and not of the restore, as this audit's comment on #364 says. What it costs is under [CPU
@@ -745,7 +776,8 @@ lemma finds its neighbours' lemmas in the database (rule 2).
 
 **Overflow.** There is no arithmetic on values: symbols are hashed and
 compared. Transition values and regex integers are range-checked (#1215,
-and #1268 for the non-deterministic constructor), and a declared domain or view outside `±(2⁶⁰ − 1)` is refused by
+and #1268 for the non-deterministic constructor), and a declared domain or view
+outside `±(2⁶⁰ − 1)` is refused by
 #1214. The regex compiler's `lo..hi` loop and class-range loop step a bounded
 `Integer` and cannot overflow; they can only be very long (#1227, and this audit's comment
 on it). State numbers are `long` and are not checked (#1333).
@@ -881,7 +913,8 @@ showing each infeasible state false, then each value's removal by RUP) and say
 it "closely resembles" McIlree and McCreesh's steps for `Regular` (CP 2023).
 What is particular to `Upfront` is the engineering around it: the per-value
 backward chains derived once at the root and kept at `Top`, and the
-per-search-path cache of dead-state lines; see [Prior art](#prior-art). Both strategies also run over a non-deterministic automaton (a
+per-search-path cache of dead-state lines; see [Prior art](#prior-art). Both
+strategies also run over a non-deterministic automaton (a
 forward row with several targets, so a state is dead only when *every* target
 is); the same arguments carry over, and that is not claimed here as new
 (Quimper and Walsh treat NFA-specified `Regular`, see [Prior art](#prior-art));
@@ -959,7 +992,8 @@ row and the exactly-one.
 - **Strength** — `GAC` on the sequence variables, when they are distinct;
   `partial` with a repeated variable: GAC on the decomposition in which each
   position is a distinct variable, which loses GAC at the root and at search
-  nodes (see [Robustness](#robustness-and-limits)). Checked by brute force: at the root, 3,000 random automata per
+  nodes (see [Robustness](#robustness-and-limits)). Checked by brute force: at
+  the root, 3,000 random automata per
   strategy and seed, deterministic (`Upfront`, `PerCall`, `Bacchus`) and
   non-deterministic (`Upfront`, `PerCall`), sequence lengths 0 to 4, 1 to 4
   states, domains with holes over `-1..3`, seeds 1 and 2: no unsupported value
@@ -1092,12 +1126,14 @@ row and the exactly-one.
   in-degree, and one per incoming edge of a node killed by its out-degree, each
   of one to three literals plus `f` (on `nono 25 1 50`: 26,379 lines with two
   terms, 118,223 with three and 194,542 with four, `f` included), and two
-  permanent `red` lines per call for `f`. Measured shares are under [Proof performance](#proof-performance).
+  permanent `red` lines per call for `f`. Measured shares are under [Proof
+  performance](#proof-performance).
 - **Gaps** — `None` under `Upfront` and `PerCall` at `Off`. Under `Bacchus`,
   rejected re-derivations wherever the backtracks are real RUPs, which is up
   to `Links` (`proof_logger.cc:427` asserts them only from `Inferences`), and
   at one shape a rejected scaffold RUP at every level (#1331).
-  Above `Off`, `Upfront`'s solution lines for an unambiguous NFA (#1332), and above `Links` the every-level root scaffolding for a variable
+  Above `Off`, `Upfront`'s solution lines for an unambiguous NFA (#1332), and
+  above `Links` the every-level root scaffolding for a variable
   whose bounds unit propagation cannot recover (#1330): the
   scaffold's gaps rather than this rule's. The propagator
   is the same with proofs on or off.
@@ -1551,8 +1587,8 @@ here.
     [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md)'s
     "upfront" strategy, landed for `Regular`, `MDD`, `Knapsack` and `BinPacking`
     in one PR stack (#210, #211, #212, #213). It is claimed here once, for the
-    solver; [`mdd.md`](mdd.md) and [`knapsack.md`](knapsack.md) describe their
-    instances and point here.
+    solver; [`mdd.md`](mdd.md), [`knapsack.md`](knapsack.md) and
+    [`bin_packing.md`](bin_packing.md) describe their instances and point here.
   - **The canonical run** (#1266), which pins an ambiguous automaton's state
     flags to one accepting run by a single redundance step over guard flags,
     so that a solution line is unit-propagation complete without determinising
@@ -1568,44 +1604,51 @@ here.
   note (command lines, no figures) for `nonogram`. Against the code at
   `86caad24` it is wrong in these places, for an out-of-stack fix:
   - it says the OPB is identical across all three strategies (`Bacchus` names
-    its flags and labels its rows differently);
+    its flags and labels its rows differently; corrected by #1396, open);
   - it says the choice "never changes the inferences drawn or the solutions
     found" (`Bacchus` accepts an empty sequence whose start is not final,
     #1329);
   - it says `Bacchus`'s backtrack RUPs close by unit propagation (not without
     three kinds of unit clause, #1331);
   - it says `Upfront`'s scaffold is emitted "only if proof logging is enabled",
-    leaving out that it is also only at `Off` (#1332);
+    leaving out that it is also only at `Off` (#1332; corrected by #1396,
+    open);
   - it says `Bacchus`'s per-call propagator "is passed `logger = nullptr`"
-    (it is passed the logger, `regular_bacchus.cc:209`);
+    (it is passed the logger, `regular_bacchus.cc:209`; corrected by
+    #1396, open);
   - it says the graph is built "once in `prepare()`" and that each call
     "builds the per-call support graph" (it is built at the first call and
-    then maintained, `regular.cc:308-309`);
+    then maintained, `regular.cc:308-309`; corrected by #1396, open);
   - it counts `Bacchus`'s incoming at-least-ones as one per `(i+1, q')` and
     its variable-support ones as one per `(i, v)` with `v` in the initial
     domain (each is skipped when no transition exists, `regular_bacchus.cc:414`,
     `:432`, and the second runs over the OPB alphabet);
   - it calls the sibling classes internal, while their headers are installed
-    and the audit lane posts them;
+    and the audit lane posts them (corrected by #1396, open);
   - its Cost section says the canonical run's "flags and lines grow as `n`
     times the live edges per layer"; that holds for the flags, but the
     per-root-value lemmas and rows are `L_i · |D_i|` lines whatever the edges,
     and the at-most-one is not linear in the edges either, as the note's
     next sentence, the live states times the edges into them, correctly says
-    (see [Initialisation](#initialisation-and-global-data)).
+    (see [Initialisation](#initialisation-and-global-data); corrected by
+    #1396, open).
 
   And `regular.hh:103-104` says `Bacchus` "requires every such set to have at
-  most one member", where an empty set is refused too (`regular.cc:563`).
+  most one member", where an empty set is refused too (`regular.cc:563`;
+  corrected by #1396, open).
 - [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md):
   the cost model shared with `MDD`, `Knapsack` and `BinPacking` (and with
-  [`mdd.md`](mdd.md) and [`knapsack.md`](knapsack.md)): displacement against
+  [`mdd.md`](mdd.md), [`knapsack.md`](knapsack.md) and
+  [`bin_packing.md`](bin_packing.md)): displacement against
   the permanent scaffold's tax, the per-family defaults, and the negative
   results on deleting scaffolding and on flat RUP hints. One correction for
   its out-of-stack list, with the others `mdd.md` and `knapsack.md` record:
   its reason for `Regular`'s default, a narrow automaton and so a tiny
   permanent scaffold (`red ≈ 28–48` flags), does not hold on nonograms, where
   `Upfront`'s scaffold has no `red` lines and is 66,680 of 85,553 lines (see
-  [Options](#options)); the conclusion survives, on line count.
+  [Options](#options)); the conclusion survives, on line count. Corrected by
+  #1396, open, in "Why each lands where it does"; its predictive rule still
+  files `Regular` as a narrow diagram with a small scaffold.
 - [`justification-techniques.md`](../justification-techniques.md): Theorems
   2.6 and 3.2, which every step here leans on.
 - [`large-domains.md`](../large-domains.md): the `Regular` rows of the
