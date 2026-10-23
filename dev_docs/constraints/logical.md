@@ -52,8 +52,7 @@ touched.
 
 | issue | PR | what it changed here |
 |---|---|---|
-| #1060 | #1105 | Three changes to `logical.cc`. **(1)** The scan stops at the first false And-form literal: with `r` false that disables a satisfied clause when the scan meets a
-satisfying literal before a second undecided one, and with `r` undecided rule 2 now names the first false literal, not the last. **(2)** Every reason is built only when `want_reasons()` says it will be read. **(3)** The clause case of 128 literals or more gets a new watched-clause propagator, with `with_watch_threshold()` and `GCS_CLAUSE_WATCH_THRESHOLD`. Changes the summary, [Options](#options), the initialisation table, the [inventory](#propagator-inventory), [Mutable state](#mutable-state-and-incrementality), [Interval efficiency](#interval-efficiency), rules 2, 4 and 5, [Tests](#tests), both performance sections, the limitations and Next steps. |
+| #1060 | #1105 | Three changes to `logical.cc`. **(1)** The scan stops at the first false And-form literal: with `r` false that disables a satisfied clause when the scan meets a satisfying literal before a second undecided one, and with `r` undecided rule 2 now names the first false literal, not the last. **(2)** Every reason is built only when `want_reasons()` says it will be read. **(3)** The clause case of 128 literals or more gets a new watched-clause propagator, with `with_watch_threshold()` and `GCS_CLAUSE_WATCH_THRESHOLD`. Changes the summary, [Options](#options), the initialisation table, the [inventory](#propagator-inventory), [Mutable state](#mutable-state-and-incrementality), [Interval efficiency](#interval-efficiency), rules 2, 4 and 5, [Tests](#tests), both performance sections, the limitations and Next steps. |
 | #1106 | #1107 | Not this family's code. `NegativeTable` and the fixed-store `Nogoods` kept their "armed" marker outside `watch_state`, and with an `AutoTable` presolver attached they lost every watch. #1105's watched clause already kept its marker in `watch_state`, and `logical_test`'s clause sets run behind an `AutoTable` to hold it there. Changes [Mutable state](#mutable-state-and-incrementality) and [Tests](#tests). |
 
 **Re-measured at `c9ceea25`**, on the same machine, now with malloc's
@@ -390,6 +389,14 @@ change what `consistency::Auto` sees.
 - **Negative values and zero.** The variable constructors read `x ≠ 0` as true,
   so a negative value is true. Tested over `[−2, 5]` domains.
 - **Degenerate shapes**: see [Semantics](#semantics).
+- **Inputs.** Since #1214 every declared domain, constant and view offset must
+  lie in `±(2⁶⁰ − 1)`. Since #1215 so must the value in every literal and in
+  the reification or condition, one past the top included, because `x ≤ v` is
+  stored as `x < v + 1`. The four classes' literal constructors check this and
+  throw `IntegerOverflow` otherwise (`logical.cc:483-484` and the like, at
+  `86caad24`); the variable constructors go through them.
+  `integer_ranges_test` checks an `Or` literal and an `AndIf` condition at
+  both ends.
 - **Overflow.** The `pos` / `neg` rows carry the coefficient `n`, the number of
   literals, as an `Integer`. The watched clause packs each of its two watched
   positions into 32 bits of one `watch_state` word. So a clause of more than
@@ -600,6 +607,7 @@ propagation.
 |---|---|
 | `logical_constraint` | `logical_test`: 14 fixed and 10 random rows over the variable constructors, each for all four classes (the unreified rows skip `AndIf` and `OrIf`), under `solve_for_tests_checking_gac`; ten random literal-form rows (random operators and values, some decided at the start); the constant-literal rows; repeated-literal rows and the reification-among-the-literals rows under plain enumeration; and, since #1105, twelve random **clause sets** (below); all with and without proofs |
 | `logical_constraint_view_mixed` | the variable-constructor rows with positions wrapped in views |
+| `logical_constraint_view_mixed_late` | from #1208: the same, with a vacuous row over each view, posted after the one under test (`--late-view-registration`) |
 | `logical_constraint_watched` | the whole of `logical_test` with `GCS_CLAUSE_WATCH_THRESHOLD=0`, so every row in the clause case gets the watched clause however short it is (#1105) |
 | `logical_constraint_watched_view_mixed` | the view-wrapped rows with the threshold at 0 (#1105) |
 | `scp_chain_and_sat`, `scp_chain_or_sat` | see [Cake conformity](#cake-conformity) |
@@ -638,9 +646,11 @@ premature disable, and the non-backtrackable marker under `AutoTable`.
 At `c9ceea25`, uncapped and at `--seed=1`, `logical_test` verifies 240 proofs
 in the bare lane and 240 at threshold 0. At `f28fdef8` it verified 168; the
 clause sets add 72. The view-mixed lane at threshold 0 verifies 92. The nine
-lanes above pass under `ctest` at `c9ceea25`, with MiniZinc 2.9.7,
-`cake_pb_cp` and `opbdiff` on the path, and both chain lanes report the full
-workflow 2. Almost every other MiniZinc lane posts clauses too, through the
+lanes above that existed then pass under `ctest` at `c9ceea25`, with MiniZinc
+2.9.7, `cake_pb_cp` and `opbdiff` on the path, and both chain lanes report the
+full workflow 2. The late-registration lane, added by #1208, verifies 92
+proofs at `86caad24`, run directly with the default caps. Almost every other
+MiniZinc lane posts clauses too, through the
 flattening.
 
 **Runtime caps.** No lane sets or clears one, and **the defaults fire**. At
@@ -752,13 +762,16 @@ like-for-like comparison of anything but throughput. The day before, on
 **The first pass's figures**, at `f28fdef8` on 2026-09-23, without the malloc
 thresholds pinned: `grid-colouring` 0.759 / 0.760 / 0.760 s (0.47×), `solbat`
 7.189 / 7.151 / 7.151 s (3.7×), `network_50_cstr` 145,102 nodes in 30 s (8×
-fewer), each ratio against Gecode run in that same sitting. Their shares, 54% / — and 30% / 10%, were the survey's at `00797a97`,
-10 s per model rather than these runs' own lengths, and 76% / — was the 20 s
+fewer), each ratio against Gecode run in that same sitting. Their shares,
+54% / — and 30% / 10%, were the survey's at `00797a97`, 10 s per model
+rather than these runs' own lengths, and 76% / — was the 20 s
 run below. They are not comparable with the table above, because the
 thresholds move `solbat` a long way. At `c9ceea25` without them, it takes
 8.80–8.82 s, against 4.64 s with them. Split with `time`, the unpinned run has
 3.5 s of system time and the pinned one 0.04 s. That is malloc mapping and
-unmapping per-node state copies, as `refined-triggers.md` describes. A same-sitting
+unmapping per-node state copies, as `refined-triggers.md` describes: #1063,
+which #1113 has since addressed by reusing popped epochs' storage; the
+unpinned figures here were not re-measured after it. A same-sitting
 A/B against `a94ca5ac`, main just before #1105 merged, shows the direction
 depends on the pinning. Each arm is `fzn-glasgow` built at its commit with the
 node-limit patch below applied, which does nothing unless its variable is set:
