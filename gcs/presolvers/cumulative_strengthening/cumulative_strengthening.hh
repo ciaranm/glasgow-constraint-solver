@@ -114,9 +114,10 @@ namespace gcs
         std::size_t declined_infeasible_donor = 0;
         /// Donors whose capacity is too large to subset-sum over. Not about
         /// proof size: the assessment itself is a bitset of `capacity` bits
-        /// rebuilt at every time point, so it costs whether or not proofs are
-        /// on, and the cost is the capacity's magnitude rather than anything
-        /// the model says about the tasks.
+        /// rebuilt for every stretch between two task-window edges (#1240),
+        /// so it costs whether or not proofs are on, and the cost is the
+        /// capacity's magnitude rather than anything the model says about the
+        /// tasks.
         std::size_t declined_capacity_too_large = 0;
         /// The capacity was already the largest load the tasks can reach, and
         /// no height moved either, so there was nothing to strengthen.
@@ -249,11 +250,12 @@ namespace gcs
          * the same donors whether or not a proof is being written, however
          * large the derivation (#1241). This bounds what deciding whether to
          * strengthen costs. `kappa` is found with a word-parallel bitset over
-         * the capacity's whole range, rebuilt at every time point of every
-         * donor, and that runs with proofs off too. A capacity in scaled units --- a resource measured in
-         * thousandths, say --- makes the assessment alone hundreds of megabytes
-         * of allocation and a horizon's worth of sweeps, for a strengthening
-         * nothing has yet said is worth having.
+         * the capacity's whole range, rebuilt for every stretch between two
+         * task-window edges of every donor (#1240), and that runs with proofs
+         * off too. A capacity in scaled units --- a resource measured in
+         * thousandths, say --- makes the assessment alone a bitset of
+         * hundreds of megabytes, allocated and swept once per stretch, for a
+         * strengthening nothing has yet said is worth having.
          *
          * The default is meant to be left alone; it exists as a knob so that a
          * test can set it low and watch the decline appear. A donor over it is

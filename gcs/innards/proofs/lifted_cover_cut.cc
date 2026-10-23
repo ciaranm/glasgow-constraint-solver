@@ -200,16 +200,18 @@ namespace
                     taken.push_back(LiftedCoverCutState{move(weights), state.profit + coefficients[member]});
             }
 
-            // Counted and checked *before* the frontier sweep, which is
-            // all-pairs over the layer: a layer large enough to blow the budget
-            // would otherwise pay the whole quadratic cost first and only then
-            // be turned away, which is the guard costing more than the thing it
-            // guards. So the budget counts the states the programme built
-            // rather than the ones that survived --- which is what the sweep
-            // actually costs, and is what the programme actually holds at the
-            // moment it holds the most. Nothing real comes near either count:
-            // the paper's own programmes are a few hundred states against a
-            // budget of a hundred thousand.
+            // Counted and checked *before* the frontier sweep, which tests
+            // each state against a prefix of the other half
+            // (merge_to_frontier, #1255) and so can still be quadratic in the
+            // layer: a layer large enough to blow the budget would otherwise
+            // pay that cost first and only then be turned away, which is the
+            // guard costing more than the thing it guards. So the budget counts
+            // the states the programme built rather than the ones that
+            // survived --- which is what the sweep is paid on, and is what the
+            // programme actually holds at the moment it holds the most. The
+            // paper's own programmes are a few hundred states against a budget
+            // of a hundred thousand, but on PSPLib J90 and J120 the budget
+            // binds (dev_docs/inferred-cumulative.md).
             states += left.size() + taken.size();
             if (states > state_budget) {
                 programme.over_budget = true;

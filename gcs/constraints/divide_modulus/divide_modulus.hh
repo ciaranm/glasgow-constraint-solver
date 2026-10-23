@@ -50,8 +50,10 @@ namespace gcs
      * Propagation works whatever the operands' widths. Proof logging needs
      * the decomposition's bit-product grid to fit in an Integer, which allows
      * the quotient's and divisor's magnitudes 63 bits between them (32 + 31,
-     * but not 32 + 32); past that, posting with proofs enabled throws a
-     * ProofError.
+     * but not 32 + 32) when the decomposition's other terms are small beside
+     * their product, and 62 when the dividend spans the declared range; past
+     * that, solving with proofs enabled throws an IntegerOverflow when the
+     * proof model is built.
      *
      * \ingroup Constraints
      * \sa Modulus

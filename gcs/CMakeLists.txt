@@ -277,14 +277,17 @@ if(GCS_BUILD_TESTS)
     # does, through Cumulative::with_encoding or the GCS_CUMULATIVE_ENCODING
     # diagnostic, which every binary honours (#1238).
     #
-    # Mutation lanes do not get the arm. The recovery puts more in the database
-    # for unit propagation to reach, so a corrupted proof veripb rejects against
-    # the shipped encoding need not be rejected with the recovered rows beside
-    # it. The one exception is registered by hand below
-    # (cumulative_overload_mutation_recover_wrong), and it is a mutation *of the
+    # A mutation lane gets the arm only once it has been shown to still fail
+    # there. The recovery puts more in the database for unit propagation to
+    # reach, so a corrupted proof veripb rejects against the shipped encoding
+    # need not be rejected with the recovered rows beside it. Nine have been
+    # shown to, and are twinned: the height rule's three, the run steps' two,
+    # the overload check's three and the optional tasks' one_too_far (all
+    # below). One more lane runs on the arm alone, registered by hand there
+    # (cumulative_overload_mutation_recover_wrong): it is a mutation *of the
     # recovery*, which is what the arm is for.
     #
-    # Neither does a `scp_chain_cumulative*` case, for a better reason: the
+    # A `scp_chain_cumulative*` case never gets it, for a better reason: the
     # chain checks our proof against cake's OPB, which carries the
     # start-checkpoint block alone, so the per-time rows the arm checks its
     # recovery against are not in it.
@@ -323,7 +326,9 @@ if(GCS_BUILD_TESTS)
     # optional-task sabotage at step 12 left every start-checkpoint lane green.
     #
     # It is the reason the time-indexed emitter is still compiled. It is not an
-    # encoding anything ships, and no solve and no .scp can select it.
+    # encoding anything ships, and no .scp can select it: only
+    # Cumulative::with_encoding or the GCS_CUMULATIVE_ENCODING diagnostic does,
+    # which every binary honours (#1238).
     function(add_cumulative_test_with_recovery name)
         add_test(NAME ${name} COMMAND ${ARGN})
         add_cumulative_arm(${name} recovering ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering ${ARGN})
@@ -748,9 +753,10 @@ if(GCS_BUILD_TESTS)
     endforeach()
     # Presence-falsification mutation lanes, the same shape as the overload
     # ones above: each writes a deliberately corrupted proof and passes only if
-    # veripb rejects it. one_too_far is on all four arms: checked one encoding
-    # at a time once the recovery learned to speak about optional tasks, and it
-    # still rejects under every one of them.
+    # veripb rejects it. one_too_far is on both arms, the shipped encoding and
+    # the recovering one: it was checked one encoding at a time once the
+    # recovery learned to speak about optional tasks, and it rejected under
+    # every one of the four there were then.
     foreach(mutation one_too_far)
         add_cumulative_test_with_recovery(cumulative_optional_mutation_${mutation}
             ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
