@@ -4,7 +4,8 @@
 > **Audited** 2026-10-09 at `86caad24` ·
 > **Open issues** filed by this audit: #1303 (the four-argument MiniZinc
 > spelling over an empty node set is reported unsatisfiable; one issue with the
-> same line in `fzn_dag.mzn`), #1311 (every call rescans every edge, so the
+> same line in `fzn_dag.mzn`; fix open as #1363), #1311 (every call rescans
+> every edge, so the
 > class is slower than the two clauses per edge it replaces). Also touching
 > this family: #1309 (the engine's propagator install is quadratic in the
 > trigger count). Already open and touching this family: #868 (cross-solver
@@ -23,10 +24,12 @@ Three things to know before touching it.
 - **It is generalised arc consistent on the node and edge variables, as long as
   no variable appears in two positions with opposite signs.** Checked by brute
   force on 24,000 random instances with distinct variables, constants, positive
-  sharing, and offset or negated views at distinct positions: no failure. A position that is the view `1 − x` of a
-  variable used positively elsewhere loses it (in 33–36% of the small random
-  instances that share a variable with opposite signs, fewer on larger graphs), which only the C++ API can build: MiniZinc's `not x` arrives as a second
-  variable, and the `.scp` reader takes no views at all.
+  sharing, and offset or negated views at distinct positions: no failure. A
+  position that is the view `1 − x` of a variable used positively elsewhere
+  loses it (in 33–36% of the small random instances that share a variable with
+  opposite signs, fewer on larger graphs), which only the C++ API can build:
+  MiniZinc's `not x` arrives as a second variable, and the `.scp` reader takes
+  no views at all.
 - **It costs more than the decomposition it stands in for.** Each call walks
   every edge, whatever woke it, where the clauses wake only on their own two
   variables. On a 5×5 grid model through MiniZinc the override takes 11.0 s
@@ -640,9 +643,10 @@ With the disable it makes fewer calls than the decomposition and is as fast or
 slightly faster: 11.48·10⁹ instructions against 11.52·10⁹ on the grid, and on
 the paths the time gaps are within noise. Its install is still quadratic in the
 number of edges today, through the engine's constraint-scope union (#1309),
-since it installs one propagator per edge under one constraint. Its proofs of the 2×3 and 3×3 grid enumerations verify (491 and 21,799
-solutions). Three runs of my own on the grid agree (median 1.458 s against
-1.537 s, core 135). #1311 proposes this version.
+since it installs one propagator per edge under one constraint. Its proofs of
+the 2×3 and 3×3 grid enumerations verify (491 and 21,799 solutions). Three
+runs of this audit's own on the grid agree (median 1.458 s against 1.537 s,
+core 135). #1311 proposes this version.
 
 **What the benchmarks do not exercise.** Conflicts: an enumeration of a
 constraint alone never fails, so rule 1's failing form appears only on the
