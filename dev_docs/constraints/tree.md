@@ -129,7 +129,8 @@ except the empty graph. Degenerate shapes:
     call `glasgow_tree` / `glasgow_dtree`; `fzn_glasgow.cc:985` posts the class.
     The undirected one goes straight to `glasgow_tree` rather than doubling the
     edges into a `dtree` as the standard library does. That does **not** halve
-    the reachability encoding, whatever `fzn_tree_enum.mzn`'s comment says:
+    the reachability encoding, whatever `fzn_tree_enum.mzn`'s comment says
+    (corrected by #1396, open):
     undirected `Reachable` already makes two arcs per edge (`reachable.cc:50–60`),
     so a `dtree` over the doubled edge list has the same `2E` arcs. In the size
     table under [OPB encoding](#opb-encoding) the reachability rows of the two
@@ -850,8 +851,9 @@ models, to optimality; 2026-10-09.* Assertion levels through
 | `dsteiner`, 4 × 4 | 1,023 | 2,309 | 34,605 | 3.0 MB | 0.85 s | 20,168, 0.21 s | fails[^links] | 18,885, 0.07 s |
 
 [^links]: At the first `soli` line, "the propagated assignment does not satisfy
-    the constraint", on all four: #1210, the generic `Links` failure whenever a
-    variable is wider than `{0,1}` (the objective, and for `steiner` the root;
+    the constraint", on all four: #1210, the generic `Links` failure on a
+    range-declared variable wider than `{0,1}` (the objective, and for
+    `steiner` the root;
     `dsteiner`'s root is the constant 1). Not this family's.
 
 The `steiner` OPBs are smaller at `Inferences` (696 and 2,223 rows), which
@@ -983,7 +985,7 @@ solution, and every one carries its reason.
    625) and in the comment at `reachable.cc:154–155`.
    `connectivity-proofs.md:402–412` ("These are not GAC") and `tree.hh:91` name
    cycle closure as the gap, and leave out `DTree`'s larger one, nothing
-   entering the root (#1314).
+   entering the root (#1314). All corrected by #1396, open.
 5. **Land PR #1302** (open), which re-pins the `Tree` and `DTree` audit-lane
    rows `Clean` with a wide-declared root, the safer choice Ciaran picked; see
    [Interval efficiency](#interval-efficiency), item 4.
@@ -994,7 +996,8 @@ solution, and every one carries its reason.
 7. **Tidying.** Skip in-degree rows for nodes with a single entering arc, which
    can never fire; that is `path.md`'s next step 7 (skip any `graph_rules` row
    whose variable count does not exceed its limit), one change in the shared
-   helper or its callers. Fix `hints.hh`'s "both spellings use it". Trivial.
+   helper or its callers. Fix `hints.hh`'s "both spellings use it" (done by
+   #1396, open). Trivial.
 
 ## Prior art
 
@@ -1029,10 +1032,11 @@ rows on top of it.
   `DTree`, `Path` and `DPath`, why the counting rows are the constraint's own
   rather than more children, and why they are not GAC (though its "One
   reachability encoding, not two" overstates what doubling costs, and its
-  "These are not GAC" omits `DTree`'s root in-degree gap; see next step 4);
-  "Measured, on a grid
-  Steiner tree" is the original decomposition-against-propagator comparison, on
-  a different instance from the one above.
+  "These are not GAC" omits `DTree`'s root in-degree gap, both corrected by
+  #1396, open; see next step 4);
+  "Measured, on a grid Steiner tree" is the original
+  decomposition-against-propagator comparison, on a different instance from
+  the one above.
 - [`reachable.md`](reachable.md): the child that does almost all the work.
 - [`path.md`](path.md): the other user of `graph_rules`, which documents its
   backward rule and its `Selected` rows.
