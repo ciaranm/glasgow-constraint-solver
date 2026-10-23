@@ -1146,7 +1146,7 @@ Facts that hold across the family:
 - **Proof size** — per firing, `O(live patterns × directions × n)` lines,
   each `O(m)` terms, with `n` and `m` the operands' bit widths: per bit, never
   per value. Plus `2nm` W-lines at `Top`, once per grid. Measured by the
-  inventory agent on a root-only probe at this commit: about `11n + 63` lines
+  inventory agent on a root-only probe at `f28fdef8`: about `11n + 63` lines
   with one live pattern and both directions, and `36n + 76` with four.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.`
@@ -1951,9 +1951,10 @@ Facts that hold across the family:
   binary truncated 8 solves per run in `multiply_test` and in
   `divide_modulus_test`, 1 in `plus_minus_test`, and none in `power_test`. A
   truncated solve checks soundness and a partial proof only. With the caps
-  off (`-DGCS_TEST_CAP_DEFAULTS=OFF`), all 54 of this family's lanes in the
-  table above pass, in a run on 2026-09-24 at `f28fdef8` with VeriPB on the
-  `PATH`. `multiply_constraint` takes 362 s, run 24 lanes at a time.
+  off (`-DGCS_TEST_CAP_DEFAULTS=OFF`), all 54 lanes this family had then
+  pass, in a run on 2026-09-24 at `f28fdef8` with VeriPB on the `PATH`: the
+  table above less `wide_product` and the `_view_mixed_late` lanes, which came
+  later. `multiply_constraint` takes 362 s, run 24 lanes at a time.
 - **Tightness.** Only `Plus`'s interval propagator has mutation lanes, with a
   control. The fixture and why it took work are under
   [sum-interval-prune](#rule-sum-interval-prune).
@@ -2186,7 +2187,7 @@ column. `harmony` has 15,624 assertions, `modulus` 2,311, `linear_equality`
 them was not traced.
 
 **Per firing, and against width.** The inventory agent measured `Multiply`'s
-derivations on root-only probes at this commit, one firing each; its probe
+derivations on root-only probes at `f28fdef8`, one firing each; its probe
 source is kept (`multiply-power-probe.cc`), but its raw outputs were not, so
 these figures are its report, not re-measured here. Product
 bounds cost about `11n + 63` lines with one live sign pattern and `36n + 76`
@@ -2209,8 +2210,8 @@ asserted there. Three gaps sit around that:
 
 - **`Modulus`'s solution steps depend on what came before them** (#1067).
   (At `Definitions` every chain case verifies. At `Links` most SAT cases of
-  every family fail at a solution step, because an asserted link with no
-  definitions leaves an atom untied to its bits; that looks like the "not a
+  every family fail at a solution step (#1210), because an asserted link with
+  no definitions leaves an atom untied to its bits; that looks like the "not a
   self-contained proof" caveat of `solution-clause-deletion.md`, not this
   family's.)
   Its quotient magnitude is not determined by unit propagation from a
