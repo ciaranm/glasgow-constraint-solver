@@ -18,7 +18,8 @@
 > been seen to reach it), #1070 (every proof line restates the 0/1 items'
 > always-true bounds; the corpus does post Knapsack). Filed since the audit
 > and reproduced for this document: #1354 (a `<knapsack>` inside an XCSP3
-> `<group>` crashes the parser before the solver sees it). Also open: #497
+> `<group>` crashes the parser before the solver sees it; fix open as #1357).
+> Also open: #497
 > (hint the dead-state RUPs), #200 (one generic layered-DAG propagator
 > framework for the diagram constraints), #833 (the large-domain policy), #868
 > (cross-solver comparisons; this document gives one, by hand). Tracked under
@@ -197,7 +198,7 @@ profit})`.
 [^sexpr]: `constraint_type()` is `"knapsack"` whatever the strategy, so an
     `Upfront` constraint's `.scp` reads back as `PerCall`; the strategy is not
     part of the model. `dev_docs/knapsack.md` still says the keyword is
-    `knapsack_upfront`.
+    `knapsack_upfront` (corrected by #1396, open).
 [^reif]: Glasgow's `mznlib` has no `fzn_knapsack_reif`, so the standard
     library's reified decomposition into linear equalities is used.
 
@@ -297,11 +298,12 @@ not wanted until a model needs one.
   the auxiliary totals it creates; they are not children.
 - **Shares code:** nothing exported. `BinPacking`'s per-bin upfront diagram is
   a `k = 1` copy of `Upfront`'s, adapted rather than called (its comments say
-  "mirrors Knapsack"); see [`bin-packing.md`](../bin-packing.md). By reading
-  only, for the `bin_packing` audit: that copy has this family's interior-value
-  pass shape (`bin_packing.cc:778–781` walks every value of a load and scans
-  the terminal states for those inside its bounds, as in #1340) and its
-  stranded temporary level on failure (`bin_packing.cc:762–764` calls
+  "mirrors Knapsack"); see [`bin_packing.md`](bin_packing.md), which owns the
+  copy, and the design note [`bin-packing.md`](../bin-packing.md). That copy
+  has this family's interior-value pass shape (`bin_packing.cc:778–781` walks
+  every value of a load and scans the terminal states for those inside its
+  bounds, as in #1340; `bin_packing.md` measures it) and its stranded
+  temporary level on failure (`bin_packing.cc:762–764` calls
   `contradiction()` before `forget_proof_level`). The
   `proof_strategy` tags are shared with `Regular` and `BinPacking`.
   `subset_sum_strengthening` is **not** this family's: nothing here calls it.
@@ -309,9 +311,7 @@ not wanted until a model needs one.
   the `cumulative_strengthening` presolver (`cumulative_strengthening.cc:302`,
   `:462`); `lifted_cover_cut` has a layered DP of its own and does not call it.
   Its note says only that its layered derivation has "the shape" of the
-  upfront diagram. `TEMPLATE.md`'s family list (the `linear` row) and
-  [`linear.md`](linear.md)'s Further reading say knapsack uses it; both are
-  wrong about knapsack.
+  upfront diagram.
 - **Presolvers:** none reads or writes a `Knapsack`.
 - **Relation to `mdd` and `regular`:** the same forward, filter and backward
   passes over a layered graph, and the same proof shape (state flags,
@@ -379,7 +379,8 @@ of variable:
     view's order atoms plus its flag, so an equality copy also brings the
     view order atoms it is defined over. Those view order atoms link back to
     the underlying's order atoms of the matching value (`y + 1 ≥ 1` with
-    `y ≥ 0`), which are created if missing, two `@i` rows each. A 0/1 variable always has atoms, because it
+    `y ≥ 0`), which are created if missing, two `@i` rows each. A 0/1 variable
+    always has atoms, because it
     is direct-encoded (`proof_model.cc:524–525`), and so does a variable
     some constraint names by value, such as one declared with holes.
   So a view's share is linear in its bits only when its underlying never
@@ -451,7 +452,7 @@ the catalogue; `chain/up_*`).
 
 Two comments in that `CMakeLists.txt` are stale: line 587 says knapsack "does
 not chain", and lines 640–646 describe the labels as `@c[_1<row>][le]`, which
-neither the solver nor cake writes.
+neither the solver nor cake writes. Both corrected by #1396, open.
 
 ### Proof-time state
 
@@ -649,7 +650,8 @@ costs anything.
      terminal states for each value inside the new bounds* (`knapsack.cc:458–463`,
      `knapsack_upfront.cc:772–775`): it walks every value of `totals[x]`'s
      domain and runs `none_of` over every terminal state for those in
-     `[lo, hi]` (`PerCall`) or `(lo, hi]` (`Upfront`, whose test is `v > lo`), so `|dom(totals[x])| + |dom(totals[x]) ∩ [lo, hi]| ·
+     `[lo, hi]` (`PerCall`) or `(lo, hi]` (`Upfront`, whose test is `v > lo`),
+     so `|dom(totals[x])| + |dom(totals[x]) ∩ [lo, hi]| ·
      |terminal|` per row. The first term is the width of the **declared** total
      at the root, before the call's own bounds narrow it (one-off per call:
      0.30 s at a width of 10⁷ for three 0/1 items, linear in the width, under
@@ -878,7 +880,8 @@ assertions are 62 to 72% of all the proof's assertions under either strategy
   the call: `O(E · k)` lines for `E` edges, each RUP carrying the reason's
   `O(n + k + h)` literals, plus `|layer|` redundant RUPs per unsupported value.
   `Upfront`: per newly dead state a `Current` `¬S` lemma, with a `pol` first
-  for an over-cap one, each written once per subtree, and the conclusion. Measured per root call in [Proof
+  for an over-cap one, each written once per subtree, and the conclusion.
+  Measured per root call in [Proof
   performance](#proof-performance).
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.` No mutation lane.
@@ -890,7 +893,8 @@ assertions are 62 to 72% of all the proof's assertions under either strategy
   6's holes), no terminal state is left (`knapsack.cc:434–442`;
   `knapsack_upfront.cc:750–756`).
 - **Strength** — `partial`: it detects that no terminal state survives; if it
-  fires the constraint has no solution in the current domains. Not every failure arrives here: when the forward pass
+  fires the constraint has no solution in the current domains. Not every failure
+  arrives here: when the forward pass
   leaves an item with no supported value, rule 3 wipes its domain first and the
   call fails as an ordinary inference (`attempted literal ∨ ¬reason`), and
   under `PerCall` rules 1 and 2 can fail before the DP runs. The fact-check's
@@ -1112,7 +1116,8 @@ sense that it must verify uncorrupted; nothing corrupts a derivation.
   known optimum `z` (16,537 and 10,618): the model passes `z` as `P`, which
   makes it a search for a solution of that exact profit. No other model in
   the throw survey's flattenings (`tmp/throw-survey/fzn.tar.gz`, one instance
-  per model) posts the family; `2014_multi-knapsack` posts none; #1070 said none did, which these two
+  per model) posts the family; `2014_multi-knapsack` posts none; #1070 said none
+  did, which these two
   correct. **Never run either with a proof:** the root call alone wrote 41 GB
   and 48 GB in about five minutes, and neither `-t` nor `SIGTERM` takes effect
   until the call returns; stop it with `SIGKILL`, or cap the file size.
@@ -1254,7 +1259,8 @@ names a total).
 
 Once there are a few items, `PerCall`'s lines average 200 to 370 bytes, since
 each RUP carries the whole reason; `Upfront`'s scaffold lines 52 to 68, since
-they name no reason. The scaffold grows with the static diagram, which holds every partial sum reachable
+they name no reason. The scaffold grows with the static diagram, which holds
+every partial sum reachable
 from the initial domains whatever the totals allow, plus the phantoms, and so it
 is much larger than one call's diagram whenever the totals are tight. The
 `multi-knapsack` root calls are this table's extreme: tens of gigabytes for one
@@ -1265,7 +1271,8 @@ fact-check ran `Definitions`, `Links` and `Backtracking` too, on its own fuzzer
 (1 to 2 constraints, repeats, views, constants and an `Element`): no mismatch
 and no rejection except at `Links`, where 61 of 300 proofs per strategy are
 rejected at their first `solx` line, as plain `Equals` and `LinearEquality`
-proofs are; that is #1210, not this family's. At `Inferences` the bench proofs are 0.59 to 1.52 MB and
+proofs are; that is #1210, not this family's. At `Inferences` the bench proofs
+are 0.59 to 1.52 MB and
 check `UNDER ASSERTIONS` in 0.02 to 0.05 s. The family's `a` lines: 2,590 of
 3,951 on instance 1 under `PerCall` (65.6%), 2,245 of 3,228, 3,171 of 5,100 and
 1,347 of 1,865 on the others; under `Upfront` the counts are within a few on
@@ -1371,7 +1378,7 @@ derivation:
    which lemmas the RUPs need is an empirical question. Not filed beyond
    #1070.
 10. **Hint the dead-state RUPs** (#497), and **sweep the large-domain lane
-   wider**: an `Upfront` row, a wide item, and a proof-size row.
+    wider**: an `Upfront` row, a wide item, and a proof-size row.
 11. **Bring the out-of-stack text into line**: `dev_docs/knapsack.md` still
     describes a `KnapsackUpfront` class, a `knapsack_upfront` keyword and XCSP3
     posting "the general k-total constructor" (it posts the two-row one), and
@@ -1424,7 +1431,8 @@ solver's upfront strategy, landed for `Regular`, `MDD`, `Knapsack` and
 domains, `k`-dimensional and not intersected with the totals, with its phantom
 states and their closing rules. `BinPacking`'s `k = 1` copy keeps the phantom
 states and the per-coordinate closing rule (`bin_packing.cc:71–86`, `:552–557`)
-but cannot need the joint-only closing case (`knapsack_upfront.cc:470–477`). As far as this audit knows they are unpublished; they are described in
+but cannot need the joint-only closing case (`knapsack_upfront.cc:470–477`). As
+far as this audit knows they are unpublished; they are described in
 `dev_docs/knapsack.md`.
 
 ## Further reading
@@ -1432,13 +1440,15 @@ but cannot need the joint-only closing case (`knapsack_upfront.cc:470–477`). A
 - [`knapsack.md`](../knapsack.md): the long design note for `Upfront`: the
   static diagram, the not-intersected caps, the phantoms and their two closing
   cases, the `Top` scaffolding line by line, and the `DeadCache`. Its
-  strategy-comparison figures predate this audit's.
+  strategy-comparison figures predate this audit's (marked as dated by
+  #1396, open).
 - [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md):
   upfront against per-call for `Regular`, `MDD`, `Knapsack` and `BinPacking`,
   the displacement-against-cost-per-line model that explains why `PerCall` is
   the default here, and the negative results on deleting scaffolding and
   hinting.
-- [`bin-packing.md`](../bin-packing.md): the `k = 1` copy of the upfront
+- [`bin_packing.md`](bin_packing.md) and its design note
+  [`bin-packing.md`](../bin-packing.md): the `k = 1` copy of the upfront
   diagram.
 - [`integer-ranges.md`](../integer-ranges.md): what the overflow behaviour is
   allowed to be.
