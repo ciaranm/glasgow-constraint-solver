@@ -134,8 +134,10 @@ through. Five things to know before touching it:
     cites them.
   - Confirmed for this presolver on the `r1`, `pack`, `two_full` and
     `knapsack_raise` fixtures at all four levels, at `7e1c4178` and again at
-    `0a5b4ec6`. Separately, at `Links` every proof of a satisfiable model is
-    rejected at its first `solx` (#1210).
+    `0a5b4ec6`. Separately, at `Links` a satisfiable model can be rejected at
+    its first `solx` (#1210, which needs a variable declared as a range wider
+    than `{0, 1}`, though that alone is not always enough); the table below
+    names the fixtures.
   - **Where it does not happen:**
     - A donor it strengthens nothing on (`nothing_to_gain`, `all_full`) gives a
       proof that verifies under assertions, but for a satisfiable model at
@@ -902,7 +904,7 @@ Facts common to every entry:
   after `0a5b4ec6`, replaced it there with "overshoots by at least the right
   hand side itself — `T ≥ 2·R`". The matching code comment at
   `cumulative_strengthening.cc:629–633` still says "once the rest overshoots
-  by half", after #1265 too.
+  by half", after #1265 too; #1301 (open) rewrites it.
 - **Tightness** — two lanes:
   - `RaiseTooFast` on `knapsack_raise`. Since #1280 it claims the raised
     coefficient at `kappa + 1` inside the `red`. With the task on and every
@@ -1293,9 +1295,9 @@ goes from 5,811 lines (381 KB) and 0.09 s to check to 940 lines (47 KB) and
 **At the assertion levels:** not measured. Under the default encoding, every
 proof in which it installs something is rejected (#1234). The
 time-indexed arm writes a checkable one, except over a `Disjunctive2D` donor it
-would strengthen (`bars`), where it throws under either encoding. The presolver emits no `a` lines of its own and carries
-no hint type. A hints-only mode would have to decide what its rows become, and
-#1234 leaves that open.
+would strengthen (`bars`), where it throws under either encoding. The
+presolver emits no `a` lines of its own and carries no hint type. A hints-only
+mode would have to decide what its rows become, and #1234 leaves that open.
 
 ## Status, gaps, and next steps
 
