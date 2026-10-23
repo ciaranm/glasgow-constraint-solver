@@ -3,10 +3,14 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1121 ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file. Already open and touching this family: #833 (the
-> large-domain policy, which names this family's walk over the value variable),
-> and #1128 (`SmartTable`'s per-call copies, which `AtMostOneSmartTable` pays).
+> **Open issues** filed by this audit: #1155 (every call walks the value
+> variable's domain while it is unfixed), #1156 (the `on_change` triggers
+> declare every variable's holes relevant), #1157 (every reason is the whole
+> scope), #1158 (the encoding is `Count`'s from before #354), #1159 (not
+> `bounds(Z)` on repeated or aliased variables). Already open and touching
+> this family: #833 (the large-domain policy, which names this family's walk
+> over the value variable), and #1128 (`SmartTable`'s per-call copies, which
+> `AtMostOneSmartTable` pays).
 > **Fixed since the audit**: #1121 (`AtMostOneSmartTable`'s child named no
 > constraint in its hints), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
@@ -53,9 +57,9 @@ Five things to know before touching it.
   `O(n log n)`; a tested patch is in [Next steps](#next-steps).
 - **Only the C++ API and the `.scp` reader reach it.** MiniZinc's `at_most(1,
   x, v)` and `count(x, y) ≤ 1`, and XCSP3's `atMost`, all post `Count` with a
-  counter in `0..1`. On an identical search tree that takes 1.5 to 1.8 times
-  `AtMostOne`'s time and writes 1.8 times its proof lines, 4.2 times its
-  bytes.
+  counter in `0..1`. On the same search tree (the same branching, the same
+  recursions, no failures) that takes 1.5 to 1.8 times `AtMostOne`'s time and
+  writes 1.8 times its proof lines, 4.2 times its bytes.
 - **Every inference's reason is the whole scope**, every variable's domain,
   where two literals suffice.
 - **Its encoding is `Count`'s from before #354**, strict `gt`/`lt` flags and
@@ -212,11 +216,13 @@ adds one more.
   `rup 1 ~f[0][t0] 1 ~i[C][eq1] >= 1`, which cites `SmartTable`'s own tuple
   flag `f[0][t0]`; cake's OPB, about the same size, names its tuple flags
   `x[_1][i]` under `@c[_1][al1]` and never defines `f[0][t0]`. The `.scp`
-  reader's comment gives the OPB's size as the reason, which is not it.
+  reader's comment gives the OPB's size as the reason, which is not it
+  (corrected by #1396, open).
 
 The registration's comment groups this case with `all_different_except` and
 `among` as diverging because "their per-value / per-pair encodings reference
-the variables' eq/ge literals". That is not this family's reason: its rows
+the variables' eq/ge literals" (corrected by #1396, open). That is not this
+family's reason: its rows
 reference no order or equality literal, and the divergence is only polarity
 and labels. Writing `Count`'s three flags and labelling the row `am1`, as
 [Next steps](#next-steps) describes, makes a variable-`val` case `strict`. The
@@ -361,8 +367,8 @@ matter.
     same `val`, and `SmartTable` rejects a tuple whose binary entries form a
     cycle. It does so when `val` or the third position is a constant too
     (`{x, x + 1, z}` against 2, `{x, x + 1, 2}` against `y`). With two
-    positions each row has one such entry, and an exact repeat is allowed (`tmp/fd-small/at_most_one/smartshapes.cc`, from the
-    fact-check).
+    positions each row has one such entry, and an exact repeat is allowed
+    (`tmp/fd-small/at_most_one/smartshapes.cc`, from the fact-check).
 
 **Overflow.** None. The propagator does no arithmetic, and the encoding's rows
 are `vars[i] − val` over bit sums, which the proof model writes like any
@@ -409,7 +415,7 @@ two-term linear row.
    holes, views, a constant or fixed `val`, or repeats, and never reach rule 2.
    The native row's comment says an aliased `val` "is rejected at post time";
    neither class rejects one at post, and only `AtMostOneSmartTable` rejects
-   it at all, from `solve_with`.
+   it at all, from `solve_with` (corrected by #1396, open).
    With the fix in [Next steps](#next-steps), on a guard build of `c9ceea25`,
    the native row survives: it reports a mismatch against its `KnownTrip` pin,
    the lane's only failure, and the SmartTable row still trips.
@@ -543,7 +549,9 @@ subhint and no payload.
 ### Tests
 
 - **`at_most_one_test`** (`at_most_one_constraint`, plus
-  `at_most_one_constraint_view_mixed`): for both classes, a fixed list of
+  `at_most_one_constraint_view_mixed` and, since #1208, its `_view_mixed_late`
+  twin, which posts a vacuous row over each view after the constraint): for both
+  classes, a fixed list of
   shapes (empty, singleton, two positions, three and four with fixed and
   variable `val`, `val` outside every domain, a negative range, forced
   propagation, an unsatisfiable pair, all-constant shapes per #254) and ten
