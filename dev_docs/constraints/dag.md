@@ -3,9 +3,10 @@
 > **Maturity** production ·
 > **Audited** 2026-10-09 at `86caad24` ·
 > **Open issues** filed by this audit: #1303 (MiniZinc's `dag` over an empty
-> node set is reported unsatisfiable), #1310 (the propagator rebuilds all of
-> its working state on every call), #1309 (`Propagators::install_returning_id`
-> is quadratic in a propagator's trigger count, an engine issue). Already open
+> node set is reported unsatisfiable; fix open as #1363), #1310 (the
+> propagator rebuilds all of its working state on every call), #1309
+> (`Propagators::install_returning_id` is quadratic in a propagator's trigger
+> count, an engine issue). Already open
 > and touching this family: #868 (cross-solver comparisons; this document gives
 > one by hand), #1006 (MiniZinc differential tests over the shapes front ends
 > get wrong), #920 (the large-domain audit binary's header; the issue also
@@ -120,7 +121,8 @@ Degenerate cases:
     which every graph binding shares and which rejects a negative endpoint. The
     stdlib's `fzn_dag_reif` is an `abort`. The file's comment (line 6) says it
     shifts "as fzn_subgraph.mzn does", but there is no such file: the shift it
-    means is in `fzn_subgraph_enum.mzn`. That is an out-of-stack comment fix.
+    means is in `fzn_subgraph_enum.mzn`. That is an out-of-stack comment fix
+    (corrected by #1396, open).
 
 [^xdag]: XCSP3 has no acyclicity constraint.
 
@@ -402,7 +404,7 @@ closes one never leaves its component, so both the candidates and the
 searches could skip those edges. On `2016/maximum-dag` `25_04` this family is
 23.9 s of a 34.9 s solve, 13.3 µs a call. Skipping the cross-component edges
 cuts the run's instructions by 18.7%, and keeping the scratch buffers between
-calls takes that to 29.0%, on the identical tree (#1310; see
+calls takes that to 29.0%, with the same node count and optimum (#1310; see
 [CPU performance](#cpu-performance)). Neither change touches an inference.
 
 ### Interior values and optional pruning
@@ -463,8 +465,9 @@ counts, and a flag's index is a `long long` cast of a `size_t`.
 **Size.** The OPB is the limit with proofs on: see [OPB encoding](#opb-encoding).
 On an input with many cyclic components, setting up the proof model is a
 limit before that: see
-[Initialisation and global data](#initialisation-and-global-data). With proofs off, the per-call rebuild is the limit on large graphs, and
-installation before it.
+[Initialisation and global data](#initialisation-and-global-data). With proofs
+off, the per-call rebuild is the limit on large graphs, and installation before
+it.
 
 ### Interval efficiency
 
@@ -1041,7 +1044,8 @@ Glasgow Subgraph Solver uses to certify connected maximum common subgraph
   audit. It says the `dag_mutation_*` lanes keep "the first two" of its four
   unsound variants honest, which would be a missing path edge and a flipped
   conclusion; the lanes are a missing path edge and a missing subgraph
-  endpoint. Its `maximum-dag` times do not reproduce, though its node counts
+  endpoint (corrected by #1396, open). Its `maximum-dag` times do not
+  reproduce, though its node counts
   do. And its dense table's 18,288 rows for a 20-node, 380-edge component are
   more than the constraint alone writes (16,781): see
   [OPB encoding](#opb-encoding).
