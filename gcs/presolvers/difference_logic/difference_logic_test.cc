@@ -14,7 +14,7 @@
 //   * every VeriPB run (there would be nothing new to verify).
 //
 // So the assertions on DifferenceLogicStats below, and the propagation-count
-// differential in the `differential` mode, are the only things standing between
+// differential in the `detection` mode, are the only things standing between
 // a silent regression and shipping. If one of them fails, DETECTION IS BROKEN.
 // Do not update the expected numbers to match what the code now does. Fix
 // gcs/presolvers/difference_logic/difference_logic.cc.
@@ -388,7 +388,8 @@ namespace
                 throw UnexpectedException{"the difference-logic presolver disabled " + to_string(stats->donor_propagators_disabled) +
                     " donor propagators on fixture '" + name +
                     "', every one of whose lifted edges is half-reified. A half-reified donor must never be retired: it also infers !cond from its "
-                    "own bounds, and the global propagator infers nothing about a condition at all, so retiring one silently loses propagation."};
+                    "own bounds, and the global propagator infers nothing about a condition during search, so retiring one silently loses "
+                    "propagation."};
         }
 
         println(cerr, " hybrid {} solutions / {} recursions / {} propagations, donors off {} / {} / {}", results[0].solutions, results[0].recursions,

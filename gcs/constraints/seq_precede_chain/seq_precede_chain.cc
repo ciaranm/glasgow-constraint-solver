@@ -68,7 +68,7 @@ auto SeqPrecedeChain::prepare(Propagators & propagators, State & initial_state, 
     // upper-bound constraints. The chain encoding alone wouldn't rule out
     // values > effective_max — we'd lose soundness without these. The
     // bound is justified by the meta-argument that any value v requires
-    // v distinct earlier positions to host 1..v-1, so v ≤ n.
+    // v-1 distinct earlier positions to host 1..v-1, so v ≤ n.
     if (max_upper > effective_max) {
         for (const auto & v : _vars)
             propagators.define_bound(initial_state, optional_model, v, Bound::Upper, effective_max);

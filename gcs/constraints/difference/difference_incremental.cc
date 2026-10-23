@@ -201,7 +201,7 @@ auto gcs::innards::difference_incremental_bounds(size_t number_of_nodes, const v
 
     // Vl: the nodes whose bound has moved since the last run, plus the nodes an
     // arc activation has forced in. The paper's Algorithm 3 line 1 and the
-    // section 4.4 recipe its section 5.4 leaves out, in one place.
+    // section 4.2 recipe its section 5.4 leaves out, in one place.
     auto in_start_set = [&](size_t v) { return bound[v] > gate[v] || 0 != forced[v]; };
 
     // pi(v0), the paper's line 2: the maximum over Vl, which is what makes every

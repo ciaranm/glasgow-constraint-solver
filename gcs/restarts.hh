@@ -17,13 +17,14 @@ namespace gcs
      * The only policy provided is Luby (Knuth's reluctant doubling: the sequence
      * 1, 1, 2, 1, 1, 2, 4, ... times a scale), whose growing-but-occasionally-
      * small cutoffs eventually exceed any tree's size, so a final run completes
-     * and the search terminates. The scale is a tunable isolated behind a default
-     * (see issue #315), not a design input.
+     * and the search terminates. That needs a scale of at least one: at scale 0
+     * every cutoff is 0 and the search never ends (issue #1391). The scale is a
+     * tunable isolated behind a default (see issue #315), not a design input.
      *
-     * \warning Without recorded nogoods a restart re-explores --- and so
-     * re-finds --- solutions, so a restart schedule is only sound for finding one
-     * solution or for optimising. Combining it with all-solution enumeration is
-     * rejected at runtime (gcs::solve_with throws UnimplementedException).
+     * \note A restart re-explores from the root, so without the recorded nogoods
+     * it would re-find solutions. With them, enumeration is sound too: the nogood
+     * learned for a fully explored subtree, solutions and all, stops a later
+     * restart re-entering it, so each solution is counted once.
      *
      * \ingroup Core
      * \sa gcs::SolveCallbacks

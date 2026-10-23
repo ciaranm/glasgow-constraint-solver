@@ -143,8 +143,9 @@ namespace gcs::innards
      * \brief Whether the shared propagator should run the root simplification
      * stage, and where to report what it did.
      *
-     * On by default: the paper's section 6.3 measures the simplification stage
-     * as most of the difference-logic win (320.95 against 312.94 overall), while
+     * On by default: the paper's Table 1 (section 6.4) measures the
+     * simplification stage as most of the difference-logic win (320.95 against
+     * 312.94 overall), while
      * the propagator on its own is near-noise. It can be turned off from either
      * entry point so that claim can be checked rather than inherited.
      *
@@ -161,8 +162,10 @@ namespace gcs::innards
      * \brief Install the global difference-logic propagator over a canonicalised
      * system, attributed to the given constraint.
      *
-     * The propagator runs Bellman-Ford from the current lower bounds over the
-     * graph and from the current upper bounds over its reverse, pushing every
+     * The propagator works from the current lower bounds over the graph and from
+     * the current upper bounds over its reverse --- by default incrementally,
+     * with Dijkstra over a maintained potential function, otherwise by
+     * Bellman-Ford from scratch (DifferenceIncrementalOptions) --- pushing every
      * bound the system implies, and refutes a negative cycle by summing the
      * cycle's rows. It is shared between DifferenceConstraints, which builds the
      * graph from the edges it was posted with, and the difference-logic
@@ -171,9 +174,11 @@ namespace gcs::innards
      * the rows, never about where they came from.
      *
      * Half-reified edges take part only while their condition currently holds.
-     * No inference runs the other way: the propagator never fixes a condition
-     * from the graph (the paper's `IncImp`), which its own configuration study
-     * says to leave off.
+     * No inference runs the other way during search: the propagator never fixes
+     * a condition from the graph (the paper's `IncImp`), which its own
+     * configuration study says to leave off. Only the root initialiser's
+     * simplification does, once, when it is on (besides the disallowed
+     * conditions below, which the initialiser also fixes false).
      *
      * A no-op if the system has no edges, static bounds or disallowed
      * conditions. Detecting a root-level contradiction (an *unconditional* edge

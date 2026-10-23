@@ -130,7 +130,7 @@ namespace gcs
          * cutoffs instead of running a single depth-first pass.
          *
          * Default (unset) reproduces a single, exhaustive depth-first search.
-         * \warning Sound only for finding one solution or for optimising; see
+         * Any solve may restart, enumeration included; see
          * gcs::RestartSchedule.
          */
         std::optional<RestartSchedule> restarts = std::nullopt;

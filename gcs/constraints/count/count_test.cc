@@ -364,6 +364,14 @@ auto main(int argc, char * argv[]) -> int
             run_aliased_count_test(proofs, {{3, 7}, {1, 5}, {0, 4}, {2, 2}}, {1, 1, 3, 2, 2}, 1, 0);
             // Through a view alone: how_many is 3 - value_of_interest.
             run_aliased_count_test(proofs, {{1, 2}, {0, 0}, {4, 4}, {-1, 1}, {3, 6}, {0, 1}}, {0, 1, 2, 3, 4}, 5, AliasedView{5, true, 3});
+            // how_many is value_of_interest, and the bound pushed on how_many
+            // after the value-of-interest loop prunes value_of_interest too, so
+            // the array pruning must not use what the loop saw (issue #1304:
+            // count([4, a, b, c], y) = y lost every solution); then the same
+            // through a view.
+            run_aliased_count_test(proofs, {{1, 6}, {0, 1}, {3, 4}, {5, 6}}, {C{4}, 1, 2, 3}, 0, 0);
+            run_aliased_count_test(proofs, {{3, 8}, {0, 1}, {3, 4}, {5, 6}}, {C{4}, 1, 2, 3}, AliasedView{0, false, -2}, AliasedView{0, false, -2});
+            run_aliased_count_test(proofs, {{1, 5}, {4, 6}}, {C{4}, AliasedView{1, false, 3}, 1, AliasedView{1, true, 5}, 1}, 0, 0);
         }
     }
 

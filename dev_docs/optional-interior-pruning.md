@@ -50,8 +50,8 @@ directions.
 
 **Sensitivity the triggers miss** is declared explicitly. The one case left is
 the refined learned-nogood store, which is installed with no triggers at all
-and arms every watch at run time; a nogood may hold `x == v`. It declares every
-variable it could learn over.
+and arms every watch at run time; a nogood may hold `x != v` or `x ∉ I`, which
+a hole can entail. It declares every variable it could learn over.
 
 The audit found three more, each an `in_domain` test, usually of an interior
 value, on a variable registered only with `on_bounds` or `on_instantiated`.
@@ -300,9 +300,10 @@ on, so `consistency::Auto` there propagates as `GAC`.
 
 - **Learned nogoods.** With restarts on, the learned-nogood store declares that
   holes in every variable affect it, so every pruning is kept. That is right in
-  general: a nogood holds the negation of each decision on a path, so any
-  brancher that can decide `x != v` --- `smallest_in`'s right branch does ---
-  can put `x == v` in a nogood, and a hole falsifies that. Only a brancher
-  whose decisions are all `x == v` or bounds would allow less, and the store
-  cannot know which brancher it is learning from.
+  general: a nogood holds the kept decisions on a path, so any brancher whose
+  first branch is `x != v` --- `smallest_out`, `largest_out` and `random_out`
+  --- or `x ∉ I` --- `reject_random_interval` --- can put such a literal in a
+  nogood, and a hole entails it. Only a brancher whose kept decisions are all
+  `x == v` or bounds would allow less, and the store cannot know which brancher
+  it is learning from.
 - **Overstated sensitivity** keeps prunings on that could go off.

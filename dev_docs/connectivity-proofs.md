@@ -11,8 +11,8 @@ is logged *against* decides everything. Against a breadth-first unfolding of
 reachability, every inference the propagator makes is a plain RUP, because unit
 propagation over that encoding *is* the breadth-first search the propagator ran.
 Against the stdlib's arithmetic distance labelling, none of them are. The price
-of the unfolding is size: it is `O(nodes × edges)` rows, where the labelling is
-`O(edges)`.
+of the unfolding is size: it is `Θ(nodes × (nodes + edges))` rows, where the
+labelling is `O(edges)`.
 
 ## What the constraint says
 
@@ -127,7 +127,8 @@ cut.
 **The propagator is generalised-arc-consistent**, in both spellings, and the test
 suite checks it: `reachable_test.cc` runs every case through
 `solve_for_tests_checking_gac`, which asserts at every search node that every
-value left in every domain has a support.
+value left in every domain has a support. (The aliased `dup` runs, which repeat a
+node variable, use plain `solve_for_tests`.)
 
 That did not come free, and the shape of what was missing is worth keeping. Write
 `G` for the residual graph (live nodes, live edges), `M` for the selected nodes,
@@ -183,8 +184,8 @@ one case where this gets expensive, measured below.
 
 ## What is not one RUP
 
-A stronger propagator would also force *cut vertices* and *bridges*: if removing
-node `j` would separate two selected nodes, `j` must be selected.
+The forcing rules of the previous section force *cut vertices* and *bridges*: if
+removing node `j` would separate two selected nodes, `j` must be selected.
 
 The shape of that proof is the obvious one, and it is worth saying what it is
 *not*. It is not a counting argument. `CircuitSCC` compares the size of a
@@ -220,19 +221,19 @@ either side of the cut, are refused as a single RUP with the root open, and veri
 with the case split added. The same harness confirmed that four unsound variants of
 the rules above are refused, so none of the acceptances are vacuous.
 
-The rule is **not implemented**. `Reachable` today propagates the five rules in the
-table, which is enough to be a checker at every leaf — a full assignment that
-violates the constraint is always caught — and enough to cut `hitori`'s search by
-three orders of magnitude. As the previous section says, adding cut vertices and
-bridges would take the undirected spelling to GAC for one linear-time pass, and
-the proof for each is a single RUP wherever the root is fixed — which is the
-common case, and cheaper than this section first concluded. What is left to
-measure is the open-root regime, where each forcing costs `O(|dom(root)|)` lines.
+The rule is implemented (081be4c0, #784), and on by default as
+`with_cut_forcing()`. With it, the undirected spelling is GAC for one linear-time
+pass, as the previous section says. Without it, the five rules in the inference
+table are still a checker at every leaf — a full assignment that violates the
+constraint is always caught — and enough to cut `hitori`'s search by three
+orders of magnitude. The proof for each forcing is a single RUP wherever the root
+is fixed, which is the common case; with the root open each forcing costs
+`O(|dom(root)|)` lines, and the `hitori` measurements below are that regime.
 
 ## The cost: encoding size
 
-The unfolding is `O(nodes × edges)`. Measured on `examples/hitori`'s grid graphs,
-where the whole `.opb` is dominated by this constraint:
+The unfolding is `Θ(nodes × (nodes + edges))`. Measured on `examples/hitori`'s
+grid graphs, where the whole `.opb` is dominated by this constraint:
 
 | grid | nodes | edges | `.opb` |
 |---|--:|--:|--:|
@@ -312,9 +313,9 @@ of that difference is the database every RUP is checked against: the unfolding's
 141 506 rows make each proof line roughly eighty times more expensive to verify.
 This is the `veripb_time = displacement × DB-tax` shape of
 [`decision-diagram-proof-strategies.md`](decision-diagram-proof-strategies.md) with
-the encoding's size as the tax, and it is why the `O(nodes × edges)` limit bites on
-checking time well before it bites on disk. (`h5-1`, at 6 118 rows, checks at about
-0.7 s per megabyte.)
+the encoding's size as the tax, and it is why the `Θ(nodes × (nodes + edges))`
+limit bites on checking time well before it bites on disk. (`h5-1`, at 6 118
+rows, checks at about 0.7 s per megabyte.)
 
 **And `--connectivity none` inverts between the two instances, which matters for
 how #637 was sized.** On `h5-1` the relaxation is the floor: 19 recursions and
@@ -348,7 +349,7 @@ handful of counting rows of its own:
 |---|---|---|
 | `Tree` | `Reachable` from the root | — |
 | `DTree` | `DReachable` from the root | at most one selected edge into each node |
-| `Path` | `Reachable` from the start | degree at most two, at most one at each end, none at all when the ends coincide |
+| `Path` | `Reachable` from the start | degree at most two, at most one at each end, none at all when the ends coincide, and the end is selected |
 | `DPath` | `DReachable` from the start | in- and out-degree at most one, none in at the start, none out of the end, and the end is selected |
 
 Each also posts `sum(es) = sum(ns) - 1`, as a `LinearEquality` child.
@@ -374,10 +375,12 @@ this for free, because nothing in and nothing out already isolates the node.
 
 The stdlib reaches the same family by doubling every undirected edge and then, for
 `dpath`, asking for two spanning trees — one on the graph and one on its reverse.
-Both of those are worth avoiding here rather than there, because the encoding above
-is `O(nodes × edges)`: doubling the edge set doubles it, and a second spanning tree
-doubles it again. The counting rows cost `O(edges)` in total, so the whole family
-stays on one unfolding.
+Doubling the edges does not grow the unfolding, since undirected `Reachable`
+already follows each edge both ways as two arcs; it adds the doubled arcs' own
+variables, the rows channelling each edge to its two arcs, and the directed
+rules. A second spanning tree does double the encoding, which is
+`Θ(nodes × (nodes + edges))`. The counting rows cost `O(edges)` in total, so the
+whole family stays on one unfolding.
 
 ### Why the counting rows are this constraint's own, and not more children
 
@@ -405,7 +408,10 @@ literals, and the reason is those literals.
 generalised-arc-consistent, and their conjunction is not — the general point
 [`constraints.md`](constraints.md) makes about decompositions. Concretely, nothing
 here notices that a selected edge would close a cycle until the cardinality count
-runs out of room. The tests say so by using `solve_for_tests` rather than
+runs out of room. That is not the only gap: `Path` and `DPath` have no degree
+lower bound, so they never force an edge in from a node's degree (#1313), and
+most of `DTree`'s gap on small graphs is that nothing says no selected edge
+enters the root (#1314). The tests say so by using `solve_for_tests` rather than
 `solve_for_tests_checking_gac`, and the class documentation says so too, because
 these sit next to a constraint that does claim GAC. A union-find cycle check is the
 obvious later strengthening, and this decomposition is the baseline to measure it
@@ -565,7 +571,8 @@ chord, on a Hamiltonian cycle at 8 nodes, on a self loop, and on a self loop
 sitting inside a larger component. Four unsound variants are refused — a reason
 missing one path edge, the conclusion flipped, an edge that closes nothing, and
 an attempt to force a node *in*. The `dag_mutation_*` ctest lanes keep the first
-two of those honest against the real propagator.
+of those honest against the real propagator, and add a reason missing its
+subgraph endpoint (`dag_mutation_path`, `dag_mutation_endpoint`).
 
 ### GAC, and cheaply
 
@@ -622,7 +629,7 @@ rather than only a bad thing to search over.
 
 The `.opb` column is where this differs from `Reachable`, and it is worth a
 paragraph because the asymptotics point the other way. There, the unfolding is
-`O(nodes × edges)` against a labelling that is `O(edges)`, and the encoding is
+`Θ(nodes × (nodes + edges))` against an `O(edges)` labelling, and the encoding is
 strictly the larger. Here it is smaller, because `fzn_dag`'s labelling drags in a
 bit-encoded `dist` per node and an `int_times` per edge, and each of those is
 several OPB rows of its own.

@@ -9,6 +9,7 @@
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 #include <version>
 
@@ -18,6 +19,7 @@
 #include <fmt/ostream.h>
 #endif
 
+#include <algorithm>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -26,12 +28,15 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::nullopt;
 using std::optional;
+using std::pair;
 using std::string;
 using std::stringstream;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::any_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -66,6 +71,25 @@ namespace
             return true;
         }
         return or_stop();
+    }
+
+    // The simple variable whose domain a variable ID is a window onto: itself,
+    // or a view's underlying variable. A constant has none.
+    auto underlying_variable(const IntegerVariableID & var) -> optional<SimpleIntegerVariableID>
+    {
+        return overloaded{
+            [](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },                 //
+            [](const ViewOfIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v.actual_variable; }, //
+            [](const ConstantIntegerVariableID &) -> optional<SimpleIntegerVariableID> { return nullopt; }            //
+        }
+            .visit(var);
+    }
+
+    // Does var share a variable with any of others, directly or through a view?
+    auto shares_a_variable(const IntegerVariableID & var, const vector<IntegerVariableID> & others) -> bool
+    {
+        auto u = underlying_variable(var);
+        return u && any_of(others, [&](const IntegerVariableID & o) { return underlying_variable(o) == u; });
     }
 }
 
@@ -127,10 +151,23 @@ auto Count::install_propagators(Propagators & propagators) -> void
     // dev_docs/propagator-performance.md.
     auto all_vars_reason = generic_reason(all_vars);
 
+    // The array pruning at the end decides from bookkeeping gathered in the
+    // value-of-interest loop, and the loop's prunings and the how_many bounds
+    // after it run in between. With the arguments independent, those can only
+    // remove values of interest the loop rejected, and narrow how_many to the
+    // range of counts the survivors span, neither of which changes what the
+    // bookkeeping says. If how_many or value_of_interest shares a variable with
+    // another argument, directly or through a view, they can move something it
+    // was read from, so it is gathered again from the state the pruning sees
+    // (issue #1304).
+    vector<IntegerVariableID> vars_and_value_of_interest = _vars;
+    vars_and_value_of_interest.push_back(_value_of_interest);
+    bool regather_survivors = shares_a_variable(_how_many, vars_and_value_of_interest) || shares_a_variable(_value_of_interest, _vars);
+
     propagators.install(
         constraint_id(),
         [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = _flags, reason = std::move(all_vars_reason),
-            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            regather_survivors, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // check support for how many by seeing how many array values
             // intersect with a potential value of interest
             int how_many_definitely_do_not = 0;
@@ -200,11 +237,16 @@ auto Count::install_propagators(Propagators & propagators) -> void
             int survivors_not_taking_every_candidate = 0;
             Integer lone_survivor_not_taking_every_candidate = 0_i;
             bool lone_survivor_allows_no_further_matches = false;
-            // Set when a pruning below empties value_of_interest's domain, so the
-            // loop leaves and the propagator returns rather than carrying on
-            // reading a state that has already failed.
-            bool stop = false;
-            for (const auto & voi : state.each_value_mutable(value_of_interest)) {
+            auto note_survivor = [&](Integer voi, Integer how_many_must, Integer how_many_might) -> void {
+                // Past two, the answer cannot change, so stop asking.
+                if (survivors_not_taking_every_candidate < 2 && some_count_between(how_many_must, how_many_might - 1_i)) {
+                    ++survivors_not_taking_every_candidate;
+                    lone_survivor_not_taking_every_candidate = voi;
+                    lone_survivor_allows_no_further_matches = ! some_count_between(how_many_must + 1_i, how_many_might);
+                }
+            };
+            // The range of counts the array allows if value_of_interest is voi.
+            auto count_range = [&](Integer voi) -> pair<Integer, Integer> {
                 Integer how_many_must = 0_i, how_many_might = 0_i;
                 for (const auto & var : vars) {
                     if (auto sv = state.optional_single_value(var)) {
@@ -216,6 +258,14 @@ auto Count::install_propagators(Propagators & propagators) -> void
                     else if (state.in_domain(var, voi))
                         ++how_many_might;
                 }
+                return pair{how_many_must, how_many_might};
+            };
+            // Set when a pruning below empties value_of_interest's domain, so the
+            // loop leaves and the propagator returns rather than carrying on
+            // reading a state that has already failed.
+            bool stop = false;
+            for (const auto & voi : state.each_value_mutable(value_of_interest)) {
+                auto [how_many_must, how_many_might] = count_range(voi);
 
                 if (how_many_might < state.lower_bound(how_many)) {
                     auto justf = [&](const ReasonLiterals & reason) -> void {
@@ -297,12 +347,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                         if ((! highest_how_many_might) || (how_many_might > *highest_how_many_might))
                             highest_how_many_might = how_many_might;
 
-                        // Past two, the answer cannot change, so stop asking.
-                        if (survivors_not_taking_every_candidate < 2 && some_count_between(how_many_must, how_many_might - 1_i)) {
-                            ++survivors_not_taking_every_candidate;
-                            lone_survivor_not_taking_every_candidate = voi;
-                            lone_survivor_allows_no_further_matches = ! some_count_between(how_many_must + 1_i, how_many_might);
-                        }
+                        note_survivor(voi, how_many_must, how_many_might);
                     }
                 }
             }
@@ -373,6 +418,22 @@ auto Count::install_propagators(Propagators & propagators) -> void
             // variable loses values only if it is unfixed and can take every
             // value of interest, which it keeps, so nothing here can empty a
             // domain.
+            //
+            // All of this reads one state, the one the pruning is decided in, and
+            // the bookkeeping has to come from it too. A value of interest that
+            // has lost all its support since the loop allows no count below
+            // how_many_might, so it counts as taking every candidate; at worst a
+            // variable then keeps that value without needing to.
+            if (regather_survivors) {
+                survivors_not_taking_every_candidate = 0;
+                for (const auto & voi : state.each_value_immutable(value_of_interest)) {
+                    auto [how_many_must, how_many_might] = count_range(voi);
+                    note_survivor(voi, how_many_must, how_many_might);
+                    if (survivors_not_taking_every_candidate >= 2)
+                        break;
+                }
+            }
+
             bool removing_lone_survivor = survivors_not_taking_every_candidate == 1;
             if (survivors_not_taking_every_candidate == 0 || (removing_lone_survivor && lone_survivor_allows_no_further_matches)) {
                 auto voi_values = state.copy_of_values(value_of_interest);
@@ -423,17 +484,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                         // pruning itself is RUP over value_of_interest's domain.
                         auto [how_many_lo, how_many_hi] = state.bounds(how_many);
                         for (const auto & v : voi_values.each()) {
-                            Integer must = 0_i, might = 0_i;
-                            for (const auto & var : vars) {
-                                if (auto sv = state.optional_single_value(var)) {
-                                    if (*sv == v) {
-                                        ++must;
-                                        ++might;
-                                    }
-                                }
-                                else if (state.in_domain(var, v))
-                                    ++might;
-                            }
+                            auto [must, might] = count_range(v);
 
                             // The equality flags of the variables that cannot be v
                             // are zero when value_of_interest is; wanted only when

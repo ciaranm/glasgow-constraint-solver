@@ -199,8 +199,20 @@ auto Among::install_propagators(Propagators & propagators) -> void
                     b.emit(*logger, ProofLevel::Temporary);
                 }
             };
-            inference.infer(
-                logger, how_many >= must_match_count, JustifyExplicitly{at_least_justify, ThenRUP::Yes, hints::Among{owner}}, vars_reason);
+            // at_least_justify reads which values of interest each must_match
+            // variable can still take, and how_many can be one of them, directly
+            // or through a view. The single-literal infer pushes first and runs
+            // the justification after, so the push would already have removed
+            // values the decision saw. Above the tracker's cover threshold the
+            // at-least-one is keyed on those values, the pol then misses them,
+            // and the closing RUP fails under the reason (issue #1308). infer_all()
+            // emits the steps before it pushes, so go through it when a proof is
+            // being written; without a logger the justification never runs.
+            auto at_least_just = JustifyExplicitly{at_least_justify, ThenRUP::Yes, hints::Among{owner}};
+            if (logger)
+                inference.infer_all(logger, vector<Literal>{how_many >= must_match_count}, at_least_just, vars_reason);
+            else
+                inference.infer(logger, how_many >= must_match_count, at_least_just, vars_reason);
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
             auto at_most_justify = [&](const ReasonLiterals &) -> void {
                 // for any variable that isn't ruled out, show that it can contribute at

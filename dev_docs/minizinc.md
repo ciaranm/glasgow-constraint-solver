@@ -50,6 +50,13 @@ If we don't override a predicate in `mznlib/`, MiniZinc uses the
 stdlib decomposition (typically a PB or boolean encoding), which
 still works but doesn't reach our dedicated propagator.
 
+`network_flow` and `network_flow_cost` are left to it, with no override
+and no tracking issue: #637 put them outside its graph-constraint
+ladder. Their decomposition is flow conservation, one linear equality
+per node (plus the cost's weighted sum), which reaches the linear
+family directly, so the fall-through costs far less than the
+reachability family's distance labelling did.
+
 ## Solver configuration files
 
 The solver configuration is generated from `minizinc/glasgow.msc.in`,
@@ -179,6 +186,14 @@ chain starts at the `.scp`, which records the constraint that was posted
 (#987). The only check that sees it is a differential test on an array that is
 not indexed from 1, so such a predicate wants one.
 
+The graph redefinitions shift their edge endpoints by `min(index_set(ns))` for
+the same reason, and need the same guard, but its polarity is the constraint's
+meaning on an empty graph rather than `true` by habit. `dag` and the
+four-argument `subgraph` hold with no nodes, so theirs is `then true` (#1303).
+The rooted ones --- `reachable`, `tree`, `path` and their directed forms ---
+need a selected root, so they are false with no nodes: a `then true` copied into
+them turns the empty graph into a wrong solution (#1305).
+
 ### Never shift a `var` array inside a comprehension
 
 A redefinition that rebases an array of *variables* — `[x[i] - min(index_set(x))
@@ -231,10 +246,13 @@ way and there is nothing to fix.
 
 Not every gcs feature wants an `mznlib/` override. The difference-logic
 presolver (#571) is the worked example: it looks for two-term
-`LinearLessThanEqual`s with coefficients `+1` and `-1` and lifts them
-into one global propagator, and MiniZinc 2.10's flattener already emits
-exactly that shape — `t[i] + 2 <= t[i+1]` becomes
-`int_lin_le([1,-1],[t_i,t_i+1],-2)`, and so does a bare `x <= y`. The
+`LinearLessThanEqual`s with coefficients `+1` and `-1`, and for
+comparisons such as `LessThanEqual`, and lifts them into one global
+propagator, and MiniZinc 2.10's flattener already emits that shape —
+`t[i] + 2 <= t[i+1]` becomes `int_lin_le([1,-1],[t_i,t_i+1],-2)`, and so
+does a bare `x <= y`; `fzn-glasgow` reads each of those back as a
+`LessThanEqual` (`8c6cb43d`), which the presolver lifts as a
+comparison. The
 shape is in the model whether or not anybody asks for it, so the whole
 binding is one command-line flag:
 

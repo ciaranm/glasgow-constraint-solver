@@ -88,6 +88,12 @@ namespace
         PosVarDataMap & pos_var_data;
         map<long, ShiftedPosDataMaps> & proof_flag_data;
         PosAllDiffData & pos_alldiff_data;
+        // Edges this call has proved impossible under its reason without pruning
+        // them (prune skip off, issue #1306). Reachability arguments skip them, so
+        // they walk the same graph as they would had the edges been pruned. The
+        // ones that need this are fix required and no back edges for a subtree,
+        // which run after explore has seen every skip edge leaving that subtree.
+        set<pair<long, long>> & proved_absent_edges;
     };
 
     struct SCCProofContext
@@ -101,18 +107,21 @@ namespace
         map<long, ShiftedPosDataMaps> & flag_data;
         ShiftedPosDataMaps & root_flag_data;
         PosAllDiffData & pos_alldiff_data;
+        const set<pair<long, long>> & proved_absent_edges;
         const SCCOptions & options;
 
         SCCProofContext(const State & state, ProofLogger & logger, const ReasonLiterals & reason, const vector<IntegerVariableID> & succ,
             SCCProofData & proof_data, const long root, const SCCOptions & options) :
             state(state), logger(logger), reason(reason), succ(succ), root(root), pos_var_data(proof_data.pos_var_data),
-            flag_data(proof_data.proof_flag_data), root_flag_data(flag_data[root]), pos_alldiff_data(proof_data.pos_alldiff_data), options(options)
+            flag_data(proof_data.proof_flag_data), root_flag_data(flag_data[root]), pos_alldiff_data(proof_data.pos_alldiff_data),
+            proved_absent_edges(proof_data.proved_absent_edges), options(options)
         {
         }
 
         SCCProofContext(SCCProofContext & other, const long root) :
             state(other.state), logger(other.logger), reason(other.reason), succ(other.succ), root(root), pos_var_data(other.pos_var_data),
-            flag_data(other.flag_data), root_flag_data(flag_data[root]), pos_alldiff_data(other.pos_alldiff_data), options(other.options)
+            flag_data(other.flag_data), root_flag_data(flag_data[root]), pos_alldiff_data(other.pos_alldiff_data),
+            proved_absent_edges(other.proved_absent_edges), options(other.options)
         {
         }
     };
@@ -808,6 +817,8 @@ namespace
                 for (auto val : ctx.state.each_value_immutable(ctx.succ[node])) {
                     if (skip_based_on_assumption(ctx.succ[node], val, assumption))
                         continue;
+                    if (ctx.proved_absent_edges.contains(pair{node, val.raw_value}))
+                        continue;
 
                     possible_next_nodes_sum += 1_i * (ctx.succ[node] == val);
                     auto next_node = val.raw_value;
@@ -960,8 +971,8 @@ namespace
                 if (data.visit_number[next_node] >= data.start_prev_subtree && data.visit_number[next_node] <= data.end_prev_subtree) {
                     back_edges.emplace_back(node, next_node);
                 }
-                else if (options.prune_skip && data.visit_number[next_node] < data.start_prev_subtree) {
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                else if (data.visit_number[next_node] < data.start_prev_subtree) {
+                    auto prove_edge_absent = [&]() {
                         if (next_node == data.root) {
                             logger->emit_proof_comment(
                                 format("Pruning edge to the root from a subtree other than the first ({}, {})", node, next_node));
@@ -973,10 +984,24 @@ namespace
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                             prove_skipped_subtree(ctx, node, next_node, data.prev_subroot);
                         }
-                        inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, NoReason{});
+                    };
+
+                    if (options.prune_skip) {
+                        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                            prove_edge_absent();
+                            inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, NoReason{});
+                        }
+                        else {
+                            inference.infer(logger, succ[node] != w, JustifyUsingRUP{hints::Circuit{owner}}, NoReason{});
+                        }
                     }
-                    else {
-                        inference.infer(logger, succ[node] != w, JustifyUsingRUP{hints::Circuit{owner}}, NoReason{});
+                    else if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                        // The edge stays in the domain, but the fix-required and no-back-edges
+                        // certificates below assume it is gone (McIlree, JP 6.16 and 6.17), so
+                        // write the same derivation and have later reachability arguments skip
+                        // the edge.
+                        prove_edge_absent();
+                        proof_data.proved_absent_edges.emplace(node, next_node);
                     }
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
@@ -1068,7 +1093,8 @@ auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, aut
     auto & pos_var_data = persistent.pos_var_data;
     if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
         return; // contradiction: the SCC check below would read junk state; the loop sees contradicted()
-    auto proof_data = SCCProofData{pos_var_data, persistent.proof_flag_data, persistent.pos_alldiff_data};
+    set<pair<long, long>> proved_absent_edges;
+    auto proof_data = SCCProofData{pos_var_data, persistent.proof_flag_data, persistent.pos_alldiff_data, proved_absent_edges};
     check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
     auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
     // Remove any newly assigned vals from unassigned (swap-and-pop; order is irrelevant).

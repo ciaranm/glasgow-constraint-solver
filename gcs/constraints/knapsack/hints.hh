@@ -21,9 +21,10 @@ namespace gcs::innards::hints
     };
 
     /**
-     * \brief KnapsackUpfront's assertion hint: just the owning constraint.
+     * \brief The assertion hint of Knapsack's proof_strategy::Upfront: just
+     * the owning constraint.
      *
-     * Used by the opt-in upfront-DAG KnapsackUpfront propagator.
+     * Used by the opt-in upfront-DAG strategy (knapsack_upfront.cc).
      *
      * \ingroup Innards
      */

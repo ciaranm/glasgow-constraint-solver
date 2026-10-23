@@ -172,9 +172,11 @@ namespace
     // a property of where the call sits rather than a guard it has to
     // check.
     //
-    // Three of the paper's four sub-steps are here. Redundant-edge
-    // removal and node removal are decisions about what to propagate,
-    // not about what the model says --- the OPB keeps every posted row,
+    // Three of the paper's four sub-steps are here, node removal only
+    // in part (the round bound drops, but the isolated nodes stay in
+    // the propagator: #1385). Redundant-edge removal and the lower
+    // round bound are decisions about what to propagate, not about
+    // what the model says --- the OPB keeps every posted row,
     // so there is nothing to certify. Fixing a condition false is a real
     // inference and carries the one proof obligation, discharged below.
     // Zero-weight-cycle unification is not implemented; the cycles are
@@ -248,10 +250,10 @@ namespace
                 auto outcome = simplify_difference_graph(n, simplify_edges, roles);
                 if (outcome.base_negative_cycle) {
                     // The unconditional part of the system is already
-                    // infeasible. Stop and let the from-scratch pass
-                    // below refute it: that is where the cycle
-                    // extraction and the telescoping pol live, and
-                    // duplicating them here would buy nothing.
+                    // infeasible. Stop and let the propagator refute it
+                    // on its first call, after this initialiser: that is
+                    // where the cycle extraction and the telescoping pol
+                    // live, and duplicating them here would buy nothing.
                     stats.base_negative_cycle = true;
                     break;
                 }
@@ -288,10 +290,13 @@ namespace
                     // Check the witness arithmetically before saying
                     // anything: that the candidate edge and the path
                     // really do form a cycle, and that it really does
-                    // weigh less than zero. That is O(cycle), and it
-                    // turns a bug in the shortest-path pass into an
-                    // exception here rather than a VeriPB failure a
-                    // hundred lines later (survey section 2.9.4).
+                    // weigh less than zero. The arithmetic is O(cycle),
+                    // though the condition deduplication sharing its
+                    // loop is a linear search per conditional edge,
+                    // O(k.c) for k such edges and c distinct conditions
+                    // (#1384). It turns a bug in the shortest-path pass
+                    // into an exception here rather than a VeriPB failure
+                    // a hundred lines later (survey section 2.9.4).
                     auto weight = arcs[candidate].d;
                     auto at = arcs[candidate].to;
                     vector<IntegerVariableCondition> conditions;
@@ -328,12 +333,18 @@ namespace
                     // around the cycle and every BinEnc term telescopes
                     // away, leaving only the big-M residuals of the
                     // conditional edges. The candidate's is always one of
-                    // them, so a saturate turns the sum into the clause
+                    // them, and a saturate caps each coefficient at the
+                    // degree --- the reified_hand.pbp shape with the roles
+                    // of the conditions swapped round. When every
+                    // condition's coefficient (its residuals summed)
+                    // reaches the degree, the saturated line is the clause
                     // `~cand v ~c_1 v ... v ~c_k' over the path's
-                    // already-true conditions --- the reified_hand.pbp
-                    // shape with the roles of the conditions swapped
-                    // round. The closing RUP assumes the reason's
-                    // literals and reads off `~cand'.
+                    // already-true conditions, scaled by the degree, and so
+                    // equivalent to it (literally the clause when the
+                    // degree is 1). When some coefficient falls short of
+                    // the degree, it is strictly stronger. Either way the
+                    // closing RUP assumes the reason's literals and reads
+                    // off `~cand'.
                     //
                     // Two mutation results, both measured rather than
                     // assumed, and both matching what the negative-cycle
@@ -342,8 +353,10 @@ namespace
                     //  * the `saturate' is not load-bearing --- removing
                     //    it leaves every fixture verifying, because the
                     //    closing RUP assumes every condition and drives
-                    //    each residual to zero. Emitted anyway so the
-                    //    derived line *is* the clause;
+                    //    each residual to zero. Emitted anyway, which
+                    //    gives the derived line the clause's shape when
+                    //    the coefficients allow it (above); the RUP
+                    //    derives the clause regardless;
                     //  * neither, here, are the path's conditions in the
                     //    reason. That is specific to running at the root:
                     //    a path condition is definitely true only because
@@ -403,10 +416,14 @@ namespace
             }
 
             // Node removal, the paper's last sub-step, and internal in
-            // exactly the same way: a node with no incident edge left
-            // cannot send or receive a bound, so it neither needs seeding
-            // nor counts towards the number of relaxation rounds a
-            // simple path can need.
+            // exactly the same way, but only in part: a node with no
+            // incident edge left cannot send or receive a bound, so it
+            // does not count towards the number of relaxation rounds a
+            // simple path can need, and the round bound drops to the
+            // nodes that still have an edge. Nothing else changes: the
+            // propagator still seeds and scans the isolated nodes, and is
+            // woken by their bounds, whatever `isolated_nodes_removed'
+            // says (#1385).
             vector<bool> live(n, false);
             for (const auto & a : arcs) {
                 live[a.from] = true;
@@ -525,33 +542,44 @@ namespace
         //
         // A half-reified edge on the cycle contributes one extra term,
         // `M.~cond', which does not telescope. Summing leaves
-        // `sum_i M_i.~cond_i >= -(cycle weight)', and one saturate turns it
-        // into the clause `~cond_1 v ... v ~cond_k' --- the learned clause,
-        // and exactly the shape hand-verified against real gcs OPB output in
-        // reified_hand.pbp before any of this was written. Every such
-        // condition therefore has to appear in the reason: the refutation is
-        // conditional on precisely them, and citing fewer would claim a
-        // contradiction the model does not entail. *That* part is
-        // load-bearing --- omitting a condition from the reason fails VeriPB
-        // on the reified fixtures, confirmed by mutation.
+        // `sum_i M_i.~cond_i >= -(cycle weight)' (a condition on several
+        // edges taking the sum of their M_i), and one saturate caps each
+        // coefficient at the degree --- the shape hand-verified against real
+        // gcs OPB output in reified_hand.pbp before any of this was written.
+        // When every coefficient reaches the degree, the saturated line is
+        // the clause `~cond_1 v ... v ~cond_k' scaled by the degree, and so
+        // equivalent to it (literally the clause when the degree is 1). When
+        // some coefficient falls short of the degree, it is a line strictly
+        // stronger than the clause. Either way the reason's literals falsify
+        // it, so the closing RUP derives the learned clause.
+        //
+        // The refutation is conditional on these conditions, so they are
+        // the reason, which is sufficient but not always minimal: the rows
+        // also carry the variables' encoding ranges, and against those fewer
+        // conditions can already be contradictory (a coefficient that
+        // saturation left below the degree marks such a condition). On the
+        // reified fixtures the reason is load-bearing: omitting a condition
+        // from it fails VeriPB, confirmed by mutation.
         //
         // The saturate itself is not: the closing RUP assumes every
         // condition, which drives each `M.~cond' to zero and falsifies the
         // unsaturated line just as well, and removing the saturate leaves
         // every reified fixture verifying (also confirmed by mutation). It
-        // is emitted anyway because it makes the derived line *be* the
-        // clause rather than a big-M encoding of it, which is what a reader,
-        // an assertion hint or a longer-lived proof level would want. It is
-        // emitted only when there is a residual to saturate, so an
-        // unconditional cycle's proof line is byte-for-byte what it was
-        // before half-reified edges existed.
+        // is emitted anyway because it gives the derived line the clause's
+        // shape whenever the coefficients allow (above), rather than a big-M
+        // encoding of it, which is what a reader, an assertion hint or a
+        // longer-lived proof level would want. It is emitted only when there
+        // is a residual to saturate, so an unconditional cycle's proof line
+        // is byte-for-byte what it was before half-reified edges existed.
         //
         // Before saying anything, verify the extracted cycle
         // arithmetically: that each edge meets the next, that it closes,
-        // and that the total weight really is negative. That is O(cycle)
-        // and turns a predecessor-walk bug into an exception at the right
-        // place rather than a VeriPB failure hundreds of lines later
-        // (survey section 2.9.4).
+        // and that the total weight really is negative. That is O(cycle),
+        // though the condition deduplication sharing its loop is a linear
+        // search per conditional edge, O(k.c) for k such edges and c
+        // distinct conditions (#1384). It turns a predecessor-walk bug into
+        // an exception at the right place rather than a VeriPB failure
+        // hundreds of lines later (survey section 2.9.4).
         auto contradict_on_cycle(const vector<size_t> & cycle, auto && tail_of, auto && head_of) const -> void
         {
             if (cycle.empty())
@@ -652,8 +680,10 @@ namespace
         // One edge, one pol: the edge row plus the definition row of the
         // predecessor's bound literal cancels BinEnc(source) and leaves
         // BinEnc(v) >= source_bound - d, which is exactly what the closing
-        // RUP needs. This is justify_linear_bounds for a two-term linear,
-        // and it is the shape verified by hand in boundpush_hand.pbp.
+        // RUP needs. This is the pol justify_linear_bounds writes for a
+        // two-term linear, except that that one leaves out a bound the bits
+        // already imply (#1035), and it is the shape verified by hand in
+        // boundpush_hand.pbp.
         // Citing the predecessor's own bound is already the paper's
         // "lifted" explanation: the weakest antecedent for v >= L - d
         // across this edge *is* source >= L, so the pol's degree comes out
@@ -920,9 +950,13 @@ namespace
 
                 // One Bellman-Ford, once, for the potential function. Every
                 // later change to the active arc set goes through IncSat
-                // instead, which is what makes a wake O(n log n + m) rather
-                // than O(n.m). No trail entries: this is the root, and the
-                // trail mark stays where it is.
+                // instead, which is what makes a wake Dijkstras over just
+                // what they reach rather than O(n.m): with the binary heap
+                // and lazy deletion, each bounds pass is
+                // O(n + (|Vl| + R) log(n + R)) for R arcs reached, and each
+                // IncSat repair O((n + m) log(n + m)) at worst. No trail
+                // entries: this is the root, and the trail mark stays where
+                // it is.
                 auto initial_potential = difference_initial_potential(n, arcs, memory.active_flags);
                 if (! initial_potential)
                     refute_negative_cycle("the initial potential computation");
@@ -948,7 +982,7 @@ namespace
             else if (! memory.changed_arcs.empty()) {
                 // Arcs whose activity has changed since the last run. Each
                 // newly active one needs *both* halves of the paper's section
-                // 4.4 treatment, and its section 5.4's during-search description
+                // 4.2 treatment, and its section 5.4's during-search description
                 // gives only the first: repair the potential function (or find
                 // that the arc closes a negative cycle), *and* seed bound
                 // propagation across it. Without the second, a condition becoming true with no node

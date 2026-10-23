@@ -1,11 +1,11 @@
-// Benchmark harness for comparing the default per-call Knapsack against
-// the opt-in upfront-DAG KnapsackUpfront. Posts the same problem with one
+// Benchmark harness for comparing Knapsack's default per-call proof strategy
+// against the opt-in upfront-DAG one. Posts the same problem with one
 // or the other and prints solver stats. Branching is fully deterministic
 // so that recursions / propagations should match exactly between the two
 // propagators on a given instance.
 //
 // CLI:
-//   --upfront            Post KnapsackUpfront (default: Knapsack)
+//   --upfront            Use proof_strategy::Upfront (default: PerCall)
 //   --instance N         Pick an instance from the curated set (1..4)
 //   --prove              Generate a proof
 //   --proof-files-basename PATH  (default: "knapsack_bench")
@@ -122,7 +122,7 @@ auto main(int argc, char * argv[]) -> int
     try {
         options.add_options("Program options")                                    //
             ("help", "Display help information")                                  //
-            ("upfront", "Post KnapsackUpfront instead of Knapsack")               //
+            ("upfront", "Use proof_strategy::Upfront instead of PerCall")         //
             ("instance", "Curated instance number (1..4)", cxxopts::value<int>()) //
             ("prove", "Generate a proof")                                         //
             ("proof-files-basename", "Basename for .opb and .pbp files",          //

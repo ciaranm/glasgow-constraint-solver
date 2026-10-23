@@ -62,6 +62,27 @@ library. For an introduction to *using* the solver, start with the top-level
   the others off changes no bound anywhere. `Element`'s `consistency::Auto` is
   the first client (issue #902). Read before choosing triggers that
   under-report what a hole would affect.
+- [Justification techniques](justification-techniques.md) — why our proof
+  steps are RUP, rather than merely that they are. Collects the
+  unit-propagation facts the solver leans on (Theorems 2.6–2.9 of McIlree's
+  thesis), the completeness invariant `Inv1` behind them, the published
+  justification procedures our constraints instantiate, and the preconditions
+  that say when each argument stops working. Cite it from a constraint's
+  documentation or comments instead of restating the proof; read it before
+  claiming a new inference is RUP.
+- [Template: a constraint family document](constraints/TEMPLATE.md) — the
+  skeleton every per-family document under `dev_docs/constraints/` follows,
+  plus the conventions and the closed vocabularies (proof technique,
+  consistency level, offline-reconstructibility verdict, frontend cell) those
+  documents draw on, and the variant template for presolvers. Read before
+  writing or auditing a family document. The family list, authoritative for
+  what counts as a family, is in the index below.
+- [Constraint family documents](constraints/README.md) — the per-family
+  documents (semantics, frontend coverage, OPB encoding, one entry per
+  inference rule with its proof technique and assertion hint, robustness
+  limits, measured CPU and proof performance, and what wants work). Index plus
+  the template that governs them. Read the template before writing or auditing
+  one.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,
@@ -125,10 +146,6 @@ library. For an introduction to *using* the solver, start with the top-level
   writing or checking, records which candidates are too large to
   proof-log at all, and lists the argument-shape traps. Use when
   changing proof logging, scaffolding, encodings or hinting.
-- [Frontend support matrix](frontend-support-matrix.md) — single source of
-  truth for which gcs propagators each frontend (MiniZinc, XCSP3, CPMpy)
-  exposes, plus where the solver-side gaps are tracked. Update when adding
-  a propagator or a frontend binding.
 - [Proof logging for `Cumulative`](cumulative-proof-logging.md) — concrete
   walk-through of the three-inference proof for the time-table propagator:
   the `pol`-over-`active=1`-flags idiom, the "extended-reason pinning"
@@ -245,9 +262,9 @@ library. For an introduction to *using* the solver, start with the top-level
   the per-term potential, the margin that decides how many to watch, and what
   it is measured to be worth. Companion to
   [refined-triggers.md](refined-triggers.md).
-- [`Knapsack`](knapsack.md) — the default per-call DP `Knapsack` (chosen
-  for fastest proof verification) and the opt-in upfront-DAG
-  `KnapsackUpfront` (#200), the *k*-coordinate generalisation of
+- [`Knapsack`](knapsack.md) — `Knapsack`'s default per-call DP strategy
+  (chosen for fastest proof verification) and its opt-in upfront-DAG
+  strategy, `proof_strategy::Upfront` (#200), the *k*-coordinate generalisation of
   `BinPacking` Stage 3. Covers the `define_proof_model` /
   `install_initialiser` split, the paper-style reified scaffolding, the
   per-call proof chain, and the measured default-vs-opt-in trade-off.
@@ -331,9 +348,9 @@ library. For an introduction to *using* the solver, start with the top-level
   one Tarjan pass undirected and a search per candidate root directed) and how
   the tests check that, why a forcing made before search has decided the root
   costs a proof line per candidate root while one made after costs one line
-  (measured, not assumed), the `O(nodes × edges)` size that is the price,
-  and the measured hitori comparison — 815 MB / 796 s of decomposition proof
-  against 0.25 MB / 0.14 s. Also covers `Subgraph` and the tree-and-path family
+  (measured, not assumed), the `Θ(nodes × (nodes + edges))` size that is the
+  price, and the measured hitori comparison — 815 MB / 796 s of decomposition
+  proof against 0.25 MB / 0.14 s. Also covers `Subgraph` and the tree-and-path family
   built on top (`Tree`, `DTree`, `Path`, `DPath`, and so `steiner`, `dsteiner`,
   `bounded_path`, `bounded_dpath` and `weighted_spanning_tree`): one reachability
   encoding plus counting rows rather than the stdlib's doubled edges and second

@@ -660,10 +660,13 @@ Two kinds of check, and the difference matters:
   build an `IntervalSet` of its own and walk that, or take an interval and expand
   it with a plain `for (Integer v = lo; v <= hi; ++v)`. `State` sees neither, so
   each such loop needs its own counter declared at the loop. Four constraints
-  carry one, over five sites: `element.cc`'s sweep over unsupported result values
-  (now only on its per-value view path), `all_equal.cc`'s expansion of the
+  carried one, over five sites: `element.cc`'s sweep over unsupported result values
+  (later only on its per-value view path), `all_equal.cc`'s expansion of the
   intersection difference, `equals.cc`'s no-overlap reason, and `abs.cc`'s two
-  interior hole loops. The counter does not belong in `IntervalSet::each()`
+  interior hole loops. #924 and #882 have since removed the first two loops, and
+  their counters with them, and `plus_minus/gac.cc` (#192) and `reason.cc`'s
+  generic-reason materialisation (#935) carry counters of their own. The counter
+  does not belong in `IntervalSet::each()`
   itself, which is a general container used for deliberate enumeration —
   tabulation, and the tests.
 
@@ -781,20 +784,20 @@ is the part worth reading carefully:
 |---|---|
 | `Clean` | has a position where a wide domain is meaningful, and survives one |
 | `KnownTrip` | likewise, and does not. This is the work #833 is about |
-| `NoWidePosition` | no variable it takes can meaningfully be wide — successors index an array, Booleans are `{0,1}`. Structural immunity, not a working fallback |
+| `NoWidePosition` | no variable it takes can meaningfully be wide — the graph family's node and edge selectors must be declared `0..1`, and `And`, `Or` and `ParityOdd` read a variable as the one literal `v != 0` however wide it is. Structural immunity, not a working fallback |
 | `HazardNotReached` | the source has a per-value site, but this probe does not reach it. **Not** a clean bill of health: a gap in the probe. No row uses this today — every *known* gap has been closed — but the outcome stays, because it is what to reach for rather than guessing when a probe cannot get at a site. "Known" is load-bearing: `Element`'s index-support rule was an unreached site for as long as the table had `Element` rows, and was never labelled this, because a gap nobody has thought of looks exactly like no gap (#900) |
 
 ### Where we stand
 
-93 constraint probes, plus 20 heuristic ones in the second table. The lane
+127 constraint probes, plus 20 heuristic ones in the second table. The lane
 itself is the authority — run it rather than trusting this table, which is a
 snapshot for orientation.
 
 | | constraints |
 |---|---|
 | **KnownTrip** (20) | `Plus/many-intervals-gac` (the exact interval arm over two operands of 400 intervals, which `Dynamic` exists to cap), `Power`, `PowerTable`, `AllDifferent`, `AllDifferentExcept`, `Count`, `NValue`, `AtMostOne`, `AtMostOneSmartTable`, `GlobalCardinality/hall`, `ArrayMinMax`, `LexSmartTable`, `SmartTable`, `Regular`, `RegularLegacy`, `RegularBacchus`, `MDD`, `Cumulative`, `Disjunctive`, `Knapsack` |
-| **Clean** (58) | the arithmetic family (with five rows of its own for `Abs`, four for its interior holes, two of them view-wrapped, and one for a constant `v2` (#1080); one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands; `Plus/many-intervals` under `Auto`; and four `wide-product` rows, for `Multiply`, `Divide`, `Modulus` and `Power`, whose bound products would overflow without #1079's saturation), comparison, equality, linear, `AllDifferent` under `VC` and under `BC`, `AllDifferentExcept` with a variable posted twice (#1004), `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods` |
-| **NoWidePosition** (15) | the graph and permutation family, and the Boolean constraints |
+| **Clean** (102) | the arithmetic family (with five rows of its own for `Abs`, four for its interior holes, two of them view-wrapped, and one for a constant `v2` (#1080); one each for `Plus`' and `Minus`' `consistency::GAC` arm over holey operands; `Plus/many-intervals` under `Auto`; and four `wide-product` rows, for `Multiply`, `Divide`, `Modulus` and `Power`, whose bound products would overflow without #1079's saturation), comparison, equality, linear, `AllDifferent` under `VC` and under `BC`, `AllDifferentExcept` with a variable posted twice (#1004), `Element` in both arms, on the index side, with a holey entry and with a *view* on the result, `AllEqual` with holes and without, `Among` contiguous and holey, `In` in three rows (a constant candidate list, and a variable one in each of its two rules), `GlobalCardinality` open and closed, `Table` (both shapes), `ValuePrecede`, `SeqPrecedeChain`, `IncreasingChain`, `Lex`, `Sort`, `ArgSort`, `NegativeTable`, `Disjunctive2D`, `BinPacking`, `MinDistance`, `DifferenceConstraints`, `Nogoods`; and every index-valued position, declared wide (below) |
+| **NoWidePosition** (5) | `Subgraph` and `Dag`, whose node and edge selectors must be declared `0..1`; `And`, `Or` and `ParityOdd`, probed at `0..10^9` but reading each variable as the one literal `v != 0` |
 
 `Among`, `In`, `AllEqual/holes`, `GlobalCardinality` (open and closed), `Table`
 and `Element` started as `KnownTrip` and are now `Clean`, by the interval
@@ -808,6 +811,30 @@ which is two range removals however wide the domain is. **A second per-value sit
 remains** in its Hall reasoning, which the original probe could not reach — one
 cover value means there is no multi-value hall — so it now has a row of its own
 rather than being covered by association.
+
+**An index-valued position is `Clean`, not `NoWidePosition`.** A successor, a
+graph root or endpoint, an `Element` index, and an entry of `Inverse`,
+`SymmetricAllDifferent` or `ArgSort` can only ever take an array's worth of
+values. So the graph and permutation rows used to be `NoWidePosition`, and every
+row, `Element`'s and `ArgSort`'s `Clean` ones included, probed such a position
+over the index range itself. But a model may declare such a position wide, and the constraint
+then `define_bound()`s it down — which installs an initialiser, so the bound
+lands when the root is propagated and everything `prepare()` and installation
+read off the variable is still the declared width. Each of these is now probed
+three ways (`index_shapes` in the test): over `0..10^9`, over the whole declared
+range `±(2^60 − 1)`, and over `0..10^9` with a hole inside the index range.
+`Circuit`, `SubCircuit`, `Inverse` (bijection and injection), `SymmetricAllDifferent`,
+`Tree`, `DTree`, `Path`, `DPath`, `Reachable` and `DReachable` moved over, and
+`Element`, `ArgSort` and `MinDistance` gained `wide-index` rows; `SeqPrecedeChain`
+is not index-valued but is bounded the same way, and is probed the same way. All
+of them survive the guard, which sees work done at the root without proofs; it
+does not cover what a proof written during search costs, and `SubCircuit` has a
+known per-value cost there (below). What remains `NoWidePosition` is genuinely so: the graph
+family's node and edge selectors are refused at `prepare()` if declared wider
+than `0..1` (which leaves `Subgraph` and `Dag` nothing else to declare), and
+`And`, `Or` and `ParityOdd` read a variable as one literal, `v != 0`, however
+wide it is declared. `BinPacking`'s item variables are index-valued too, but
+their declaration is likewise refused if it is wider than the bins.
 
 **Whether an operand is *wrapped* is an axis of its own, and for a long time no
 probe in this lane used it.** `Element/view-result` (#924) was the first row to
@@ -917,10 +944,11 @@ now a `KnownTrip`:
   erases everything in one `erase_range` and leaves no remainder — the original
   probe made the hazard disappear by being too wide. (And a narrow entry reaches
   only half of that sweep; see below.)
-* `AllEqual` needs holes *and* a large difference. Bounds propagation runs first
-  (`all_equal.cc:95`) and collapses a merely narrow partner, so the hole has to
-  be spread across the full width: a two-value domain at the extremes leaves the
-  whole middle of the other variable to be removed one value at a time.
+* `AllEqual` needed holes *and* a large difference. Bounds propagation runs first
+  (`all_equal.cc:97-104`) and collapses a merely narrow partner, so the hole has
+  to be spread across the full width: a two-value domain at the extremes leaves
+  the whole middle of the other variable to be removed, which was one value at a
+  time and is now one range removal.
 
 **Three were not hazards at all**, and the entry in #833's source list was about
 a sibling rather than the constraint itself. Each is now `Clean`:
@@ -1146,9 +1174,17 @@ the line) and the wide case is flat. **A rewrite that is asymptotically better c
 still be worse everywhere anyone actually is**, and the only way to find that out
 is to measure the narrow case as well as the wide one.
 
-`subcircuit` deliberately keeps the per-value form: its pigeonhole needs every
-value named, and a successor's definition range *is* the node set, so there is no
-width there to spend on values the counting does not use.
+`subcircuit` deliberately keeps the per-value form, because its pigeonhole needs
+every value named. That rested on a successor's definition range being the node
+set, which is true only when the model declares it so. A successor may be declared
+wide (see the index-valued rows in the audit lane), and `prepare()` then
+`define_bound()`s it, but the at-least-one still spans the declared range: one term
+per declared value. This is a **known open problem** (#1326). With `SubCircuit` over five
+nodes, under SCC with a required node and two nodes unreachable, enumerating with
+proofs (four solutions) writes 5,257, 50,257 and 500,257 proof lines at declared
+widths of 100, 1,000 and 10,000. The audit lane cannot see this, because it is
+proof-only work done during search, and the proof-scaling survey cannot either,
+because it stops at the root.
 
 Each caller names only the values **its variable can still take**, not its whole
 value set. The two are different whenever the value set is a Hall set, a cover or
@@ -1345,9 +1381,10 @@ propagation work in #833.
 | #845 | `Power`, `PowerTable` | O(D) | a row of an enumerated relation | no — it *is* a table |
 
 **`Regular` and `MDD` are the easy ones, and the fix needs no checker feature.**
-Both deliberately widen their OPB alphabet to the union of the transition keys
-*and every value of every variable's initial domain*
-(`regular.cc:581-584`, `mdd.cc:465-471`), purely so that a value with no
+Both deliberately widen their OPB alphabet beyond the transition keys to the
+variables' initial domains — `Regular` to *every value of every variable's
+initial domain* (`regular.cc:602-605`), `MDD` per layer, to that layer's own
+variable's domain (`mdd.cc:470-477`) — purely so that a value with no
 transition gets an explicit `(x_i ≠ val) ∨ ¬(state_i = q)` row — the comment says
 it is "what veripb needs to verify the propagator's RUP-justified pruning of
 those values". But a value outside the transition keys entirely has no transition

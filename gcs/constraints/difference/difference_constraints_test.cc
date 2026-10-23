@@ -203,7 +203,7 @@ namespace
             proofs ? " with proofs:" : ":");
         cerr << flush;
 
-        // Ten of the nineteen canonical wraps negate, and DifferenceConstraints
+        // Nine of the nineteen canonical wraps negate, and DifferenceConstraints
         // refuses a negated operand at construction rather than approximating
         // it: `-X - Y <= d' has both coefficients negative, is not a difference
         // constraint at all, and lifting it would be unsound rather than merely
@@ -664,8 +664,9 @@ namespace
     // sub-step and would otherwise have to restate every other count.
     //
     // These assertions are the whole reason the counters exist. Redundant-edge
-    // removal, node removal and zero-cycle detection are all invisible from
-    // outside: they change no solution, no proof and no search tree. A stage
+    // removal, the lower round bound (node removal, which keeps the nodes:
+    // #1385) and zero-cycle detection are all invisible from outside: they
+    // change no solution, no proof and no search tree. A stage
     // that quietly did nothing at all would pass the solution-equivalence check,
     // the recursion check, the OPB byte-diff and VeriPB. So "the counters say it
     // fired" is the only thing standing between a working stage and a shipped
@@ -700,8 +701,9 @@ namespace
     // and once with it off, and insist that the only thing that changed is how
     // much searching it took.
     //
-    // Redundant-edge removal, node removal and zero-cycle detection are
-    // propagation-neutral by construction, so on a fixture where no condition is
+    // Redundant-edge removal, the lower round bound (node removal, which keeps
+    // the nodes: #1385) and zero-cycle detection are propagation-neutral by
+    // construction, so on a fixture where no condition is
     // fixed the recursion counts must be *equal*: a difference means an edge was
     // dropped that was carrying propagation. Fixing a condition is strictly
     // stronger, so on those fixtures the count may fall, and the fixture says so
@@ -815,7 +817,7 @@ namespace
             SimplifyExpectation{.ran = true, .redundant_edges_removed = 3});
 
         // A node that is only ever a static bound has no arcs at all, so it
-        // drops out of the relaxation loop and out of the round bound.
+        // drops out of the round bound (it stays in the propagator: #1385).
         run_simplify_test(proofs, "isolated_node", {{0, 8}, {0, 8}, {0, 8}}, {{v(0), c(4), 3}, {v(1), v(2), -1}},
             SimplifyExpectation{.ran = true, .isolated_nodes_removed = 1});
 
@@ -1038,7 +1040,7 @@ namespace
     //
     // So `Vl` is empty, and an implementation that transcribed only the paper's
     // section 5.4 (repair the potential function on activation, and stop there)
-    // would do nothing at all here. Section 4.4 is the one that says to seed
+    // would do nothing at all here. Section 4.2 is the one that says to seed
     // bound propagation across the new arc as well.
     auto run_activation_seed_test(bool incremental) -> void
     {
@@ -1129,10 +1131,10 @@ namespace
     // survived a restart it should not have, or that was popped further than it
     // should have been, shows up as a different optimum or a different search.
     //
-    // Optimisation rather than enumeration, because a restart schedule without
-    // recorded nogoods re-finds solutions and gcs rejects combining it with
-    // all-solution enumeration. The Luby scale is deliberately tiny so that a
-    // few-hundred-node search restarts many times.
+    // Optimisation, so the comparison below covers the optimum as well as the
+    // search. (Enumeration with restarts is supported too: the recorded nogoods
+    // stop a later pass re-finding a solution.) The Luby scale is deliberately
+    // tiny so that a few-hundred-node search restarts many times.
     auto run_restart_stress() -> void
     {
         print(cerr, "difference incremental restart stress:");

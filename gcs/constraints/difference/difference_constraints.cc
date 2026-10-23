@@ -134,8 +134,9 @@ auto DifferenceConstraints::prepare(Propagators &, State & initial_state, ProofM
         // d >= 0 and a root contradiction when d < 0. Half-reified it is
         // vacuous when d >= 0 and says `!cond' when d < 0 --- which has to be
         // *said*, since dropping it would let cond hold with the constraint
-        // violated. The propagator does that from the same row, so no
-        // initialiser is involved and a presolver could do the same.
+        // violated. The shared propagator's root initialiser says it, from the
+        // same row, for each DifferenceDisallowedCondition recorded below, and
+        // a presolver could do the same.
         auto degenerate = [&](Integer weight) {
             if (weight >= 0_i)
                 return;
@@ -208,16 +209,21 @@ auto DifferenceConstraints::define_proof_model(ProofModel & model, const State &
 
         // An aliased edge leaves the same variable in the sum twice with
         // opposite coefficients, and a two-constant edge leaves the sum empty:
-        // both render as a row whose left hand side is zero, which is exactly
-        // what 0 <= d says, and which VeriPB reads as trivially true or
-        // directly false according to d's sign.
+        // both render as a row whose left hand side is zero in value (the
+        // aliased one is written with both copies of the bits, which cancel),
+        // which is exactly what 0 <= d says, and which VeriPB reads as
+        // trivially true or directly false according to d's sign.
         //
         // A half-reified edge's row is emitted under HalfReifyOnConjunctionOf,
         // so it says `cond -> X - Y <= d' and carries a big-M term on `~cond'.
         // That term does not telescope, which is the point: it survives every
-        // sum as a residual and saturates into exactly the clause the propagator
-        // is entitled to learn. An unconditional edge passes nullopt and its row
-        // is byte-for-byte what it was before conditions existed.
+        // sum as a residual, and a saturate caps each coefficient at the degree.
+        // When every condition's coefficient reaches the degree, the line is the
+        // clause the propagator is entitled to learn, scaled by the degree
+        // (literally the clause when the degree is 1); when some coefficient
+        // falls short, it is strictly stronger. The closing RUP derives the
+        // clause either way. An unconditional edge passes nullopt and its row is
+        // byte-for-byte what it was before conditions existed.
         optional<HalfReifyOnConjunctionOf> half_reif;
         if (e.cond)
             half_reif = HalfReifyOnConjunctionOf{*e.cond};

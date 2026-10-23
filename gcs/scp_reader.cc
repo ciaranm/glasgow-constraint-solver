@@ -663,8 +663,9 @@ namespace
         // is the same constraint reached through a SmartTable decomposition; it
         // keeps its own keyword (which is also cake's spelling) and rebuilds as
         // the matching class, so the term round-trips. It does not chain: cake's
-        // rule wants an integer where this writes a variable, and the SmartTable
-        // desugaring is a much larger OPB than cake's rows.
+        // rule wants an integer where this writes a variable, and with a constant
+        // the proof cites SmartTable's own tuple flags, which cake's OPB (its
+        // tuple flags are x[_1][i]) never defines.
         if (terms.size() != 4)
             throw ScpReadError{op + " is (label " + op + " (vars...) val)"};
         auto vars = resolve_variable_list(variables, terms[2], ("the " + op + " variable list").c_str());
@@ -958,7 +959,7 @@ namespace
         -> void
     {
         // (label min_distance (X1 ... Xn) Z ((d...)...) [((r...)...)]): the Xi
-        // pick sites, Z is a lower bound on the pairwise distance between the
+        // pick sites, Z is the minimum pairwise distance between the
         // chosen sites, and the square matrix gives the distance between each
         // pair of sites. The optional trailing matrix is the per-pair minimum
         // *requirement*. The propagation strategy is deliberately absent: like

@@ -60,8 +60,7 @@ namespace gcs
          * donor, and so joined the graph as `cond -> x - y <= d`.
          *
          * Broken out rather than counted separately because these are the edges
-         * a disjunctive encoding contributes, which is where the paper's
-         * scheduling wins come from --- and because they are the ones whose
+         * a disjunctive encoding contributes --- and because they are the ones whose
          * donors must *not* be retired (see DifferenceLogic::disabling_lifted_donors).
          */
         std::size_t half_reified_edges_lifted = 0;
@@ -139,7 +138,7 @@ namespace gcs
      * A model does not have to be rewritten against DifferenceConstraints to get
      * the global propagation: post `1*x + -1*y <= d` as an ordinary
      * LinearLessThanEqual, or `x <= y + d` as an ordinary LessThanEqual, add
-     * this presolver, and the edges are lifted into one Bellman-Ford pass over
+     * this presolver, and the edges are lifted into one global propagator over
      * the whole graph. This is the hybrid of section 4.4
      * of Kletzander, Dekker, Schutt and Stuckey, "Global Difference Constraint
      * Propagation for Constraint Programming" (arXiv:2607.20022) --- and it is
@@ -204,7 +203,8 @@ namespace gcs
          * \brief Also retire the propagators of every *unconditional* donor
          * whose edge was lifted, so only the global propagator runs over them.
          *
-         * Ships off, because the hybrid is what the paper measures as best; this
+         * Ships off, keeping the hybrid (the paper describes it in section 4.4 but
+         * does not measure it against retiring the donors); this
          * exists so the alternative can be measured rather than assumed. It is
          * also a soundness tripwire, and a strong one: the global propagator
          * subsumes every unconditional donor's single-edge bound push, and
@@ -216,8 +216,11 @@ namespace gcs
          * were lifted. Subsumption fails for them in one direction: a
          * `LinearLessThanEqualIf` also infers `!cond` when its bounds make the
          * inequality impossible, and the global propagator makes no inference
-         * about a condition at all (that is the paper's `IncImp`, deliberately
-         * not implemented). Retiring one would lose that inference, which is a
+         * about a condition during search: neither the paper's section 5.4
+         * bounds check nor its `IncImp` is implemented, and root simplification
+         * fixes a condition only once, at the root, from the negative cycle its
+         * edge would close with the edges that hold there, rather than from
+         * bounds. Retiring one would lose that inference, which is a
          * completeness loss no proof could catch.
          */
         auto disabling_lifted_donors(bool = true) -> DifferenceLogic &;
@@ -227,9 +230,10 @@ namespace gcs
          * lifted graph.
          *
          * On by default, matching DifferenceConstraints, and for the same
-         * reason: the paper's section 6.3 measures the simplification stage as
-         * most of the difference-logic win. It is exactly the same code and the
-         * same proof shapes from either entry point --- it runs from an
+         * reason: the paper's section 6.4 measures the simplification stage as
+         * most of the difference-logic win on two of its three benchmarks. It is
+         * exactly the same code and the same proof shapes from either entry
+         * point --- it runs from an
          * initialiser installed alongside the shared propagator, so a model
          * this presolver builds a graph for can be refuted before search is
          * entered at all.

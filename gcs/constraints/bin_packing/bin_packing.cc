@@ -366,7 +366,7 @@ namespace
         logger->emit_rup_proof_line(WPBSum{} + 1_i * ! parent_s + 1_i * branch_neg + 1_i * succ_s >= 1_i, ProofLevel::Top);
     }
 
-    // Emit one bin's Top-level scaffolding. Mirrors knapsack.cc
+    // Emit one bin's Top-level scaffolding. Mirrors knapsack_upfront.cc
     // `emit_scaffolding` specialised to k=1.
     //
     // Order is load-bearing for RUP closure: per-coord forward chains are
@@ -805,9 +805,10 @@ namespace
         // the surviving layer-n set. Emit ~S for dead intermediates; for
         // each item i, if the "items[i] == b" branch is never taken in any
         // surviving path, infer items[i] != b. (Note: we don't infer
-        // items[i] == b from this pass — that direction needs a separate
-        // argument involving all OTHER bins, which the per-bin sweep can't
-        // see. Per-bin GAC is one direction only.)
+        // items[i] == b from this pass, though bin b's constraint alone
+        // forces it when every surviving path takes the "items[i] == b"
+        // branch: #1346. This pass is one direction only, so it stops short
+        // of per-bin GAC.)
         int var_number = static_cast<int>(n) - 1;
         for (auto layer = completed_layers.rbegin(); layer != completed_layers.rend() && next(layer) != completed_layers.rend();
             ++layer, --var_number) {
@@ -990,9 +991,10 @@ namespace
     // backward reachability restricted to the static DAG, where a terminal
     // counts only if loads[b]'s domain allows its load. Then prune
     // items[i] != b wherever the "in bin b" edge has no alive support, and cut
-    // loads[b] down to the alive terminals. That is per-bin GAC, and the same
-    // inferences the upfront sweep (propagate_bin) draws: the two strategies
-    // differ only in the proof. Before issue #995 this sweep read no load, so
+    // loads[b] down to the alive terminals. That is per-bin GAC short of
+    // committing an item (#1346), and reaches the same fixpoint as the upfront
+    // sweep (propagate_bin), though within a call the two can draw different
+    // inferences; the proofs differ. Before issue #995 this sweep read no load, so
     // it pruned nothing at all.
     //
     // Proof: see justify below. It does not rely on the reified state flags
@@ -1591,10 +1593,14 @@ namespace
             if (alpha > max_cap)
                 continue;
 
-            // An item smaller than the threshold buys less than a whole unit of
-            // a bin's divided capacity while costing c_i (|D_i| - 1), so it only
-            // pays its way once it is pinned to a bin -- which is exactly where
-            // that cost is zero, and so where it was admitted above.
+            // The counted set S(alpha) is the items of size at least alpha plus
+            // every item of positive size pinned to a bin (admitted above). That
+            // is a choice, not a dominance argument: a smaller free item can
+            // still raise each of its |D_i| bins' rounded overflows by up to one
+            // while costing c_i (|D_i| - 1), so counting every item gives a
+            // different bound, stronger on some states and weaker on others.
+            // Measured over search, neither choice dominates, so this one is
+            // kept (#1355).
             try {
                 for (; admitted < n && sizes[sc.by_size[admitted]].raw_value >= alpha; ++admitted) {
                     auto i = sc.by_size[admitted];
@@ -1643,7 +1649,10 @@ namespace
                     continue;
 
                 // Cheap necessary condition, so that the O(bins) work below is
-                // only done for items that could possibly give a prune. Taking h
+                // only done for items that could possibly give a prune. (In
+                // practice it passes every free item at a threshold where S holds
+                // only pinned items and DELTA is 0, and almost none of those
+                // prune: #1358.) Taking h
                 // out of S refunds at most c_h (|D_h| - 1) of the penalty and
                 // can only lower `base`, and putting it back into one bin raises
                 // that bin's term by at most c_h. So DELTA <= base - penalty +
@@ -1818,12 +1827,18 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
         sc.counted.assign(_items.size(), uint8_t{0});
         sc.domain_of.reserve(num_bins);
 
-        // DELTA is piecewise constant in the threshold with breakpoints at the
-        // item sizes, so the distinct sizes plus 1 (the energy end of the
-        // family) are the whole list, and neither it nor the size order depends
-        // on the state. Largest first, because S(alpha) only grows as alpha
-        // falls: that is what lets the sweep fold each item into the per-bin
-        // totals once for the whole list rather than once per threshold.
+        // The distinct sizes plus 1 (the energy end of the family). This is a
+        // sample of the useful thresholds, not all of them: DELTA is not
+        // piecewise constant between sizes, because each c_i and each bin's
+        // rounded overflow still change there. A complete list exists (1, every
+        // ceil(s/k) and every s+1, the largest size plus 1 included), but
+        // measured over search it changed about one search tree in twenty,
+        // never for the worse, at 1.5 to 19 times the instructions (geometric
+        // means, bounds consistency), so this cheaper list is kept (#1355).
+        // Neither the list nor the size order depends on the state.
+        // Largest first, because S(alpha) only grows as alpha falls: that is
+        // what lets the sweep fold each item into the per-bin totals once for
+        // the whole list rather than once per threshold.
         sc.alphas.clear();
         sc.alphas.push_back(1);
         for (const auto & sz : _sizes)

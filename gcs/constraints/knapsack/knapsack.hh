@@ -22,8 +22,8 @@ namespace gcs
      * every propagation call, at ProofLevel::Temporary; Upfront emits
      * paper-style scaffolding once at the search root, at ProofLevel::Top.
      * Both draw the same inferences and find the same solutions; PerCall's
-     * proofs verify 3.6–18× faster (so it is the default), Upfront's are
-     * 3–6× smaller. See dev_docs/knapsack.md.
+     * proofs verify faster on the in-tree benchmarks (so it is the default),
+     * Upfront's are smaller in bytes. See dev_docs/knapsack.md.
      *
      * \ingroup ProofStrategy
      */

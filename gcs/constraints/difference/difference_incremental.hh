@@ -228,7 +228,7 @@ namespace gcs::innards
      * \c forced marks nodes that must be seeded and expanded whatever the gate
      * says. That is how a newly activated arc gets its bound propagation: mark
      * its tail, and Dijkstra carries the tail's bound across the new arc and
-     * onwards. The paper's section 4.4 says to do this and its section 5.4's
+     * onwards. The paper's section 4.2 says to do this and its section 5.4's
      * during-search description omits it; transcribing the latter alone loses
      * every push a reification delivers.
      *

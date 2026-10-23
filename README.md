@@ -177,9 +177,10 @@ Useful options:
 For developer documentation on the XCSP3 frontend (the callbacks layer,
 the intension tree walker, the testing flow with cached expected outputs
 and ACE cross-checking, and the recipe for adding a new constraint
-binding), see [`dev_docs/xcsp.md`](dev_docs/xcsp.md). The corresponding
-support matrix across all three frontends is in
-[`dev_docs/frontend-support-matrix.md`](dev_docs/frontend-support-matrix.md).
+binding), see [`dev_docs/xcsp.md`](dev_docs/xcsp.md). Which constraints
+each frontend reaches is recorded per constraint family, in the frontend
+coverage table of each document indexed by
+[`dev_docs/constraints/README.md`](dev_docs/constraints/README.md).
 
 Using the MiniZinc Solver
 -------------------------
@@ -361,7 +362,10 @@ autotuner) without recompiling. Each is read once, on first use.
   ``ProofOptions`` passed to ``solve_with()`` does not set one explicitly (an option set in code
   takes precedence). Accepts ``Off``, ``Definitions``, ``Links``, ``Inferences``, or
   ``Backtracking`` (case-insensitive), or the numeric values ``0`` to ``4``; an unrecognised
-  value is ignored with a warning.
+  value is ignored with a warning. It applies to every proof the solver writes, including
+  those from ``fzn-glasgow``, the XCSP3 and ``.scp`` solvers and ``gcspy``, none of which
+  sets a level itself. Every level other than ``Off`` is work in progress and is not
+  expected to work in every case yet (see ``AssertionLevel`` in ``gcs/proof.hh``).
 
 * ``GCS_VERBOSE_LOGGING``: if set to anything, every proof log line is preceded by comment lines
   giving a C++ stacktrace of the solver code that emitted it, which is very useful for figuring

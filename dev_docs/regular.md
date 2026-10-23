@@ -3,8 +3,9 @@
 Working-design note for the `Regular` propagator. The high-level
 approach mirrors [`mdd.md`](mdd.md) (when written) and
 [`knapsack.md`](knapsack.md) (when written) — build the layered graph
-once in `prepare()`, emit the proof scaffolding (per-val backward
-chains, statically-dead-state lines) once at `ProofLevel::Top` via
+at the first propagator call and maintain it from then on, emit the
+proof scaffolding (per-val backward chains, statically-dead-state lines)
+once at `ProofLevel::Top` via
 `install_initialiser`, and run a slim per-call sweep that emits at
 most one cache-gated `~state[i][q]` line at `ProofLevel::Current`
 per state-death.
@@ -23,19 +24,25 @@ strategy is selected with the fluent
 | `Upfront` (default) | Upfront per-val backward chains + statically-dead-state lines at Top, then per-call cache-gated `~state[i][q]` lines for dynamic state-deaths. | `gcs/constraints/regular/regular.{cc,hh}` |
 | `Bacchus`          | Upfront Bacchus encoding (per-(i, q, v) transition extension variables + AL1s) derived from the natural OPB at Top; per-call propagator emits no proof. Deterministic automata only (not regex/NFA input). | `gcs/constraints/regular/regular_bacchus.{cc,hh}` |
 
-The OPB is identical across all three — automaton semantics, no propagator
-internals (see [Constraint definition](#constraint-definition) and
+The OPB says the same thing under all three — automaton semantics, no
+propagator internals, though `Bacchus` names its state flags and labels its
+forward chains differently (see [Constraint definition](#constraint-definition) and
 [OPB encoding](#opb-encoding) below). What differs is what each strategy
 derives in its initialiser at search root, and what its per-call
 propagator emits; the choice never changes the inferences drawn or the
-solutions found.
+solutions found. That includes the empty sequence, which each strategy
+checks for itself, since with no variables there is nothing for a
+propagator to fail on: `Upfront` and `PerCall` in the propagator (#254),
+`Bacchus` by installing the contradiction up front (#1329).
 
 The public `Regular` front-end (`gcs/constraints/regular/regular.{cc,hh}`)
 *is* the `Upfront` implementation; for `PerCall` and `Bacchus` its
 `prepare()` constructs the sibling implementation, installs it in full,
 and returns false so none of `Regular`'s own phases run. Those siblings
-are internal to the constraint (not part of the public API — they are no
-longer named in `gcs/constraints/regular.hh`). Everything posts
+are not meant to be posted directly (they are no longer named in
+`gcs/constraints/regular.hh`), though their headers are installed with the
+rest and a few tests post them (the large-domain audit lane,
+`integer_ranges_test`, `scp_reader_test`). Everything posts
 `Regular`; benchmarking picks a strategy with `with_proof_strategy(...)`.
 
 ## Default: `proof_strategy::Upfront`
@@ -235,7 +242,9 @@ derived constraints too.
 
 ### Cost
 
-The flags and lines grow as `n` times the live edges per layer. The
+The flags grow as `n` times the live edges per layer; the co-reachability
+lemmas and the rows over the run's flags add one line per live state per root
+value, whatever the edges. The
 pairwise at-most-one adds about the live states times the edges into
 them, per layer. Measured on 2026-10-05 with VeriPB 3.0.2, with a second,
 deterministic `Regular` posted to keep the solution count small:
@@ -252,7 +261,9 @@ deterministic `Regular` posted to keep the solution count small:
 ## `Regular`'s Top-level scaffolding
 
 `install_initialiser` emits, **once** at search root and only if proof
-logging is enabled:
+logging is enabled at `AssertionLevel::Off` (above `Off` it emits only an
+ambiguous automaton's canonical run, since the per-call inferences are
+asserted; #1332 is what that leaves out):
 
 1. **Per-val backward chains.** For each `(i, q', val)` with
    `val ∈ initial dom(vars[i])`:
@@ -274,8 +285,10 @@ no-op.
 
 ### `Regular`'s per-call propagator
 
-For each propagation call: build the per-call support graph (forward,
-backward), prune values whose support set is empty (`JustifyUsingRUP`),
+For each propagation call: build the support graph (forward, backward) on
+the first call, and after that update it by removing the edges on values
+that have left the domains; prune values whose support set is empty
+(`JustifyUsingRUP`),
 and emit a cache-gated `~state_i_is_q >= 1` at Current for each newly
 dead state. With the Top-level scaffolding plus the cached lines, both
 the state-death RUPs and the value-pruning RUPs close on the proof DB.
@@ -286,7 +299,13 @@ Following [Bacchus, "GAC via unit propagation," CP 2007], the
 `install_initialiser` derives a stronger scaffolding so that the
 per-call propagator can emit **no proof lines at all** — every
 value-pruning is `NoJustificationNeeded`, and VeriPB closes the
-eventual backtrack RUP by UP on the Top-level encoding.
+eventual backtrack RUP by UP on the Top-level encoding. That holds
+only for the whole of the encoding: Bacchus's property is for his
+encoding as published, which McIlree states as Encoding Procedure 5.2
+and #215 lists, and it includes three kinds of line that become
+**unit clauses** in edge cases. The scaffold once skipped all three,
+and then a backtrack after an unlogged pruning, or one of the
+scaffold's own incoming AL1s, was not RUP (#1331).
 
 Concretely, for every `(i, q, v)` with `T(q,v)` defined:
 
@@ -301,25 +320,56 @@ Concretely, for every `(i, q, v)` with `T(q,v)` defined:
    The complementary `state + ~state` pair is what unlocks the AL1
    RUPs below — VeriPB's UP collapses it during the RUP check.
 
-3. Outgoing AL1: `~state_i_is_q + ∑_{v ∈ dom_q} t[i][q][v] >= 1`
-   (one per `(i, q)` with `dom_q` non-empty).
+Then, in this order, all as RUP at `ProofLevel::Top`:
 
-4. Incoming AL1: `~state_{i+1}_is_q' + ∑_{(p, v) : T(p,v)=q'} t[i][p][v] >= 1`
-   (one per `(i+1, q')`).
+3. Last-layer units: `~state_n_is_q >= 1` for every non-final `q`
+   (EP 5.2 writes them as one line, `∑_{q ∉ F} ~state_n_is_q >= |Q \ F|`).
+   RUP because `state_n_is_q` falsifies the final states through the last
+   layer's exactly-one, and with them the OPB's accept row. Unit
+   propagation cannot get there from the accept row on its own once `F`
+   has two states or more.
 
-5. Variable-support AL1: `(vars[i] != v) + ∑_{q : T(q,v) def} t[i][q][v] >= 1`
-   (one per `(i, v)` with `v` in the initial domain).
+4. Outgoing AL1: `~state_i_is_q + ∑_{v ∈ dom_q} t[i][q][v] >= 1`, one
+   per `(i, q)`. RUP because, with `state_i_is_q` and every `t[i][q][v]`
+   false, the step-2 lines rule out each `v` with a transition and the
+   OPB's no-transition rows rule out every other value, which empties
+   `vars[i]`'s domain. When `q` has no transition at all the sum is empty
+   and the line is the unit `~state_i_is_q`.
 
-3–5 are emitted as RUP, and close via UP given the t-defs from step 1
-and the per-(q, v) pol lines from step 2.
+5. Incoming AL1: `~state_{i+1}_is_q' + ∑_{(p, v) : T(p,v)=q'} t[i][p][v] >= 1`,
+   one per `(i+1, q')`. RUP because `state_{i+1}_is_q'` falsifies the
+   rest of layer `i+1` through its exactly-one, so every `t[i][p][v]` that
+   does not lead to `q'` is false by its definition, and then every state
+   of layer `i` is false by its step-4 line, against layer `i`'s
+   exactly-one. That is why all the step-4 lines come first. When no
+   transition leads to `q'` the sum is empty and the line is the unit
+   `~state_{i+1}_is_q'`.
+
+6. Variable-support AL1: `(vars[i] != v) + ∑_{q : T(q,v) def} t[i][q][v] >= 1`
+   (one per `(i, v)` with `v` in the alphabet and some transition on
+   it). EP 5.2 has this line for every `v` (its line 12), so when no
+   state has a transition on `v` it is the unit `vars[i] != v` (RUP,
+   since `vars[i] = v` falsifies every state of layer `i` through the
+   no-transition rows). That unit is not written. No sweep has found a
+   proof that needs it, but nor is there an argument that none does.
+
+The step-4 lines need the domain of `vars[i]` to empty under unit
+propagation, which the bound pins give for a variable declared as a
+range. Above `AssertionLevel::Links` the tracker emits no such pins
+(#1330), so there a step-4 line, the no-outgoing unit among them, need
+not be RUP for a range-declared variable, and Inferences-level proofs
+over range-declared variables can still be rejected. (Variables declared
+from a value list are unaffected: their OPB has an at-least-one row over
+the values.) At `Off`, `Definitions` and `Links`, random sweeps of the repaired
+scaffold (#1331) find no rejected proof over either kind of declaration.
 
 ### `RegularBacchus`'s per-call propagator
 
 The graph maintenance (forward/backward sweeps, `decrement_outdeg` /
 `decrement_indeg`) is unchanged — still needed to *decide* which
 values to prune — but every `infer_not_equal` call uses
-`NoJustificationNeeded` and is passed `logger = nullptr`. No proof
-line is written per call.
+`NoJustificationNeeded` (it is passed the logger, which writes no line for
+it). No proof line is written per call.
 
 ## Benchmark (regular_random)
 

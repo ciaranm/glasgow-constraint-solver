@@ -56,7 +56,7 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
                 cxxopts::value<string>()->default_value("crystal_maze"))     //
             ("stats", "Print solve statistics")                              //
-            ("assert", "Use annotated assertions")                           //
+            ("assert", "Use annotated assertions (work in progress)")        //
             ;
 
         options.add_options()             //

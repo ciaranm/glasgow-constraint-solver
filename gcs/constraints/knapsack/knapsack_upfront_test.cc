@@ -113,7 +113,8 @@ auto run_knapsack_upfront_test(bool proofs, pair<int, int> valrange, const vecto
     check_results(proof_name, expected, actual);
 }
 
-// Dup-variable test: KnapsackUpfront with a duplicated handle in `vars` (or in
+// Dup-variable test: Knapsack under proof_strategy::Upfront with a
+// duplicated handle in `vars` (or in
 // `totals`). Two vars positions sharing a handle should be equivalent
 // to one position with summed coefficients; the PB encoding sums by
 // coefficient in normal form. Consistency isn't checked on dup runs;

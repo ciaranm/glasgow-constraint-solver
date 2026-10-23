@@ -22,7 +22,7 @@ namespace gcs::innards
      * / total bounds with a per-call `JustifyUsingRUP` that RUP-closes through
      * that scaffolding plus the natural per-equation OPB constraints. It draws
      * exactly the same inferences as the default per-call `Knapsack`; only the
-     * proof differs (3–6× smaller, but 3.6–18× slower to verify). See
+     * proof differs (smaller in bytes, but slower to verify). See
      * `dev_docs/knapsack.md`.
      */
     struct KnapsackUpfrontData;

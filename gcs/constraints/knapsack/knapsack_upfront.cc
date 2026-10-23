@@ -72,9 +72,10 @@ namespace
     // each node at layer i is a k-vector of partial sums. Layer 0 holds
     // exactly the zero vector; layer i+1 contains every state reachable
     // from some layer-i node by some value in initial dom(vars[i]) that
-    // doesn't exceed the per-coord cap (initial upper(totals[x]) or sum
-    // of max contributions, whichever is tighter). No backward filter:
-    // every forward-reachable node gets a Top-level reified flag so the
+    // doesn't exceed the per-coord cap (the sum of max contributions,
+    // deliberately not intersected with initial upper(totals[x]): see
+    // compute_caps). No backward filter: every forward-reachable node gets
+    // a Top-level reified flag so the
     // per-call proof chain has a handle to reference.
     struct Dag
     {

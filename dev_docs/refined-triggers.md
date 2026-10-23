@@ -15,7 +15,7 @@ is woken only when one of *those*
 literals becomes entailed, and is told exactly which fired. This document covers
 the engine mechanism (`gcs/innards/propagators.{hh,cc}`) and its first real
 client, the two-watched-literal `Nogoods` propagator
-(`gcs/constraints/nogoods.cc`).
+(`gcs/constraints/nogoods/nogoods.cc`).
 
 It is an *addition* to the coarse system, not a replacement: the two indexes live
 side by side, and a propagator can use either or both. A propagator that uses
@@ -226,14 +226,15 @@ trailed (cost proportional to writes) and aligned with the watch restore.
 
 ## The `Nogoods` two-watched-literal client
 
-`Nogoods` (`gcs/constraints/nogoods.cc`) is the first real client. It has two
+`Nogoods` (`gcs/constraints/nogoods/nogoods.cc`) is the first real client. It has two
 paths, selected by a `bool _refined`:
 
 - **scan** (`install_scan_nogoods`) — the original: coarse `on_change` on every
   nogood variable, rescan the whole store per wake. Kept as the differential
-  oracle, and used by the growable-store constructor only when
-  `GCS_LEARNED_NOGOODS_SCAN` is set.
-- **refined** (`install_refined_nogoods`, the default) — two-watched-literal over
+  oracle. It is the growable-store constructor's default, but `solve_with` asks
+  for it on the learned store only when `GCS_LEARNED_NOGOODS_SCAN` is set.
+- **refined** (`install_refined_nogoods`, the fixed-store constructor's default
+  and the learned store's) — two-watched-literal over
   refined watches.
 
 ### How 2WL maps onto refined watches
@@ -244,8 +245,11 @@ payload = the clause index. The two watched positions are stored in
 
 - **Catch-up.** Watches are set up at a *root re-propagation* — the only time the
   propagator runs with an empty fired set (`propagate(nullopt)`, depth 0), which
-  the restart loop re-enters once per pass. For the fixed store this happens once;
-  for the growable store it picks up the nogoods learned since the last pass. A
+  the restart loop re-enters once per pass, except under optimisation: a pass
+  after the incumbent has improved seeds its root from the objective bound
+  instead, so its catch-up waits for a later pass (#1390). For the fixed store
+  this happens once; for the growable store it picks up the nogoods learned since
+  the last pass. A
   high-water mark in `watch_state(0)` says how far it has got; it is kept there
   rather than beside the watches so that a backtrack that removes the watches
   also resets it (see the `AutoTable` pitfall below). A clause
@@ -427,8 +431,11 @@ For anyone changing this code:
   three clients here do. `NegativeTable` and the fixed-store `Nogoods` once kept
   theirs in a `shared_ptr<size_t>`, and with an `AutoTable` attached both
   accepted a solution their constraint forbids (issue #1106).
-- The conversion is **semantics-preserving**: scan and refined must explore the
-  identical search tree and learn the identical nogoods.
+- The conversion is meant to be **semantics-preserving**: scan and refined must
+  explore the identical search tree and learn the identical nogoods. That holds
+  for satisfaction and enumeration under every brancher tested so far but
+  dom/wdeg (#1392); under optimisation the tree can differ (#1390), and the
+  proofs' inference lines can differ with the propagation order in any case.
 
 ## Testing
 
@@ -478,7 +485,7 @@ inject the bug, confirm a differential catches it, before trusting the check.
   `Triggers::refined`.
 - `gcs/innards/propagators.cc` — the watch index, firing, masks, restore trail,
   `watch_state`.
-- `gcs/constraints/nogoods.cc` — `install_scan_nogoods` / `install_refined_nogoods`.
+- `gcs/constraints/nogoods/nogoods.cc` — `install_scan_nogoods` / `install_refined_nogoods`.
 - `gcs/constraints/logical/logical.cc` — `propagate_watched_clause`, and the
   threshold that chooses it over the scan.
 - `benchmarks/clause_watch_bench` — the benchmark behind that threshold.

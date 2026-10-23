@@ -25,11 +25,19 @@ namespace gcs
      *
      * A \c cond makes the edge *half-reified*: the constraint holds only when
      * the condition does, and the edge takes part in the graph only while the
-     * condition currently holds. Nothing is inferred in the other direction ---
-     * the condition is never fixed from the graph. That is the paper's
-     * `IncImp`, which its own configuration study says to leave off, so it is
-     * deliberately absent; posting `b -> x - y <= d` on its own therefore leaves
-     * `b` for the search (or for some other constraint) to decide.
+     * condition currently holds. During search nothing is inferred in the
+     * other direction: the paper's `IncImp`, which its own configuration study
+     * says to leave off, is deliberately absent, and nor is its section 5.4
+     * bounds check (an edge the bounds falsify fixes its condition false)
+     * implemented. There are two exceptions, both at the root: a degenerate
+     * edge, whose operands are the same variable (directly or through offset
+     * views) or both constants, so that it says `cond -> 0 <= d'` for `d'` the
+     * weight with the offsets folded in, has its condition fixed false when
+     * `d' < 0`; and simplification (on by default) fixes a condition false
+     * whose edge would close a negative cycle with the edges that already hold
+     * there. Otherwise posting `b -> x - y <= d` over two distinct variables
+     * on its own leaves `b` for the search (or for some other constraint) to
+     * decide.
      *
      * \sa DifferenceConstraints
      * \ingroup Constraints
@@ -59,9 +67,11 @@ namespace gcs
      * work, because bounds crawl along the graph one propagator wake at a time
      * (the paper's Example 8, measured in `examples/difference_chain`).
      *
-     * This propagator is bounds consistent for the system as a whole: it runs
-     * Bellman-Ford from the current lower bounds over the graph and from the
-     * current upper bounds over its reverse, and pushes every bound the system
+     * This propagator is bounds consistent on the node variables with respect to
+     * the edges whose conditions currently hold (so for the system as a whole
+     * when every edge is unconditional): from the current lower bounds over the
+     * graph and from the current upper bounds over its reverse, by default
+     * incrementally (see incrementally()), it pushes every bound that sub-system
      * implies in one pass. It reads and writes bounds only, so it never removes
      * an interior value, and gcs domains may have holes where the paper's
      * Theorem 2 assumes ranges.
@@ -70,11 +80,14 @@ namespace gcs
      * an edge participates only while its condition currently holds, and every
      * inference made using it cites that condition. Inference in the other
      * direction (fixing a condition because its edge would close a negative
-     * cycle --- the paper's `IncImp`) is deliberately not implemented, since the
-     * paper's own configuration study says to leave it off. Note also the
-     * paper's caveat in its section 4.1: its "this is a domain propagator"
-     * claim assumes no Boolean appears in two difference constraints, which a
-     * disjunctive encoding (`b -> i before j`, `!b -> j before i`) violates by
+     * cycle --- the paper's `IncImp`) is made only once, at the root, by
+     * simplifying_at_root(), and for a degenerate edge by the root initialiser
+     * regardless (see DifferenceEdge); during search it is deliberately not
+     * implemented, since the paper's own configuration study says to leave it
+     * off. Note also the paper's caveat in its section 4.1: its "this is a
+     * domain propagator" claim assumes no Boolean appears in two difference
+     * constraints, which a disjunctive encoding (`b -> i before j`,
+     * `!b -> j before i`) violates by
      * construction. That is a *completeness* caveat only; soundness is
      * unaffected, and this propagator is bounds consistent rather than domain
      * consistent in any case.
@@ -147,7 +160,7 @@ namespace gcs
          * certify), which conditions would close a negative cycle if they held
          * (they are fixed false, which is an inference and is proved), and which
          * nodes are left with no edges. It is the paper's section 5.2, and its
-         * section 6.3 measures it as most of the difference-logic win --- but
+         * section 6.4 measures it as most of the difference-logic win --- but
          * that is a claim about their solver, so it can be switched off here and
          * checked rather than inherited.
          */
@@ -158,9 +171,10 @@ namespace gcs
          * it runs.
          *
          * Shared, not copied, so it survives Problem::post cloning the
-         * constraint, and it is filled in during the first propagation rather
-         * than at post time. A stage that silently did nothing would pass every
-         * other check there is, so these counters are what the tests assert on.
+         * constraint, and it is filled in by the root initialiser, before
+         * search, rather than at post time. A stage that silently did nothing
+         * would pass every other check there is, so these counters are what the
+         * tests assert on.
          */
         auto reporting_simplification_to(std::shared_ptr<DifferenceSimplificationStats>) -> DifferenceConstraints &;
 
@@ -170,11 +184,15 @@ namespace gcs
          *
          * The incremental route maintains a potential function and runs
          * Dijkstra on the reduced-cost graph over just the bounds that have
-         * moved, which is `O(n log n + m)` against the from-scratch route's
-         * `O(n.m)`. The two reach the identical per-call fixpoint, so
-         * `recursions` and the solution sequence must come out the same either
-         * way; that equality is the sharpest test there is of the incremental
-         * route, because a lost inference is invisible to proof logging.
+         * moved, which with its binary heap and lazy deletion is
+         * `O(n + (|Vl| + R) log(n + R))` a pass, for `Vl` the nodes it starts
+         * from (those whose bounds moved, those an arc activation forces in,
+         * and every node on the first call) and `R` the arcs it reaches,
+         * against the from-scratch route's `O(n.m)`.
+         * The two reach the identical per-call fixpoint, so `recursions` and
+         * the solution sequence must come out the same either way; that
+         * equality is the sharpest test there is of the incremental route,
+         * because a lost inference is invisible to proof logging.
          */
         auto incrementally(bool = true) -> DifferenceConstraints &;
 

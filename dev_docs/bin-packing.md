@@ -23,14 +23,16 @@ items in `0..num_bins − 1`.
 
 The `with_consistency(...)` fluent setter selects the propagation
 strength: `consistency::GAC` (the default) runs the Stage 2 bounds pass
-followed by the Stage 3 per-bin DAG sweep (per-bin GAC); `consistency::BC`
-runs the Stage 2 bounds pass alone (the cheaper option, for when per-bin
-capacity is much larger than the number of items).
+followed by the Stage 3 per-bin DAG sweep (per-bin GAC on the items' bin
+values and on the loads, short of committing an item to a bin, #1346);
+`consistency::BC` runs the Stage 2 bounds pass alone (the cheaper option,
+for when per-bin capacity is much larger than the number of items).
 
 The `with_proof_strategy(...)` fluent setter selects the Stage 3
 *proof-emission* strategy (only meaningful under `consistency::GAC`). It
-changes only the proof, never the set of inferences drawn or the
-solutions found. (Until issue #995 that was not so: the per-call sweep
+changes the proof and the Stage 3 code path, never the fixpoint reached or
+the solutions found, though within one call the two can draw different
+inferences. (Until issue #995 that was not so: the per-call sweep
 read no load, and in fact drew no Stage 3 inference at all.
 `bin_packing_test` now runs both strategies on every case and requires
 their search trees to match.)
@@ -67,8 +69,9 @@ equations.
 
 Stages 1, 2, 3 and 4 are shipped. Stage 1 is documented for
 completeness; Stage 2 strictly subsumes it. Stage 3 sits on top of
-Stage 2 as a GAC-strength (per bin, not joint) pass, and Stage 4 (#209)
-is the opt-in cross-bin pass that reaches what no single bin can see.
+Stage 2 as a GAC-strength pass (per bin, not joint, and short of
+committing items, #1346), and Stage 4 (#209) is the opt-in cross-bin pass
+that reaches what no single bin can see.
 
 ### Stage 1 — checker (superseded)
 
@@ -127,10 +130,10 @@ bin's sweep don't update its own `floor_b` / `ceiling_b` mid-sweep;
 the framework re-fires the propagator on any domain change and the
 next call catches anything missed.
 
-`bounds_only=true` runs only Stage 2 (no Stage 3 DAG); leave it clear
-(the default) to add Stage 3 on top.
+`with_consistency(consistency::BC{})` runs only Stage 2 (no Stage 3 DAG);
+the default, `consistency::GAC`, adds Stage 3 on top.
 
-### Stage 3 — per-bin partial-load DAG, per-bin GAC
+### Stage 3 — per-bin partial-load DAG, per-bin GAC short of commitment
 
 For each bin `b` a layered DAG: layer `i` corresponds to item `i`,
 nodes are partial-load values `w`, edges are
@@ -157,16 +160,16 @@ via `create_proof_flag_reifying`:
 - `S_{b,i,w}` ⇔ `g_up_{b,i,w} + g_dn_{b,i,w} ≥ 2`  (sum exactly w)
 
 The conjunction-of-sub-states pattern is from Demirović et al., CP
-2024 §4 ("Knapsack as a Constraint"; PDF at
+2024 §3.3 ("Knapsack as a Constraint"; PDF at
 `ciaranm.github.io/papers/cp2024-dp.pdf`), specialised to one
 partial-sum dimension. For Knapsack the conjunction adds further
 sub-states (`P_↑/↓` over profit) — same shape, more legs. Both proof
 strategies (below) define exactly these flags at Top; they differ only
 in how much aggregation is pre-derived versus left to VeriPB's unit
-propagation per call. The strategy is picked by the `upfront_proof`
-constructor flag.
+propagation per call. The strategy is picked by
+`with_proof_strategy(...)`.
 
-**Default strategy — per-call (`upfront_proof = false`).** The
+**Default strategy — per-call (`proof_strategy::PerCall`).** The
 initialiser emits nothing beyond the flag definitions above. The
 per-call sweep (`run_stage3_for_bin`) recomputes the alive `(i, w)`
 nodes under the current item domains (forward ∩ backward reachability
@@ -221,7 +224,7 @@ it does not once a prune needs subset-sum reasoning: sizes `{1,2,2,2,2}`
 into a load of 4. It had never been caught, because the sweep never
 pruned anything.
 
-**Opt-in strategy — upfront (`upfront_proof = true`).** On top of the
+**Opt-in strategy — upfront (`proof_strategy::Upfront`).** On top of the
 flag definitions the initialiser derives the full chain scaffolding
 (all at `Top`):
 
@@ -287,10 +290,10 @@ agreed to 0.01s:
 | 7 | 9it 4bin pigeonhole capa | 1.64 MB | 7.31 MB | 0.21s | 1.11s | 0.061s | 0.194s |
 | 8 | 9it 4bin pigeonhole load | 2.42 MB | 50.4 MB | 0.61s | 3.01s | 0.065s | 0.566s |
 
-Both strategies search the same tree on every instance (they draw the
-same inferences). Upfront proofs are 4.5–21× larger and 2.8–5.6× slower
+Both strategies search the same tree on every instance (they reach the
+same fixpoint). Upfront proofs are 4.5–21× larger and 2.8–5.6× slower
 to verify, so per-call is the default. Upfront is an off-by-default opt-in
-(`upfront_proof = true`, or `--upfront` in the bench), kept for
+(`proof_strategy::Upfront`, or `--upfront` in the bench), kept for
 robustness and A/B measurement. The upfront design is the one that
 generalises to the #200 unified path-DAG framework, which is why it is
 retained rather than deleted. Worth revisiting if a future model makes
@@ -311,7 +314,8 @@ BinPacking (60s, 3 reps), no best objective got worse and one got better
 (2022 team-assignment, 2884 → 2887). Nodes per minute rose on most:
 2016 gbac +15%, steelmillslab +14–24%, 2022 team-assignment 2.6×.
 
-**Per-bin GAC, not joint GAC.** Each bin's DAG sees only its own
+**Per-bin GAC (short of commitment, #1346), not joint GAC.** Each
+bin's DAG sees only its own
 constraint; cross-bin interactions that route an item elsewhere are
 invisible. Worked example:
 `items=[(0,1),(0,1),(0,1)] sizes=[1,2,2] caps=[3,2]` has 2 solutions
@@ -326,7 +330,7 @@ envelope, and does prune this example.
 reification axioms. For `n=20` items of total size 20, 5 bins, ~6 000 flags +
 ~12 000 axiom lines after static reduction — workable. For `n=50` items
 of total size 100, 10 bins it can climb into the high tens of thousands;
-`bounds_only=true` is the user-visible escape hatch. There is no
+`consistency::BC` is the user-visible escape hatch. There is no
 general "warn when a constraint's OPB footprint gets large" mechanism
 in the solver yet; documented here as a known sharp edge.
 
@@ -387,16 +391,25 @@ the threshold and `R_b` counts how many of them a bin cannot take, so
 which unit propagation cannot do at all, and which is why the division
 step is load-bearing rather than cosmetic. The rounding in between is
 what the Martello–Toth L2 bound is made of, and Shaw §4 is where bin
-packing gets it. `DELTA` is piecewise constant in `α` with breakpoints at
-the item sizes, so the distinct sizes plus 1 are the whole family.
+packing gets it. The code tries `α = 1` and the distinct sizes, which is a
+sample of the family rather than all of it: `DELTA` is not piecewise
+constant between sizes, because each `c_i` and each bin's `R_b` still change
+there. #1355 has an instance that only `α = 3` prunes. A complete list
+exists (1, every `⌈s / k⌉` and every `s + 1`, the largest size plus 1
+included), and it is never weaker, but measured over search on BPPLIB and
+generated instances it changed about one search tree in twenty among those
+every list finished, at 1.5 to 19 times the instructions (geometric means,
+bounds consistency), so the cheaper sample is kept.
 
 **Which items are counted.** `S(α)` is the items with `sizes[i] >= α`,
 plus every item of positive size already pinned to a bin, however small.
-An item below the threshold buys less than a whole unit of a bin's divided
-capacity while costing `c_i (|D_i| - 1)`, so it only pays its way once
-`|D_i| = 1` — which is exactly where that cost is zero. This is the
-domain-aware form of the threshold rule L2 uses: the classical bound has
-no domains to be aware of, and `|D_i| - 1` is where ours reads them.
+This is the domain-aware form of the threshold rule L2 uses: the classical
+bound has no domains to be aware of, and `|D_i| - 1` is where ours reads them.
+Counting only these is a choice rather than a consequence: an item below the
+threshold can still raise each of its `|D_i|` possible bins' `R_b` by up to
+one while costing `c_i (|D_i| - 1)`, so counting every item gives a different
+bound, stronger on some states and weaker on others. Measured over search,
+neither choice dominates, so this one is kept (#1355).
 
 A constant item of positive size is pinned, so it is counted, but it gets
 no at-least-one row, and no term in a bin's weakening or slack line. There
@@ -444,7 +457,11 @@ threshold list rather than recomputed: `S(α)` only grows as `α` falls, so
 the thresholds are walked largest-first and each item folds into the
 totals once. The shaving scan is gated on `base - penalty + c_h |D_h| >=
 1`, a necessary condition that costs `O(1)` per item, so the `O(bins)`
-work happens only where a prune is possible.
+work happens only where a prune is possible. In practice that is far more
+often than a prune happens: at every threshold where `S(α)` holds only
+pinned items, `DELTA` is 0 and the condition passes for every free item,
+and almost none of those prune; under bounds consistency this can be most
+of the run's time (#1358).
 
 **Benchmark.** `bin_packing_bench`, default (per-call) Stage 3 proofs,
 `--cardinality` against the default, one core of an otherwise idle
@@ -557,11 +574,11 @@ rather than argument-shaped, so every counted item's row goes in.
   so its state flags belong in the OPB. `BinPacking`'s natural
   definition is the sum equations, so its per-bin DAGs (when added in
   Stage 3) belong in the proof scaffolding, not the OPB.
-- **`Knapsack`** — the opt-in `KnapsackUpfront` variant is retrofitted
+- **`Knapsack`** — its opt-in `proof_strategy::Upfront` is retrofitted
   to the same `install_initialiser` + Top-level scaffolding pattern
   Stage 3 uses here, generalised to *k* partial-sum coordinates. See
-  [`knapsack.md`](knapsack.md). The default `Knapsack` remains the
-  per-call DP implementation (it verifies faster); `KnapsackUpfront`
+  [`knapsack.md`](knapsack.md). The default `Knapsack` strategy remains the
+  per-call DP (it verifies faster); `Upfront`
   is the smaller-proof opt-in.
 - **#200 unified framework** — the layered-DAG abstraction (per-layer
   node counts, transitions, accepting terminals) is the dispatch point.

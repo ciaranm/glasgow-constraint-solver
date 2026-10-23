@@ -13,7 +13,8 @@ namespace gcs
 {
     /**
      * \brief What the difference-logic root simplification stage did, filled in
-     * the first time the propagator runs.
+     * when the stage runs, from the root initialiser installed alongside the
+     * propagator.
      *
      * A simplification stage that silently does nothing preserves the solution
      * set, adds no OPB content, leaves every proof verifying and leaves every
@@ -70,7 +71,8 @@ namespace gcs
         std::size_t conditions_fixed = 0;
 
         /// Nodes left with no incident edge once the above was done, and so
-        /// dropped from the relaxation loop and from the round bound.
+        /// dropped from the round bound. Only from that: the propagator still
+        /// seeds and scans them and is woken by their bounds (#1385).
         std::size_t isolated_nodes_removed = 0;
 
         /// Zero-weight cycles found, and how many nodes lie on one. Unifying
@@ -201,8 +203,12 @@ namespace gcs::innards
      * for a presolver-built system, and what makes it directly unit-testable.
      *
      * Bellman-Ford from the paper's imaginary source `v0` (a zero-weight edge to
-     * every node) gives the potentials, `n` Dijkstras on the reduced-cost graph
-     * give the distances. That is `O(n^2 log n + nm)`, paid once.
+     * every node) gives the potentials, up to `n` Dijkstras on the reduced-cost
+     * graph give the distances. The Dijkstras use a binary heap with lazy
+     * deletion, holding an entry per improving relaxation, so each is
+     * `O((n + m) log(n + m))` and the whole is `O(n.m log(n + m))`, paid once
+     * per round; `log(n + m)` is `O(log n)` only while the parallel edges are
+     * bounded by a polynomial in `n`.
      *
      * \ingroup Innards
      */

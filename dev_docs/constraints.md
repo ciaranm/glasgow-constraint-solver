@@ -416,10 +416,11 @@ against a constant `c` is the small case — instantiation plus `x != c` is the
 whole of what it reads, where `on_change` woke it once per value in `x`'s domain
 (issue #889) — and the learned-nogood store is the large one.
 
-A refined-watch literal puts its variable in the propagator's **scope** (so
-degree and adjacency are unchanged) without arming a coarse trigger; use
+A refined-watch literal declared in `Triggers::refined` puts its variable in the
+propagator's **scope** (so degree and adjacency are unchanged) without arming a
+coarse trigger; one armed at run time with `ctx.watch` does not. Use
 `Triggers::scope_only` to declare scope for a variable that neither mechanism
-mentions.
+mentions, and for every variable a propagator only ever watches at run time.
 
 ### install_initialiser
 
@@ -592,6 +593,13 @@ by `AssertionLevel`, in which inferences are asserted under their reason for
 an external justifier rather than fully justified. In normal proofs-off mode
 the hint is inert and the output is byte-identical. See `abs/hints.hh` for
 the minimal shape.
+
+Assertion mode, and every `AssertionLevel` above `Off`, is work in progress:
+neither the levels nor the justifier they serve are fully designed or
+implemented yet, so some proofs written above `Off` are expected to fail. A
+proof that fails only above `Off` is not treated as a bug for now. A fix that
+is right at `Off` does not need extra per-level code to keep proofs at the
+higher levels passing; say in its pull request what moves there, if anything.
 
 **Development scaffolding only --- never merge it:**
 `AssertRatherThanJustifying` is a "trust me" step that bypasses the

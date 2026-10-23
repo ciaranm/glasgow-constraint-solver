@@ -100,8 +100,8 @@ namespace gcs
          * \brief Constrain that the sequence of variables is accepted by a
          * possibly non-deterministic automaton: transitions[q] maps each value
          * to the set of states reachable from q on it, and state 0 is the
-         * start. proof_strategy::Bacchus requires every such set to have at
-         * most one member.
+         * start. proof_strategy::Bacchus requires every such set to have
+         * exactly one member (it refuses an empty set as well as a larger one).
          */
         explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
             std::vector<long> final_states);

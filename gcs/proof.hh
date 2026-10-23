@@ -33,6 +33,13 @@ namespace gcs
     /**
      * \brief Mode setting for annotated assertions. Each option involves successively less
      * justification.
+     *
+     * Every level other than Off is work in progress. The levels are meant for an
+     * external justifier, which fills in what is asserted and is itself still being
+     * written, and the levels are not yet fully designed or implemented. So a proof
+     * written above Off is not expected to work in every case yet: VeriPB may reject
+     * it, and some constraints do not support every level. Use Off, the default, for a
+     * proof that is checked end to end.
      */
     enum class AssertionLevel
     {
@@ -69,7 +76,8 @@ namespace gcs
         AssertionLevel assertion_level = AssertionLevel::Off;
         bool assertion_level_set_explicitly = false; ///< Was assertion_level set in code (so it overrides the env var)?
 
-        /// Write annotated assertions instead of full justifications.
+        /// Write annotated assertions instead of full justifications. Work in
+        /// progress, not expected to work in every case yet: see AssertionLevel.
         ProofOptions & set_assertion_level(AssertionLevel a = AssertionLevel::Inferences)
         {
             assertion_level = a;

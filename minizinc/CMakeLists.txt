@@ -130,6 +130,12 @@ set_tests_properties(minizinc-alldifferentexcept-shapes PROPERTIES SKIP_RETURN_C
 add_test(NAME minizinc-among COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ amongtest true true)
 set_tests_properties(minizinc-among PROPERTIES SKIP_RETURN_CODE 66)
 
+# Among with how_many among the positions over a wide holey domain: the lower
+# bound's justification used to read the state after its own push, and VeriPB
+# rejected the proof (issue #1308).
+add_test(NAME minizinc-amongaliased COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_among $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ amongaliased true true)
+set_tests_properties(minizinc-amongaliased PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-arraybooland COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ arraybooland true true)
 set_tests_properties(minizinc-arraybooland PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -210,6 +216,16 @@ set_tests_properties(minizinc-subgraph PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-dag COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_dag $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dagtest true true)
 set_tests_properties(minizinc-dag PROPERTIES SKIP_RETURN_CODE 66)
 
+# dag and the four-argument subgraph over an empty node set are true, so these
+# models keep the solutions of their free variable (#1303). Nothing reaches a
+# builtin, so there is no --fzn-pattern; --reference-std is the standard
+# library's reading of the empty case.
+add_test(NAME minizinc-dag-empty COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ dagempty true true)
+set_tests_properties(minizinc-dag-empty PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-subgraph-empty COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ subgraphempty true true)
+set_tests_properties(minizinc-subgraph-empty PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-tree COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_tree $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ treetest true true)
 set_tests_properties(minizinc-tree PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -243,6 +259,12 @@ set_tests_properties(minizinc-countaliasedboth PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-countaliasedvoi COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_count_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countaliasedvoi true true)
 set_tests_properties(minizinc-countaliasedvoi PROPERTIES SKIP_RETURN_CODE 66)
 
+# how_many is the value of interest, and the array pruning used to decide on
+# bookkeeping from before the how_many bound that also pruned the value of
+# interest: a wrong UNSATISFIABLE (issue #1304).
+add_test(NAME minizinc-countaliasedsurvivor COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_count_eq $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countaliasedsurvivor true true)
+set_tests_properties(minizinc-countaliasedsurvivor PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-cumulative COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativetest false true)
 set_tests_properties(minizinc-cumulative PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -275,10 +297,10 @@ set_tests_properties(minizinc-disjunctive-strict-opt PROPERTIES SKIP_RETURN_CODE
 # The difference-logic presolver is invisible to solution equivalence and to
 # proof verification alike, so this one also asserts on its counters: four
 # lifted edges over four nodes, and the two constraints that are not
-# difference-shaped classified rather than quietly ignored. The zero says
-# all four arrived as `int_lin_le`, which is the whole reason this needs no
-# predicate of its own; a flattener that started emitting `int_le` would
-# still lift four edges, but they would be counted here instead.
+# difference-shaped classified rather than quietly ignored. All four arrive
+# as `int_lin_le`, which is the whole reason this needs no predicate of its
+# own, and the reader recovers each as a LessThanEqual, so they are counted
+# as comparison edges (below).
 #
 # These names are also the contract between ComponentStats::entries() and the
 # generic %%%mzn-stat loop in fzn_glasgow.cc: each is component_name() and an
@@ -511,6 +533,27 @@ set_tests_properties(minizinc-nvalue PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-regex COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ regex true true)
 set_tests_properties(minizinc-regex PROPERTIES SKIP_RETURN_CODE 66)
+
+# Start states other than 1 (#1328), which fzn-glasgow has to renumber to
+# Regular's state 0 consistently across the table's rows, its targets and the
+# final states. The shapes model packs four automata, and --fzn-count checks all
+# four reached the builtin. The other two are empty sequences whose start state
+# is final and state 1 is not, and the other way round.
+add_test(NAME minizinc-regularstart COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-count 4 glasgow_regular --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ regularstart true true)
+set_tests_properties(minizinc-regularstart PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-regularstartempty COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_regular --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ regularstartempty true true)
+set_tests_properties(minizinc-regularstartempty PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-regularstartemptynot COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --unsatisfiable --fzn-pattern glasgow_regular --reference-std $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ regularstartemptynot true true)
+set_tests_properties(minizinc-regularstartemptynot PROPERTIES SKIP_RETURN_CODE 66)
+
+# A reified regular with a start state other than 1, as MiniZinc 2.10's
+# fzn_regular_reif flattens it: a plain glasgow_regular over two extra states,
+# with q0 passed through. 2.9 refuses a reified regular for every solver, so
+# this is hand-written JSON (taken from 2.10.1's output) rather than a model
+# whose flattening would depend on the version.
+add_test(NAME minizinc-regularreifstart-fzn COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ regular_reif_start)
 
 add_test(NAME minizinc-nurses COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ nurses true false)
 set_tests_properties(minizinc-nurses PROPERTIES SKIP_RETURN_CODE 66)

@@ -21,7 +21,7 @@ Code map (cited throughout):
 - `gcs/variable_weighting.{hh,cc}` — `WeightingState`, `VariableWeighting` and
   the concrete schemes.
 - `gcs/innards/conflict_observer.hh` — the `ConflictObserver` seam.
-- `gcs/constraints/nogoods.{hh,cc}` — the `Nogoods` constraint and `NogoodStore`.
+- `gcs/constraints/nogoods/nogoods.{hh,cc}` — the `Nogoods` constraint and `NogoodStore`.
 - `gcs/search_heuristics.{hh,cc}` — `variable_order::dom_wdeg`, `branch_with`,
   the value generators.
 
@@ -55,7 +55,7 @@ do {
     search_result = solve_with_state(0, ..., restart, nogood_store.get(), {}, ...);
     if (search_result == SearchResult::RestartCutoffHit) {
         ++stats.restarts;
-        if (auto observer = propagators.conflict_observer())
+        for (auto & observer : propagators.conflict_observers())
             observer->on_restart();          // weighting decays/smooths
         restart_schedule->advance();         // grow the cutoff
         restart.cutoff = restart_schedule->current_cutoff();
@@ -66,7 +66,8 @@ do {
 Completeness holds because the cutoff grows without bound **and** the recorded
 nogoods stop already-refuted regions being re-explored: a later pass searches
 differently (weights and the incumbent objective bound persist), and the growing
-Luby cutoff eventually exceeds the whole tree so a final pass completes.
+Luby cutoff eventually exceeds the whole tree so a final pass completes. (At a
+scale of 0 every cutoff is 0 and no pass completes: #1391.)
 
 ### RestartSchedule
 
@@ -97,8 +98,8 @@ side and the read side reach the live weighting by two different paths.
 ### The ConflictObserver write seam
 
 `gcs/innards/conflict_observer.hh`. An abstract `ConflictObserver` is borrowed by
-`Propagators` for the duration of a search (`set_conflict_observer` /
-`conflict_observer`). Whenever a propagator wipes out a domain,
+`Propagators` for the duration of a search (`add_conflict_observer` /
+`conflict_observers`). Whenever a propagator wipes out a domain,
 `Propagators::propagate` calls
 
 ```cpp
@@ -126,7 +127,7 @@ propagation event and this keeps the seam in one place.
   `ca.cd` (`1 / (|fut| * (1 + |dom|))`) is **the default**; its degree-at-root
   equals classic, so selector tie-break tests are unaffected.
 - `ConflictHistorySearch` — Habet & Terrioux: recency-weighted ERWA scores with
-  `on_restart` smoothing (inert until restarts actually fire).
+  `on_restart` smoothing at each restart.
 
 `DenseConstraintWeighting` factors the dense storage and the read/snapshot/load
 machinery shared by the global schemes; `RefinedWeighting` is local so it stores
@@ -147,7 +148,7 @@ exchange) and proof-mined weight seeding possible without it being built yet.
 `variable_order::dom_wdeg(problem | vars, scheme = ca.cd, initial = nullopt)`
 returns a `BranchVariableHeuristic` — a `function` called **once per search**
 that creates the live weighting, seeds it via `load` if an initial state was
-given, attaches it with `propagators.set_conflict_observer`, and returns a
+given, attaches it with `propagators.add_conflict_observer`, and returns a
 selector that captures it. (Branchers used to be rebuilt per node, which would
 have wiped stateful weights; `solve_with` now builds once and reuses the
 selector.) The comparison is `dom(a)·W(b) < dom(b)·W(a)` in `double`, with
@@ -156,19 +157,19 @@ selector.) The comparison is `dom(a)·W(b) < dom(b)·W(a)` in `double`, with
 
 ## The Nogoods constraint
 
-`gcs/constraints/nogoods.hh`. A nogood is a forbidden conjunction of decision
+`gcs/constraints/nogoods/nogoods.hh`. A nogood is a forbidden conjunction of decision
 literals; the constraint forbids them all at once.
 
 ```cpp
-using Nogood = std::vector<IntegerVariableCondition>;   // = / != / >= / <= literals
+using Nogood = std::vector<IntegerVariableCondition>;   // = / != / >= / < / range literals
 ```
 
 `Nogoods` **generalises `NegativeTable`**: a forbidden tuple is a nogood of
 `var == value` literals, and `NegativeTable`'s entailment-based two-watched-
-literals carries straight over to arbitrary `=`/`≠`/`≥`/`≤` literals.
+literals carries straight over to arbitrary `=`/`≠`/`≥`/`<`/`∈`/`∉` literals.
 
 - **Entailment-based 2WL.** A watched literal is "broken" when it is *entailed*,
-  read via `State::test_literal` (`DefinitelyTrue`/`DefinitelyFalse`/`Undecided`):
+  read via `State::literal_is_entailed`:
   `x >= 10` is entailed once `lower(x) >= 10`, so `x >= 12` triggers it too. This
   is the bug class the per-node UP reference test (below) targets. When a clause
   is unit, the negation of the surviving literal is inferred (`JustifyUsingRUP`
@@ -194,8 +195,12 @@ This has been fixed by the **refined per-literal trigger** redesign, which is it
 own subsystem — see [Refined triggers](refined-triggers.md). The learned-nogood
 store now defaults to a **two-watched-literal** scheme over refined watches: the
 propagator wakes only when a clause loses a non-entailed literal and visits only
-the clauses that fired. It is **semantics-preserving** (identical tree, nogoods
-and proof; validated by a scan-vs-refined differential), and on the worst case
+the clauses that fired. For satisfaction and enumeration it explores the same
+tree and learns the same nogoods as the scan path under every brancher tested
+so far but dom/wdeg (#1392), though its proof's inference lines can differ with
+the propagation order; under optimisation the tree can differ too (#1390). Two
+scan-vs-refined differentials in `gcs/solve_test.cc`, both on unsatisfiable
+models, check the search counts. On the worst case
 measured it takes the learned-nogood overhead from a 3.4× tax down to ~free
 (`tsp --restarts=10000`: 190.6s → 58.4s against a 55.6s no-nogoods floor). The
 original scan path is kept as the differential oracle, reachable via
@@ -238,15 +243,13 @@ Measured shrink (qap `--size=8`, `smallest_in`, same nogood counts, both
 VeriPB-verified): `luby×50` 130→48 literals (2.7×), `luby×200` 86→20 (4.3×).
 Deeper nogoods drop more negatives, so the shrink grows with restart depth.
 
-**Interval and reject branches.** An *accept* interval decision (`x in a..b`) is
-two bound literals `x>=a ∧ x<=b` — no disjunction, handled. A *reject* interval
-(`x ∉ [a,b]`) is disjunctive; representing it as one clause literal would need an
-interval-hole reified Boolean, the forbidden disjunctive reification that breaks
-backtrack-from-guess RUP. No reject-interval value generator exists today, so it
-is moot for v1 (the not-a-plain-condition guard in the extraction is a
-conservative fallback). The range/interval-literal design from PR #303 makes
-these literals first-class and dissolves that RUP wall, so reject branches become
-representable once it lands.
+**Interval and reject branches.** Since the range literals of PR #303, an
+*accept* interval decision is one `x ∈ [a, b]` literal and a *reject* one is
+`x ∉ [a, b]`, so either goes into a clause as it is, and a learned `x ∉ I`
+reaches the proof like any other literal. `value_order::reject_random_interval`
+branches that way (`solve_test.cc` covers it). The extraction's guard against a
+sibling that is not a plain condition now skips only proof-scaffolding literals
+(`solve.cc:266-270`).
 
 ## The proof lifecycle
 
@@ -291,7 +294,7 @@ The two-sided net (companion to the BinPacking per-bin pattern, *not*
 `solve_for_tests_checking_gac`, which would wrongly flag a correct per-clause-UP
 propagator):
 
-- **Propagation core** (`gcs/constraints/nogoods_test.cc`): a standalone program
+- **Propagation core** (`gcs/constraints/nogoods/nogoods_test.cc`): a standalone program
   feeding a fixed synthetic nogood set, with a per-node UP **reference** in the
   trace callback that asserts the 2WL invariant — an unsatisfied clause has `>= 2`
   non-entailed literals — using its own bound-based entailment so it catches a
