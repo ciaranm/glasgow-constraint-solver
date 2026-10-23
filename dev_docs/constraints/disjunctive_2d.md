@@ -383,7 +383,8 @@ Four SCP chain cases run at strictness `none`:
 variable width, non-strict) and `disjunctive2d_strict_sat` (a zero-width
 rectangle inside a wider one, 67 solutions against 81 non-strict). They stay at
 `none` because the ordering rows reference the operands' bit encodings, which
-still differ from cake's eager encoding (#358). The optional forms have **no
+still differ from cake's eager encoding (#358, closed as not planned on
+2026-06-30). The optional forms have **no
 cake encoder**. Their `constraint_type()`s, `disjunctive2d_optional` and
 `disjunctive2d_strict_optional`, are named apart so that the gap is a miss,
 not a silent mismatch.
@@ -427,7 +428,8 @@ are derivable from cake's OPB as well as ours, though no suite lane says so.
   for what that does to a presolver.
 - **At `Temporary`:** every pairwise pol, route B's whole certificate
   (including the comparator network's fresh wires), and route A's per-firing
-  energies and pins. All are deleted on backtrack. None is needed later, since
+  energies and pins. All are deleted once the firing's conclusion is derived.
+  None is needed later, since
   every later firing rebuilds its own.
 - **The literal layer.** Route B states each member's time bounds at
   `t − len + 1` and `t`, and route A's flags and energies cite literals at
@@ -1629,7 +1631,8 @@ is the table's two columns.
   at `7e1c4178` and matched. At `0a5b4ec6` it still describes the pairwise
   rule with mandatory boxes and "six pols", which #1265, merged after it,
   corrects. #1276 changed several of its `squares` figures (see [Proof
-  performance](#proof-performance)), and those were not updated.
+  performance](#proof-performance)), and those were not updated; #1301
+  (open) re-measures that table.
 - [`cumulative-proof-logging.md`](../cumulative-proof-logging.md): the two
   `CumulativeInputs` fields the projection added, and what `Cumulative`'s
   certificates cite.
