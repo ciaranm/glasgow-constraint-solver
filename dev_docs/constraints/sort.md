@@ -2,8 +2,10 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-29 at `c9ceea25` ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file. Already open and touching this family: #262 (a
+> **Open issues** filed by this audit: #1139 (`ArgSort`'s rank propagator
+> is up to cubic per call, and walks a domain for a proof-only threshold),
+> #1140 (`Sort` searches for its proof's Hall band with proofs off). Already
+> open and touching this family: #262 (a
 > dominance prelude for permutation auxiliaries, which would change how `pos`
 > is pinned), #833 (the large-domain policy), #868 (cross-solver comparisons;
 > this document gives one, by hand). Tracked under #871.
@@ -307,7 +309,9 @@ posts two.
 **Overflow.** The algorithms compare bounds as `long long` and write
 `L = ly[j]` style constants back; nothing adds to a bound but `± 1` inside
 `infer_*`. The `ArgSort` threshold search (below) does `v + 1` in `long long`
-up to `ub(x[k])`, which cannot exceed the domain cap.
+up to `ub(x[k])`, which cannot exceed the domain cap. Since #1215 the
+constructor refuses an `ArgSort` offset outside `±(2⁶⁰ − 1)` with
+`IntegerOverflow` (`arg_sort.cc:60`).
 
 ### Interval efficiency
 
@@ -410,7 +414,8 @@ proof. That check runs with proofs off too, which is the cost measured below.
 - **Offline reconstructibility** — `offline`: `k₁`, `k₂` and `V` are readable
   off the reason's `y` bounds.
 - **Proof size** — `k₂ − k₁` lemmas.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: no-matching
 
@@ -433,7 +438,8 @@ proof. That check runs with proofs off too, which is the cost measured below.
   it is in the baseline context, since it follows from the reason's bounds.
 - **Proof size** — `O(n)` window lemmas plus `O(|S|·n)` exclusions: `O(n²)`
   lines, most of them emitted under the `O(n)` reason. Not measured.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: y-lower-bound
 
@@ -478,7 +484,8 @@ proof. That check runs with proofs off too, which is the cost measured below.
   (`tmp/fd-ordering/factcheck3/sort/linesizes.py`). (c) `O(n²)` lines, most
   under the `O(n)` reason (the `j + 1` chain lines and the final `pol` are
   not); not measured.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: y-upper-bound
 
@@ -515,7 +522,8 @@ proof. That check runs with proofs off too, which is the cost measured below.
 - **Hint** — `hints::Sort`.
 - **Offline reconstructibility** — intersection `offline`; Hall `search`.
 - **Proof size** — intersection `n` lines; Hall `O(n²)`.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: x-upper-bound
 
@@ -548,7 +556,8 @@ as rule 5, mirrored.
 - **Hint** — `hints::ArgSort`.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: channel-fixed
 
@@ -565,7 +574,8 @@ as rule 5, mirrored.
 - **Hint** — `hints::ArgSort`.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: rank-outside-interval
 
@@ -592,7 +602,8 @@ as rule 5, mirrored.
 - **Offline reconstructibility** — `offline`: `a_k` and `b_k` follow from the
   reason's bounds.
 - **Proof size** — `O(n)` lines.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ### Rule: rank-hole
 
@@ -618,7 +629,8 @@ as rule 5, mirrored.
   and the reconstructor recomputes it from the reason's bounds (the same step
   function the propagator walks, which the breakpoints give directly).
 - **Proof size** — `O(n)` lines.
-- **Gaps** — `None.` **Tightness** — `Not shown.`
+- **Gaps** — `None.`
+- **Tightness** — `Not shown.`
 
 ## Evidence
 
@@ -788,7 +800,7 @@ the permutation facts alone.
 
 **Lines grow by 7 to 8 per doubling: cubic.** At `n = 80` about 75% of them are
 the transitivity lines (`2n(n − 1)(n − 2)`) and 19% the pairwise at-most-one
-lines `recover_am1` folds (`n·C(n, 2)`). The
+lines `recover_am1_from_pairs` folds (`n·C(n, 2)`). The
 solver writes the `n = 80` root in 0.83 s; VeriPB takes 118 s to check it,
 before any search.
 
