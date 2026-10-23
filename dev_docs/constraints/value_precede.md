@@ -2,10 +2,13 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-29 at `c9ceea25` ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file. Already open and touching this family: #833 (the
-> large-domain policy), #868 (cross-solver comparisons; this document gives
-> one, by hand). Tracked under #871.
+> **Open issues** filed by this audit: #1145 (the forcing half of Law and
+> Lee is missing). **Fixed since the audit**: #1188, filed from review
+> (extreme chain values overflowed through views and in the proof model), by
+> #1215, with #1214 for view offsets; see [Overflow](#robustness-and-limits).
+> Already open and touching this family: #833 (the large-domain policy), #868
+> (cross-solver comparisons; this document gives one, by hand). Tracked under
+> #871.
 
 `ValuePrecede(chain, vars)` says that for each consecutive pair `(s, t)` of
 `chain`, every occurrence of `t` in `vars` has an occurrence of `s` strictly
@@ -69,8 +72,9 @@ the two-value chain.
 
 [^xprec]: `buildConstraintPrecedence` supports only `covered = false` with an
     explicit `values` list. `covered = true` and the form without values (whose
-    chain would come from the domains' union) are reported unsupported, the
-    latter as issue #150's phase 2b.
+    chain would come from the domains' union) are reported unsupported. The
+    code's comment calls the latter issue #150's phase 2b, but #150 is closed,
+    so nothing tracks it.
 
 [^gcspy]: `gcspy` binds nothing in this family. CPMpy's side was not checked.
 
@@ -87,8 +91,13 @@ mistranslated; `valueprecede.mzn` and `valueprecedechain.mzn` cover the glue.
 
 Plain variables, constants and views are all accepted. The propagator reads
 `in_domain(x, s)` and `in_domain(x, t)` and removes a value, which is the same
-for any kind. The proof handles views too: the encoding names each view's
-`x_i = v` through the underlying variable's literal, and the
+for any kind. The proof handles views too. Since #1208 the encoding names
+each view's `x_i = v` by the view's own `=` literal, which the view's channel
+rows tie to the underlying variable; at `c9ceea25` it was spelled through the
+underlying variable's literal. At `86caad24`, `ValuePrecede{1, 2, {x + 1, y,
+3 − w}}` over `0..3` writes `~p[1_view_of_x_plus_1][eq1]` in its upper-bound
+row and enumerates its 36 solutions with a verifying proof
+(`tmp/fd-wrapup/review/g4/probes/vpview.cc`). The
 `value_precede_constraint_view_mixed` lane runs the suite's shapes with views
 mixed in.
 
@@ -441,7 +450,9 @@ chain over six variables in `0..3`, 64 for a three-value chain, all that form.
 ### Tests
 
 - **`value_precede_test`** (`value_precede_constraint`, plus
-  `value_precede_constraint_view_mixed`): 25 fixed shapes (two-, three- and
+  `value_precede_constraint_view_mixed` and, since #1208, its `_view_mixed_late`
+  twin, which posts a vacuous row over each view after the constraint): 25 fixed
+  shapes (two-, three- and
   four-value chains, values in no domain, the first position forced to `t`,
   chain values out of domain order, repeated chains `{1, 2, 1}` and `{1, 1}`,
   empty and one-value chains, negative values, constants mid-array, #254's
