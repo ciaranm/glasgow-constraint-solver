@@ -226,8 +226,8 @@ answers with proofs off (50 and 60 solutions for `cond → x − y ≤ −1` on
 `x, y ∈ 0..3`, `z ∈ 0..4`, with `cond` `z ∈ 1..3` and `z ∉ 1..3`, checked
 against a hand count) and throws `range literals during model writing are not
 yet supported` with proofs on, from `NamesAndIDsTracker::need_invar`. That is
-#1225, whose fix is #310; `comparison` has the same throw (its document cites
-#310 only). No front end can post one.
+#1225, whose fix is #310; `comparison` has the same throw. No front end can
+post one.
 
 Full reification would add nothing the posted rows cannot say and is not
 wanted. Inferring `¬cond` during search is the missing direction, in both of
@@ -1410,7 +1410,8 @@ What to read out of it:
   degrees (one global propagator against one per edge; not tested). The
   rcpsp rows use a static order; the size-22 rows agree on recursions, and the
   machine rows differ because the propagation does. Incremental against from
-  scratch at the identical tree: 13× at `n = 640`.
+  scratch, both with simplification off, at equal recursions and
+  propagations: 13× at `n = 640`.
 - **Root simplification is most of the cost on a dense unconditional system**
   and buys nothing there: 0.762 s of the 0.930 s at `n = 640` (82%), dropping
   0.3% of the edges, and 34% of the refutation's time. On the tight RCPSP/max
@@ -1704,22 +1705,24 @@ wrong is answered at the site: the `Do` and backtracking argument over
 trigger choice, and the initialiser's placement.
 
 Stale text found by this audit and its fact-check, recorded rather than fixed
-here. Code comments first:
+here. #1389 and #1396 (both open, on main) correct the items marked so; the
+rest still stand. Code comments first:
 
 - `DifferenceSimplificationStats`'s brief ("filled in the first time the
   propagator runs", `difference_simplify.hh:15-16`) and
   `reporting_simplification_to`'s ("filled in during the first
   propagation", `difference_constraints.hh:161`) predate #659, which moved
-  the stage into an initialiser.
+  the stage into an initialiser. Corrected by #1396, open.
 - `difference_constraints.cc:136-138` says the disallowed condition is handled
   "from the same row, so no initialiser is involved"; the root initialiser
-  infers it (`difference_graph.cc:1274-1276`).
+  infers it (`difference_graph.cc:1274-1276`). Corrected by #1396, open.
 - `difference_constraints.hh:62` calls the propagator "bounds consistent for
   the system as a whole", which is false once edges are half-reified (rule 1's
-  Strength); `:72-75` call `IncImp` "deliberately not implemented", which
-  rule 8 now is at the root; `difference_graph.hh:163-166` describes
+  Strength; corrected by #1396, open); `:72-75` call `IncImp` "deliberately
+  not implemented", which rule 8 now is at the root (corrected by #1389, open);
+  `difference_graph.hh:163-166` describes
   `install_difference_propagator` as running Bellman-Ford, where the default
-  route is incremental Dijkstra.
+  route is incremental Dijkstra (corrected by #1396, open).
 - `difference_constraints.hh:173` and `difference_graph.cc:923` give the
   incremental route as `O(n log n + m)`, and `difference_simplify.hh:205`
   (and `difference-logic.md`, "The four sub-steps" and "This is `IncImp`")
@@ -1727,7 +1730,7 @@ here. Code comments first:
   are binary with lazy deletion, holding an entry per improving relaxation,
   so a Dijkstra is `O((n + m) log(n + m))` and a simplification round
   `O(n·m log(n + m))`; `log n` needs the parallel edges bounded by a
-  polynomial in `n`.
+  polynomial in `n`. All corrected by #1389, open.
 - The saturated sum "turns it into the clause" (`difference_graph.cc:527-531`,
   the cycle; `:330-332`, the root witness), "saturates into exactly the
   clause" (`difference_constraints.cc:216-219`), the root witness's
@@ -1737,35 +1740,38 @@ here. Code comments first:
   The line is equivalent to the clause only when every coefficient (a
   condition's residuals summed) reaches the degree, and literally the clause
   only when the degree is also 1
-  ([negative-cycle](#rule-negative-cycle)).
+  ([negative-cycle](#rule-negative-cycle)). Corrected by #1389, open, along
+  with the note's "The proof for condition fixing" and `IncImp` deferral
+  item, which repeat it.
 - The cycle comment's minimality claim (`difference_graph.cc:531-534`):
   "Every such condition therefore has to appear in the reason ... citing
   fewer would claim a contradiction the model does not entail". The reason
   is sufficient, not minimal, and in Codex's two-edge example each row alone
   entails its own condition false ([negative-cycle](#rule-negative-cycle),
-  *Reason*).
+  *Reason*). Corrected by #1389, open.
 - The node-removal comment (`difference_graph.cc:405-409`: an isolated node
   "neither needs seeding nor counts towards the number of relaxation
   rounds"), `isolated_nodes_removed`'s brief ("dropped from the relaxation
   loop and from the round bound", `difference_simplify.hh:72-73`), and
   `difference-logic.md`, "The four sub-steps, and which are here", item 4:
   only the round bound changes; the nodes are still seeded, scanned and
-  triggered (#1385).
+  triggered (#1385). All three corrected by #1389, open.
 - The two arithmetic checks called "O(cycle)" (`difference_graph.cc:289-292`,
   `:549-552`) share their loop with the condition deduplication, `O(k·c)`
-  (#1384).
+  (#1384). Corrected by #1389, open.
 - The activation-seeding recipe is attributed to the paper's "section 4.4"
   (`difference_incremental.hh:231`, `difference_incremental.cc:204`,
   `difference_graph.cc:950-951`, `difference_constraints_test.cc:1041`, and
   `difference-logic.md`, "Defects in the paper's pseudocode" and "Arc
   activation"); it is in §4.2, and §4.4 is "Possible Variations and
-  Optimizations".
+  Optimizations". All corrected by #1396, open.
 - "Ten of the nineteen wraps negate" (`gcs/CMakeLists.txt:985`,
   `difference_constraints_test.cc:206`, and `difference-logic.md`, "The
-  view-wrap sweep"): nine do.
+  view-wrap sweep"): nine do. All corrected by #1396, open.
 - The comment that an aliased edge "render[s] as a row whose left hand side is
   zero" (`difference_constraints.cc:209-213`, and the note) is true of the
-  row's value; it is written with both copies of the bits.
+  row's value; it is written with both copies of the bits. Corrected by
+  #1396, open.
 
 Then `difference-logic.md`, in sections as they stand on main (the copy beside
 this document in the stack predates some of them):
@@ -1775,7 +1781,8 @@ this document in the stack predates some of them):
   propagation. "RCPSP/max: the benchmark this was built for" points to a
   non-incrementality caveat under "Deliberately deferred" that is no longer
   there. "Rounds" describes `n` rounds, where the code now uses the live-node
-  count after simplification and an early limit.
+  count after simplification and an early limit. All three corrected by
+  #1396, open.
 - "Switching that mechanism on: `--machine=difference`" and "RCPSP/max: the
   headline reproduces" put the conditional models' extra nodes down to
   `IncImp`'s absence, and "This is `IncImp`, restricted to the root" repeats
@@ -1786,7 +1793,7 @@ this document in the stack predates some of them):
   the paper's final configuration keeps; `IncImp` is the separate path check
   it leaves off. `difference_constraints.hh:28-32` ("That is the paper's
   `IncImp` ... so it is deliberately absent", of a condition never fixed from
-  the graph) has the same framing.
+  the graph) has the same framing. All corrected by #1389, open.
 - "Extreme weights" says the early-exit limits stop a negative cycle relaxed
   round after round from running out of range; true for the short cycle it
   tests, not for a cycle of nine heavy edges (#1371, #1372).
@@ -1801,3 +1808,4 @@ this document in the stack predates some of them):
   `O(n + |Vl| log n + reachable arcs)`, a decrease-key bound; with the lazy
   binary heap each pass is `O(n + (|Vl| + R) log(n + R))` for `R` arcs
   reached ([Mutable state and incrementality](#mutable-state-and-incrementality)).
+  Corrected by #1389, open.
