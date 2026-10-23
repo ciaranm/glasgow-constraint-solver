@@ -775,10 +775,9 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
   degree count ([Can it weaken the model?](#can-it-weaken-the-model)).
 - **Offline reconstructibility.** `search`, pending the external
   justifier's design (see the last paragraph); `table.md`'s rules 2–5 also
-  give `search` for this caller. The
-  assertions
-  carry no hint, and the rows the solver's own derivation uses (the
-  entries' forward halves and the cover) exist only at `Off`. What has to be derived is the assertion itself,
+  give `search` for this caller. The assertions carry no hint, and the rows
+  the solver's own derivation uses (the entries' forward halves and the
+  cover) exist only at `Off`. What has to be derived is the assertion itself,
   `inference ∨ ¬R`, where `R` is the generic reason over the scope: every
   scope variable's current domain. **Rebuilding the table, by replaying this
   presolver's enumeration, is one sufficient derivation, not a necessary

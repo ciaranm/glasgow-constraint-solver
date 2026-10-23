@@ -75,8 +75,8 @@ Five things to know before touching it.
   The two encoders spell those atoms differently (ours the bit, cake's
   `eq0`/`eq1`), and the derivation cancels by spelling. That is #1193's root
   cause, met in one more place (commented on #1193). Ordering literals
-  (`v ≥ 1`, `v < 1`) pass. Against the solver's own OPB, every `AssertionLevel::Off` proof in this
-  audit verifies outside #1381's shape.
+  (`v ≥ 1`, `v < 1`) pass. Against the solver's own OPB, every
+  `AssertionLevel::Off` proof in this audit verifies outside #1381's shape.
 
 ## What it is
 
@@ -196,8 +196,9 @@ system infers whatever the donor would have. That is an argument about
 strength. The header goes on to a cost claim, that a gathered donor "is then
 pure overhead on every wake" (`.hh:181–185`; `parity-system.md` says the same,
 under "Donors are retired by default"), and this audit's measurements
-contradict it. Retiring changes which propagator explains each inference, and
-it is not a saving in general. Across the shapes measured, the retired proof
+contradict it (both corrected by #1389, open). Retiring changes which
+propagator explains each inference, and it is not a saving in general. Across
+the shapes measured, the retired proof
 ranged from about 6% smaller to quadratically larger
 ([retire-gathered-donors](#rewrite-retire-gathered-donors), **Proof size**). On
 #1386's chain at 4,096 variables with the `Equals` posted first, the kept
@@ -227,7 +228,8 @@ model where parity dominates, it prunes nothing and costs four times as much.
 - **Boolean donors**: both operands may be variables, views or constants, as
   long as their bounds **in the state the presolver sees** lie within `[0, 1]`
   (`within_a_bit`, `parity_system_gathering.cc:159–168`). The header says
-  "declared domain", but the code reads `initial_state.bounds`, and the root
+  "declared domain" (corrected by #1396, open), but the code reads
+  `initial_state.bounds`, and the root
   initialisers have already run by then. So `x ∈ −3..1` narrowed to `0..1` by
   `Abs`'s root initialiser is gathered (`narrowed_abs_*` fixtures), and so is
   `1 − y` over `y ∈ {0, 1}`. A negated view `−y` has bounds `−1..0` and is
@@ -922,8 +924,9 @@ bug applies. The scan fails as follows:
    `bool_xor(a, b, true)`, and `fzn-glasgow` posts that as
    `EqualsIff{a, b, 1 ≠ 1}` (`fzn_glasgow.cc:867–869`): a plain `a ≠ b`.
    Through the local switch, three such rows over four Booleans gave
-   `gathered nothing` with `skipped_reified` 3 (`p10-boolxor/bx.mzn`). `DifferenceLogic` does the same
-   for `Iff`, though it lifts an `If` whatever its condition
+   `gathered nothing` with `skipped_reified` 3 (`p10-boolxor/bx.mzn`).
+   `DifferenceLogic` does the same for `Iff`, though it lifts an `If`
+   whatever its condition
    ([`difference_logic.md`](difference_logic.md)): two `LessThanEqualIff` or two
    `LinearLessThanEqualIff` donors under the constant condition `1 = 1` lift
    nothing and count `skipped_reified` 2, where the unconditional spellings lift
@@ -1473,9 +1476,10 @@ yet portable to cake's encoding.
 - [`parity-system.md`](../parity-system.md): the long design note. Its "The
   presolver" half covers the two donor families, components, why donors are
   retired by default (its claim that a gathered donor is "pure overhead" is
-  contradicted here, under [Options](#options)), the tripwire and strength
-  tables, and the API the presolver needed. §2 derives the slack rows from the chain, and "What
-  mutation testing says" has the seven mutations.
+  contradicted here, under [Options](#options), and corrected by #1389,
+  open), the tripwire and strength tables, and the API the presolver needed.
+  §2 derives the slack rows from the chain, and "What mutation testing says"
+  has the seven mutations.
 - [`difference_logic.md`](difference_logic.md): the other presolver that can
   retire donors (`disabling_lifted_donors()`, off by default), and the template
   this one was built to. Its measurements lean the other way on its

@@ -345,6 +345,12 @@ interiors.
 - **Negative values and zero.** `≠ 0` reads a negative value as true. Tested
   over `[−2, 2]`.
 - **Degenerate shapes**: see [Semantics](#semantics).
+- **Inputs.** Since #1214 every declared domain, constant and view offset must
+  lie in `±(2⁶⁰ − 1)`. Since #1215 so must the value in every literal of
+  either class, one past the top included (`x ≤ v` is stored as `x < v + 1`).
+  The constructors throw `IntegerOverflow` otherwise (`parity.cc:62`,
+  `parity_system.cc:57`, at `86caad24`). `integer_ranges_test` checks a
+  `ParityOdd` literal at both ends.
 - **Overflow.** None: the only arithmetic is parity and bitsets. The `pol`
   coefficients are small integers.
 - **Large systems.** The system's per-call cost is
@@ -676,8 +682,8 @@ term the OPB pins anyway.
 | Lane | What it checks |
 |---|---|
 | `parity_constraint` | `parity_test`: fixed and random rows (some with constants) under `solve_for_tests_checking_gac`; five repeated-literal rows under plain enumeration; with and without proofs |
-| `parity_constraint_view_mixed` | the same, positions wrapped in views, minus the repeated-literal rows |
-| `parity_system_constraint`, `…_view_mixed` | `parity_system_test`: 15 fixed systems (no rows, one row, disjoint rows, a cycle that is unsatisfiable with no two rows in conflict, a repeated row, wider domains, constants, an empty row, a duplicate within a row) and 10 random ones, all under `solve_for_tests_checking_gac` at the default `GaussJordan` |
+| `parity_constraint_view_mixed`, `…_view_mixed_late` | the same, positions wrapped in views, minus the repeated-literal rows; the late lane (from #1208) posts a vacuous row over each view after the constraint |
+| `parity_system_constraint`, `…_view_mixed`, `…_view_mixed_late` | `parity_system_test`: 15 fixed systems (no rows, one row, disjoint rows, a cycle that is unsatisfiable with no two rows in conflict, a repeated row, wider domains, constants, an empty row, a duplicate within a row) and 10 random ones, all under `solve_for_tests_checking_gac` at the default `GaussJordan` |
 | `parity_system_gathering_presolver` | the presolver: exact stats counts, equal solution and recursion counts with and without donor retirement, and the strength differentials `parity-system.md` tabulates; its equivalence runs use plain enumeration, so the gathered system's per-node strength is not checked |
 | `scp_chain_parity_sat`, `scp_chain_parity_unsat` | see [Cake conformity](#cake-conformity) |
 | `scp_reader_test`, `constraint_enumeration_test` | the `parity_system` `.scp` form: solutions counted, and a separate write → read → write round trip; the presolver's class enumeration finds `ParityOdd` and `ReifiedEquals` |

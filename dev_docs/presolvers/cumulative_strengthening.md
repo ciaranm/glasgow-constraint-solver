@@ -248,9 +248,9 @@ For each donor:
 This is a presolver, so the table lists its **entry points**: the option or
 flag that turns it on, per front end.
 
-| Entry point | C++ API | MiniZinc (`fzn-glasgow`) | XCSP3 | `.scp` solver | `gcspy` / CPMpy | Examples |
-|---|---|---|---|---|---|---|
-| `CumulativeStrengthening` | `Problem::add_presolver(CumulativeStrengthening{…})` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#1374)` | `frontend gap (#983)` | none; `examples/rcpsp` has no flag[^fe] |
+| Entry point | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
+|---|---|---|---|---|---|
+| `CumulativeStrengthening` (presolver) | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#983)` | `frontend gap (#1374)` | C++ API, `Problem::add_presolver(CumulativeStrengthening{…})`; no example adds it: `examples/rcpsp` has no flag[^fe] |
 
 #983 (open) tabulates all three scheduling presolvers as reachable from no
 front end, and asks whether each should get a flag or whether there should be
