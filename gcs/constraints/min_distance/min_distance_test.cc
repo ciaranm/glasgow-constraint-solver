@@ -360,6 +360,15 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // Heterogeneous requirement per position pair.
     const IntMatrix r4_mixed{{0, 2, 4, 5}, {0, 0, 3, 4}, {0, 0, 0, 3}, {0, 0, 0, 0}};
     go({pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, pair{0, 10}, d4, r4_mixed);
+
+    // Positions declared over more than 100 values, so that the matching bound's
+    // at-least-ones are interval covers rather than per-value lines, with a
+    // requirement that prunes a root site from two positions before the matching
+    // fires (#1224). Every value past site 2 is cut at the root.
+    const IntMatrix d3_far{{0, 10, 9}, {10, 0, 1}, {9, 1, 0}};
+    const IntMatrix r3_far{{0, 10, 1}, {0, 0, 0}, {0, 0, 0}};
+    go({pair{0, 100}, pair{0, 100}, pair{0, 100}}, vector<int>{0, 1, 9, 10}, d3_far, r3_far);
+    go({vector<int>{0, 1, 2, 100}, vector<int>{0, 1, 2, 100}, vector<int>{0, 1, 2, 100}}, vector<int>{0, 1, 9, 10}, d3_far, r3_far);
 }
 
 // Random symmetric distance matrix: zero diagonal, non-negative, entries in
@@ -405,6 +414,28 @@ auto random_site_domain(mt19937 & rand, int n) -> DomainSpec
     return subset;
 }
 
+// Stretch a site domain's declared range to well over 100 values by adding
+// values past every site, which the constraint's site-range restriction then
+// cuts at the root. A constant stays a constant.
+auto widen_past_sites(mt19937 & rand, const DomainSpec & spec) -> DomainSpec
+{
+    const auto far = uniform_int_distribution<int>{100, 150}(rand);
+    return visit(
+        [&](const auto & s) -> DomainSpec {
+            using T = std::decay_t<decltype(s)>;
+            if constexpr (std::is_same_v<T, int>)
+                return s;
+            else if constexpr (std::is_same_v<T, pair<int, int>>)
+                return pair{s.first, far};
+            else {
+                auto values = s;
+                values.push_back(far);
+                return values;
+            }
+        },
+        spec);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -430,7 +461,9 @@ auto main(int argc, char * argv[]) -> int
 
         // Random sweep: small symmetric matrices, small p, random site domains,
         // random z domains, half of them with a random feasible-ish requirement.
-        for (int iter = 0; iter < 8; ++iter) {
+        // The second half widens the positions' declared ranges past 100 values,
+        // which turns their at-least-ones into interval covers (#1224).
+        for (int iter = 0; iter < 16; ++iter) {
             uniform_int_distribution<int> n_dist{2, 5};
             uniform_int_distribution<int> p_dist{2, 4};
             int n = n_dist(rand);
@@ -440,6 +473,9 @@ auto main(int argc, char * argv[]) -> int
             vector<DomainSpec> x_specs;
             for (int i = 0; i < p; ++i)
                 x_specs.push_back(random_site_domain(rand, n));
+            if (iter >= 8)
+                for (auto & spec : x_specs)
+                    spec = widen_past_sites(rand, spec);
 
             // z domain: a random window that sometimes dips below zero and
             // sometimes starts above it, wide enough to admit the true minimum.
