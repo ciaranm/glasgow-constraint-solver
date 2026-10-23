@@ -3,10 +3,15 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1215 and #1208 ·
-> **Open issues** none filed by this audit yet; see [Next steps](#next-steps)
-> for what it would file. Already open and touching this family: #833 (the
-> large-domain policy), #868 (cross-solver comparisons; this document gives a
-> whole-solve comparison by hand, not the identical-tree one #868 asks for).
+> **Open issues** filed by this audit: #1160 (carving `K` listed values
+> costs Θ(K²) in the state layer's interval scans), #1161 (the constants-only
+> `In` stays live after its only useful call, and declares holes it does not
+> read), #1162 (step 1's union is quadratic in interval counts), #1163
+> (repeated or aliased candidates lose `bounds(Z)`), #1164 (XCSP3's
+> index-free `element` is unsupported). Already open and touching this
+> family: #833 (the large-domain policy), #868 (cross-solver comparisons;
+> this document gives a whole-solve comparison by hand, not the
+> identical-tree one #868 asks for).
 > **Fixed since the audit**: the extreme-constant overflow with proofs on,
 > which had no issue of its own, by #1215 (which closed `Table`'s #1117); see
 > [Re-audit, 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
@@ -886,7 +891,9 @@ Facts shared by every rule:
 
 ### Tests
 
-- **`in_test`** (`in_constraint`, plus `in_constraint_view_mixed`), 60 cases
+- **`in_test`** (`in_constraint`, plus `in_constraint_view_mixed` and, since
+  #1208, its `_view_mixed_late` twin, which posts a vacuous row over
+  each view after the constraint), 60 cases
   per proof setting:
   - constants only (alternating, even, all, single, all outside, some outside,
     negative, duplicates);
