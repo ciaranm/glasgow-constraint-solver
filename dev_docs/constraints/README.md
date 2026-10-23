@@ -26,6 +26,22 @@ constraints and do not restate it.
   `AllDifferent` over the same variables does. The fourth pass records #1088,
   which made `NotEquals(x, x)` a root contradiction rather than a
   construction-time throw.
+- [`comparison.md`](comparison.md) — `LessThan`, `LessThanEqual`, their
+  `Greater*` mirrors and their eight reified forms: twelve posted constraints
+  over one propagator whose whole vocabulary is bounds, so one definitional OPB
+  row, **no proof flags and no view detour anywhere**, eight inference rules
+  each a single RUP, and 11.8% of its own proof. Nearly unreachable from the
+  frontends, which turn a binary ordering into a two-term linear inequality;
+  its real consumer is the difference-logic presolver. The audit's two findings
+  are both fixed — a reason assembled on every call whether or not anything
+  reads it, 43% of the cycles on a family-dominated benchmark (#907 → #916),
+  and two reification kinds that threw from `s_expr()` leaving a truncated
+  `.scp` behind (#908 → #915). It is also the family that makes
+  `consistency::Auto` pay: everything it reads is a bound, so **holes affect
+  nothing here**, and a comparison in a model is not a reason for anybody
+  else's interior pruning to stay on. Its third pass records #1088, which made
+  `LessThan(x, x)` a root contradiction rather than a construction-time
+  throw.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
