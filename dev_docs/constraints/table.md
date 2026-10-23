@@ -1014,8 +1014,8 @@ where JP 3.3 states one value.
 
 | Lane | What it covers |
 |---|---|
-| `table_constraint`, `table_constraint_view_mixed` (`table_test`) | hand-written two- and three-variable tables, empty tables, fixed variables (#254), negative values and wildcards, under **all three algorithms**, with **GAC checked at every node** (`solve_for_tests_checking_gac`). Since #1202 also two tables with duplicate rows and two whose wildcard rows overlap, each with solutions two rows match (`table_test.cc:274-277`, `:290-294`). In the bare lane only: `run_constant_table_test` (`:191`), a real constant position that rules out some tuples, with a duplicate row, since #1202, solutions only; random four-variable tables of 120 and 400 tuples over `0..7`, which the test's comment names as the only place `Auto` switches mid-search, so that the compact table is handed the live set and later re-seeded from scratch; and two repeated-variable shapes, solutions only |
-| `negative_table_constraint`, `…_view_mixed` | hand-written tables, duplicates, all-forbidden, fixed variables, wildcards and repeated variables, **solutions only**, which is right, since it is not GAC |
+| `table_constraint`, `table_constraint_view_mixed`, `…_view_mixed_late` (`table_test`) | hand-written two- and three-variable tables, empty tables, fixed variables (#254), negative values and wildcards, under **all three algorithms**, with **GAC checked at every node** (`solve_for_tests_checking_gac`). Since #1202 also two tables with duplicate rows and two whose wildcard rows overlap, each with solutions two rows match (`table_test.cc:274-277`, `:290-294`). In the bare lane only: `run_constant_table_test` (`:191`), a real constant position that rules out some tuples, with a duplicate row, since #1202, solutions only; random four-variable tables of 120 and 400 tuples over `0..7`, which the test's comment names as the only place `Auto` switches mid-search, so that the compact table is handed the live set and later re-seeded from scratch; and two repeated-variable shapes, solutions only |
+| `negative_table_constraint`, `…_view_mixed`, `…_view_mixed_late` | hand-written tables, duplicates, all-forbidden, fixed variables, wildcards and repeated variables, **solutions only**, which is right, since it is not GAC |
 | `table_shared_tuples_test` | tuple storage shared rather than copied, for both classes; one support-mask set for three compact tables over one tuple set; shared and unshared masks give the same 336 solutions |
 | `tables`, `tables_live`, `tables_compact` | the example under each algorithm, verified. Its tables are under 64 tuples, so `Auto` never switches there |
 | `table_layout-table`, `…-dzn` | the table-layout example posting one `Table` per cell, verified |
@@ -1548,6 +1548,6 @@ per search (about four for megane, per the code's comment), so `Auto` never
 reaches its 32-wake decision, and there a lazily built compact table pays even
 for so few wakes.
 It is also 5–15% behind forced compact on six of the thirteen `srch_*`
-instances. The doc comment is stale, and the decision rule, which gates on
-wake count, cannot see Renault's case at all: few wakes, each over a very large
-live set. Filed as #1118.
+instances. The doc comment is stale (corrected by #1396, open), and the
+decision rule, which gates on wake count, cannot see Renault's case at all: few
+wakes, each over a very large live set. Filed as #1118.
