@@ -95,7 +95,7 @@ Three things to know before touching it.
 | reified | `decompose`: the stdlib's `fzn_all_equal_int_reif`[^reif] | n/a | — | — | no class exists |
 
 [^mzn]: `minizinc/mznlib/fzn_all_equal_int.mzn` routes the stdlib's
-    `fzn_all_equal_int` to `glasgow_all_equal_int` (`fzn_glasgow.cc:882`). On
+    `fzn_all_equal_int` to `glasgow_all_equal_int` (`fzn_glasgow.cc:911`). On
     both 2.9.7 and 2.10.1, with `build/glasgow.msc`, int, enum and bool arrays
     flatten to one `glasgow_all_equal_int`, the bool array through three
     `bool2int`, with no warning. An array indexed from 3 flattens the same, and
@@ -104,7 +104,7 @@ Three things to know before touching it.
     (`fzn_all_equal_set`) is `n/a`: the solver has no set variables.
 
 [^xtree]: `buildConstraintAllEqual(string, vector<XVariable *>)`
-    (`xcsp_glasgow_constraint_solver.cc:280`) posts `AllEqual`. The parser's
+    (`xcsp_glasgow_constraint_solver.cc:281`) posts `AllEqual`. The parser's
     other overload, over expression trees (`<allEqual> add(x,1) y </allEqual>`),
     is not overridden, so such an instance answers `s UNSUPPORTED`
     (`tmp/fd-small/all_equal/xcsp/tree.xml`).
@@ -202,7 +202,7 @@ cake conformity.
 labels. `scp_chain_all_equal_sat` (three variables over `0..3`) and
 `scp_chain_all_equal_unsat` (`0..2` against `3..5`) pass the full workflow-2
 chain, with `opbdiff` matching every row
-(`verified_encodings/scp_cases/CMakeLists.txt:94–103`, run at `c9ceea25`).
+(`verified_encodings/scp_cases/CMakeLists.txt:102–111`; run at `c9ceea25`).
 
 Neither case has a hole, so neither reached the wrong-answer bug (#1153). On
 `tmp/fd-small/all_equal/scp/wrong.scp` (`x ∈ {1, 5}` through an `in`,
@@ -434,7 +434,8 @@ per-value iterators.
    The `AllEqual/holes` row's comment is stale. It says the pass "then walks
    each interval a value at a time" and that the row "still trips", and it
    cites `all_equal.cc:114`; but the row is pinned `Clean`, the per-value
-   loop is gone, and the hole pass is at line 116.
+   loop is gone, and the hole pass is at line 116. Corrected by #1396,
+   open.
 
 ## Inference catalogue
 
@@ -629,7 +630,9 @@ literal in the clause names.
 ### Tests
 
 - **`all_equal_test`** (`all_equal_constraint`, plus
-  `all_equal_constraint_view_mixed`), each run without and with proofs:
+  `all_equal_constraint_view_mixed` and, since #1208, its `_view_mixed_late`
+  twin, which posts a vacuous row over each view after the constraint), each run
+  without and with proofs:
   - six fixed interval shapes of two to four variables, three shapes of
     singleton domains (#254), and thirteen random interval shapes whose lower
     bound is in `−3..5` and which are up to five wider. All run under
@@ -728,7 +731,8 @@ check the same thing.
     fact-check found the diverging branch unreached on those and on
     `generalized-peacable-queens`, so the bug did not fire there.
 - **For CPU:** the enumeration below. It reaches all four rules, has a
-  checkable solution count, and gives GCS and Gecode identical trees.
+  checkable solution count, and gives GCS and Gecode the same tree
+  (recursions equal to Gecode's nodes, no failures).
 - **For proof verification:** the same enumeration with two or three groups
   (below). VeriPB time grows fast with the group size, so start small.
 
@@ -971,9 +975,9 @@ every shape below gives the right answer at `0a5b4ec6` (see [Re-audit,
    hole pass when the change was a bound, might recover the advantage the
    call counts suggest. This is empirical, and small to try. Not worth an issue
    until it has been tried.
-4. **Correct the stale text elsewhere.** Trivial. Step 1 landed without it:
-   #1180 touched neither file, and at `0a5b4ec6` all three passages below
-   are as described.
+4. **Correct the stale text elsewhere** (done by #1396, open). Trivial.
+   Step 1 landed without it: #1180 touched neither file, and at `0a5b4ec6` all
+   three passages below are as described.
    - `large_domain_audit_test.cc:438–449`: the `AllEqual/holes` row's comment,
      including its stale `all_equal.cc:114`;
    - [`large-domains.md`](../large-domains.md), line 664: `all_equal.cc` is
