@@ -79,7 +79,7 @@ Four things to know before touching it.
   does not even reach `bounds(Z)`.
 - **The encoding matches `cake_pb_cp`'s row for row, but it is unlabelled and
   in a different order.** So the three SCP chain cases can only be `none`.
-  The comment giving #358 as the reason is stale.
+  The comment giving #358 as the reason is stale (corrected by #1396, open).
 - **Its single-support rule's reason and proof are per value of the result.**
   The reason names `x ≠ r` for every value `r`, where a bound would do.
 
@@ -119,7 +119,7 @@ The degenerate cases:
 | indexed or tree-list `minimum` / `maximum` | n/a | `unsupported`[^xcsp] | — | — | |
 
 [^mzn]: `fzn_glasgow.cc` posts `array_int_minimum` / `array_int_maximum` at
-    line 551, and `int_max` / `int_min` at lines 724 and 730. The mznlib
+    line 580, and `int_max` / `int_min` at lines 753 and 759. The mznlib
     declares the two array builtins in `redefinitions-2.0.mzn`. Flattening
     fourteen shapes with `build/glasgow.msc` on 2.9.7 and 2.10.1
     (`tmp/fd-small/min_max/mzn/shapes.sh`) gives the same builtins on both:
@@ -139,9 +139,9 @@ The degenerate cases:
     Gecode on both versions.
 
 [^xcsp]: `build_min_max_common` (`xcsp_glasgow_constraint_solver.cc`, line
-    1198) creates an auxiliary result over the entries' hull, posts
+    1202) creates an auxiliary result over the entries' hull, posts
     `ArrayMin`/`ArrayMax`, and applies the condition to the result.
-    `intension`'s `min` and `max` (line 1447) also make a fresh result, with
+    `intension`'s `min` and `max` (line 1451) also make a fresh result, with
     tighter bounds than the hull: the minimum's upper bound is the smallest
     upper bound, and the maximum's lower bound the largest lower bound.
     The indexed, tree-list and `*Arg` forms fall through to the parser's
@@ -209,7 +209,8 @@ MiniZinc flattens `b <-> (max(x) = 3)`. No class is wanted.
 - **Child constraints:** none.
 - **Shares code:** the single-support rule calls
   `justify_not_in_range_across_equality` (`innards/justify_not_in_range`),
-  without a guard. `equals`, `all_equal`, `in` and `element` also call it. The
+  without a guard. `equals`, `all_equal` and `in` also call it; `element`
+  writes the same argument inline (`element.cc:452`). The
   result-in-union rule writes the same lemmas with a selector guard inline, not
   through the helper's `under` argument.
 - **Presolvers:** none recognises it. `AutoTable` tabulates whatever the
@@ -258,7 +259,7 @@ unlabelled and in a different order. So `--match-labels` falls back to
 position and fails, and the cases are registered as `none`. All three
 chain-verify.
 
-`verified_encodings/scp_cases/CMakeLists.txt` (line 282) gives the eq/ge
+`verified_encodings/scp_cases/CMakeLists.txt` (line 290) gives the eq/ge
 literal divergence of #358 as the reason they stay `none`. #358 is closed, and
 these OPBs carry no eq/ge literal definitions to diverge; the reason now is
 only the labels and the order.
@@ -452,7 +453,7 @@ and the random ones from −5 to 13.
   - **Who can reach it.** The C++ API and `gcspy`:
     - FlatZinc hands min and max only plain variables and constants.
       `fzn_glasgow.cc` does make views, but not into min and max: it recovers a
-      two-term equality (around line 649) as an `Equals` between a variable
+      two-term equality (around line 678) as an `Equals` between a variable
       and a view, and it shifts zero-based arrays for other families;
     - XCSP3's result is always fresh;
     - the `.scp` reader takes only atoms as operands, so a `.scp` file cannot
@@ -556,7 +557,7 @@ rest of the propagation is interval-level.
    line 601).
    - **Its comment is stale.** It blames "H1b (a missing hull bound) and H1a
      (the union scan)". The union scan has been interval-level since #815, and
-     the trip is the entry pass.
+     the trip is the entry pass. Corrected by #1396, open.
    - **What it does not vary:** holes, views, `min`, a narrow result (which
      reaches line 332 rather than 320), a single-support shape, or proofs. So
      the reason and proof sides above are outside it.
@@ -803,7 +804,8 @@ The shapes below are for `max`; `min` mirrors them.
 ### Tests
 
 - **`min_max_test`** (`min_max_constraint`, plus
-  `min_max_constraint_view_mixed`):
+  `min_max_constraint_view_mixed` and, since #1208, its `_view_mixed_late`
+  twin, which posts a vacuous row over each view after the constraint):
   - **The shapes.** For both directions: 20 fixed shapes (singletons, repeats
     of one range, constants mid-array, the #254 all-constant rows), then 10
     random shapes with a ranged result and 10 with a constant one, each of one
@@ -835,7 +837,8 @@ The shapes below are for `max`; `min` mirrors them.
 - **MiniZinc:** `arrayintminmax.mzn` (`array_int_minimum`/`maximum`, with
   `alldifferent`) and `minmax.mzn` (`int_min`/`int_max`), both optimisation.
 - **XCSP3:** `minimum.xml`, `maximum.xml`.
-- **Python:** `test_min` and `test_max` in `python_test.py`.
+- **Python:** `test_min` and `test_max` in `python_test.py`, which no ctest
+  runs (#1078).
 - **Audit lane:** the `ArrayMinMax` row; see [Interval
   efficiency](#interval-efficiency).
 
@@ -1093,14 +1096,14 @@ rules 4 and 5 and [Robustness](#robustness-and-limits).
      would have to target the result too.
 
    Medium; filed as #1166.
-3. **Update the audit row's comment**, and add rows with a narrow result, with
-   holes, and with proofs. Trivial.
+3. **Update the audit row's comment** (done by #1396, open), and add rows
+   with a narrow result, with holes, and with proofs. Trivial.
 4. **Make the single-support rule's reason and proof per run.** State "no
    other entry meets the result" as each other entry's generic reason, and one
    `¬f_k` per entry by a lemma per run. Small; filed as #1167.
 5. **Label the rows as cake does, in cake's order.** That makes the three
-   chain cases `strict`. Also correct the CMake comment's stale #358 reason.
-   Small.
+   chain cases `strict`. Also correct the CMake comment's stale #358 reason
+   (done by #1396, open). Small.
 6. **Measure the per-call overheads:** the domain copies, the `scope` vector,
    the generator frames, and the bound rules' unconditional (though
    non-allocating) reasons. These are candidates for the remaining 6.8 to 8.6
