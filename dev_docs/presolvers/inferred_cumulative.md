@@ -457,9 +457,10 @@ row carries at an assertion level, is `cumulative.md`'s.
   and this presolver posts nothing.
   - **At `Definitions`, `Inferences` and `Backtracking`** the proof then
     verifies.
-  - **At `Links`** it is still rejected, not because of this presolver: at
-    `Links` every proof of a satisfiable model is rejected at its first `solx` (#1210), and the projection fixtures
-    are satisfiable.
+  - **At `Links`** it is still rejected at its first `solx`, not because of
+    this presolver but for #1210: the projection fixtures are satisfiable and
+    declare their variables by range, which #1210 needs (a range wider than
+    `{0, 1}`, though that alone is not always enough).
   `disjunctive_2d_presolver_test`'s strip instance at `Inferences` reports
   `declined_by_install = 5`, one per cut (`disjunctive_2d.md`; probe
   `tmp/fd-sched/factcheck2/disjunctive_2d/bars/probe5.cc`).
@@ -696,9 +697,10 @@ MiniZinc RCPSP collections (Pack, Pack_d, BL, KSD15_D, la_x), proofs off, at
     value), so the four names above are listed instead.
 - **Neutral with respect to its consumers?** Yes, for time-tabling: a valid
   cut cannot change a verdict about one time point. That is why the derived
-  constraint ships with time-tabling off, and why the test can assert
-  node-for-node equality with it back on (181 nodes either way, seeds 1
-  and 2). The energy rules are where it is meant to be stronger.
+  constraint ships with time-tabling off, and why the test can assert the
+  same solution set and recursion count with it back on (181 recursions
+  either way, seeds 1 and 2). The energy rules are where it is meant to be
+  stronger.
 - **Proof size** — the programme replay costs about 12.5 lines per state,
   and over one row the states number `members × (π₀ + 1)` or fewer. That is
   the design note's figure, taken before #943; the replay itself did not
