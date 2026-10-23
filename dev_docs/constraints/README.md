@@ -985,6 +985,36 @@ constraints and do not restate it.
       condition is a constant, as an explicit MiniZinc `bool_xor(a, b)`
       arrives. The installed system changes `dom_then_deg`'s search through
       degree.
+- [`nogoods.md`](nogoods.md) — `Nogoods`, the learned-nogood store: search
+  machinery for restarts, **not a constraint meant for users**, though it is a
+  public class (`gcs.hh` includes it) and the `.scp` reader reads `nogoods`.
+  When restarts are on, `solve_with` installs one over a growing store and adds
+  each reduced nld-nogood (Lecoutre et al.) at the restart unwind; each is also
+  derived in the proof as a RUP line at `Top`, while the ancestors' backtrack
+  clauses still supply the dropped negative decisions, and moved to core when
+  the abandoned level held a solution's blocking clause. Two propagators, a
+  scan and a refined two-watched-literal one (the learned store's default),
+  over one definitional row per fixed nogood. Strength is unit propagation per
+  clause: GAC on a clause over distinct underlying variables, weaker when two literals
+  share one (26,000 brute-forced instances, both paths). A random differential
+  of 60,480 runs with a restart schedule (17,581 of which restarted) against
+  brute force found no wrong or repeated solution; every proved restarting run
+  (1,185) verifies at `Off`, as does Langford 11's 35,584-solution enumeration,
+  and three mutations of the learned-clause derivation are refused. Filed:
+  under optimisation the refined store arms a pass's nogoods late whenever the
+  next root is seeded by an improved bound (#1390); a restart scale of 0 never
+  terminates, through the own `--timeout` of XCSP3, the examples and the
+  MiniCP benchmarks (#1391); the refined
+  propagator never adopted #506's `scope_only`, so under dom/wdeg its
+  conflicts weight no variable, one cause of refined and scan diverging there
+  (#1392; with it fixed they still charge some failures to different
+  constraints, which dom/wdeg reads); a store grown by user code mid-search is
+  enforced on the refined path only at the next root propagation (so never,
+  without restarts) and gets a rejected proof on the scan path (#1393); and
+  the engine's refined-watch undo, a linear search per removed watch, takes
+  59% of the profile samples of `tsp --restarts=100`, and searching from the
+  back halves that run's time (#1394).
+  What other uses would need is recorded as Known limitations and Next steps.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
