@@ -990,7 +990,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `path.md` | `path/` | |
 | `reachable.md` | `reachable/` | |
 | `regular.md` | `regular/` | existing note `regular.md` |
-| `seq_precede_chain.md` | `seq_precede_chain/` | |
+| `seq_precede_chain.md` | `seq_precede_chain/` | **written**. Delegates to `value_precede` after a clamp; this document covers the clamp and the delegation |
 | `smart_table.md` | `smart_table/` | **written**. `SmartTable`, and the engine under `LexSmartTable` and `AtMostOneSmartTable`. The candidate merge with `table`, settled: separate. No shared code, and a flag per row and per entry against `Table`'s proof-only selector |
 | `sort.md` | `sort/` | `Sort`, `ArgSort`; existing note `sortedness.md` |
 | `subgraph.md` | `subgraph/` | |
