@@ -610,9 +610,10 @@ term the OPB pins anyway.
 | `xcsp_intension_boolean` | `xor(a, c, d)` at the top level |
 | `minizinc-arrayboolxor` | `array_bool_xor` against MiniZinc's default solver |
 
-All pass at `f28fdef8`, caps off, with MiniZinc 2.9.7, `cake_pb_cp` and
-`opbdiff` on the path. At `--seed=1`, `parity_test` verifies 32 proofs,
-`parity_system_test` 25 and the presolver test 36.
+All that existed then pass at `f28fdef8`, caps off, with MiniZinc 2.9.7,
+`cake_pb_cp` and `opbdiff` on the path. At `--seed=1`, `parity_test` verifies
+32 proofs, `parity_system_test` 25 and the presolver test 36. The two late
+lanes pass at `86caad24`, run directly (27 and 25 proofs).
 
 **Runtime caps.** No lane sets or clears one, and the defaults **never fire**:
 three unseeded runs of each of the three binaries, and one of each of the two
