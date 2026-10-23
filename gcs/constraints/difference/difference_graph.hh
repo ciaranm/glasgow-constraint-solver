@@ -171,9 +171,11 @@ namespace gcs::innards
      * the rows, never about where they came from.
      *
      * Half-reified edges take part only while their condition currently holds.
-     * No inference runs the other way: the propagator never fixes a condition
-     * from the graph (the paper's `IncImp`), which its own configuration study
-     * says to leave off.
+     * No inference runs the other way during search: the propagator never fixes
+     * a condition from the graph (the paper's `IncImp`), which its own
+     * configuration study says to leave off. Only the root initialiser's
+     * simplification does, once, when it is on (besides the disallowed
+     * conditions below, which the initialiser also fixes false).
      *
      * A no-op if the system has no edges, static bounds or disallowed
      * conditions. Detecting a root-level contradiction (an *unconditional* edge
