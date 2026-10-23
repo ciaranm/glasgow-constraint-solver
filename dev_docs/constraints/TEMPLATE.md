@@ -991,7 +991,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `reachable.md` | `reachable/` | |
 | `regular.md` | `regular/` | existing note `regular.md` |
 | `seq_precede_chain.md` | `seq_precede_chain/` | |
-| `smart_table.md` | `smart_table/` | The candidate merge with `table`, settled: separate. No shared code: `SmartTable` does not use `extensional_utils`, encodes one proof flag per smart tuple over constraint-shaped entries, and is reached only from the `.scp` reader and as the engine under `LexSmartTable` and `AtMostOneSmartTable` |
+| `smart_table.md` | `smart_table/` | **written**. `SmartTable`, and the engine under `LexSmartTable` and `AtMostOneSmartTable`. The candidate merge with `table`, settled: separate. No shared code, and a flag per row and per entry against `Table`'s proof-only selector |
 | `sort.md` | `sort/` | `Sort`, `ArgSort`; existing note `sortedness.md` |
 | `subgraph.md` | `subgraph/` | |
 | `table.md` | `table/`, `extensional_utils.{hh,cc}` | **written**. `Table`, `NegativeTable`, and the extensional propagator that `AutoTable` and the tabulated constraints also run. Not merged with `smart_table`; see its row |
