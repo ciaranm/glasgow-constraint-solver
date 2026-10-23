@@ -135,8 +135,8 @@ z = min_{0 ≤ i < j < p} D[x_i, x_j]        and, with R,   D[x_i, x_j] ≥ R_ij
 [^vocab]: No frontend has a vocabulary for it: neither MiniZinc's standard
     library nor XCSP3 defines a minimum-distance global, and `minizinc/mznlib`,
     `xcsp/` and `gcspy` bind nothing here. The cells follow the row #569 added
-    to `frontend-support-matrix.md`. `examples/p_dispersion` is the only
-    in-tree model.
+    to the frontend support matrix, since retired. `examples/p_dispersion` is
+    the only in-tree model.
 
 [^scpmode]: `read_min_distance` (`scp_reader.cc:957`) posts at the default,
     `ForwardBound`, whatever wrote the file, as the regular variants do; a

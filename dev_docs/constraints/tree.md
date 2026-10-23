@@ -146,9 +146,9 @@ except the empty graph. Degenerate shapes:
 
 [^xcsp]: XCSP3-core has no tree constraint.
 
-[^cpmpy]: `n/a`, as the frontend support matrix records it for the tree and
-    path family. `gcspy`, CPMpy's route into this solver, binds nothing in this
-    family; CPMpy itself was not examined.
+[^cpmpy]: `n/a`, as the retired frontend support matrix recorded it for the
+    tree and path family. `gcspy`, CPMpy's route into this solver, binds
+    nothing in this family; CPMpy itself was not examined.
 
 [^wrappers]: The standard library's `fzn_steiner` is `let { var 1..N: r } in
     tree(…) ∧ weight = Σ es·w`, `fzn_dsteiner` is `dtree(…)` with the given

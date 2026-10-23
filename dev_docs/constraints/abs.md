@@ -93,8 +93,7 @@ Three things to know before touching it.
 [^xabs]: The intension walker gives `abs(e)` an auxiliary result `absresult`
     whose domain is the image of `e`'s bounds, and posts `Abs{e, r}`. `dist(a,
     b)` becomes a difference variable `a − b` by a linear equality, then `Abs`
-    on it. `frontend-support-matrix.md` has no row for either; they sit under
-    its `intension` row.
+    on it.
 
 CPMpy's upstream GCS interface, checked 2026-09-23, posts `abs(x) == y` as
 `post_abs(x, y)`, asserting that `abs` has one argument; its comment adds

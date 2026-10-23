@@ -74,9 +74,9 @@ library. For an introduction to *using* the solver, start with the top-level
   skeleton every per-family document under `dev_docs/constraints/` follows,
   plus the conventions and the closed vocabularies (proof technique,
   consistency level, offline-reconstructibility verdict, frontend cell) those
-  documents draw on. Also carries the family list — authoritative for what
-  counts as a family — and the variant template for presolvers. Read before
-  writing or auditing a family document.
+  documents draw on, and the variant template for presolvers. Read before
+  writing or auditing a family document. The family list, authoritative for
+  what counts as a family, is in the index below.
 - [Constraint family documents](constraints/README.md) — the per-family
   documents (semantics, frontend coverage, OPB encoding, one entry per
   inference rule with its proof technique and assertion hint, robustness
@@ -146,12 +146,6 @@ library. For an introduction to *using* the solver, start with the top-level
   writing or checking, records which candidates are too large to
   proof-log at all, and lists the argument-shape traps. Use when
   changing proof logging, scaffolding, encodings or hinting.
-- [Frontend support matrix](frontend-support-matrix.md) — which gcs
-  propagators each frontend (MiniZinc, XCSP3, CPMpy) exposes, plus where the
-  solver-side gaps are tracked. **Being retired**: its rows are migrating into
-  the per-family documents under `dev_docs/constraints/`. Update the family
-  document rather than this file, and delete this one once every family carries
-  its rows.
 - [Proof logging for `Cumulative`](cumulative-proof-logging.md) — concrete
   walk-through of the three-inference proof for the time-table propagator:
   the `pol`-over-`active=1`-flags idiom, the "extended-reason pinning"

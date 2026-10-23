@@ -149,9 +149,7 @@ limitations](#known-limitations) keeps that history.
 
 Twelve classes, four cells each; the pattern is uniform enough to table by
 shape rather than by class. The CPMpy cells are `?` except for the
-half-reified forms, which `frontend-support-matrix.md` already tracks as a
-CPMpy gap under #61 — that row and the matrix's "binary comparison" row are the
-two this table replaces.
+half-reified forms, which CPMpy reaches through `gcspy`[^cpmpyif].
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
@@ -161,7 +159,7 @@ two this table replaces.
 | `GreaterThanEqual` | `decompose` — over integers, as `GreaterThan`; over Booleans, flattened to a `bool_clause`, so it reaches `Or` rather than this family | ✓ `intension` ge; also `circuit`'s tour-size bound | ? | ✓ `greater_equal` | |
 | `LessThanIff`, `LessThanEqualIff` | ✓ `int_le_reif` against a constant, and `bool_lt_reif`; a reified ordering between integer variables arrives as `int_lin_le_reif` (see[^lin]), and a non-strict Boolean one as `bool_clause_reif` | ✓ reified `intension` lt/le | ? | ✓ `less_than_iff`, `less_equal_iff` | |
 | `GreaterThanIff`, `GreaterThanEqualIff` | `decompose` — between two integer variables, to a two-term `int_lin_le_reif`, posted as `LinearLessThanEqualIff`[^lin]; against a constant, to `int_le_reif` with the operands exchanged, so a `LessThanEqualIff`; over Booleans, `>` to `bool_lt_reif` with the operands exchanged and `>=` to `bool_clause_reif` | ✓ reified `intension` gt/ge | ? | ✓ `greater_*_iff` | |
-| the four `*If` forms | frontend gap — no FlatZinc predicate half-reifies[^imp] | unsupported — a top-level `imp` becomes an `Or` over a fully-reified control | frontend gap (#61) | ✓ `less_than_if` etc. | the one conditional shape of this family the presolver lifts. Neither MiniZinc nor XCSP3 produces it, and the routes that do (`.scp`'s `less_than_if`, `gcspy`'s `*If` posts) cannot turn the presolver on |
+| the four `*If` forms | frontend gap — no FlatZinc predicate half-reifies[^imp] | unsupported — a top-level `imp` becomes an `Or` over a fully-reified control | ✓ `gcspy`'s `post_*_reif` with `fully_reify` false[^cpmpyif] | ✓ `less_than_if` etc. | the one conditional shape of this family the presolver lifts. Neither MiniZinc nor XCSP3 produces it, and the routes that do (`.scp`'s `less_than_if`, `gcspy`'s `*If` posts) cannot turn the presolver on |
 
 [^lin]: **From MiniZinc this family is reached through a recovery.** The
     flattener (2.9.7 and 2.10.1 alike) emits `int_lin_le([1,-1],[x,y],d)` even
@@ -195,8 +193,7 @@ two this table replaces.
     `add`, `sub` and `neg` into a single `LinearLessThanEqual`; anything else
     falls back to the ordinary walk and reaches this family. `eq` is excluded
     from that peephole for the strength reason in [^lin]. Details and the
-    measured OPB/proof saving are in
-    [`frontend-support-matrix.md`](../frontend-support-matrix.md).
+    measured OPB/proof saving are in [`xcsp.md`](../xcsp.md#the-affine-peephole).
 
 [^imp]: `minizinc/mznlib/` declares no `*_imp` predicates, so MiniZinc's
     flattener never half-reifies. Every conditional difference arrives fully
@@ -206,6 +203,14 @@ two this table replaces.
     difference-logic presolver skips a fully reified donor
     ([`difference_logic.md`](../presolvers/difference_logic.md)). Lifting its
     two halves is #1373.
+
+[^cpmpyif]: `gcspy`'s `post_less_than_reif`, `post_less_than_equal_reif`,
+    `post_greater_than_reif` and `post_greater_than_equal_reif` post the `*If`
+    class when `fully_reify` is false and the `*Iff` one when it is true
+    (`python/gcspy.cc:364–442`). CPMpy's upstream GCS interface, as copied on
+    2026-09-23 (`tmp/linear-audit/cpmpy_gcs.py:512–548`), passes `fully_reify`
+    false for `b -> (x op y)`, so it reaches all four. #61, the CPMpy wishlist
+    that asked for three of these classes, closed on 2026-09-18.
 
 ### Options
 

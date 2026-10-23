@@ -33,7 +33,7 @@ reasoning behind them.
 | making a propagator faster | [`propagator-performance.md`](dev_docs/propagator-performance.md), then [`benchmarking.md`](dev_docs/benchmarking.md) |
 | changing the build, an option, or a toolchain assumption | [`building.md`](dev_docs/building.md) |
 | writing C++ that clang-format does not settle | [`code-style.md`](dev_docs/code-style.md) |
-| working on a frontend | [`minizinc.md`](dev_docs/minizinc.md), [`xcsp.md`](dev_docs/xcsp.md), [`frontend-support-matrix.md`](dev_docs/frontend-support-matrix.md) |
+| working on a frontend | [`minizinc.md`](dev_docs/minizinc.md), [`xcsp.md`](dev_docs/xcsp.md), and the family's frontend coverage table ([`dev_docs/constraints/README.md`](dev_docs/constraints/README.md) is the index) |
 | releasing the Python bindings | [`releasing-gcspy.md`](dev_docs/releasing-gcspy.md) |
 
 For orientation in the source itself, `README.md` (Navigating the Source Code)

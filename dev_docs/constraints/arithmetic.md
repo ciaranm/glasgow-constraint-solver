@@ -202,8 +202,8 @@ Degenerate shapes, per class:
     zero can still leave the
     quotient short of its hull (see [quotient-sign](#rule-quotient-sign)).
 
-`frontend-support-matrix.md` has no rows for this family; its XCSP3 side sits
-under the matrix's `intension (algebraic exprs)` row.
+The XCSP3 cells are all the intension tree walker's; see
+[`xcsp.md`](../xcsp.md), "The intension tree walker".
 
 ### Options
 

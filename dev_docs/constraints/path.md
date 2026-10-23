@@ -127,8 +127,8 @@ is that one node and no edges.
     nothing is lost beyond one variable and one `Equals` per endpoint.
     MiniZinc's `fzn_path_reif` and `fzn_dpath_reif` `abort`.
 
-[^gcspy]: As `frontend-support-matrix.md` has it. `gcspy` binds nothing in this
-    family.
+[^gcspy]: As the retired frontend support matrix had it. `gcspy` binds nothing
+    in this family.
 
 [^bounded]: The stdlib defines `bounded_path` and `bounded_dpath` as the path
     plus a weighted sum, in both spellings, on 2.9.7 and 2.10.1, so they reach

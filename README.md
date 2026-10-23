@@ -177,9 +177,10 @@ Useful options:
 For developer documentation on the XCSP3 frontend (the callbacks layer,
 the intension tree walker, the testing flow with cached expected outputs
 and ACE cross-checking, and the recipe for adding a new constraint
-binding), see [`dev_docs/xcsp.md`](dev_docs/xcsp.md). The corresponding
-support matrix across all three frontends is in
-[`dev_docs/frontend-support-matrix.md`](dev_docs/frontend-support-matrix.md).
+binding), see [`dev_docs/xcsp.md`](dev_docs/xcsp.md). Which constraints
+each frontend reaches is recorded per constraint family, in the frontend
+coverage table of each document indexed by
+[`dev_docs/constraints/README.md`](dev_docs/constraints/README.md).
 
 Using the MiniZinc Solver
 -------------------------

@@ -50,6 +50,13 @@ If we don't override a predicate in `mznlib/`, MiniZinc uses the
 stdlib decomposition (typically a PB or boolean encoding), which
 still works but doesn't reach our dedicated propagator.
 
+`network_flow` and `network_flow_cost` are left to it, with no override
+and no tracking issue: #637 put them outside its graph-constraint
+ladder. Their decomposition is flow conservation, one linear equality
+per node (plus the cost's weighted sum), which reaches the linear
+family directly, so the fall-through costs far less than the
+reachability family's distance labelling did.
+
 ## Solver configuration files
 
 The solver configuration is generated from `minizinc/glasgow.msc.in`,

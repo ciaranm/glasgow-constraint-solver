@@ -1,15 +1,92 @@
 # Constraint family documents
 
-One document per constraint family, written to
-[`TEMPLATE.md`](TEMPLATE.md) — which is also where the conventions, the closed
-vocabularies, and the authoritative family list live. Read it before writing or
-auditing one of these.
+One document per constraint family, and one per presolver under
+[`../presolvers/`](../presolvers/), written to [`TEMPLATE.md`](TEMPLATE.md),
+which is also where the conventions and the closed vocabularies live. Read it
+before writing or auditing one of these. This file is the index: [the family
+list](#the-family-list), which says what counts as a family, then a summary of
+each [family document](#families) and each [presolver document](#presolvers).
 
 `dev_docs/constraints.md`, one directory up, stays the generic "how to
 implement a constraint" guide. These documents are about particular
 constraints and do not restate it.
 
-## Written so far
+Every family in the list has its document, and so has every presolver. #871
+is the tracker for the arc, including the method that produced the pilot and
+the decisions it settled.
+
+The point of the arc is not a complete set of documents. It is that by the time
+the audit is done, the solver is in a good state to write the
+proof-logging-for-CP paper: each family gets read carefully, its problems get
+filed and fixed, and the document is the record of that pass. Expect the fixing
+to outweigh the writing, and expect the document to need rewriting afterwards:
+the pilot filed seven issues, six of the fixes landed, and bringing the
+document back into line with them touched the rule catalogue, the robustness
+section, both performance tables and every measured figure. A family document
+is the record of a pass, so a pass that changes the code changes the document.
+
+## The family list
+
+The definition of "family", and so of which document covers which code. It
+is authoritative: do not derive it from `ls`. Every candidate merge it once
+listed has been settled, and each document's Relation to other families says
+how. It moved here from [`TEMPLATE.md`](TEMPLATE.md) once every family was
+written.
+
+| Document | Covers | Notes |
+|---|---|---|
+| [`all_different.md`](all_different.md) | `all_different/` | GAC, BC and VC arms, `AllDifferentExcept`, `ExceptZero`, and `SymmetricAllDifferent`, which lives here and shares the encoding and the GAC propagator |
+| [`all_equal.md`](all_equal.md) | `all_equal/` | One class, `AllEqual`; not merged with `equals`, which is the binary case and shares only the range-removal helper |
+| [`arithmetic.md`](arithmetic.md) | `multiply/`, `divide_modulus/`, `plus_minus/`, `power/`, and the `plus.hh` / `minus.hh` / `divide.hh` / `modulus.hh` headers | One family over several directories; `arithmetic-proofs.md` stays, as its design note |
+| [`abs.md`](abs.md) | `abs/` | The candidate merge into `arithmetic`, settled: separate. The view-proof gap that first kept it apart has closed; it shares no code or encoding with the product family |
+| [`at_most_one.md`](at_most_one.md) | `at_most_one/` | `AtMostOne`, and `AtMostOneSmartTable`, whose engine is `smart_table`'s. Not merged with `counting`: the meaning of `Count` with a counter in `0..1`, but no shared code |
+| [`bin_packing.md`](bin_packing.md) | `bin_packing/` | One class, `BinPacking`, in its two forms (variable loads, constant capacities), with its three stages: Stage 2 bounds, Stage 3 under `consistency::GAC` with the `PerCall` and `Upfront` proof strategies, and the opt-in Stage 4 (`bin_packing::Shaw`). The `Upfront` Stage 3 is a `k = 1` copy of `Knapsack`'s upfront diagram, documented here as a copy and cited to `knapsack.md` for what is identical; `PerCall` shares nothing with `Knapsack`'s. Not merged with `knapsack`: items are bin indices, one diagram per bin, no shared code. `bin-packing.md` and `decision-diagram-proof-strategies.md` stay as long notes; filed #1345 (XCSP3 condition-form wrong answers), #1347 (front-end refusals: MiniZinc out-of-range item domains, `var opt` over 1-based bins, negative loads; XCSP3 aborts), #1346 (Stage 3's missing commitment), #1349 (the constant-capacity Stage 3 waste, no change to the fixpoint) and #1348 (no load coherence); commented on #1340 and #1210 |
+| [`circuit.md`](circuit.md) | `circuit/` | `Circuit` and `SubCircuit`, one document: they share the directory, the hint header and `all_different`'s value consistent pass and clique, and no propagator or position encoding. `subcircuit-proof-logging.md` stays as the long note. No shared code or encoding with `path`, `tree`, `dag`, `reachable` or `subgraph`, whose reachability proofs use `connectivity-proofs.md`'s unfolding instead of a labelling |
+| [`counting.md`](counting.md) | `count/`, `among/`, `global_cardinality/`, `n_value/` | The candidate merge, settled: four classes (`Count`, `Among`, `NValue`, `GlobalCardinality` at `BC` and `GAC`), no shared propagation code and four encodings, so one document and no code merge |
+| [`comparison.md`](comparison.md) | `comparison/` | Twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
+| [`equals.md`](equals.md) | `equals/` | The pilot. `Equals`, `NotEquals` and the four reified forms |
+| [`cumulative.md`](cumulative.md) | `cumulative/` | `Cumulative` and its optional-task form, plus the runtime machinery the three scheduling presolvers install (`derived_cumulative`, `donor_view`, `propagate.hh`, the checkpoint recovery); `Disjunctive2D` runs the same propagator over its projections and is documented in `disjunctive_2d.md`; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` stay |
+| [`difference.md`](difference.md) | `difference/` | One class, `DifferenceConstraints`, and the runtime machinery `install_difference_propagator` installs for it and for the `difference_logic` presolver (root initialiser, incremental and from-scratch routes, root simplification), documented here whoever installs it; the presolver's detection and rewrite are `presolvers/difference_logic.md`'s. `difference-logic.md` stays as the long note, cross-referenced from both. Not merged with `comparison` or `linear`, whose rows are the per-edge spellings the presolver cites: no shared code. Filed #1371 (the shortest-path arithmetic of the incremental route and root simplification) and #1372 (`difference_graph.cc`'s Bellman-Ford bounds and cycle sums) |
+| [`dag.md`](dag.md) | `dag/` | One class, `Dag`; shares `connectivity-proofs.md` with `reachable`, which stays as the long note. `reachable.md` owns the rooted unfolding and `dag.md` the rootless form. The `sgf`/`sgt` subgraph rows and the two subgraph rules are copied, not shared, between `Dag`, `Subgraph` and `Reachable`, and each family's document records its own copy |
+| [`disjunctive.md`](disjunctive.md) | `disjunctive/` | `Disjunctive` only: `disjunctive_2d/` now has its own document, `disjunctive_2d.md`, split out because it is large. Note `disjunctive-proof-logging.md` stays as the long note, and this document describes `ComparatorNetwork` for both |
+| [`disjunctive_2d.md`](disjunctive_2d.md) | `disjunctive_2d/` | `Disjunctive2D` (`diffn`), strict, non-strict and optional, with the cumulative relaxation (route B time-tabling, route A overload / edge-finding / TTEF), `cumulative_projection` and the projection donors; split from `disjunctive.md` because the relaxation is as large as the 1-D family. Note `disjunctive-proof-logging.md` ("2D non-overlap") stays as the long note. `Cumulative`'s propagator, run on each projection, is documented in `cumulative.md`; `ComparatorNetwork` in `disjunctive.md` |
+| [`element.md`](element.md) | `element/` | `Element`, `Element2D` |
+| [`in.md`](in.md) | `in/` | One class over constants and variable candidates; also the machinery behind every `create_integer_variable(vector)`. `range_literals_spec.md` stays the range-literal reference |
+| [`increasing.md`](increasing.md) | `increasing/` | `Increasing`, `StrictlyIncreasing`, `Decreasing` and `StrictlyDecreasing` over one `IncreasingChain`. Not merged with `comparison`: the same row and theorem, no shared code |
+| [`inverse.md`](inverse.md) | `inverse/` | One class; its propagator runs `all_different`'s generalised arc consistent algorithm on one array, and is documented there as well |
+| [`knapsack.md`](knapsack.md) | `knapsack/` | One class, `Knapsack`, with two proof strategies over one OPB: `PerCall` (default; Demirović et al.'s per-call diagram) and `Upfront` (`knapsack_upfront.{hh,cc}`, the static diagram at `Top`). Shares no code: `BinPacking`'s upfront diagram is a `k = 1` copy, and `subset_sum_strengthening` is not this family's (its callers are `cumulative` and the `cumulative_strengthening` presolver). `knapsack.md` and `decision-diagram-proof-strategies.md` stay as long notes; filed #1337 (negative values from the front ends), #1340 (the quadratic interior pass), #1334 (unchecked row lengths) and #1341 (the `multi-knapsack` root); commented on #1229 (at `AssertionLevel::Off`, reachable from MiniZinc) and #1070 |
+| [`lex.md`](lex.md) | `lex/`, `lex_smart_table.hh` | The twelve named `Lex*` forms over `LexCompareGreaterThanOrMaybeEqual`, and `LexSmartTable`, whose engine is `smart_table`'s |
+| [`linear.md`](linear.md) | `linear/` | Note `linear-slack-waking.md` is cross-referenced and due to be folded in; `subset-sum-strengthening.md` is not this family's (an `innards/proofs` helper for `cumulative` and the `cumulative_strengthening` presolver; `knapsack` does not use it) |
+| [`logical.md`](logical.md) | `logical/` | `And`, `Or`, `AndIf`, `OrIf` over one template and two propagators, the scan and, for a long clause, the watched clause |
+| [`mdd.md`](mdd.md) | `mdd/` | One class, `MDD`. Not merged with `regular`: `mdd.cc` carries its own copy of `Regular`'s graph code (`MDDGraph`, `DeadCache`, the degree cascade) with per-layer node sets, and shares no helper, hint or encoding row with it; #200 is the unification. `decision-diagram-proof-strategies.md` stays as the long note shared with `regular`, `knapsack` and `bin_packing`; this document describes only `MDD`'s upfront use of it |
+| [`min_distance.md`](min_distance.md) | `min_distance/` | `MinDistance` and its five propagation modes; `min-distance-proofs.md` stays as the long note |
+| [`min_max.md`](min_max.md) | `min_max/` | `ArrayMin`, `ArrayMax`, `Min` and `Max` over one `ArrayMinMax`; `Min` and `Max` are its two-entry case |
+| [`nogoods.md`](nogoods.md) | `nogoods/` | Search machinery rather than a posted constraint: the learned-nogood store that `solve_with` installs when restarts are on, its two propagators (scan and refined two-watched-literal), and the reduced nld-nogoods the restart unwind records and `emit_learned_nogood` derives in the proof. Reachable as a public class and through the `.scp` reader, which the document records without endorsing; what other uses would need is under its Known limitations and Next steps. Not a candidate merge with `logical` or `table`: it shares no code with them, though their watched clauses are copies of the same scheme (#131). `restarts-nogoods-weighting.md` and `refined-triggers.md` stay as long notes; filed: the optimisation catch-up's late arming (#1390), a restart scale of 0 (#1391), the refined propagator's missing `scope_only` under dom/wdeg (#1392), a user-grown store (#1393), and the refined-watch undo cost (#1394) |
+| [`parity.md`](parity.md) | `parity/` | `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
+| [`path.md`](path.md) | `path/` | `Path` and `DPath`, posted as a `Reachable` / `DReachable` child plus a `LinearEquality` child plus their own degree and endpoint rows. The rows and their propagator are `innards/graph_rules`, shared with `DTree` and catalogued here; `tree.md` owns `DTree`'s use of it. The child's rules and the unfolding are in `reachable.md`. Nothing is shared with `circuit`. `connectivity-proofs.md` stays as the long note |
+| [`reachable.md`](reachable.md) | `reachable/` | `Reachable` and `DReachable`, which `connected` / `dconnected` reach through the stdlib and `Tree` / `Path` post as a child; owns the unfolding encoding, the propagator and its forcing. `connectivity-proofs.md` stays, shared with `dag`; `Reachable`, `Subgraph` and `Dag` each carry their own copy of the subgraph rows and rules, and each document records its own; filed #1305, #1312, #1316 |
+| [`regular.md`](regular.md) | `regular/` | `Regular`, with its three proof strategies (`Upfront`, the default; `PerCall`, `RegularLegacy`; `Bacchus`, `RegularBacchus`), `canonical_run` (#1266) and the regex front end (`regex.{cc,hh}`), one document: one public class, one propagator in three copies, one encoding. `regular.md` and `decision-diagram-proof-strategies.md` stay as long notes; the latter is shared with `mdd`, `knapsack` and `bin_packing`, and each document describes its own strategies. No code shared with `mdd`, which carries its own copy of the graph maintenance (with the same per-node copy, stale-key and recursive-cascade defects, #1338, #1339 and #1351, each filed for both); `recover_am1_from_pairs`, which the canonical run calls, is documented in its header, and no family document owns it |
+| [`seq_precede_chain.md`](seq_precede_chain.md) | `seq_precede_chain/` | Delegates to `value_precede` after a clamp; this document covers the clamp and the delegation |
+| [`smart_table.md`](smart_table.md) | `smart_table/` | `SmartTable`, and the engine under `LexSmartTable` and `AtMostOneSmartTable`. The candidate merge with `table`, settled: separate. No shared code; since #1202 both give each row a proof flag reified both ways under an at-least-one, but `SmartTable`'s entries are constraints with flags of their own, where `Table`'s are equality literals |
+| [`sort.md`](sort.md) | `sort/` | `Sort`, `ArgSort`; `sortedness.md` stays as the long note |
+| [`subgraph.md`](subgraph.md) | `subgraph/` | One class, `Subgraph`. Not merged with `reachable` or `dag`: they carry copies of its two rows and its two rules under their own IDs and hints, and none of them calls it |
+| [`table.md`](table.md) | `table/`, `extensional_utils.{hh,cc}` | `Table`, `NegativeTable`, and the extensional propagator that `AutoTable` and the tabulated constraints also run. Not merged with `smart_table`; see its row |
+| [`tree.md`](tree.md) | `tree/` | `Tree` and `DTree`; a `Reachable` child, a `LinearEquality` count and, for `DTree`, in-degree rows through `innards/graph_rules`, shared with `path`. Not merged with `reachable` (own `.scp` term, count, rows and hint) or `path` (shares only `graph_rules`); no shared code with `dag` or `circuit` (`dag` copies the two subgraph rows per edge; its unfolding is its own). `connectivity-proofs.md` stays as the long note |
+| [`value_precede.md`](value_precede.md) | `value_precede/` | `ValuePrecede`, for a pair or a chain; `seq_precede_chain` installs it |
+
+Not families, and getting no document: `gcs/constraints/innards/` (shared
+helpers — documented where they are used, or in `constraints.md`).
+
+Presolvers, one document each under `dev_docs/presolvers/`: `auto_table`,
+`cumulative_strengthening`, `difference_logic`, `inferred_cumulative`,
+`inferred_disjunctive`, `parity_system_gathering`. Existing notes:
+`cumulative-strengthening.md`, `inferred-cumulative.md`,
+`inferred-disjunctive.md`, the presolver half of `difference-logic.md`, and the
+gathering half of `parity-system.md`. What each one installs, and which family
+document owns that machinery, is the table under [The presolver
+variant](TEMPLATE.md#the-presolver-variant).
+
+## Families
 
 - [`equals.md`](equals.md) — `Equals`, `NotEquals` and the four reified forms:
   one class and one propagator behind six posted constraints, a definitional
@@ -57,8 +134,9 @@ constraints and do not restate it.
   a real option (`with_consistency`), the first to claim idempotence, the first
   whose propagators are not all GAC, and the only one whose dominant wire hint
   belongs to another family — 93% of the assertions it is responsible for
-  arrive labelled `equals`, because it reuses `enforce_equality`. Three of its
-  six rules are published justification procedures; two are ours. It is also
+  arrive labelled `equals`, because it reuses `enforce_equality`. Two of its
+  six rules are published justification procedures and three are ours, rule 1
+  since #929 put its certificate over runs. It is also
   **the first and so far only client of optional interior pruning**: under
   `consistency::Auto` its two result propagators are installed as a pair and
   the solver decides, once and per model, whether anything could observe the
@@ -67,8 +145,9 @@ constraints and do not restate it.
 - [`all_different.md`](all_different.md) — `AllDifferent` at three consistency
   levels, `AllDifferentExcept` and `SymmetricAllDifferent`: one clique encoding,
   nine rules, and the thesis's own Hall set procedures (JP 3.16, 3.17) behind the
-  generalised arc consistent arm. The first family whose code is not only its
-  own — `Inverse`, `ArgSort`, `Circuit` and `SubCircuit` run its propagators —
+  generalised arc consistent arm. The family whose code is most widely
+  shared — `Inverse`, `ArgSort`, `Circuit` and `SubCircuit` run its
+  propagators —
   and the counterexample for `consistency::Auto`: a bounds consistent arm that
   cannot be paired, because a hole in one variable moves another's bound. The
   audit's headline is in the front end: MiniZinc's `symmetric_all_different`,
@@ -96,7 +175,9 @@ constraints and do not restate it.
   fixed: a constant in `GlobalCardinality`'s array (#1046, found by the
   `inverse` audit; #1187), aliasing in `GlobalCardinality` and `Count` (#1191,
   #1197, #1201) and a view registered by a later constraint (#1200).
-  Re-audited 2026-10-08.
+  Re-audited 2026-10-08. Two bugs found after that are open: `Count` with `n`
+  and `y` one variable can lose solutions (#1304), and `Among` with `n` among
+  its positions can write proofs VeriPB rejects (#1308).
 - [`linear.md`](linear.md) — `LinearEquality`, `LinearNotEquals`,
   `LinearLessThanEqual`, `LinearGreaterThanEqual` and their reified forms:
   twelve named classes over two base classes and one bound sweep, and the
@@ -110,8 +191,8 @@ constraints and do not restate it.
   edges and none in the propagator,
   all now fixed: an XCSP3 `sum ≠` translation whose wrong `UNSATISFIABLE`
   verified (#1032), constant-condition `If` forms (#1033), and a `gcspy`
-  binding posting `≤` for `≥` (#1036). Its inequality's bound pushes are the
-  only unhinted assertions any family document has recorded. The stateless
+  binding posting `≤` for `≥` (#1036). Its inequality's bound pushes were the
+  first unhinted assertions any family document recorded. The stateless
   and incremental sweeps find the same solutions and each wins by up to 3×
   somewhere; the default loses 2.2× on one model to per-node heap copies of its
   fold state (#1034).
@@ -209,7 +290,8 @@ constraints and do not restate it.
   194 are contradicted by later solutions in the same proof. `Circuit` has the
   same defect from the same change. Also: the default short reasons
   define a flag on every call, taking one enumeration's checking time from
-  0.8 s to 15.9 s. On identical trees it is 8–23 times slower than the native
+  0.8 s to 15.9 s. At equal recursion and solution counts it is 8–23 times
+  slower than the native
   `Lex` and `AtMostOne`, about half of it in allocation, hash lookups and map
   helpers. Not merged with
   `table`: no shared code, and different entries.
@@ -247,7 +329,8 @@ constraints and do not restate it.
   propagated pair by pair. The clamp row is part of the encoding's definition,
   since the chain stops at the array length; `cake_pb_cp` writes one for every
   position. Everything is independent of width, because the chain is capped,
-  checked by full enumerations up to `2⁶¹ − 1`. The encoding is `Θ(n²)` rows
+  checked by full enumerations up to `2⁶⁰ − 1`, the widest declared domain
+  since #1214. The encoding is `Θ(n²)` rows
   and `Θ(n³)` terms. Its class comment misstates the semantics, and MiniZinc's
   standard library wrongly rejects an all-negative array.
 - [`lex.md`](lex.md) — the twelve `LexGreaterThan`, `LexGreaterEqual`,
@@ -255,7 +338,8 @@ constraints and do not restate it.
   Frisch et al. propagator with a flag-per-position encoding matching
   `cake_pb_cp`'s; and `LexSmartTable`, a benchmarking reference. Generalised arc
   consistent on distinct variables, holes and unequal lengths included, at 4.2
-  to 4.8 times Gecode's time on an identical tree. The headline is the cost of
+  to 4.8 times Gecode's time on the same tree, node for node. The headline is
+  the cost of
   a call: it materialises a whole-scope reason on every call (#1141), and at
   `c9ceea25` deferring it gave 1.58 times the node throughput on `zephyrus`
   and 3.0 times on `mqueens` (the reason's content is unchanged; the builds'
@@ -305,8 +389,9 @@ constraints and do not restate it.
   on distinct variables, holes and views included, by two rules that read only
   which variables are fixed; not even `bounds(Z)` on repeated ones. Only the
   C++ API and the `.scp` reader reach it: MiniZinc and XCSP3 post `Count`,
-  which on an identical tree takes 1.5 to 1.8 times its time and writes 1.8
-  times its proof lines. Findings, each with a tested patch: while the value
+  which on the same search tree (same recursions, no failures) takes 1.5 to
+  1.8 times its time and writes 1.8 times its proof lines. Findings, each with
+  a tested patch: while the value
   variable is unfixed every call walks its whole domain, about 0.4 s a call at
   10⁷ values, where collecting the fixed values does the same in `O(n log n)`;
   its `on_change` triggers declare every variable's holes relevant, though
@@ -357,7 +442,9 @@ constraints and do not restate it.
   between any two of `p` selected sites, from Lagerkvist's p-dispersion
   propagators: one definitional encoding with a min-attained ladder, and five
   propagation modes from a checker to the conflict-matching bound, every
-  inference certified; [`min-distance-proofs.md`](../min-distance-proofs.md)
+  inference certified, though over positions declared wider than 100 values
+  the matching bound's proof can be rejected (#1224, fix open as #1362);
+  [`min-distance-proofs.md`](../min-distance-proofs.md)
   stays as the long note. Library and `.scp` only, and `cake_pb_cp` has no rule
   for it. Partial by design: forward checking or pairwise arc consistency on
   the sites, upper bounds only on `z`, whose lower bound nothing raises before
@@ -479,121 +566,6 @@ constraints and do not restate it.
     by decision (#1272 documents it).
   - Route B's 630 MB enumeration proof checks faster than the projection's
     49 MB one, probably because cached `Top` rows slow every RUP (untested).
-- [`cumulative_strengthening.md`](../presolvers/cumulative_strengthening.md) — the
-  first of the three presolver documents, and the first written to the
-  template's presolver variant. It covers Schulz's integrality strengthenings of
-  each posted `Cumulative`, and of each `Disjunctive2D` projection.
-  - **What it does.** It reduces the capacity to the largest load the tasks
-    that can run beside something can actually reach, by gcd rounding or a
-    knapsack programme. It sets the height of every task that can run beside
-    nothing to that capacity, raising or lowering it. The result is installed as a derived `Cumulative` whose
-    rows are proved from the donor's and pinned by `ia`, so the OPB and the
-    `.scp` are untouched, and every rewrite is time-table neutral.
-  - **Reachable only from the C++ API.** No front end or example adds it.
-  - **Findings**, re-audited 2026-10-08 after #1280, #1281 and #1286 fixed
-    the first three.
-    - Its own pass walked every time point of the horizon, with proofs off
-      too: 12 s and 5.6 GB at 10⁷. It is per stretch between window edges
-      since #1281 (#1240), and the pass is no longer what a long horizon
-      costs.
-    - Its proof budgets applied only with proofs on, and their predictions
-      grew with the horizon and the capacity's magnitude, not with the
-      derivation: a fixture scaled by 20 was declined, and the proofs-on
-      search took 182 nodes where the proofs-off one refuted at the root.
-      #1280 and #1286 removed them (#1242, #1241), so at `Off` proofs on and
-      off search identically, at the price of proofs of any size: 767,000
-      lines on #1286's sixteen-task example.
-    - Raising a height cost up to a `pol` per unit of the capacity. Since
-      #1280 it is one proof by contradiction per raised task per row (#1242).
-    - Wherever it installs something over a posted donor, like every derived
-      `Cumulative` under the default encoding, its proofs are rejected at
-      assertion levels above `Off`. Over a `Disjunctive2D` projection donor
-      that it would strengthen it is worse: the other two presolvers decline
-      there and their proofs verify, but this one throws and the solve
-      aborts.
-    - Its answer depends on presolver order: `DifferenceLogic`'s initialiser
-      can tighten a start before it reads the windows.
-- [`inferred_cumulative.md`](../presolvers/inferred_cumulative.md) — the
-  `InferredCumulative` presolver. It is Sidorov's (CP 2026) cover-and-lift
-  procedure over every posted `Cumulative` and every `Disjunctive2D`
-  projection at once. Each lifted cut is posted as a derived `Cumulative`,
-  and each per-time row is certified by replaying the knapsack dynamic
-  programme that validates the whole cut, built by the same code that answers
-  the lifting subproblems. That way no validated cut ever fails to
-  certify: zero uncertifiable over 710 MiniZinc RCPSP and 1,999 PSPLib
-  instances. Findings:
-  - **No front end can run it** (#983). The audit answers what it would detect by
-    building the MiniZinc and XCSP3 shapes by hand. A capacity-one resource
-    posted as `Disjunctive` is invisible. Per-resource length variables
-    break cross-resource lifting (`L` lower on 87 of 710 instances).
-    Three spellings zero the certified bound on every instance:
-    per-resource length variables, single-value length variables, and
-    end-variable makespan rows. At the audit none of them said so; since
-    #1282 (#1257) each gets a `General` note. Adding `InferredDisjunctive`
-    first can zero it too, where that presolver's bound already reaches this
-    one's, and the summary now says so.
-  - **#943's single start-checkpoint encoding cost it heavily, and #1290 won
-    most of it back** (#1254). One donor row's recovery was about 7,200
-    lines, and the reference certificate 6.8 times the lines and 93 times
-    the checking time of the time-indexed arm. Recovering each row from the
-    one before it takes that certificate from 35.5 s of checking to 0.64 s,
-    and the Pack_d certificates check again.
-  - **With a makespan named, the root proof is linear in the makespan
-    bound,** so in the task lengths, and its checking time worse than linear.
-  - **The lifting programme's frontier sweep** cost up to minutes per PSPLib
-    J90 or J120 instance with proofs off. #1277 and #1291 (#1255) took
-    `J120_59_6` from 57 s to 12 s serially. `J120_19_1`, the slowest
-    measured, now takes 33 s serially (3 to 4 minutes at the audit, partly
-    beside other jobs). Its state budget still binds on at
-    least 102 of them, changing cuts or dropping ones it could not afford to
-    validate, and still counts states rather than comparisons (#1255,
-    open).
-  - **An `Important` note fired on 556 of the 710 instances** for the
-    published procedure's own output budget. Since #1274 (#1256) a drop at
-    the default budget is a `General` note.
-  - **Assertion levels.** Above `Off`, under the default start-checkpoint
-    encoding, a cut over posted donors gets the proof rejected
-    (#1234). Over a `Disjunctive2D` projection donor every cut
-    is declined instead, and the proof verifies at `Definitions`,
-    `Inferences` and `Backtracking`. At `Links` every proof of a satisfiable
-    model is rejected (#1210). The installed constraint's hints
-    say `constraint_id unnamed`.
-- [`inferred_disjunctive.md`](../presolvers/inferred_disjunctive.md) — the
-  `InferredDisjunctive` presolver. It reads every posted
-  `Cumulative`, and every `Disjunctive2D` axis projection, as a resource. It
-  grows maximal cliques in the cross-resource conflict graph and installs each
-  as a derived capacity-one `Cumulative`. Nothing reaches the OPB, and every
-  per-time row is proved from the witnessing resources' rows: a pairwise
-  at-most-one and its bridges, then a clique merge pinned by `ia`, at
-  `(k² + 7k)/2` to `k(7k − 11)/2` lines per time point, depending on how
-  many pairs need bridging. Sidorov's stage one, at unit
-  coefficients. Findings:
-  - **No front end reaches it** (#983).
-  - **It cannot see a machine written as a `Disjunctive`** or as pairwise
-    non-overlap. That halved the conflict graph on 30 generated instances.
-  - **It has nothing to infer on job shops by construction.** At the audit
-    it still raised an Important "search may be slower" note there (#1258).
-    Since #1274 a drop by a budget at its default is a `General` note only.
-  - **Its pass is quadratic in memory**: a 104-byte conflict entry per task
-    pair, held about three times over at the peak, so 3.1 GiB at 3,200 tasks.
-    With proofs on, each posted clique keeps one copy (#705).
-  - **`dropped_subset` cannot fire on an honest run**, so #706 cannot have
-    an honest fixture for it.
-  - **No declines on 110 Pack and Pack_d instances**: install posts the same
-    cliques with proofs on as with them off.
-  - **Above `AssertionLevel::Off`**, a proof containing one of its
-    constraints over a posted donor is rejected under the default
-    start-checkpoint encoding, and over a `Disjunctive2D` projection nothing
-    is installed under any encoding (#1234).
-  - **Its certified makespan bound is fragile.** It disappears when the
-    lengths are single-valued variables or the finish rows go through end
-    variables (checked on 110 Pack instances), or when `InferredCumulative`
-    runs first and certifies the same bound. Since #1282 (#1257) each of
-    these is reported, by a `General` note or the summary.
-  - **With proofs on, the bound's certificate grows with the span of the
-    window**: a 133 MB root proof on Pack_d `pack008` that checks in 8 s,
-    against 2.3 MB without it. At the audit, before #1290, it was 822 MB and
-    did not check in 30 minutes.
 - [`reachable.md`](reachable.md) — `Reachable` and `DReachable`, MiniZinc's
   `reachable` and `dreachable` and, through the stdlib's wrappers, `connected`
   and `dconnected`; also the child that `Tree` and `Path` post. One propagator
@@ -665,7 +637,29 @@ constraints and do not restate it.
   MiniZinc versions, both index conventions, the `.scp` reader and Gecode; the
   empty graph is a solver error through MiniZinc where the standard library says
   unsatisfiable (#1305).
-- [`path.md`](path.md) — `Path` and `DPath`, MiniZinc's `path` and `dpath`: a decomposition with rows of its own. It posts a `Reachable` / `DReachable` child from the start and a `LinearEquality` child for `Σ es = Σ ns − 1`, both under its own ID. It adds a handful of degree and endpoint rows, enforced by the `graph_rules` propagator it shares with `DTree`. Every inference of its own is one RUP against its row, of at most five literals except for a degree overflow, which names every selected edge at the node. No code or encoding is shared with `circuit`. The audit found it sound everywhere it looked: 28,000 random root checks with full enumerations at one seed (and again at a second in an independent re-run), 1,200 random proofs, every MiniZinc route on both versions, and the `.scp` route, all against Gecode. The one exception is an empty node set, which errors from MiniZinc's `int` spelling instead of reporting unsatisfiable (#1305), as the rooted `reachable` and `tree` do. It is far from GAC, chiefly because nothing states the **degree lower bound**: posting it as redundant rows cuts a 5 × 5 grid path enumeration from 887,711 nodes to 26,481 (#1313). Its own rows are at most `5n` against the unfolding's `Θ(n(n + m))`, and they cost 2 to 3% of VeriPB's checking time against the child's 51 to 59%. Rules 4 and 5 are not GAC on a row with limit at least 1 and a repeated term, such as an undirected self loop or an aliased selector. While both ends are open, the `loop` rule cannot fire backwards, whether the ends are one variable or two. The cardinality row turns out to be implied by the rest, and `Holes affect` over-reports `end`.
+- [`path.md`](path.md) — `Path` and `DPath`, MiniZinc's `path` and `dpath`: a
+  decomposition with rows of its own. It posts a `Reachable` / `DReachable`
+  child from the start and a `LinearEquality` child for `Σ es = Σ ns − 1`,
+  both under its own ID. It adds a handful of degree and endpoint rows,
+  enforced by the `graph_rules` propagator it shares with `DTree`. Every
+  inference of its own is one RUP against its row, of at most five literals
+  except for a degree overflow, which names every selected edge at the node.
+  No code or encoding is shared with `circuit`. The audit found it sound
+  everywhere it looked: 28,000 random root checks against brute force with
+  full enumerations at one seed (and again at a second in an independent
+  re-run), 1,200 random proofs that all verify, and every MiniZinc route on
+  both versions and the `.scp` route against Gecode. The one exception is an
+  empty node set, which errors from MiniZinc's `int` spelling instead of
+  reporting unsatisfiable (#1305), as the rooted `reachable` and `tree` do. It
+  is far from GAC, chiefly because nothing states the **degree lower bound**:
+  posting it as redundant rows cuts a 5 × 5 grid path enumeration from 887,711
+  nodes to 26,481 (#1313). Its own rows are at most `5n` against the
+  unfolding's `Θ(n(n + m))`, and they cost 2 to 3% of VeriPB's checking time
+  against the child's 51 to 59%. Rules 4 and 5 are not GAC on a row with limit
+  at least 1 and a repeated term, such as an undirected self loop or an
+  aliased selector. While both ends are open, the `loop` rule cannot fire
+  backwards, whether the ends are one variable or two. The cardinality row
+  turns out to be implied by the rest, and `Holes affect` over-reports `end`.
 - [`circuit.md`](circuit.md) — `Circuit` and `SubCircuit`: two classes, two
   position-labelling encodings, five propagators and a root contradiction,
   sharing only the value consistent all-different pass and its clique with
@@ -849,6 +843,157 @@ constraints and do not restate it.
   Root simplification is 82% of the solve on a dense unconditional
   `difference_chain` and the whole of a tight RCPSP/max refutation;
   `dev_docs/difference-logic.md` stays as the long note.
+- [`nogoods.md`](nogoods.md) — `Nogoods`, the learned-nogood store: search
+  machinery for restarts, **not a constraint meant for users**, though it is a
+  public class (`gcs.hh` includes it) and the `.scp` reader reads `nogoods`.
+  When restarts are on, `solve_with` installs one over a growing store and adds
+  each reduced nld-nogood (Lecoutre et al.) at the restart unwind; each is also
+  derived in the proof as a RUP line at `Top`, while the ancestors' backtrack
+  clauses still supply the dropped negative decisions, and moved to core when
+  the abandoned level held a solution's blocking clause. Two propagators, a
+  scan and a refined two-watched-literal one (the learned store's default),
+  over one definitional row per fixed nogood. Strength is unit propagation per
+  clause: GAC on a clause over distinct underlying variables, weaker when two
+  literals share one (26,000 brute-forced instances, both paths). A random
+  differential of 60,480 runs with a restart schedule (17,581 of which
+  restarted) against brute force found no wrong or repeated solution; every
+  proved restarting run (1,185) verifies at `Off`, as does Langford 11's
+  35,584-solution enumeration, and three mutations of the learned-clause
+  derivation are refused. Filed:
+  under optimisation the refined store arms a pass's nogoods late whenever the
+  next root is seeded by an improved bound (#1390); a restart scale of 0 never
+  terminates, through the own `--timeout` of XCSP3, the examples and the
+  MiniCP benchmarks (#1391); the refined
+  propagator never adopted #506's `scope_only`, so under dom/wdeg its
+  conflicts weight no variable, one cause of refined and scan diverging there
+  (#1392; with it fixed they still charge some failures to different
+  constraints, which dom/wdeg reads); a store grown by user code mid-search is
+  enforced on the refined path only at the next root propagation (so never,
+  without restarts) and gets a rejected proof on the scan path (#1393); and
+  the engine's refined-watch undo, a linear search per removed watch, takes
+  59% of the profile samples of `tsp --restarts=100`, and searching from the
+  back halves that run's time (#1394).
+  What other uses would need is recorded as Known limitations and Next steps.
+
+## Presolvers
+
+- [`cumulative_strengthening.md`](../presolvers/cumulative_strengthening.md) — the
+  first of the three scheduling presolver documents, and the first written to the
+  template's presolver variant. It covers Schulz's integrality strengthenings of
+  each posted `Cumulative`, and of each `Disjunctive2D` projection.
+  - **What it does.** It reduces the capacity to the largest load the tasks
+    that can run beside something can actually reach, by gcd rounding or a
+    knapsack programme. It sets the height of every task that can run beside
+    nothing to that capacity, raising or lowering it. The result is installed as a derived `Cumulative` whose
+    rows are proved from the donor's and pinned by `ia`, so the OPB and the
+    `.scp` are untouched, and every rewrite is time-table neutral.
+  - **Reachable only from the C++ API.** No front end or example adds it.
+  - **Findings**, re-audited 2026-10-08 after #1280, #1281 and #1286 fixed
+    the first three.
+    - Its own pass walked every time point of the horizon, with proofs off
+      too: 12 s and 5.6 GB at 10⁷. It is per stretch between window edges
+      since #1281 (#1240), and the pass is no longer what a long horizon
+      costs.
+    - Its proof budgets applied only with proofs on, and their predictions
+      grew with the horizon and the capacity's magnitude, not with the
+      derivation: a fixture scaled by 20 was declined, and the proofs-on
+      search took 182 nodes where the proofs-off one refuted at the root.
+      #1280 and #1286 removed them (#1242, #1241), so at `Off` proofs on and
+      off search identically, at the price of proofs of any size: 767,000
+      lines on #1286's sixteen-task example.
+    - Raising a height cost up to a `pol` per unit of the capacity. Since
+      #1280 it is one proof by contradiction per raised task per row (#1242).
+    - Wherever it installs something over a posted donor, like every derived
+      `Cumulative` under the default encoding, its proofs are rejected at
+      assertion levels above `Off`. Over a `Disjunctive2D` projection donor
+      that it would strengthen it is worse: the other two presolvers decline
+      there and their proofs verify, but this one throws and the solve
+      aborts.
+    - Its answer depends on presolver order: `DifferenceLogic`'s initialiser
+      can tighten a start before it reads the windows.
+- [`inferred_cumulative.md`](../presolvers/inferred_cumulative.md) — the
+  `InferredCumulative` presolver. It is Sidorov's (CP 2026) cover-and-lift
+  procedure over every posted `Cumulative` and every `Disjunctive2D`
+  projection at once. Each lifted cut is posted as a derived `Cumulative`,
+  and each per-time row is certified by replaying the knapsack dynamic
+  programme that validates the whole cut, built by the same code that answers
+  the lifting subproblems. That way no validated cut ever fails to
+  certify: zero uncertifiable over 710 MiniZinc RCPSP and 1,999 PSPLib
+  instances. Findings:
+  - **No front end can run it** (#983). The audit answers what it would detect by
+    building the MiniZinc and XCSP3 shapes by hand. A capacity-one resource
+    posted as `Disjunctive` is invisible. Per-resource length variables
+    break cross-resource lifting (`L` lower on 87 of 710 instances).
+    Three spellings zero the certified bound on every instance:
+    per-resource length variables, single-value length variables, and
+    end-variable makespan rows. At the audit none of them said so; since
+    #1282 (#1257) each gets a `General` note. Adding `InferredDisjunctive`
+    first can zero it too, where that presolver's bound already reaches this
+    one's, and the summary now says so.
+  - **#943's single start-checkpoint encoding cost it heavily, and #1290 won
+    most of it back** (#1254). One donor row's recovery was about 7,200
+    lines, and the reference certificate 6.8 times the lines and 93 times
+    the checking time of the time-indexed arm. Recovering each row from the
+    one before it takes that certificate from 35.5 s of checking to 0.64 s,
+    and the Pack_d certificates check again.
+  - **With a makespan named, the root proof is linear in the makespan
+    bound,** so in the task lengths, and its checking time worse than linear.
+  - **The lifting programme's frontier sweep** cost up to minutes per PSPLib
+    J90 or J120 instance with proofs off. #1277 and #1291 (#1255) took
+    `J120_59_6` from 57 s to 12 s serially. `J120_19_1`, the slowest
+    measured, now takes 33 s serially (3 to 4 minutes at the audit, partly
+    beside other jobs). Its state budget still binds on at
+    least 102 of them, changing cuts or dropping ones it could not afford to
+    validate, and still counts states rather than comparisons (#1255,
+    open).
+  - **An `Important` note fired on 556 of the 710 instances** for the
+    published procedure's own output budget. Since #1274 (#1256) a drop at
+    the default budget is a `General` note.
+  - **Assertion levels.** Above `Off`, under the default start-checkpoint
+    encoding, a cut over posted donors gets the proof rejected
+    (#1234). Over a `Disjunctive2D` projection donor every cut
+    is declined instead, and the proof verifies at `Definitions`,
+    `Inferences` and `Backtracking`. At `Links` the projection fixtures are
+    still rejected, for #1210 (a satisfiable model with a variable declared as
+    a range wider than `{0, 1}`; that alone is not always enough). The
+    installed constraint's hints
+    say `constraint_id unnamed`.
+- [`inferred_disjunctive.md`](../presolvers/inferred_disjunctive.md) — the
+  `InferredDisjunctive` presolver. It reads every posted
+  `Cumulative`, and every `Disjunctive2D` axis projection, as a resource. It
+  grows maximal cliques in the cross-resource conflict graph and installs each
+  as a derived capacity-one `Cumulative`. Nothing reaches the OPB, and every
+  per-time row is proved from the witnessing resources' rows: a pairwise
+  at-most-one and its bridges, then a clique merge pinned by `ia`, at
+  `(k² + 7k)/2` to `k(7k − 11)/2` lines per time point, depending on how
+  many pairs need bridging. Sidorov's stage one, at unit
+  coefficients. Findings:
+  - **No front end reaches it** (#983).
+  - **It cannot see a machine written as a `Disjunctive`** or as pairwise
+    non-overlap. That halved the conflict graph on 30 generated instances.
+  - **It has nothing to infer on job shops by construction.** At the audit
+    it still raised an Important "search may be slower" note there (#1258).
+    Since #1274 a drop by a budget at its default is a `General` note only.
+  - **Its pass is quadratic in memory**: a 104-byte conflict entry per task
+    pair, held about three times over at the peak, so 3.1 GiB at 3,200 tasks.
+    With proofs on, each posted clique keeps one copy (#705).
+  - **`dropped_subset` cannot fire on an honest run**, so #706 cannot have
+    an honest fixture for it.
+  - **No declines on 110 Pack and Pack_d instances**: install posts the same
+    cliques with proofs on as with them off.
+  - **Above `AssertionLevel::Off`**, a proof containing one of its
+    constraints over a posted donor is rejected under the default
+    start-checkpoint encoding, and over a `Disjunctive2D` projection nothing
+    is installed under any encoding (#1234).
+  - **Its certified makespan bound is fragile.** It disappears when the
+    lengths are single-valued variables or the finish rows go through end
+    variables (checked on 110 Pack instances), or when `InferredCumulative`
+    runs first and certifies the same bound. Since #1282 (#1257) each of
+    these is reported, by a `General` note or the summary.
+  - **With proofs on, the bound's certificate grows with the span of the
+    window**: a 133 MB root proof on Pack_d `pack008` that checks in 8 s,
+    against 2.3 MB without it. At the audit, before #1290, it was 822 MB and
+    did not check in 30 minutes.
 - [`difference_logic.md`](../presolvers/difference_logic.md) — the
   `DifferenceLogic` presolver. It lifts each two-term unit-coefficient
   `x − y ≤ d` over distinct variables, posted as a linear inequality or as a
@@ -973,6 +1118,11 @@ constraints and do not restate it.
     - Its own pass is quadratic in time and memory in the XOR structure: setup
       to the first node takes 6.7 s and 1.4 GB on 32,000 two-row components,
       against 0.13 s without it (#1380; #1309 adds the engine's share).
+    - Retiring the gathered donors, the default, is not a saving in general.
+      On a chain of unit inferences the system's proof grows quadratically:
+      at 4,096 variables with the fixing `Equals` posted first, 145 MB
+      retired against 0.56 MB kept, and 3.5 G instructions against 0.42 G
+      with proofs off (#1386, the system propagator's).
     - Against `cake_pb_cp`'s OPB, the in-proof slack derivation fails for a
       `ParityOdd` donor with an equality-type literal (`v ≠ 0`, `v = 1`, …)
       over a `{0, 1}` variable, which is what `array_bool_xor` posts: the two
@@ -985,48 +1135,3 @@ constraints and do not restate it.
       condition is a constant, as an explicit MiniZinc `bool_xor(a, b)`
       arrives. The installed system changes `dom_then_deg`'s search through
       degree.
-- [`nogoods.md`](nogoods.md) — `Nogoods`, the learned-nogood store: search
-  machinery for restarts, **not a constraint meant for users**, though it is a
-  public class (`gcs.hh` includes it) and the `.scp` reader reads `nogoods`.
-  When restarts are on, `solve_with` installs one over a growing store and adds
-  each reduced nld-nogood (Lecoutre et al.) at the restart unwind; each is also
-  derived in the proof as a RUP line at `Top`, while the ancestors' backtrack
-  clauses still supply the dropped negative decisions, and moved to core when
-  the abandoned level held a solution's blocking clause. Two propagators, a
-  scan and a refined two-watched-literal one (the learned store's default),
-  over one definitional row per fixed nogood. Strength is unit propagation per
-  clause: GAC on a clause over distinct underlying variables, weaker when two literals
-  share one (26,000 brute-forced instances, both paths). A random differential
-  of 60,480 runs with a restart schedule (17,581 of which restarted) against
-  brute force found no wrong or repeated solution; every proved restarting run
-  (1,185) verifies at `Off`, as does Langford 11's 35,584-solution enumeration,
-  and three mutations of the learned-clause derivation are refused. Filed:
-  under optimisation the refined store arms a pass's nogoods late whenever the
-  next root is seeded by an improved bound (#1390); a restart scale of 0 never
-  terminates, through the own `--timeout` of XCSP3, the examples and the
-  MiniCP benchmarks (#1391); the refined
-  propagator never adopted #506's `scope_only`, so under dom/wdeg its
-  conflicts weight no variable, one cause of refined and scan diverging there
-  (#1392; with it fixed they still charge some failures to different
-  constraints, which dom/wdeg reads); a store grown by user code mid-search is
-  enforced on the refined path only at the next root propagation (so never,
-  without restarts) and gets a rejected proof on the scan path (#1393); and
-  the engine's refined-watch undo, a linear search per removed watch, takes
-  59% of the profile samples of `tsp --restarts=100`, and searching from the
-  back halves that run's time (#1394).
-  What other uses would need is recorded as Known limitations and Next steps.
-
-Everything else is still to write; the family list in
-[`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
-is the tracker for the arc — including the method that produced the pilot, and
-the decisions already settled.
-
-The point of the arc is not a complete set of documents. It is that by the time
-the audit is done, the solver is in a good state to write the
-proof-logging-for-CP paper: each family gets read carefully, its problems get
-filed and fixed, and the document is the record of that pass. Expect the fixing
-to outweigh the writing, and expect the document to need rewriting afterwards:
-the pilot filed seven issues, six of the fixes landed, and bringing the
-document back into line with them touched the rule catalogue, the robustness
-section, both performance tables and every measured figure. A family document
-is the record of a pass, so a pass that changes the code changes the document.

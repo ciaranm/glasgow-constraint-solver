@@ -126,7 +126,7 @@ Degenerate cases:
 
 [^xdag]: XCSP3 has no acyclicity constraint.
 
-[^gcspy]: `n/a`, as the frontend support matrix records it.
+[^gcspy]: `n/a`, as the retired frontend support matrix recorded it.
     `gcspy` binds nothing in the graph families, so no CPMpy route can reach
     `Dag` today; whether CPMpy itself has a `dag` was not checked.
 

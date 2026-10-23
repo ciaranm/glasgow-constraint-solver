@@ -467,12 +467,12 @@ because it is the one a real model reaches.
   so it would find nothing at all if either started returning something else, and
   that is a failure the presolver's own counts would report as "gathered
   nothing".
-- `dev_docs/README.md` has an entry for this document, and
-  `dev_docs/frontend-support-matrix.md` a row: `ParityOdd` itself is reachable
-  from both frontends (MiniZinc `array_bool_xor`, XCSP3 `intension` `xor`), and
-  neither the system nor the presolver is reachable from either. The matrix is
-  the single source of truth for that, so the gap is recorded there rather than
-  only here.
+- `dev_docs/README.md` has an entry for this document. `ParityOdd` itself is
+  reachable from both frontends (MiniZinc `array_bool_xor`, XCSP3 `intension`
+  `xor`), and neither the system nor the presolver is reachable from either;
+  the frontend coverage tables of [`constraints/parity.md`](constraints/parity.md)
+  and [`presolvers/parity_system_gathering.md`](presolvers/parity_system_gathering.md)
+  record that gap, rather than only this document.
 
 ## Staging
 

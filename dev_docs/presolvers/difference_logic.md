@@ -1939,9 +1939,7 @@ literature.
     - `minizinc/CMakeLists.txt:277–281` ("The zero says all four arrived as
       `int_lin_le`", above a pin of `ComparisonEdgesLifted=4`);
     - the header of `minizinc/tests/differencelogic.mzn`;
-    - [`minizinc.md`](../minizinc.md):232–238;
-    - [`frontend-support-matrix.md`](../frontend-support-matrix.md)'s
-      `[^cmp]`.
+    - [`minizinc.md`](../minizinc.md):232–238.
   - **In this stack, wrong rather than stale, and now corrected.**
     [`comparison.md`](../constraints/comparison.md)'s lead, its `[^lin]`
     footnote and its "Not to do" item, and its `README.md` bullet, all said the

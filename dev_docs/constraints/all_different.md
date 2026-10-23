@@ -124,8 +124,8 @@ The degenerate cases, where the frontends and the tests disagree most often:
 
 [^matrix]: `buildConstraintAlldifferentMatrix` posts one `AllDifferent` per row
     and one per column. `allDifferent-list` — lists pairwise distinct *as
-    tuples* — is a different constraint and is `unsupported`; the retiring
-    support matrix already says so.
+    tuples* — is a different constraint and is `unsupported`: the binding
+    does not override the parser's callback for it, whose default throws.
 
 [^xexpr]: The XCSP3 parser's default `buildConstraintAlldifferent` over a
     vector of expression trees throws "not yet supported", and the binding does

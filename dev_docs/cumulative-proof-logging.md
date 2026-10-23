@@ -414,8 +414,8 @@ Two reusable ideas crystallise out of the above:
    treats it as "given the reason and `¬ext_lit`, the flag holds";
    the closing RUP supplies `¬ext_lit` from its negated goal.
 
-Both ideas are likely to apply to `BinPacking` (#148) when it lands —
-see [`frontend-support-matrix.md`](frontend-support-matrix.md).
+Both ideas were expected to apply to `BinPacking` (#148), which has
+since landed; see [`constraints/bin_packing.md`](constraints/bin_packing.md).
 `Disjunctive` is the instructive counter-example: at `h = 1`,
 `capacity = 1` every time-table inference is a two-task ordering
 statement, so its proofs skip the time-indexed vocabulary entirely and

@@ -43,10 +43,10 @@ so `zero-area-leaf` is mostly subsumed and its code comment was stale at
 `0a5b4ec6` (#1265, merged after it, rewrites the comment). #1265 also rewrites
 the other 2-D text that #1276 left describing mandatory boxes: the class
 comment in `disjunctive_2d.hh`, several comments in `disjunctive_2d.cc`, the
-relaxation test's header and `frontend-support-matrix.md`'s noOverlap
-footnote; and it corrects "6-way" to "5-way with one optional rectangle, 6-way
-with two" in the code and the design note, except one comment in
-`disjunctive_2d_optional_test.cc`.
+relaxation test's header and the noOverlap footnote of the frontend support
+matrix (since retired); and it corrects "6-way" to "5-way with one optional
+rectangle, 6-way with two" in the code and the design note, except one comment
+in `disjunctive_2d_optional_test.cc`, which #1301 (open) corrects.
 
 **What was measured again.** At `0a5b4ec6`, on fataepyc-10, with timings
 taken one run at a time on one pinned core, and with the probes in
@@ -194,10 +194,12 @@ MiniZinc's standard-library `diffn` and refused by `Disjunctive2D`: on
 `var -1..2` widths, Chuffed (the standard decomposition) and a brute force of
 the library's predicate find 1,224 solutions, Gecode finds 657 (it restricts
 sizes to be non-negative), and `fzn-glasgow` reports `=====ERROR=====`
-("widths must be non-negative"). That is deliberate: #1272 closed #1251 by
-documenting it, in `frontend-support-matrix.md`'s noOverlap footnote and in
-comments in both `fzn_diffn*.mzn` files, with `size >= 0` in the model as
-the remedy. The zero-width strict case agrees
+("widths must be non-negative"). That is deliberate, a clear error rather
+than a quietly different answer, and no known model leaves a size's lower
+bound negative: #1272 closed #1251 by documenting it, in the frontend support
+matrix (since retired; this footnote now carries it) and in comments in both
+`fzn_diffn*.mzn` files, with `size >= 0` in the model as the remedy. The
+zero-width strict case agrees
 across all three (3 solutions on the probe `zero.mzn`).
 
 [^xcsp]: `xcsp/xcsp_glasgow_constraint_solver.cc`, the two
@@ -1578,8 +1580,9 @@ is the table's two columns.
    reasons smaller on holey domains, and needs a proof diff to confirm nothing
    else read the gaps.
 8. **Decide negative sizes in MiniZinc** (#1251). Decided: document. #1272
-   records the error in `frontend-support-matrix.md`'s noOverlap footnote
-   and in both `fzn_diffn*.mzn` files.
+   recorded the error in the frontend support matrix, since retired, and in
+   both `fzn_diffn*.mzn` files; the MiniZinc footnote under [Concrete
+   constraints](#concrete-constraints-and-frontend-coverage) now carries it.
 9. **A span-flat certificate for route A** remains open (design note, open
    follow-ups). The cap is the only answer today.
 10. **A cake encoder for the optional forms**, which waits for the next batch of

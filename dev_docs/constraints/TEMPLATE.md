@@ -44,14 +44,14 @@ documents rather than a re-reading of thirty of them.
 ## Where these live
 
 ```
-dev_docs/constraints/README.md      index: the family list, one line each
+dev_docs/constraints/README.md      index: the family list, and a summary of each document
 dev_docs/constraints/<family>.md    one per family
 dev_docs/presolvers/<name>.md       one per presolver (see the variant below)
 ```
 
 The file name is the `gcs/constraints/` directory name, so the mapping is
 mechanical — with the documented exceptions in [the family
-list](#provisional-family-list), which is authoritative for what counts as a
+list](README.md#the-family-list), which is authoritative for what counts as a
 family. Do not derive the family list from `ls`: arithmetic is one family
 spread over several directories and loose headers, and some directories
 (`innards/`, `extensional_utils`) are not families at all.
@@ -144,12 +144,12 @@ ones stay where they are and are cross-referenced from [Further
 reading](#further-reading) with a sentence saying what is in them. Do not
 inline a thousand-line proof-logging writeup.
 
-**`frontend-support-matrix.md` is being retired.** Its rows migrate into each
-family's [Concrete constraints and frontend
-coverage](#concrete-constraints-and-frontend-coverage) table, which is why that
-table inherits the matrix's cell vocabulary and footnote style. Delete the
-matrix once every family document carries its rows; until then, do not update
-both — update the family document and let the matrix rot.
+**Front-end coverage lives in the family documents.** Each family's [Concrete
+constraints and frontend
+coverage](#concrete-constraints-and-frontend-coverage) table is where a
+front end's binding is recorded; update it in the same change as the
+binding. The table inherits its cell vocabulary and footnote style from
+`frontend-support-matrix.md`, which it replaced and which has been deleted.
 
 ---
 
@@ -488,8 +488,7 @@ Every field appears in every entry.*
 
 *A rule is **one inference the propagator makes**, not one propagator: a single
 propagator that pushes a bound, removes a value and detects a contradiction is
-three rules. Expect this section to be the bulk of the document — the smallest
-constraint in the solver has nine rules.*
+three rules. Expect this section to be the bulk of the document.*
 
 *Facts that hold for **every** rule in the family — the hint type they all
 share, an invariant like "no justification reads `state`" — go in a short
@@ -882,7 +881,7 @@ develops. Getting this field wrong is more expensive than leaving it blank.
 
 ## Appendix D: frontend coverage cells
 
-Inherited from `frontend-support-matrix.md`, which these tables replace.
+Inherited from `frontend-support-matrix.md`, which these tables replaced.
 
 | Cell | Meaning |
 |---|---|
@@ -985,64 +984,3 @@ where a frontend has none; a budget that applies only with proofs on is a
 strength change with proofs on, and goes in **Proof-logging gaps**; and a
 presolver whose answer depends on the presolvers run before it says so under
 **Relation to other families**.
-
----
-
-# Provisional family list
-
-The work plan, and the definition of "family". Provisional: the groupings
-marked *candidate merge* should be settled as the documents get written, and
-this table moves to `dev_docs/constraints/README.md` once it is stable.
-
-| Document | Covers | Notes |
-|---|---|---|
-| `all_different.md` | `all_different/` | **written**. GAC, BC and VC arms, `AllDifferentExcept`, `ExceptZero`, and `SymmetricAllDifferent`, which lives here and shares the encoding and the GAC propagator |
-| `all_equal.md` | `all_equal/` | **written**. One class, `AllEqual`; not merged with `equals`, which is the binary case and shares only the range-removal helper |
-| `arithmetic.md` | `multiply/`, `divide_modulus/`, `plus_minus/`, `power/`, and the `plus.hh` / `minus.hh` / `divide.hh` / `modulus.hh` headers | **written**. One family over several directories; `arithmetic-proofs.md` stays, as its design note |
-| `abs.md` | `abs/` | **written**. The candidate merge into `arithmetic`, settled: separate. The view-proof gap that first kept it apart has closed; it shares no code or encoding with the product family |
-| `at_most_one.md` | `at_most_one/` | **written**. `AtMostOne`, and `AtMostOneSmartTable`, whose engine is `smart_table`'s. Not merged with `counting`: the meaning of `Count` with a counter in `0..1`, but no shared code |
-| `bin_packing.md` | `bin_packing/` | **written**. One class, `BinPacking`, in its two forms (variable loads, constant capacities), with its three stages: Stage 2 bounds, Stage 3 under `consistency::GAC` with the `PerCall` and `Upfront` proof strategies, and the opt-in Stage 4 (`bin_packing::Shaw`). The `Upfront` Stage 3 is a `k = 1` copy of `Knapsack`'s upfront diagram, documented here as a copy and cited to `knapsack.md` for what is identical; `PerCall` shares nothing with `Knapsack`'s. Not merged with `knapsack`: items are bin indices, one diagram per bin, no shared code. `bin-packing.md` and `decision-diagram-proof-strategies.md` stay as long notes; filed #1345 (XCSP3 condition-form wrong answers), #1347 (front-end refusals: MiniZinc out-of-range item domains, `var opt` over 1-based bins, negative loads; XCSP3 aborts), #1346 (Stage 3's missing commitment), #1349 (the constant-capacity Stage 3 waste, no change to the fixpoint) and #1348 (no load coherence); commented on #1340 and #1210 |
-| `circuit.md` | `circuit/` | **written**. `Circuit` and `SubCircuit`, one document: they share the directory, the hint header and `all_different`'s value consistent pass and clique, and no propagator or position encoding. `subcircuit-proof-logging.md` stays as the long note. No shared code or encoding with `path`, `tree`, `dag`, `reachable` or `subgraph`, whose reachability proofs use `connectivity-proofs.md`'s unfolding instead of a labelling |
-| `counting.md` | `count/`, `among/`, `global_cardinality/`, `n_value/` | **written**. The candidate merge, settled: four classes (`Count`, `Among`, `NValue`, `GlobalCardinality` at `BC` and `GAC`), no shared propagation code and four encodings, so one document and no code merge |
-| `comparison.md` | `comparison/` | **written**. Twelve classes over `ReifiedCompareLessThanOrMaybeEqual`; **not** merged with `equals` — same reified-dispatcher pattern, no shared code, separate encodings |
-| `equals.md` | `equals/` | **written** — the pilot. `Equals`, `NotEquals` and the four reified forms |
-| `cumulative.md` | `cumulative/` | **written**. `Cumulative` and its optional-task form, plus the runtime machinery the three scheduling presolvers install (`derived_cumulative`, `donor_view`, `propagate.hh`, the checkpoint recovery); `Disjunctive2D` runs the same propagator over its projections and is documented in `disjunctive_2d.md`; notes `cumulative-proof-logging.md`, `certified-makespan-bounds.md`, `rule-counters.md` stay |
-| `difference.md` | `difference/` | **written**. One class, `DifferenceConstraints`, and the runtime machinery `install_difference_propagator` installs for it and for the `difference_logic` presolver (root initialiser, incremental and from-scratch routes, root simplification), documented here whoever installs it; the presolver's detection and rewrite are `presolvers/difference_logic.md`'s. `difference-logic.md` stays as the long note, cross-referenced from both. Not merged with `comparison` or `linear`, whose rows are the per-edge spellings the presolver cites: no shared code. Filed #1371 (the shortest-path arithmetic of the incremental route and root simplification) and #1372 (`difference_graph.cc`'s Bellman-Ford bounds and cycle sums) |
-| `dag.md` | `dag/` | **written**. One class, `Dag`; shares `connectivity-proofs.md` with `reachable`, which stays as the long note. `reachable.md` owns the rooted unfolding and `dag.md` the rootless form. The `sgf`/`sgt` subgraph rows and the two subgraph rules are copied, not shared, between `Dag`, `Subgraph` and `Reachable`, and each family's document records its own copy |
-| `disjunctive.md` | `disjunctive/` | **written**. `Disjunctive` only: `disjunctive_2d/` now has its own document, `disjunctive_2d.md`, split out because it is large. Note `disjunctive-proof-logging.md` stays as the long note, and this document describes `ComparatorNetwork` for both |
-| `disjunctive_2d.md` | `disjunctive_2d/` | **written**. `Disjunctive2D` (`diffn`), strict, non-strict and optional, with the cumulative relaxation (route B time-tabling, route A overload / edge-finding / TTEF), `cumulative_projection` and the projection donors; split from `disjunctive.md` because the relaxation is as large as the 1-D family. Note `disjunctive-proof-logging.md` ("2D non-overlap") stays as the long note. `Cumulative`'s propagator, run on each projection, is documented in `cumulative.md`; `ComparatorNetwork` in `disjunctive.md` |
-| `element.md` | `element/` | **written**. `Element`, `Element2D` |
-| `in.md` | `in/` | **written**. One class over constants and variable candidates; also the machinery behind every `create_integer_variable(vector)`. `range_literals_spec.md` stays the range-literal reference |
-| `increasing.md` | `increasing/` | **written**. `Increasing`, `StrictlyIncreasing`, `Decreasing` and `StrictlyDecreasing` over one `IncreasingChain`. Not merged with `comparison`: the same row and theorem, no shared code |
-| `inverse.md` | `inverse/` | **written**. One class; its propagator runs `all_different`'s generalised arc consistent algorithm on one array, and is documented there as well |
-| `knapsack.md` | `knapsack/` | **written**. One class, `Knapsack`, with two proof strategies over one OPB: `PerCall` (default; Demirović et al.'s per-call diagram) and `Upfront` (`knapsack_upfront.{hh,cc}`, the static diagram at `Top`). Shares no code: `BinPacking`'s upfront diagram is a `k = 1` copy, and `subset_sum_strengthening` is not this family's (its callers are `cumulative` and the `cumulative_strengthening` presolver; the `linear` row and `linear.md` wrongly say knapsack uses it). `knapsack.md` and `decision-diagram-proof-strategies.md` stay as long notes; filed #1337 (negative values from the front ends), #1340 (the quadratic interior pass), #1334 (unchecked row lengths) and #1341 (the `multi-knapsack` root); commented on #1229 (at `AssertionLevel::Off`, reachable from MiniZinc) and #1070 |
-| `lex.md` | `lex/`, `lex_smart_table.hh` | **written**. The twelve named `Lex*` forms over `LexCompareGreaterThanOrMaybeEqual`, and `LexSmartTable`, whose engine is `smart_table`'s |
-| `linear.md` | `linear/` | **written**. Note `linear-slack-waking.md` is cross-referenced and due to be folded in; `subset-sum-strengthening.md` is not this family's (an `innards/proofs` helper for `cumulative` and the `cumulative_strengthening` presolver; `knapsack` does not use it) |
-| `logical.md` | `logical/` | **written**. `And`, `Or`, `AndIf`, `OrIf` over one propagator |
-| `mdd.md` | `mdd/` | **written**. One class, `MDD`. Not merged with `regular`: `mdd.cc` carries its own copy of `Regular`'s graph code (`MDDGraph`, `DeadCache`, the degree cascade) with per-layer node sets, and shares no helper, hint or encoding row with it; #200 is the unification. `decision-diagram-proof-strategies.md` stays as the long note shared with `regular` and `knapsack`; this document describes only `MDD`'s upfront use of it |
-| `min_distance.md` | `min_distance/` | **written**. `MinDistance` and its five propagation modes; `min-distance-proofs.md` stays as the long note |
-| `min_max.md` | `min_max/` | **written**. `ArrayMin`, `ArrayMax`, `Min` and `Max` over one `ArrayMinMax`; `Min` and `Max` are its two-entry case |
-| `nogoods.md` | `nogoods/` | **written**. Search machinery rather than a posted constraint: the learned-nogood store that `solve_with` installs when restarts are on, its two propagators (scan and refined two-watched-literal), and the reduced nld-nogoods the restart unwind records and `emit_learned_nogood` derives in the proof. Reachable as a public class and through the `.scp` reader, which the document records without endorsing; what other uses would need is under its Known limitations and Next steps. Not a candidate merge with `logical` or `table`: it shares no code with them, though their watched clauses are copies of the same scheme (#131). `restarts-nogoods-weighting.md` and `refined-triggers.md` stay as long notes; filed: the optimisation catch-up's late arming (#1390), a restart scale of 0 (#1391), the refined propagator's missing `scope_only` under dom/wdeg (#1392), a user-grown store (#1393), and the refined-watch undo cost (#1394) |
-| `parity.md` | `parity/` | **written**. `ParityOdd`, and the GF(2) system propagator in `gf2_system.{hh,cc}` that the `parity_system_gathering` presolver installs; note `parity-system.md` |
-| `path.md` | `path/` | **written**. `Path` and `DPath`, posted as a `Reachable` / `DReachable` child plus a `LinearEquality` child plus their own degree and endpoint rows. The rows and their propagator are `innards/graph_rules`, shared with `DTree` and catalogued here; `tree.md` owns `DTree`'s use of it. The child's rules and the unfolding are in `reachable.md`. Nothing is shared with `circuit`. `connectivity-proofs.md` stays as the long note |
-| `reachable.md` | `reachable/` | **written**. `Reachable` and `DReachable`, which `connected` / `dconnected` reach through the stdlib and `Tree` / `Path` post as a child; owns the unfolding encoding, the propagator and its forcing. `connectivity-proofs.md` stays, shared with `dag`; `Reachable`, `Subgraph` and `Dag` each carry their own copy of the subgraph rows and rules, and each document records its own; filed #1305, #1312, #1316 |
-| `regular.md` | `regular/` | **written**. `Regular`, with its three proof strategies (`Upfront`, the default; `PerCall`, `RegularLegacy`; `Bacchus`, `RegularBacchus`), `canonical_run` (#1266) and the regex front end (`regex.{cc,hh}`), one document: one public class, one propagator in three copies, one encoding. `regular.md` and `decision-diagram-proof-strategies.md` stay as long notes; the latter is shared with `mdd` and `knapsack`, and each document describes its own strategies. No code shared with `mdd`, which carries its own copy of the graph maintenance (with the same per-node copy, stale-key and recursive-cascade defects, #1338, #1339 and #1351, each filed for both); `recover_am1_from_pairs`, which the canonical run calls, is documented in its header, and no family document owns it |
-| `seq_precede_chain.md` | `seq_precede_chain/` | **written**. Delegates to `value_precede` after a clamp; this document covers the clamp and the delegation |
-| `smart_table.md` | `smart_table/` | **written**. `SmartTable`, and the engine under `LexSmartTable` and `AtMostOneSmartTable`. The candidate merge with `table`, settled: separate. No shared code, and a flag per row and per entry against `Table`'s proof-only selector |
-| `sort.md` | `sort/` | **written**. `Sort`, `ArgSort`; `sortedness.md` stays as the long note |
-| `subgraph.md` | `subgraph/` | **written**. One class, `Subgraph`. Not merged with `reachable` or `dag`: they carry copies of its two rows and its two rules under their own IDs and hints, and none of them calls it |
-| `table.md` | `table/`, `extensional_utils.{hh,cc}` | **written**. `Table`, `NegativeTable`, and the extensional propagator that `AutoTable` and the tabulated constraints also run. Not merged with `smart_table`; see its row |
-| `tree.md` | `tree/` | **written**. `Tree` and `DTree`; a `Reachable` child, a `LinearEquality` count and, for `DTree`, in-degree rows through `innards/graph_rules`, shared with `path`. Not merged with `reachable` (own `.scp` term, count, rows and hint) or `path` (shares only `graph_rules`); no shared code with `dag` or `circuit` (`dag` copies the two subgraph rows per edge; its unfolding is its own). `connectivity-proofs.md` stays as the long note |
-| `value_precede.md` | `value_precede/` | **written**. `ValuePrecede`, for a pair or a chain; `seq_precede_chain` installs it |
-
-Not families, and getting no document: `gcs/constraints/innards/` (shared
-helpers — documented where they are used, or in `constraints.md`).
-
-Presolvers, one document each under `dev_docs/presolvers/`: `auto_table`,
-`cumulative_strengthening`, `difference_logic`, `inferred_cumulative`,
-`inferred_disjunctive`, `parity_system_gathering`. Existing notes:
-`cumulative-strengthening.md`, `inferred-cumulative.md`,
-`inferred-disjunctive.md`, the presolver half of `difference-logic.md`, and the
-gathering half of `parity-system.md`. What each one installs, and which family
-document owns that machinery, is the table under [The presolver
-variant](#the-presolver-variant).
