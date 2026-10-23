@@ -732,7 +732,9 @@ specific to it:
 
 ### Tests
 
-- **`lex_test`** (`lex_constraint`, plus `lex_constraint_view_mixed`): for
+- **`lex_test`** (`lex_constraint`, plus `lex_constraint_view_mixed` and, since
+  #1208, its `_view_mixed_late` twin, which posts a vacuous row over
+  each view after the constraint): for
   each of the four directions, pairs and triples over several ranges, arrays of
   six, and unequal lengths (both directions, asymmetric domains, one against
   three, #254's empty and all-fixed operands), under
