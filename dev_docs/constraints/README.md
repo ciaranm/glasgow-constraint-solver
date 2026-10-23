@@ -898,6 +898,53 @@ constraints and do not restate it.
     `InferredDisjunctive` and `CumulativeStrengthening` find, and their
     documents' probes reproduce at `86caad24`. With donors retired, the
     scheduling presolvers' makespan links still work, on a probe (`mk2.cc`).
+- [`auto_table.md`](../presolvers/auto_table.md) — the `AutoTable`
+  presolver. The caller names a scope. Before search it runs a complete
+  search over the scope, propagating the whole model (in full at its root,
+  incrementally below), and installs `propagate_extensional` over every
+  assignment of the scope that propagation leaves standing, beside the
+  posted constraints, none of which it disables. It writes nothing to the
+  OPB. At `AssertionLevel::Off` each
+  entry is defined by two `red` lines over a proof-only selector, and the
+  logged subproblem search derives the at-least-one; above `Off` it writes
+  nothing of its own. The machinery it installs is [`table.md`](table.md)'s.
+  No front end can add it (#983), and `glasgow_scp_solver` has no
+  presolver switch (#1374).
+  - **Strength.** On 10,000 random models with views, constants, repeated
+    variables, holes and constraints partly outside the scope, there was no
+    solution-set mismatch, the tuple count always lay between the
+    projection of the solutions and the solutions of the constraints inside
+    the scope, and the domains, after every propagator's fixpoint, were GAC
+    over the scope's variables relative to those constraints at all 75,370
+    branching nodes.
+    All 300 random proofs verify at `Off`, and the cake chain re-checks
+    eight shapes by hand.
+  - **Findings.**
+    - Its throwaway root search runs every propagator's first call below a
+      guess and then backtracks, stranding once-only state: the bug class
+      of #1106 (#1378). An incremental difference propagator,
+      posted or installed by an earlier `DifferenceLogic`, throws
+      `UnexpectedException`; removing `AutoTable`'s `TrueLiteral` guess
+      turns that into lost propagation. `propagate_extensional`'s once-only
+      root width trim is lost, for a posted `Table` and for every tabulated
+      constraint: a 191-line proof becomes 3.6 million lines and 20 GB at
+      width 10⁵, and a tabulated `Power` over a wide variable goes from 4 ms
+      to no answer in 60 s. A 485-lane sweep under an injected pseudo-root
+      `AutoTable` found no other member.
+    - Its backtrack clauses carry every selector value found so far, so `T`
+      tuples cost at least `T(T+1)/2` selector literals: 238 MB at 4,032
+      tuples, against 2.2 MB with subtree-local clauses (#1379).
+    - The subproblem search ignores the abort flag: 4.8 s against a 200 ms
+      abort, a case #816 already claims (commented there).
+    - Above `Off`, an unsatisfiable subproblem that root propagation does
+      not refute gives a proof VeriPB rejects at `Definitions` and `Links`;
+      recorded, not filed.
+    - `Stats::propagations` counts the subproblem's calls and `recursions`
+      does not, so compare searches across it on `recursions`.
+  - **What it buys.** On `skyscrapers 7`, tabulating each row and column
+    takes the search from 1,232,741 recursions and 35 s to one recursion
+    and 0.13 s; on `shikaku human`, from 2,793 recursions to 10. On
+    `skyscrapers 5` and `6` it costs 1.2–1.5× the instructions.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
