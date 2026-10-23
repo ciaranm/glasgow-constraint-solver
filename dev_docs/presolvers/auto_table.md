@@ -197,8 +197,9 @@ The entry-point table, with one row because there is one class:
 2. A `.scp` is a model and a presolver is a solve option, so this is
    `glasgow_scp_solver`'s gap, not the format's. #1374 records it: it asked
    for the difference-logic switch, and a comment now asks it to cover every
-   presolver (#983's table has no `.scp` column). `glasgow_scp_solver.cc` and `scp_reader.cc`
-   never call `add_presolver`. A switch for this presolver would also need
+   presolver (#983's table has no `.scp` column). `glasgow_scp_solver.cc`
+   and `scp_reader.cc` never call `add_presolver`. A switch for this
+   presolver would also need
    a way to name the scope.
 
 A front end would also need a way to **name the scope**, which none has.
@@ -271,10 +272,10 @@ consequence of the model, so it holds unconditionally.
     reproducer takes 40 recursions instead of 30, and the propagator's own
     audit reports lost propagation. The premise is written down in the code
     (`difference_graph.cc:1309-1310`, "Search propagates everything before
-    it guesses anything, so this cannot happen") and in
-    [`difference.md`](../constraints/difference.md) (:414-417, open PR
-    #1376): "cannot happen because root propagation runs before any guess".
-    With an `AutoTable` it can.
+    it guesses anything, so this cannot happen"), and was in
+    [`difference.md`](../constraints/difference.md) as first written (:414-417,
+    open PR #1376: "cannot happen because root propagation runs before any
+    guess"), which now records the exception. With an `AutoTable` it can.
   - **(b) `propagate_extensional`'s root trim is lost.** It runs once, behind
     `residues.initialised` (`extensional_utils.cc:755-836`), and its
     removals are undone by the backtrack. The real root never re-trims, so
@@ -295,8 +296,9 @@ consequence of the model, so it holds unconditionally.
     `solve_test`, which includes `solve.cc`). The only real differences were
     (a) and (b); the rest were harness artefacts, such as counted proof
     markers, propagator counts, `Stats::propagations`, and root-unsatisfiable
-    presolver fixtures whose presolver then never ran. That cannot rule out state that matters only on
-    models no lane posts, or effects on cost and heuristics alone, such as
+    presolver fixtures whose presolver then never ran. That cannot rule out
+    state that matters only on models no lane posts, or effects on cost and
+    heuristics alone, such as
     `table::Auto`'s 32-wake decision, which counts the throwaway search's
     wakes.
 - **Other documents' descriptions.** `table.md` (:244-246) said the
@@ -525,6 +527,9 @@ nodes beside its own tuples (`:128-130`). That holds for `ran`, `variables`,
   value (#1387);
 - a solve that never reaches `run` leaves every field as the last run that
   did left it (see [Evidence that it fired](#evidence-that-it-fired)).
+
+The header's comments on `ran` and `compact_table` (`auto_table.hh:33-37`,
+`:55-62`) mention neither exception (corrected by #1389, open).
 
 Two `AutoTable`s sharing one block in one solve report the later run only,
 apart from `compact_table` when the later run finds no tuple (#1387 again),
@@ -1374,8 +1379,8 @@ carries a hint of this presolver's, because there is none.
 - [`table.md`](../constraints/table.md): the propagator this presolver
   installs, its rules 2–5, its state and idempotence, and its
   reconstructibility verdict for this caller.
-- [`refined-triggers.md`](../refined-triggers.md), on main (not yet in this
-  document's tree), "But the first run is not always at the real root": the
+- [`refined-triggers.md`](../refined-triggers.md), "But the first run is not
+  always at the real root": the
   #1106 pitfall for watch markers, the general form of this document's
   [Relation to other families](#relation-to-other-families) list.
 - [`difference.md`](../constraints/difference.md): the incremental route's
