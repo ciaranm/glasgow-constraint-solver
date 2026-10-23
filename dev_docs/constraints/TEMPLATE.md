@@ -964,7 +964,7 @@ this table moves to `dev_docs/constraints/README.md` once it is stable.
 | `all_equal.md` | `all_equal/` | **written**. One class, `AllEqual`; not merged with `equals`, which is the binary case and shares only the range-removal helper |
 | `arithmetic.md` | `multiply/`, `divide_modulus/`, `plus_minus/`, `power/`, and the `plus.hh` / `minus.hh` / `divide.hh` / `modulus.hh` headers | **written**. One family over several directories; `arithmetic-proofs.md` stays, as its design note |
 | `abs.md` | `abs/` | **written**. The candidate merge into `arithmetic`, settled: separate. The view-proof gap that first kept it apart has closed; it shares no code or encoding with the product family |
-| `at_most_one.md` | `at_most_one/` | |
+| `at_most_one.md` | `at_most_one/` | **written**. `AtMostOne`, and `AtMostOneSmartTable`, whose engine is `smart_table`'s. Not merged with `counting`: the meaning of `Count` with a counter in `0..1`, but no shared code |
 | `bin_packing.md` | `bin_packing/` | existing note `bin-packing.md` |
 | `circuit.md` | `circuit/` | includes subcircuit |
 | `counting.md` | `count/`, `among/`, `global_cardinality/`, `n_value/` | **written**. The candidate merge, settled: four classes (`Count`, `Among`, `NValue`, `GlobalCardinality` at `BC` and `GAC`), no shared propagation code and four encodings, so one document and no code merge |

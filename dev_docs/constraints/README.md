@@ -292,6 +292,20 @@ constraints and do not restate it.
   `n − 1` `Equals` it replaces, but is no faster, and takes 4.6 to 10.5 times
   Gecode's time. Bounds and values are one RUP each, a removed interval three;
   a bound moved across more than one equality is checked, not argued.
+- [`at_most_one.md`](at_most_one.md) — `AtMostOne`, at most one position of an
+  array equals a value that may itself be a variable, and
+  `AtMostOneSmartTable`, its `SmartTable` baseline. Generalised arc consistent
+  on distinct variables, holes and views included, by two rules that read only
+  which variables are fixed; not even `bounds(Z)` on repeated ones. Only the
+  C++ API and the `.scp` reader reach it: MiniZinc and XCSP3 post `Count`,
+  which on an identical tree takes 1.5 to 1.8 times its time and writes 1.8
+  times its proof lines. Findings, each with a tested patch: while the value
+  variable is unfixed every call walks its whole domain, about 0.4 s a call at
+  10⁷ values, where collecting the fixed values does the same in `O(n log n)`;
+  its `on_change` triggers declare every variable's holes relevant, though
+  none is; every reason is the whole scope where two literals suffice; and its
+  encoding is `Count`'s from before `Count` was conformed to `cake_pb_cp`. Not
+  merged with `counting`: no shared code, and it is the cheaper special case.
 
 Everything else is still to write; the family list in
 [`TEMPLATE.md`](TEMPLATE.md#provisional-family-list) is the work plan, and #871
