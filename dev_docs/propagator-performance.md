@@ -410,6 +410,14 @@ all 285 models it threw **219 918** times in total, and exactly one model
 (`2019_kidney-exchange`) reaches even 1% of its runtime that way. The table
 propagator was the outlier, not the first of many.
 
+The survey only sees what a frontend can reach, though. `Disjunctive`'s
+energetic rules are not exposed to `fzn-glasgow`, and its overload check
+contradicts in bulk. #1299 made its three conflicts `contradiction_or_stop`;
+on `ft06 --deadline 54` with the check on, that and #1299's reason changes
+took 62.4G instructions to 50.8G on the same search. The reason changes alone,
+still throwing, had measured 71.0G: what they inlined moved the throw site
+further down the lambda's call-site table, which the unwinder scans linearly.
+
 **The volume is all on the other path — an `infer*` that empties a domain —
 which threw 19 457 165 times, eighty-eight times as often.** That is worth
 10-22% of the run on six models, and it concentrates in a handful of
