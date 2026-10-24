@@ -13,6 +13,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/innards/wide_sum.hh>
 
 #include <version>
 
@@ -305,7 +306,10 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
                                                  reason = generic_reason(vars),
                                                  owner = constraint_id()](const State & state, auto &, ProofLogger * const,
                                                  const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
-                Integer min_possible = 0_i, max_possible = 0_i;
+                // Summed exactly and never narrowed: only the comparisons below
+                // read the totals, and a partial sum, or a total nothing else
+                // needs, can pass the end of Integer (dev_docs/integer-ranges.md).
+                WideSum min_possible, max_possible;
                 for (const auto & cv : sanitised_cv.terms) {
                     auto bounds = state.bounds(get_var(cv));
                     if (get_coeff(cv) >= 0_i) {
@@ -318,7 +322,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
                     }
                 }
 
-                if (min_possible > value + modifier) {
+                if (min_possible > WideSum{value} + modifier) {
                     // cannot possibly hold. The witness cites proof_lines.first, the
                     // `cond -> sum <= value` row. If, NotIf and Iff all get here
                     // undecided, but only If and Iff license an inference (not cond)
@@ -332,7 +336,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
                         .reason = reason                                                                                                  //
                     };
                 }
-                else if (max_possible <= value + modifier) {
+                else if (max_possible <= WideSum{value} + modifier) {
                     // must definitely hold
                     return reification_verdict::MustHold<LinearCondJustification>{
                         .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{{owner}, &state, sanitised_neg_cv, proof_lines_swapped},
