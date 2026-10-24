@@ -410,6 +410,14 @@ all 285 models it threw **219 918** times in total, and exactly one model
 (`2019_kidney-exchange`) reaches even 1% of its runtime that way. The table
 propagator was the outlier, not the first of many.
 
+The survey only sees what a frontend can reach, though. `Disjunctive`'s
+energetic rules are not exposed to `fzn-glasgow`, and its overload check
+contradicts in bulk. #1299 made its three conflicts `contradiction_or_stop`;
+on `ft06 --deadline 54` with the check on, that and #1299's reason changes
+took 62.4G instructions to 50.8G on the same search. The reason changes alone,
+still throwing, had measured 71.0G: what they inlined moved the throw site
+further down the lambda's call-site table, which the unwinder scans linearly.
+
 **The volume is all on the other path — an `infer*` that empties a domain —
 which threw 19 457 165 times, eighty-eight times as often.** That is worth
 10-22% of the run on six models, and it concentrates in a handful of
@@ -438,6 +446,15 @@ hand, and `all_different_except`'s failure is
 `gac_all_different.cc`'s matching-too-small `infer(logger, FalseLiteral{}, ...)`,
 which would need `propagate_gac_all_different` to return a verdict to its five
 callers. Both are mechanical; neither is one line.
+
+`disjunctive_strict` is converted (#1405), and it was worth far more than
+its single survey model suggests. The survey cannot reach its rules, but its
+default ones, time-tabling and detectable precedences, are reached, and each
+of their pushes can empty a domain. On `ft06 --deadline 54` with the default
+rules, 47% of the instructions were the unwinder, and converting every push
+took the run from 337.2G instructions to 167.4G on the same search, with
+`libgcc_s` at 0%. A propagator whose pushes are the usual way a node dies
+belongs on this list whatever the survey says.
 
 **Per-throw cost, measured on an identical completed search** (`gc_4_8`, 322 378
 clause conflicts): 5.65G instructions and 1.85G cycles, i.e. **17 500

@@ -352,13 +352,18 @@ tasks its certificate cites, not the whole scope. The mandatory-overlap
 contradiction, a pairwise detectable-precedence push and the strict
 zero-length check name their two tasks; a time-table push and a
 presence falsification name the pushed task and the blockers its chain
-cites. The energy rules and the set-based precedence speak about a
-window, and keep the whole scope, built once at install rather than at
-every inference. A task's reason is its start, its duration when that
-is a variable, and its presence literal when it is known present. On
-`ft06` minimised, that takes VeriPB's check of the set-based rule's
-proof from 973 to 654 billion instructions, and edge-finding's from 48
-to 45, and an assertion at `Inferences` names only the tasks involved.
+cites. The overload check names its window's tasks, by start and
+presence only: its certificate counts a duration at its declared floor,
+which needs no reason (#1299). The other energy rules and the set-based
+precedence speak about a window, and keep the whole scope, built once at
+install rather than at every inference. A task's reason is its start,
+its duration when that is a variable, and its presence literal when it
+is known present, and it states bounds only, never holes, since no rule
+reads one (#1299). On `ft06` minimised, naming only the cited tasks
+takes VeriPB's check of the set-based rule's proof from 973 to 654
+billion instructions, and edge-finding's from 48 to 45, and an assertion
+at `Inferences` names only the tasks involved. With proofs off no reason
+is built at all, since nothing reads one (#1299).
 
 **Presence falsification.** When no start in `dom(s_j)` escapes the
 mandatory parts of the present tasks, `p_j = 0`. The derivation is the
