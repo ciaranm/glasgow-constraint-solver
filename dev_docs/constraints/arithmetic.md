@@ -21,7 +21,8 @@
 > or `c1·c2`, into its linear form, which can throw `IntegerOverflow` or be
 > refused) and #1222 (`Divide` sizes the quotient's magnitude from `q`'s
 > declared domain, so a wide `q` with a divisor of a few bits throws with
-> proofs). Already open and touching this family: #540, #724,
+> proofs; closed by keeping cake_pb_cp's sizing and saying so in the
+> `IntegerOverflow`). Already open and touching this family: #540, #724,
 > #845, #880, #960, #846, #833, #868; #1038, listed here at the first pass, was
 > closed by removing the short-names option (#1087). Tracked under #871.
 
@@ -748,7 +749,12 @@ as unaffected.
     without proofs and throws `IntegerOverflow` with them, at `0a5b4ec6`. With
     that `q`, a divisor in `[1, 7]` still solves with proofs and `[1, 8]`
     throws; with a 59-bit `q`, `[1, 15]` solves and `[1, 16]` throws.
-    `fzn-glasgow` gives an undeclared `var int` the whole range.
+    `fzn-glasgow` gives an undeclared `var int` the whole range. This is
+    deliberate since #1222's fix: the sizing is cake_pb_cp's, whose OPB the
+    proof is checked against in workflow 2 (sizing `|q|` from `|x|` instead
+    makes `scp_chain_divide_span_unsat`'s proof fail against cake's OPB), so
+    the throw stays and says so: "Divide: the proof encoding does not fit in
+    an Integer…".
   - **A `Multiply` with a constant operand** (#1221's two shapes): the
     `LinearEquality` it becomes ends up with a constant built from the
     inputs: for two constant operands, `multiply.cc:52-53` makes `c1·c2` its
@@ -2258,8 +2264,11 @@ asserted there. Three gaps sit around that:
 - **`Divide` with a quotient declared much wider than it can be** throws with
   proofs on once `q`'s declared bits and the divisor's pass 63, because the
   quotient's magnitude is sized from `q`'s declared domain rather than from
-  `x` (#1222). An undeclared FlatZinc `var int` quotient is that shape once
-  its divisor can reach 8.
+  `x`, as cake_pb_cp sizes it. An undeclared FlatZinc `var int` quotient is
+  that shape once its divisor can reach 8. Deliberate since #1222: the
+  `IntegerOverflow` names `Divide` (or `Modulus`, for a wide dividend) and
+  the proof encoding, and `integer_ranges_test` pins the limit with a twin
+  just inside it.
 - **A `Multiply` with a constant operand can throw** on in-range
   inputs that have solutions, with or without proofs: its `LinearEquality` folds
   `c·offset`, or `c1·c2` for two constant operands, into a constant that can
@@ -2334,11 +2343,11 @@ Ranked by what they buy for what they cost.
    `Divide`, depends on the dividend's width too. And `power.hh`'s note on
    `(−2)^63 = INT64_MIN`, which since #1214 describes a throw no input can
    reach.
-8. **#1221 and #1222**, from the integer-range audit: give a constant-operand
+8. **#1221**, from the integer-range audit: give a constant-operand
    `Multiply` a form that does not fold `c·offset` or `c1·c2` into a
-   constant, and size `Divide`'s quotient magnitude from `x` rather than from
-   `q`'s declaration, as `Modulus` already does. The second changes the OPB,
-   so cake conformity needs checking (#1216's body).
+   constant. (#1222, sizing `Divide`'s quotient magnitude from `x`, was
+   checked and declined: cake_pb_cp sizes it from `q`, and workflow 2 then
+   rejects the proof; changing that would start in cake's encoder.)
 
 Done since the first pass: **#1064** (saturate the corner products; #1079,
 which also added the large-domain rows the first pass asked for, including the

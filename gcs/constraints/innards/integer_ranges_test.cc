@@ -719,6 +719,77 @@ namespace
         }
     }
 
+    // Divide's and Modulus's proof encoding is cake_pb_cp's, which multiplies
+    // the quotient's and the divisor's magnitudes bit by bit and sums that grid
+    // in its remainder rows, sizing Divide's quotient magnitude from the
+    // quotient's declared domain and Modulus's from the dividend. A wide
+    // operand then leaves a row whose constants do not fit, so with proofs that
+    // is an IntegerOverflow saying what is to blame, never a wrong answer
+    // (#1222); without proofs, and for the twin just inside the limit, it
+    // solves. 10..11 / 5..8 is 1 or 2, so eight solutions; (B - 2 .. B) + B
+    // mod 3 has one remainder each, so three. Modulus needs both the dividend
+    // past S and a remainder declared over S to overflow: the rows sum all
+    // three.
+    auto run_divide_modulus_encoding_test(bool proofs) -> void
+    {
+        struct Case
+        {
+            string name;
+            function<void(Problem &)> post;
+            long long solutions;
+            bool overflows_with_proofs;
+        };
+
+        // |y| has four bits, so a quotient magnitude of n bits needs
+        // (2^n - 1) * 15 plus |x| to fit: n = 59 does, and S's 60 does not.
+        auto divide = [](Problem & p, Integer q_magnitude) {
+            p.post(Divide{
+                p.create_integer_variable(10_i, 11_i), p.create_integer_variable(5_i, 8_i), p.create_integer_variable(-q_magnitude, q_magnitude)});
+        };
+        auto modulus = [](Problem & p, Integer offset) {
+            p.post(Modulus{p.create_integer_variable(B - 2_i, B) + offset, constant_variable(3_i), p.create_integer_variable(A, B)});
+        };
+
+        vector<Case> cases{{"Divide quotient over S", [&](Problem & p) { divide(p, B); }, 8, true},
+            {"Divide quotient inside the encoding's limit", [&](Problem & p) { divide(p, Integer{(1LL << 59) - 1}); }, 8, false},
+            {"Modulus dividend view past S", [&](Problem & p) { modulus(p, B); }, 3, true},
+            {"Modulus dividend at the top of S", [&](Problem & p) { modulus(p, 0_i); }, 3, false}};
+
+        for (const auto & [name, post, expected, overflows_with_proofs] : cases) {
+            bool expect_overflow = proofs && overflows_with_proofs;
+            println(cerr, "integer ranges: {}{}: expecting {}", name, proofs ? " with proofs" : "",
+                expect_overflow ? string{"IntegerOverflow"} : std::to_string(expected) + " solutions");
+            Problem p;
+            post(p);
+            long long solutions = 0;
+            string proof_name = "integer_ranges_divide_modulus";
+            try {
+                solve_with(p,
+                    SolveCallbacks{
+                        .solution = [&](const CurrentState &) -> bool {
+                            ++solutions;
+                            return true;
+                        },
+                        .stats_report = silent_stats_report() //
+                    },
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+            }
+            catch (const innards::IntegerOverflow & e) {
+                if (! expect_overflow)
+                    throw;
+                if (! string{e.what()}.contains("the proof encoding does not fit in an Integer"))
+                    throw UnexpectedException{name + ": the IntegerOverflow does not say what overflowed: " + e.what()};
+                continue;
+            }
+            if (expect_overflow)
+                throw UnexpectedException{name + ": solved, but was expected to overflow, so this case no longer tests the limit"};
+            if (solutions != expected)
+                throw UnexpectedException{name + ": found " + std::to_string(solutions) + " solutions, expected " + std::to_string(expected)};
+            if (proofs)
+                verify_proof_and_clean_up(proof_name);
+        }
+    }
+
     // An objective that is a view at either end of the range, minimised and
     // maximised. A view beyond the range used to be too wide for a bit vector
     // of its own, and the conclusion then claimed a bound that included the
@@ -772,6 +843,7 @@ auto main(int argc, char * argv[]) -> int
         run_auxiliary_tests(proofs);
         run_all_different_except_test(proofs);
         run_cumulative_energy_test(proofs);
+        run_divide_modulus_encoding_test(proofs);
         for (auto c : {A, B})
             for (bool negate : {false, true})
                 for (bool maximise : {false, true})

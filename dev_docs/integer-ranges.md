@@ -163,6 +163,21 @@ blame and keeps the operation that overflowed, and `integer_ranges_test` pins
 each site with a twin just inside the limit that must solve. Revisit this if an
 application meets it.
 
+`Divide` and `Modulus` with proofs are a third case, also by decision
+(#1222). Their proof encoding is cake_pb_cp's, which multiplies the
+quotient's and the divisor's magnitudes bit by bit and sums that grid in its
+remainder rows, and it sizes `Divide`'s quotient magnitude from the
+quotient's declared domain. That grid's largest sum must fit in an
+`Integer`, so a quotient declared over the whole of `S` throws once the
+divisor has four bits, though `|q| <= |x|` may be tiny; sizing from `|x|`
+would fix it but makes the OPB differ from cake_pb_cp's, whose OPB the
+proof is checked against in workflow 2. `Modulus` sizes its quotient
+magnitude from the dividend, so it meets this only with a dividend view past
+`S` and a remainder declared over `S`, whose rows sum all three. Without
+proofs both solve. The
+`IntegerOverflow` names the constraint and the proof encoding, and
+`integer_ranges_test` pins each with a twin just inside the limit.
+
 What it must not do is throw on a value nothing needs. The commonest way is a
 running sum whose total fits but whose partial sums do not: nine terms at the
 top of the range and nine at the bottom sum to zero, but not in that order. Sum
