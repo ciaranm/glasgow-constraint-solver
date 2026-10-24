@@ -2,17 +2,26 @@ include(FetchContent)
 
 # The parser reads every integer as an int, and upstream's conversion does not
 # check for overflow: 4294967297 is read as 1, silently, so an instance with a
-# value past int32 gets a wrong answer. The patch makes the conversion throw
-# std::out_of_range instead, refuses a tuple value of INT_MAX (the parser's
-# wildcard sentinel, so it would be read as `*`), stops a domain reaching
-# INT_MAX from overflowing the loop that lists its values, and saturates an
-# interval's width and a domain's size, which overflow for a domain spanning
-# (nearly) the whole of int. The binary reports
-# the refusals as unsupported. See dev_docs/xcsp.md, "Integer range".
+# value past int32 gets a wrong answer. The first patch makes the conversion
+# throw std::out_of_range instead, refuses a tuple value of INT_MAX (the
+# parser's wildcard sentinel, so it would be read as `*`), stops a domain
+# reaching INT_MAX from overflowing the loop that lists its values, and
+# saturates an interval's width and a domain's size, which overflow for a domain
+# spanning (nearly) the whole of int. The binary reports the refusals as
+# unsupported. See dev_docs/xcsp.md, "Integer range".
+#
+# The second patch makes a <group> of <knapsack> constraints work (#1354).
+# Upstream tags such a group FLOW, so every row went through the flow unfolder,
+# which casts the knapsack to a flow and dereferences the null result; and the
+# knapsack unfolder never copied the profit condition from the template, so each
+# row arrived with an empty one. Each patch is applied by its own COMMAND, and
+# each is skipped if already in place.
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
     GIT_TAG 179670dd97cd2b87cdeb93aa7268b57bba719490
     PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_integer_overflow.patch
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
+    COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_knapsack_group.patch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(xcsp3_cpp_parser)
@@ -153,6 +162,18 @@ add_xcsp_test(intension_basic)
 add_xcsp_test(intension_boolean)
 add_xcsp_test(intension_ordering)
 add_xcsp_test(intension_reified)
+add_xcsp_test(knapsack)
+# The same four knapsacks as xcsp_knapsack, written as two <group>s, one with a
+# constant profit condition and one with the profit condition a parameter. The
+# pinned parser crashed on any knapsack group, and once it no longer did it
+# dropped the profit condition (#1354); xcsp3_parser_knapsack_group.patch fixes
+# both. The second test checks that the two instances' caches, each from ACE,
+# agree, so that the group is checked against its written-out form.
+add_xcsp_test(knapsack_group)
+add_test(NAME xcsp_knapsack_group_matches_written_out
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+        ${CMAKE_SOURCE_DIR}/xcsp/tests/expected/knapsack.sols
+        ${CMAKE_SOURCE_DIR}/xcsp/tests/expected/knapsack_group.sols)
 add_xcsp_test(lex)
 add_xcsp_test(lex_matrix)
 add_xcsp_test(maximum)
@@ -171,7 +192,7 @@ add_xcsp_test(regular)
 # instance without (q0, 1, q0), and is every word but 0 0 0 0.
 add_xcsp_test(regular_nfa)
 # A domain reaching INT_MAX, which the parser listed with an int loop that
-# overflowed and never finished (the patch in this file fixes it). ACE cannot
+# overflowed and never finished (the first patch fixes it). ACE cannot
 # parse such a domain, so the cache is a hand count: x in {0, 1, INT_MAX} with
 # x != 1.
 add_xcsp_test(range_domain_int_max)
