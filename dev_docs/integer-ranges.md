@@ -141,9 +141,18 @@ range moves that step into the sum as a constant instead, so that
   been.
 
 A constraint whose own arithmetic genuinely needs more than 64 bits for
-in-range inputs throws then, during search: `DifferenceConstraints`, for
-example, forms Bellman-Ford path sums, and a chain of nine edges of weight
-`-max_bounded_value()` has a path sum past the end of `Integer`.
+in-range inputs throws then, during search.
+
+`DifferenceConstraints` (and the `difference_logic` presolver, which installs
+the same machinery) throws by decision (#1371, #1372). Its potentials,
+Dijkstra distances, reduced weights, Bellman-Ford bounds and cycle weights are
+`Integer`s, so a chain of nine edges of weight `-max_bounded_value()`, or a
+shorter one with a redundant edge, throws even where its answer, often a
+refutation by its first edge, needs no such value. Holding all of them wide
+would reach into the incremental route's heaps and the simplification stage.
+The `IntegerOverflow` says it came from difference logic, and
+`difference_constraints_test`'s near-edge lane checks that no route answers
+those shapes wrongly.
 
 `Cumulative` (posted, derived, or as `Disjunctive2D`'s projection) is the same
 case on a broader footing, by decision rather than by necessity (#1235, #1223).

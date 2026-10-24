@@ -3,16 +3,16 @@
 > **Maturity** production (the C++ API and `.scp`; reached from MiniZinc and
 > XCSP3 only through the opt-in `difference_logic` presolver) ·
 > **Audited** 2026-10-19 at `86caad24` ·
-> **Open issues** filed by this audit: #1371, the
+> **Closed by decision** since this audit: #1371, the
 > shortest-path arithmetic of the incremental route and of root
 > simplification (potentials, reduced weights and costs, keys, distances)
 > is plain `Integer`, so in-range systems throw `IntegerOverflow`, also
 > through `--difference-logic` in its default configuration and from
 > MiniZinc; #1372, `difference_graph.cc`'s Bellman-Ford bounds
 > and cycle sums (the from-scratch reference route's, and root
-> simplification's witness check) are plain `Integer` too. Both list the
-> sites found so far and ask for an audit of their files, since every check
-> found more. Already open and touching
+> simplification's witness check) are plain `Integer` too. Both still
+> throw, and now say so; see [Known limitations](#known-limitations).
+> Already open and touching
 > this family: #1072 (a push cites a predecessor bound the proof already has),
 > #594 (zero-weight-cycle unification, the deferred fourth sub-step of root
 > simplification), #582 (no propagator priorities), #1225 (a range-literal
@@ -593,8 +593,9 @@ presolver, a presolver-installed propagator's condition variables count too.
   and the other three routes throw from a potential function. The throws on
   values nothing needs fall into two issues, split by file. **Both lists are
   what the audit found, and neither is exhaustive**: each round of checking
-  found more sites, so each issue asks for an audit of its files rather than a
-  patch of the lines it names.
+    found more sites, so each issue asked for an audit of its files rather than
+  a patch of the lines it names. Both were closed instead by keeping the
+  throws, with a message (see [Known limitations](#known-limitations)).
   - **#1371: the shortest-path arithmetic** of `difference_incremental.cc`
     and `difference_simplify.cc` — the potentials (incremental `π`,
     simplification's `h`), the reduced weights and costs, keys and distances
@@ -1255,10 +1256,13 @@ among others), which run with `run_test_and_verify.bash`.
   ([Inference catalogue](#rule-lower-bound-push), rule 1) is the evidence.
 - **Hand-built tests.** In every mode and every view lane: the negated-view
   refusal and the extreme-weight test (`run_overflow_test`, chains of two,
-  three and nine edges over the whole range, default route only; it requires
-  the nine-edge chain to *throw* `IntegerOverflow`,
-  `difference_constraints_test.cc:544-567`, which #1371's fix would flip to
-  UNSAT, as the test's own failure message anticipates). `basic` adds
+    three and nine edges over the whole range, default route only; it requires
+  the nine-edge chain to *throw* `IntegerOverflow`, saying it came from
+  difference logic). `basic` adds `run_near_edge_shapes_test`: the shapes of
+  #1371 and #1372 (chains of eight to ten edges, cycles of nine and ten, the
+  redundant edge, the undecided closing edge and shape Z, over the whole range
+  and `0..1`) on all four routes, each of which must either give the answer
+  the same rows give as linear inequalities or throw that message. It also adds
   the transitive push, the hole snap (both routes) and the heavy-edge test
   (`run_heavy_edge_test`, weights `±(2^60 − 1)` in three configurations:
   default, simplification off, and from scratch with simplification on);
@@ -1549,9 +1553,16 @@ with `comparison`.
   from scratch without simplification over the whole range, and on every
   route over `0..1`; a chain of eight with the redundant edge
   `x[0] − x[8] ≤ d`, `d ≥ 8`, throws whenever simplification is on; a negative cycle of nine such edges throws on every
-  route. Through `--difference-logic` such models are `=====ERROR=====` where
+    route. Through `--difference-logic` such models are `=====ERROR=====` where
   the model alone is `=====UNSATISFIABLE=====`. The shapes known are listed in
-  the two issues, which do not claim to be complete.
+  the two issues, which do not claim to be complete. **This is deliberate**
+  since #1371 and #1372 were closed: the initialiser and the propagator
+  rethrow any `IntegerOverflow` saying it came from difference logic and why
+  (`explaining_overflow` in `difference_graph.cc`), and
+  `run_near_edge_shapes_test` checks that no route answers those shapes
+  wrongly. Carrying every potential, distance and bound wide through the
+  heaps and the simplification stage was judged not worth it for weights
+  this close to `2^60`.
 - **The `.scp` writer writes view operands the reader cannot read back**, and
   `cake_pb_cp` cannot check this family at all.
 - **Root simplification can dominate a dense unconditional model**, at 82% of
@@ -1562,25 +1573,13 @@ with `comparison`.
 
 Ranked by value for cost.
 
-1. **Fix #1371 and #1372, by auditing the files rather than the listed
-   lines.**
-   - #1371: every sum and difference over potentials, distances, reduced
-     weights and reduced costs in `difference_incremental.cc` and
-     `difference_simplify.cc`, together with the vectors and heap keys that
-     store them, held in `WideSum`; and the incremental potential's drift
-     bounded or re-seeded.
-   - #1372: `difference_graph.cc`'s Bellman-Ford working bounds held wide,
-     with only the inferred bound capped at the wipeout (a naive clamp of the
-     stored bound makes `extract_cycle` throw), and the cycle sums at `:564`
-     and `:301` in `WideSum`.
-
-   Small, and it buys the range policy's promise on every route. The
-   fixtures are every shape in the two issues — chains of eight and nine (full
-   range and `0..1`) and ten, the chain plus the redundant edge
-   `x[0] − x[8] ≤ 8`, the chain plus an undecided closing edge, shape Z, the
-   heavy negative cycle and the drift — and the
-   reference is the from-scratch route without simplification, for the models
-   it answers.
+1. (Declined: auditing `difference_incremental.cc`, `difference_simplify.cc`
+   and `difference_graph.cc` to hold every potential, distance, reduced
+   weight and Bellman-Ford bound in `WideSum`, which #1371 and #1372 asked
+   for. They were closed with a clear `IntegerOverflow` instead, under the
+   rule that a clean error is acceptable where wide arithmetic is not
+   straightforward; see [Known limitations](#known-limitations). The issues
+   keep the list of sites and shapes, should an application need it.)
 2. **Give the assertions a hint.** A `hints::Difference` carrying the
    constraint id (and, for rules 3 and 8, the posted indices of the rows
    summed) would turn four `search` verdicts into `hinted`, and would let a
