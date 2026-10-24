@@ -790,6 +790,76 @@ namespace
         }
     }
 
+    // A Multiply with a constant operand becomes a linear equality whose
+    // constant is built from the inputs: the product of two constant operands,
+    // or a constant times the other operand's view offset. Two constants
+    // whose product lies past S still solve when the result is a view that can
+    // reach it, since the view's offset is folded first (#1221); where the
+    // constant genuinely does not fit, the IntegerOverflow says so. Each throw
+    // has a twin just inside the limit.
+    auto run_multiply_constant_operand_test(bool proofs) -> void
+    {
+        struct Case
+        {
+            string name;
+            function<void(Problem &)> post;
+            optional<long long> expected;
+        };
+
+        const auto two_59 = Integer{1LL << 59};
+        // x + B is 0 or 1, so c * (x + B) is 0 or c: two solutions, but the
+        // linear form's constant is c * B.
+        auto times_view = [](Problem & p, Integer c) {
+            auto x = p.create_integer_variable(A, A + 1_i);
+            p.post(Multiply{constant_variable(c), x + B, p.create_integer_variable(A, B)});
+        };
+
+        vector<Case> cases{{"Multiply constant times a view, constant past Integer", [&](Problem & p) { times_view(p, -B); }, nullopt},
+            // 8B < 2^63, so 8 is the widest constant whose product with B fits.
+            {"Multiply constant times a view, constant inside Integer", [&](Problem & p) { times_view(p, -8_i); }, 2},
+            // 3 * 2^59 is past S, but z + B reaches it at z = 3 * 2^59 - B.
+            {"Multiply two constants into a view past S",
+                [&](Problem & p) { p.post(Multiply{3_c, constant_variable(two_59), p.create_integer_variable(A, B) + B}); }, 1},
+            // Without the view, no z in S can be 3 * 2^59.
+            {"Multiply two constants past S", [&](Problem & p) { p.post(Multiply{3_c, constant_variable(two_59), p.create_integer_variable(A, B)}); },
+                nullopt},
+            {"Multiply two constants inside S",
+                [&](Problem & p) { p.post(Multiply{1_c, constant_variable(two_59), p.create_integer_variable(A, B)}); }, 1}};
+
+        for (const auto & [name, post, expected] : cases) {
+            println(cerr, "integer ranges: {}{}: expecting {}", name, proofs ? " with proofs" : "",
+                expected ? std::to_string(*expected) + " solutions" : string{"IntegerOverflow"});
+            Problem p;
+            long long solutions = 0;
+            string proof_name = "integer_ranges_multiply_constant";
+            try {
+                post(p);
+                solve_with(p,
+                    SolveCallbacks{
+                        .solution = [&](const CurrentState &) -> bool {
+                            ++solutions;
+                            return true;
+                        },
+                        .stats_report = silent_stats_report() //
+                    },
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+            }
+            catch (const innards::IntegerOverflow & e) {
+                if (expected)
+                    throw;
+                if (! string{e.what()}.contains("Multiply with a constant operand"))
+                    throw UnexpectedException{name + ": the IntegerOverflow does not say what overflowed: " + e.what()};
+                continue;
+            }
+            if (! expected)
+                throw UnexpectedException{name + ": solved, but was expected to overflow, so this case no longer tests the limit"};
+            if (solutions != *expected)
+                throw UnexpectedException{name + ": found " + std::to_string(solutions) + " solutions, expected " + std::to_string(*expected)};
+            if (proofs)
+                verify_proof_and_clean_up(proof_name);
+        }
+    }
+
     // An objective that is a view at either end of the range, minimised and
     // maximised. A view beyond the range used to be too wide for a bit vector
     // of its own, and the conclusion then claimed a bound that included the
@@ -844,6 +914,7 @@ auto main(int argc, char * argv[]) -> int
         run_all_different_except_test(proofs);
         run_cumulative_energy_test(proofs);
         run_divide_modulus_encoding_test(proofs);
+        run_multiply_constant_operand_test(proofs);
         for (auto c : {A, B})
             for (bool negate : {false, true})
                 for (bool maximise : {false, true})

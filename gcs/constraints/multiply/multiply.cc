@@ -46,15 +46,44 @@ namespace
 {
     // The resolved form when at least one operand is constant: a linear
     // equality. Used by both install() and s_expr(), which must agree exactly.
+    //
+    // With two constant operands, a view result's offset is folded here rather
+    // than by tidy_up_linear, giving the same tidied form: the product is not
+    // an input, so it may lie outside the bounded range where the result's view
+    // can still reach it (#1221), and the right-hand side must not.
     auto linear_for_constant_operand(const AffineForm & a1, const AffineForm & a2, const IntegerVariableID & v1, const IntegerVariableID & v2,
         const IntegerVariableID & result) -> pair<WeightedSum, Integer>
     {
-        if ((! a1.var) && (! a2.var))
-            return pair{WeightedSum{} + 1_i * result, a1.offset * a2.offset};
+        if ((! a1.var) && (! a2.var)) {
+            auto product = a1.offset * a2.offset;
+            if (auto a3 = affine_of(result); a3.var)
+                return pair{WeightedSum{} + a3.coeff * *a3.var, product - a3.offset};
+            return pair{WeightedSum{} + 1_i * result, product};
+        }
 
         const auto & other = a1.var ? v1 : v2;
         auto constant = a1.var ? a2.offset : a1.offset;
         return pair{WeightedSum{} + constant * other + -1_i * result, 0_i};
+    }
+
+    // The linear form's constant is built from the inputs, the product of two
+    // constant operands or a constant times the other operand's view offset,
+    // so it can leave the range though every value the constraint relates is
+    // small. Rather than introduce an auxiliary for the view, that stands as
+    // the error (#1221; dev_docs/integer-ranges.md), saying what is to blame
+    // and keeping the original message. The same holds for the linear
+    // equality's own coefficient-times-bound products.
+    [[noreturn]] auto rethrow_explaining_constant_operand_overflow(const IntegerOverflow & e) -> void
+    {
+        std::string inner = e.what();
+        if (inner.starts_with("unexpected problem: "))
+            inner.erase(0, std::string{"unexpected problem: "}.size());
+        throw IntegerOverflow{"Multiply with a constant operand: the linear equality it becomes does not fit in an Integer. Its "
+                              "constant is the product of two constant operands, or a constant operand times the other operand's view "
+                              "offset, and its bounds a constant operand times the other operand's, so those products must fit: post "
+                              "the product over a view's underlying variable, or narrow the constants or domains; see "
+                              "dev_docs/integer-ranges.md (" +
+            inner + ")"};
     }
 }
 
@@ -82,49 +111,54 @@ auto Multiply::prepare(Propagators & propagators, State & initial_state, ProofMo
     // A constant operand makes this a linear equality, which knows how to
     // tabulate itself for GAC.
     if ((! a1.var) || (! a2.var)) {
-        auto [sum, value] = linear_for_constant_operand(a1, a2, _v1, _v2, _result);
+        try {
+            auto [sum, value] = linear_for_constant_operand(a1, a2, _v1, _v2, _result);
 
-        auto linear_level = overloaded{                                                                            //
-            [&](const consistency::BC &) -> LinearEqualityConsistency { return consistency::BC{}; },               //
-            [&](const consistency::Tabulated &) -> LinearEqualityConsistency { return consistency::Tabulated{}; }, //
-            [&](const consistency::Auto &) -> LinearEqualityConsistency {
-                // budget for what the delegated equality will enumerate:
-                // the sanitised terms, with the largest-domained one's level
-                // left out because MustHold claims every term as determined.
-                // This mirrors want_tabulation's Auto rule, which cannot be
-                // called directly because LinearEqualityConsistency has no
-                // Auto to delegate; keep the two in step.
-                auto tidied_and_modifier = tidy_up_linear(sum);
-                const auto & tidied = tidied_and_modifier.first;
-                return visit(
-                    [&](const auto & cv) -> LinearEqualityConsistency {
-                        Integer largest = 0_i;
-                        for (const auto & term : cv.terms)
-                            largest = max(largest, initial_state.domain_size(get_var(term)));
+            auto linear_level = overloaded{                                                                            //
+                [&](const consistency::BC &) -> LinearEqualityConsistency { return consistency::BC{}; },               //
+                [&](const consistency::Tabulated &) -> LinearEqualityConsistency { return consistency::Tabulated{}; }, //
+                [&](const consistency::Auto &) -> LinearEqualityConsistency {
+                    // budget for what the delegated equality will enumerate:
+                    // the sanitised terms, with the largest-domained one's level
+                    // left out because MustHold claims every term as determined.
+                    // This mirrors want_tabulation's Auto rule, which cannot be
+                    // called directly because LinearEqualityConsistency has no
+                    // Auto to delegate; keep the two in step.
+                    auto tidied_and_modifier = tidy_up_linear(sum);
+                    const auto & tidied = tidied_and_modifier.first;
+                    return visit(
+                        [&](const auto & cv) -> LinearEqualityConsistency {
+                            Integer largest = 0_i;
+                            for (const auto & term : cv.terms)
+                                largest = max(largest, initial_state.domain_size(get_var(term)));
 
-                        long long size = 1;
-                        bool skipped = false;
-                        for (const auto & term : cv.terms) {
-                            auto d = initial_state.domain_size(get_var(term));
-                            if ((! skipped) && d == largest) {
-                                skipped = true;
-                                continue;
+                            long long size = 1;
+                            bool skipped = false;
+                            for (const auto & term : cv.terms) {
+                                auto d = initial_state.domain_size(get_var(term));
+                                if ((! skipped) && d == largest) {
+                                    skipped = true;
+                                    continue;
+                                }
+                                if (mul_overflows(size, d.raw_value, &size))
+                                    return consistency::BC{};
                             }
-                            if (mul_overflows(size, d.raw_value, &size))
-                                return consistency::BC{};
-                        }
-                        if (size <= default_tabulation_threshold())
-                            return consistency::Tabulated{};
-                        return consistency::BC{};
-                    },
-                    tidied);
-            }}.visit(_level);
+                            if (size <= default_tabulation_threshold())
+                                return consistency::Tabulated{};
+                            return consistency::BC{};
+                        },
+                        tidied);
+                }}.visit(_level);
 
-        LinearEquality resolved{move(sum), value};
-        resolved.with_consistency(linear_level);
-        resolved.set_constraint_id(constraint_id());
-        move(resolved).install(propagators, initial_state, optional_model);
-        return false;
+            LinearEquality resolved{move(sum), value};
+            resolved.with_consistency(linear_level);
+            resolved.set_constraint_id(constraint_id());
+            move(resolved).install(propagators, initial_state, optional_model);
+            return false;
+        }
+        catch (const IntegerOverflow & e) {
+            rethrow_explaining_constant_operand_overflow(e);
+        }
     }
 
     // Both operands are genuine variables, possibly through views, aliased
@@ -230,10 +264,15 @@ auto Multiply::s_expr(const ProofModel * const model) const -> SExpr
     // repost. Tabulation and the auxiliary variables are invisible here, like
     // every other proof-level choice.
     if ((! a1.var) || (! a2.var)) {
-        auto [sum, value] = linear_for_constant_operand(a1, a2, _v1, _v2, _result);
-        LinearEquality resolved{move(sum), value};
-        resolved.set_constraint_id(_constraint_id);
-        return resolved.s_expr(model);
+        try {
+            auto [sum, value] = linear_for_constant_operand(a1, a2, _v1, _v2, _result);
+            LinearEquality resolved{move(sum), value};
+            resolved.set_constraint_id(_constraint_id);
+            return resolved.s_expr(model);
+        }
+        catch (const IntegerOverflow & e) {
+            rethrow_explaining_constant_operand_overflow(e);
+        }
     }
 
     auto & tracker = model->names_and_ids_tracker();

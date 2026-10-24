@@ -19,7 +19,8 @@
 > #1102 (a hole at 0 in `Divide`'s quotient does not wake it). Filed since by
 > the integer-range audit: #1221 (a constant-operand `Multiply` folds `c·offset`,
 > or `c1·c2`, into its linear form, which can throw `IntegerOverflow` or be
-> refused) and #1222 (`Divide` sizes the quotient's magnitude from `q`'s
+> refused; closed by folding a view result's offset first and saying what
+> overflowed otherwise) and #1222 (`Divide` sizes the quotient's magnitude from `q`'s
 > declared domain, so a wide `q` with a divisor of a few bits throws with
 > proofs; closed by keeping cake_pb_cp's sizing and saying so in the
 > `IntegerOverflow`). Already open and touching this family: #540, #724,
@@ -770,7 +771,15 @@ as unaffected.
     is #1215's right-hand-side check (`linear_equality.cc:162` at
     `0a5b4ec6`): before #1215 the shape solved and its proof verified, per
     #1221's body, so it is a regression of the integer-range arc. Both at
-    `0a5b4ec6`.
+    `0a5b4ec6`. Since #1221's fix, two constant operands fold a view
+    result's offset into the right-hand side before the check, as
+    `tidy_up_linear` would after it, so the second shape solves again (same
+    tidied row, so the same OPB); a two-constant product the result cannot
+    reach, and the first shape's `c·offset` past `2^63`, still throw, now
+    saying "Multiply with a constant operand: the linear equality it becomes
+    does not fit in an Integer…". Giving the view an auxiliary instead was
+    judged not worth it: the shape needs a constant and a view offset whose
+    product passes `2^63`.
   - **Auxiliary variables over views** (#1216). `Divide` / `Modulus`'s operand
     magnitudes and `Power`'s chain variables range over a view's values,
     which reach one bit past the declared range. Until #1216 `State` refused
@@ -2271,8 +2280,11 @@ asserted there. Three gaps sit around that:
   just inside it.
 - **A `Multiply` with a constant operand can throw** on in-range
   inputs that have solutions, with or without proofs: its `LinearEquality` folds
-  `c·offset`, or `c1·c2` for two constant operands, into a constant that can
-  pass `2^63` or, since #1215's check, the input range (#1221).
+  `c·offset` into a constant that can pass `2^63`. Deliberate since #1221,
+  whose fix folds a view result's offset first, so that two constant operands
+  whose product passes the input range still solve when the result's view
+  reaches it; the `IntegerOverflow` names the rewrite, and
+  `integer_ranges_test` pins each limit with a twin just inside it.
 - (No longer a limitation: `Power(x, 63, INT64_MIN)` with a constant result
   threw `IntegerOverflow` at `61112ed0`, the one representable power the
   constant-exponent path misses. Since #1214 `INT64_MIN` cannot be a constant,
@@ -2343,11 +2355,12 @@ Ranked by what they buy for what they cost.
    `Divide`, depends on the dividend's width too. And `power.hh`'s note on
    `(−2)^63 = INT64_MIN`, which since #1214 describes a throw no input can
    reach.
-8. **#1221**, from the integer-range audit: give a constant-operand
-   `Multiply` a form that does not fold `c·offset` or `c1·c2` into a
-   constant. (#1222, sizing `Divide`'s quotient magnitude from `x`, was
-   checked and declined: cake_pb_cp sizes it from `q`, and workflow 2 then
-   rejects the proof; changing that would start in cake's encoder.)
+8. (Done: #1221 and #1222, from the integer-range audit, now end in an
+   `IntegerOverflow` that names what overflowed. A form for a
+   constant-operand `Multiply` that does not fold `c·offset` would need an
+   auxiliary for the view; sizing `Divide`'s quotient magnitude from `x` was
+   checked and declined, since cake_pb_cp sizes it from `q` and workflow 2
+   then rejects the proof, so that change would start in cake's encoder.)
 
 Done since the first pass: **#1064** (saturate the corner products; #1079,
 which also added the large-domain rows the first pass asked for, including the
