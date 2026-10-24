@@ -8,14 +8,14 @@
 > state is a heap allocation per slot per node), #1042 (the reified equality
 > ignores its bounds), #1043 (tidying, items 4 and 5 left). Filed from review:
 > #1091 (an equality's fixpoint can take a number of sweeps linear in the
-> domain width). Filed from the 2026-10-08 re-audit: #1298 (every reified
-> inequality throws on a partial sum or a maximum that only its undecided
-> check computes). Already open and touching this family: #868 (cross-solver),
+> domain width). Already open and touching this family: #868 (cross-solver),
 > #310 (a range-literal reification condition cannot be written into the
 > model), and #1225, filed since by the integer-range audit (the same condition
 > throws with proofs on). **Fixed since the audit**: #1032, #1033, #1035,
-> #1036, #1043's first three items, and #1103 (filed from review: under
-> `Tabulated`, a released form built a table); see
+> #1036, #1043's first three items, #1103 (filed from review: under
+> `Tabulated`, a released form built a table), and #1298 (filed from the
+> 2026-10-08 re-audit: every reified inequality threw on a partial sum or a
+> maximum that only its undecided check computes); see
 > [Re-audit, 2026-09-25](#re-audit-2026-09-25), [Re-audit,
 > 2026-09-26](#re-audit-2026-09-26) and [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
@@ -74,7 +74,7 @@ into line with both at `0a5b4ec6`.
 | Issue | Fixed by | What changed here |
 |---|---|---|
 | #1035, trivial reason literals | #1055 | the bound pushes' reason leaves out a term at its declared bound when the term's bits imply that bound, when its boundary pin is already a unit, or, above `AssertionLevel::Links`, when it would have been pinned; the `pol`s leave out a bound the bits imply, no longer divide by the changed variable's coefficient, and are not emitted when no bound is added. The three things to know, Shared code, [Proof-time state](#proof-time-state), [Interval efficiency](#interval-efficiency) 2, the JP 3.15 departures, rules 1, 8 and 9, [Tests](#tests), [Benchmarks](#benchmarks-and-examples), [Proof performance](#proof-performance), [Known limitations](#known-limitations), Next step 1, [Prior art](#prior-art) and the [commentary](#developer-commentary) |
-| — (the integer-range arc) | #1214, #1215, #1220 | inputs must lie in `±(2⁶⁰ − 1)`, and a coefficient or right-hand side outside it is refused at construction, as is a condition value past one above the top; the sweeps' running sums are exact 128-bit `WideSum`s, so there only a total that does not fit throws, but the reified inequality's undecided check still sums in `Integer`; the fold state is 24 bytes: [Robustness and limits](#robustness-and-limits), [Mutable state](#mutable-state-and-incrementality), [Tests](#tests), [Known limitations](#known-limitations), Next step 4 |
+| — (the integer-range arc) | #1214, #1215, #1220 | inputs must lie in `±(2⁶⁰ − 1)`, and a coefficient or right-hand side outside it is refused at construction, as is a condition value past one above the top; the sweeps' running sums are exact 128-bit `WideSum`s, as is the reified inequality's undecided check since #1298, and since #244 the sweeps narrow only each term's remainder, so no total throws; the fold state is 24 bytes: [Robustness and limits](#robustness-and-limits), [Mutable state](#mutable-state-and-incrementality), [Tests](#tests), [Known limitations](#known-limitations), Next step 4 |
 | — (#1200, #1206) | #1208 | 14 `…_view_mixed_late` lanes ([Tests](#tests)) |
 | — (front-end integer range) | #1217 | four `lin_strict_*_edge` chain cases ([Cake conformity](#cake-conformity)) |
 
@@ -598,28 +598,36 @@ undecided reified equality or a `Tabulated` equality does not.
 - **Running sums are exact** since #1220: the lower and inverse sums, the
   incremental `fixed_lower`, `tidy_up_linear`'s constant, the not-equals and
   undecided-equality accumulators, `Tabulated`'s callbacks and the slack cover
-  are 128-bit `WideSum`s, and there only a total that does not fit throws.
-  Before it, nine terms at the top of the range and nine at the bottom, summed
-  in that order, threw though their total was 0. **One sum was missed**: the
-  reified inequality's undecided check still sums its minimum and maximum in
-  plain `Integer` (`linear_inequality.cc:308-318`), though both are only
-  compared with the right-hand side (`:321`, `:335`), so a 128-bit sum would
-  decide without narrowing. #1220's own shape, nine terms fixed at the top
-  and nine at the bottom with `z ∈ −2..2` and `sum ≤ 0`, has 3 solutions
-  under `LinearLessThanEqual`, but with proofs off every reified inequality
-  form throws: `LinearLessThanEqualIff`, `…If` and a `NotIf` with `Integer
-  overflow: 9223372036854775800 += 1152921504606846975`, and
-  `LinearGreaterThanEqualIff` and `…If` with the mirror. `LinearEqualityIff`
-  on the same shape solves. The same accumulator throws on a maximum past
-  `2⁶³` that only the comparison needs: `LinearLessThanEqualIff` with two
-  terms of coefficient `2⁴⁰` over `0..2²²` throws `Integer overflow:
-  4611686018427387904 += 4611686018427387904` (`:313`). All measured at
-  `0a5b4ec6`. Under `integer-ranges.md` that is a bug: a throw on a value
-  nothing needs. With proofs on, these reified forms throw the model writer's
-  "cannot size the reification constant" first, which is allowed. Filed as
-  #1298. Solving `c·x = r` uses
-  `WideSum::divided_exactly_by`. The per-term remainder arithmetic is
-  unchanged: saturating it would be unsound.
+    are 128-bit `WideSum`s, or, for the sweeps since #244, native sums that
+  are used only when they are known to be safe (below). Before #1220, nine
+  terms at the top of the range and nine at the bottom, summed
+  in that order, threw though their total was 0. The reified inequality's
+  undecided check was missed then and caught up in #1298: it sums its minimum
+  and maximum in `WideSum` too and never narrows them, since only the
+  comparisons with the right-hand side read them, so a maximum past `2⁶³`
+  (two terms of coefficient `2⁴⁰` over `0..2²²`) decides rather than throws.
+  With proofs on, these reified forms throw the model writer's "cannot size
+  the reification constant" first, which is allowed. Solving `c·x = r` uses
+    `WideSum::divided_exactly_by`.
+- **The sweeps choose their arithmetic once a sweep** (#244, `SmallSum` in
+  `propagate.cc`). Each sums its terms' least contributions natively, with
+  an overflow flag and a mask of the magnitudes. When the total, every
+  contribution and the right-hand side lie within `2⁶⁰` of zero, nothing
+  the sweep forms from them, whether a sum less one term, a remainder or a
+  rounded quotient, can pass `2⁶³`, and it runs the `Integer` loop it
+  always has. Otherwise it sums exactly in `WideSum`s, and
+  `narrow_remainder` turns each term's remainder into an `Integer`: below
+  the term's least contribution it becomes that least less one (a wipeout
+  either way, whose literal is one past the term's bound rather than at a
+  value far outside its domain), and at or above its greatest contribution
+  there is nothing to infer; in between it fits. The justification never
+  reads the remainder: its `pol` derives the true bound, which implies the
+  inferred one. Saturating instead would be unsound, since dividing a
+  saturated remainder by a large coefficient gives too tight a bound.
+  Checking per term instead cost 10 to 25% more instructions on
+  `magic_series 100` and `magic_square 5`, whose sweeps are a dozen or so
+  instructions a term; the per-sweep choice measured −0.1% and +1.6%, with
+  identical search.
 - **Overflow**: coefficient × bound products are checked `Integer` arithmetic
   and **throw** `IntegerOverflow` on overflow; they never wrap. Measured at
   `0a5b4ec6`: with coefficients of `2⁴⁰` and bounds of `2²⁹` to `2³⁰`, the
@@ -629,16 +637,17 @@ undecided reified equality or a `Tabulated` equality does not.
   coefficient, whose forward sweep multiplies it by an upper bound. With
   proofs on, the model writer refuses those rows first, before search, with an
   `IntegerOverflow` that says which quantities may be to blame (#852).
-  **A total past `2⁶³` throws too**, even when every product fits: two terms
-  of coefficient `2⁴⁰` over `[2²², 2²² + 1]` make the `≤` and the equality
-  throw `a sum does not fit in an Integer` (`WideSum::narrow_or_throw`, from
-  the lower sum, `propagate.cc:260`), and with proofs on that throw still
-  comes from the propagator, not the writer. Over `0..2²²` the `≤` and the
-  equality solve. **The propagator's throws name no constraint**, and a
-  total's names no product either. A sweep's product or lower sum past `2⁶³`
-  is a value the sweep needs, so under `integer-ranges.md` it is a limit an
-  arithmetic constraint may have, not a bug; the reified inequality's
-  undecided sums above are the exception.
+  **A total past `2⁶³` no longer throws** (#244): two terms of coefficient
+  `2⁴⁰` over `[2²², 2²² + 1]` against `max_bounded_value()`, whose least sum
+  is exactly `2⁶³`, used to make the `≤`, the `≥` and the equality throw `a
+  sum does not fit in an Integer` from the lower sum; now the `≤` and the
+  equality find no solution and the `≥` four, with proofs too. This is what
+  `fzn-glasgow`'s unbounded `var int`s, given the whole bounded range, met
+  in a sum of more than eight of them (`work-task-variation`, #244, #250).
+  **The propagator's product throws name no constraint**. A sweep's
+  product past `2⁶³` is a value the sweep needs, so under
+  `integer-ranges.md` it is a limit an arithmetic constraint may have, not a
+  bug.
 - **Negative values and zero**: negative coefficients are first-class
   throughout, and the chain has negative-coefficient and sign-bit lanes. A
   zero coefficient is dropped by `tidy_up_linear`.
@@ -1137,7 +1146,7 @@ the same instances, the same verified proofs.
 
 | Lane | What it checks |
 |---|---|
-| `linear_constraint_{eq,ne,le,ge,le_not}` × `{incremental,stateless}` and their `_if`/`_iff`/`_notif` forms | `linear_test`, random instances of three terms, enumeration against brute force. Consistency is checked only for single-constraint instances: `bounds(Z)` on each term for the inequalities, weaker than the `GAC` they reach (`GAC` for not-equals), **never for `LinearEquality`**, whose `bounds(R)` would not pass a `bounds(Z)` check, and never for the reified equality and not-equals forms; `GAC` for the `Tabulated` rows. Since #1220, also a partial-sum case for `eq` (and its `Tabulated` arm), `ne`, `le` and `ge`, at the default threshold and at 0: nine terms fixed at the top of the range and nine at the bottom, then one free over `−2..2`, so a running sum in term order passes `2⁶³` though the total is small (`linear_test.cc:335-400`); with proofs, except for `ne`, whose half-reified rows cannot hold nine such coefficients |
+| `linear_constraint_{eq,ne,le,ge,le_not}` × `{incremental,stateless}` and their `_if`/`_iff`/`_notif` forms | `linear_test`, random instances of three terms, enumeration against brute force. Consistency is checked only for single-constraint instances: `bounds(Z)` on each term for the inequalities, weaker than the `GAC` they reach (`GAC` for not-equals), **never for `LinearEquality`**, whose `bounds(R)` would not pass a `bounds(Z)` check, and never for the reified equality and not-equals forms; `GAC` for the `Tabulated` rows. Since #1220, also a partial-sum case for `eq` (and its `Tabulated` arm), `ne`, `le` and `ge`, at the default threshold and at 0: nine terms fixed at the top of the range and nine at the bottom, then one free over `−2..2`, so a running sum in term order passes `2⁶³` though the total is small (`run_partial_sum_order_test`); with proofs, except for `ne`, whose half-reified rows cannot hold nine such coefficients. Since #1298, the same shape for every `_if`, `_iff` and `_notif` form, and a wide-total one (`2⁴⁰·a + 2⁴⁰·b ≤ 2⁵⁰` with `a, b ∈ {0, 2²²}`, whose maximum is `2⁶³`), without proofs, whose reification constants cannot be sized (`run_reified_wide_sum_test`) |
 | `linear_constraint_*_view_mixed` (14) | the same with the terms wrapped in views |
 | `linear_constraint_*_view_mixed_late` (14) | the same, with every view registered by a constraint posted after the one under test (#1208) |
 | `linear_constraint_*_slack` (8) | the inequality forms with slack waking forced on at any length and any cover |
@@ -1190,10 +1199,6 @@ slack-watched wake were not counted; the slack lanes force that path on.
   coefficients within a few units, and the partial-sum case uses unit ones, so
   nothing exercises a coefficient-times-bound overflow, the rounding of rule
   1's division by a large coefficient, or rule 12's divisibility.
-- **Partial sums in the reified forms.** #1220's partial-sum case covers
-  `eq`, `ne`, `le` and `ge`, but no `If`, `NotIf` or `Iff` form, which is why nothing
-  caught the reified inequality's undecided check still summing in `Integer`
-  (#1298; [Robustness and limits](#robustness-and-limits)).
 - **Long sums.** Every random `linear_test` instance has three terms; the
   partial-sum case has nineteen, all but one fixed from the start. So the
   incremental propagator's folding is exercised on three terms at threshold 0,
@@ -1396,19 +1401,11 @@ reification condition cannot be written at all (#310).
   on a model with many long reified inequalities (#1034; at `00797a97`, and
   2.3× per node at `0a5b4ec6`). It was 1.6–3× faster where there are a few
   long sums, at `00797a97`.
-- **A coefficient times a bound, or a sum of them, past `2⁶³` throws**
-  `IntegerOverflow` from inside propagation, naming no constraint (a product's
-  message names the product; a total's names nothing). With proofs on, the
-  model writer refuses a row whose products are too large first; a total
-  past `2⁶³` in the `≤` or the equality still throws from the propagator,
-  while for a reified inequality the writer refuses first. Inputs outside
+- **A coefficient times a bound past `2⁶³` throws** `IntegerOverflow` from
+  inside propagation, naming the product but no constraint. With proofs on,
+  the model writer refuses a row whose products are too large first. (A sum
+  of products past `2⁶³` no longer throws, since #244.) Inputs outside
   `±(2⁶⁰ − 1)` are refused at construction (#1215).
-- **The reified inequality's undecided check sums in plain `Integer`**
-  (`linear_inequality.cc:308-318`), so every reified inequality form throws,
-  with proofs off, on a partial sum that leaves the range though the total
-  fits, where the unreified forms solve since #1220, and on a maximum past
-  `2⁶³` that only a comparison needs (see [Robustness and
-  limits](#robustness-and-limits)). Filed as #1298.
 - **A reified equality waits for its last unfixed term** before deciding its
   condition, even when its bounds already exclude the value. This costs nothing
   measurable on the corpus (#1042).

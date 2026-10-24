@@ -196,6 +196,11 @@ add_xcsp_test(regular_nfa)
 # parse such a domain, so the cache is a hand count: x in {0, 1, INT_MAX} with
 # x != 1.
 add_xcsp_test(range_domain_int_max)
+# A sum whose terms reach (2^31 - 1)^2: three such, over x, y and z, against 0,
+# with x = 1 and y = -1. Its least and greatest sums pass the end of Integer, so
+# it used to be refused here as unsupported; the answer needs none of them
+# (#244). ACE cannot parse the domains, so the cache is a hand count: z = 0.
+add_xcsp_test(range_sum_wide)
 
 # Integers the parser cannot represent. Each used to wrap silently, giving a
 # wrong answer, or to abort; each must now be reported as unsupported, with the
@@ -216,8 +221,6 @@ add_xcsp_refusal_test(range_tuple_past_int32 "an integer does not fit in an int"
 add_xcsp_refusal_test(range_tuple_int_max "cannot be told apart from the wildcard")
 # The parser's own std::stoi refusing a condition value, which used to abort.
 add_xcsp_refusal_test(range_condition_past_int32 "stoi")
-# Arithmetic over in-range values that does not fit, which used to abort.
-add_xcsp_refusal_test(range_sum_overflow "does not fit in an Integer")
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to
