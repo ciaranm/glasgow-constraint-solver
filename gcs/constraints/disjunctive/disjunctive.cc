@@ -522,6 +522,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             guarded = make_shared<map<tuple<size_t, long long, long long, long long, long long, long long>, window_energy::GuardedWindowEnergy>>(),
             floors = make_shared<map<size_t, ProofLine>>(), escapes = make_shared<map<size_t, ProofLine>>(),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // Every inference that can fail reports it through the tracker's
+            // non-throwing path and returns at once: a push that empties a
+            // domain is the commonest way a node dies here, and unwinding
+            // through this lambda cost more than the rules themselves.
+
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
             // duration they are the live lower / upper bounds.
@@ -1959,6 +1964,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             };
 
                             ++disjunctive_counters[rule_presence].firings;
+                            // The one inference here that may throw, because
+                            // it cannot fail: the presence is undecided, so
+                            // fixing it to 0 never empties it.
                             inference.infer_equal(logger, *presence[j], 0_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
                                 chain_reason(j, chain));
                             continue;
@@ -1990,8 +1998,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             };
 
                             ++disjunctive_counters[rule_time_table_lb].firings;
-                            inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, chain_reason(j, chain));
+                            if (! inference.infer_greater_than_or_equal_or_stop(logger, starts[j], new_lb,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, chain_reason(j, chain)))
+                                return PropagatorState::DisableUntilBacktrack;
                         }
 
                         // ub-push: mirror of lb-push, scanning downward, each step
@@ -2032,8 +2041,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             };
 
                             ++disjunctive_counters[rule_time_table_ub].firings;
-                            inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, chain_reason(j, chain));
+                            if (! inference.infer_less_than_or_stop(logger, starts[j], new_ub + 1_i,
+                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, chain_reason(j, chain)))
+                                return PropagatorState::DisableUntilBacktrack;
                         }
                     }
                 }
@@ -2263,9 +2273,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 ++disjunctive_counters[rule_detectable_precedences_lb].firings;
                                 // The pairwise push is about j and k alone; the
                                 // set rule's certificate speaks about a window.
-                                inference.infer_greater_than_or_equal(logger, starts[j], target,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
-                                    set_based ? whole_scope : reason_for_tasks(array{j, *predecessor}));
+                                if (! inference.infer_greater_than_or_equal_or_stop(logger, starts[j], target,
+                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
+                                        set_based ? whole_scope : reason_for_tasks(array{j, *predecessor})))
+                                    return PropagatorState::DisableUntilBacktrack;
                             }
                         }
 
@@ -2295,9 +2306,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     emit_ub_dichotomy(j, k, cur_ub, target, mutation);
                                 };
                                 ++disjunctive_counters[rule_detectable_precedences_ub].firings;
-                                inference.infer_less_than(logger, starts[j], target + 1_i,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
-                                    set_based ? whole_scope : reason_for_tasks(array{j, *successor}));
+                                if (! inference.infer_less_than_or_stop(logger, starts[j], target + 1_i,
+                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
+                                        set_based ? whole_scope : reason_for_tasks(array{j, *successor})))
+                                    return PropagatorState::DisableUntilBacktrack;
                             }
                         }
                     }
@@ -2454,12 +2466,14 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
                                     auto one_too_far = std::holds_alternative<disjunctive_proof_mutation::EdgeFindingOneTooFar>(mutation);
                                     auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, high_guard, starts_inside);
-                                    if (starts_inside)
-                                        inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
-                                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
-                                    else
-                                        inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                    auto pushed = starts_inside
+                                        ? inference.infer_greater_than_or_equal_or_stop(logger, starts[j.task],
+                                              one_too_far ? high_guard + 1_i : high_guard,
+                                              JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope)
+                                        : inference.infer_less_than_or_stop(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                              JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                    if (! pushed)
+                                        return PropagatorState::DisableUntilBacktrack;
                                 }
 
                             // Not-first / not-last. Edge-finding asks how far a
@@ -2523,8 +2537,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         if (clipped > 0_i && energy + clipped > b - a) {
                                             ++disjunctive_counters[rule_not_first].firings;
                                             auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, min_ect, true, "not-first");
-                                            inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
-                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                            if (! inference.infer_greater_than_or_equal_or_stop(logger, starts[j.task],
+                                                    one_too_far ? min_ect + 1_i : min_ect,
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope))
+                                                return PropagatorState::DisableUntilBacktrack;
                                         }
                                     }
 
@@ -2545,8 +2561,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         if (clipped > 0_i && energy + clipped > b - a) {
                                             ++disjunctive_counters[rule_not_last].firings;
                                             auto justify = edge_finding_justification(a, b, inside, j.task, low_guard, s_hi + 1_i, false, "not-last");
-                                            inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                            if (! inference.infer_less_than_or_stop(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope))
+                                                return PropagatorState::DisableUntilBacktrack;
                                         }
                                     }
                                 }
@@ -2640,8 +2657,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                             ++disjunctive_counters[rule_not_first].firings;
                                             auto justify = published_justification(ect_j, lct_theta, members_without(members, in, j.task), j.task,
                                                 s_lo, s_hi, p_j, conclusion, true, in);
-                                            inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? conclusion + 1_i : conclusion,
-                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                            if (! inference.infer_greater_than_or_equal_or_stop(logger, starts[j.task],
+                                                    one_too_far ? conclusion + 1_i : conclusion,
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope))
+                                                return PropagatorState::DisableUntilBacktrack;
                                         }
                                     }
                                 }
@@ -2695,8 +2714,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                             ++disjunctive_counters[rule_not_last].firings;
                                             auto justify = published_justification(est_theta, s_hi, members_without(members, in, j.task), j.task,
                                                 s_lo, s_hi, p_j, conclusion, false, in);
-                                            inference.infer_less_than(logger, starts[j.task], one_too_far ? conclusion - 1_i : conclusion,
-                                                JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope);
+                                            if (! inference.infer_less_than_or_stop(logger, starts[j.task],
+                                                    one_too_far ? conclusion - 1_i : conclusion,
+                                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, whole_scope))
+                                                return PropagatorState::DisableUntilBacktrack;
                                         }
                                     }
                                 }
