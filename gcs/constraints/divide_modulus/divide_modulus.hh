@@ -53,7 +53,9 @@ namespace gcs
      * but not 32 + 32) when the decomposition's other terms are small beside
      * their product, and 62 when the dividend spans the declared range; past
      * that, solving with proofs enabled throws an IntegerOverflow when the
-     * proof model is built.
+     * proof model is built. The quotient's magnitude counts its declared
+     * domain, as cake_pb_cp's encoding does, so a quotient declared much
+     * wider than the dividend meets this limit early.
      *
      * \ingroup Constraints
      * \sa Modulus
