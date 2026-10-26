@@ -400,6 +400,86 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "{} wide programmes' frontiers match the all-pairs sweep, the widest layer holding {} states", compared, widest);
     }
 
+    // Lifting a cover the way the presolver does, with every question asked of
+    // LiftedCoverCutLifting and of lifted_cover_cut_optimum, which has to give
+    // the same answer: the same optimum, the same ceiling reached, and the same
+    // budget verdict, since which cuts are posted turns on all three (#1255).
+    // Budgets small enough to bind and ceilings low enough to reach, and demands
+    // often zero, so that which rows bind changes from question to question.
+    {
+        std::mt19937 rand(*get_seed() + 2);
+        std::uniform_int_distribution<> n_dist(4, 16), rows_dist(1, 4), cap_dist(6, 24), coeff_dist(1, 4), cover_dist(2, 4), ceiling_dist(1, 8),
+            budget_dist(0, 3), zero_dist(0, 3), lift_dist(0, 1);
+        const size_t budgets[] = {20, 60, 200, generous};
+        size_t answered = 0, ceilings = 0, over_budget = 0, fewer_rows = 0;
+        for (size_t trial = 0; trial < 600; ++trial) {
+            auto n = static_cast<size_t>(n_dist(rand));
+            auto rows = static_cast<size_t>(rows_dist(rand));
+            vector<Integer> capacities;
+            vector<vector<Integer>> demands(rows);
+            for (size_t row = 0; row < rows; ++row) {
+                capacities.push_back(Integer{cap_dist(rand)});
+                std::uniform_int_distribution<> demand_dist(1, static_cast<int>(capacities[row].raw_value) / 2);
+                for (size_t i = 0; i < n; ++i)
+                    demands[row].push_back(zero_dist(rand) == 0 ? 0_i : Integer{demand_dist(rand)});
+            }
+            auto column = [&](size_t i) {
+                vector<Integer> result;
+                for (size_t row = 0; row < rows; ++row)
+                    result.push_back(demands[row][i]);
+                return result;
+            };
+            auto ceiling = Integer{ceiling_dist(rand)};
+            auto budget = budgets[budget_dist(rand)];
+
+            LiftedCoverCutLifting lifting{capacities, ceiling, budget};
+            vector<vector<Integer>> support_demands(rows);
+            vector<Integer> support_coefficients;
+            auto add = [&](size_t i, Integer coefficient) {
+                lifting.add_member(column(i), coefficient);
+                for (size_t row = 0; row < rows; ++row)
+                    support_demands[row].push_back(demands[row][i]);
+                support_coefficients.push_back(coefficient);
+            };
+
+            auto cover = std::min(n, static_cast<size_t>(cover_dist(rand)));
+            for (size_t i = 0; i < cover; ++i)
+                add(i, 1_i);
+            for (size_t member = cover; member < n; ++member) {
+                vector<Integer> residual;
+                for (size_t row = 0; row < rows; ++row)
+                    residual.push_back(capacities[row] - demands[row][member]);
+
+                auto shared = lifting.optimum(residual);
+                auto alone = lifted_cover_cut_optimum(support_demands, support_coefficients, residual, ceiling, budget);
+                if (shared.value != alone.value || shared.over_state_budget != alone.over_state_budget)
+                    fail("lifting from shared programmes disagrees with a programme of its own over " + to_string(support_coefficients.size()) +
+                        " members and " + to_string(rows) + " rows");
+
+                if (shared.over_state_budget)
+                    ++over_budget;
+                else if (! shared.value)
+                    ++ceilings;
+                else
+                    ++answered;
+                for (size_t row = 0; row < rows; ++row) {
+                    auto sum = std::accumulate(support_demands[row].begin(), support_demands[row].end(), 0_i);
+                    if (sum <= residual[row]) {
+                        ++fewer_rows;
+                        break;
+                    }
+                }
+
+                if (lift_dist(rand) == 0)
+                    add(member, Integer{coeff_dist(rand)});
+            }
+        }
+        println(cerr, "lifting from shared programmes agrees on {} answers, {} ceilings reached and {} budgets run out, {} with a row not binding",
+            answered, ceilings, over_budget, fewer_rows);
+        if (answered < 100 || ceilings < 100 || over_budget < 100 || fewer_rows < 100)
+            fail("the lifting corpus is not reaching every way a question can end");
+    }
+
     // Rows that cannot rule anything out are dropped rather than carried as a
     // flag per state saying nothing, and the caller's numbering survives it.
     {

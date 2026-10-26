@@ -8,6 +8,7 @@
 
 #include <compare>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -180,6 +181,65 @@ namespace gcs::innards
      */
     [[nodiscard]] auto lifted_cover_cut_optimum(const std::vector<std::vector<Integer>> & demands, const std::vector<Integer> & coefficients,
         const std::vector<Integer> & capacities, Integer profit_ceiling, std::size_t state_budget) -> LiftedCoverCutOptimum;
+
+    /**
+     * \brief Every lifting subproblem of one cover, answered from programmes
+     * shared between them.
+     *
+     * Lifting a cover asks \ref lifted_cover_cut_optimum one question per task,
+     * and between questions little changes: the support only grows, by the
+     * task just lifted going on the end, and the capacities are the full ones
+     * less the asking task's demands. Each answer from here is exactly the one
+     * \ref lifted_cover_cut_optimum gives on the same support, residual
+     * capacities, ceiling and budget, over-budget verdicts included. What
+     * differs is that its programme is not rebuilt: one is kept per set of
+     * binding rows, under the full capacities, grown a layer at a time as
+     * questions need it, and each question reads its own programme off it.
+     *
+     * That reading is exact because no demand or coefficient is negative. A
+     * state that fits under the residual capacities got there through states
+     * that all fit, and anything covering it uses less and so fits too; so the
+     * residual programme's layer is the shared one's with the states that do
+     * not fit left out, for every layer that programme builds before stopping.
+     * The one thing the shared programme leaves out is any state at or above
+     * the ceiling, since a question reaching one stops there, and whether one
+     * is reached is read off the layer before it.
+     *
+     * Built for #1255, where rebuilding a programme per task was the whole of
+     * the presolver's cost on PSPLib J90 and J120.
+     *
+     * \ingroup Innards
+     */
+    class LiftedCoverCutLifting
+    {
+    private:
+        struct Imp;
+        std::unique_ptr<Imp> _imp;
+
+    public:
+        /**
+         * `capacities` has one entry per row, and is the most any question
+         * will be asked about on that row.
+         */
+        LiftedCoverCutLifting(std::vector<Integer> capacities, Integer profit_ceiling, std::size_t state_budget);
+        ~LiftedCoverCutLifting();
+
+        LiftedCoverCutLifting(const LiftedCoverCutLifting &) = delete;
+        auto operator=(const LiftedCoverCutLifting &) -> LiftedCoverCutLifting & = delete;
+
+        /**
+         * Put one more member on the end of the support, with its demand on
+         * each row and its coefficient, neither negative.
+         */
+        auto add_member(const std::vector<Integer> & demands, Integer coefficient) -> void;
+
+        /**
+         * What \ref lifted_cover_cut_optimum says about the support so far
+         * under `residual_capacities`, each between zero and the capacity this
+         * was built with.
+         */
+        [[nodiscard]] auto optimum(const std::vector<Integer> & residual_capacities) -> LiftedCoverCutOptimum;
+    };
 
     /**
      * \brief Derive a validated lifted cover cut from its capacity rows, by

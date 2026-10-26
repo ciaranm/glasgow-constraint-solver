@@ -18,6 +18,8 @@ using fmt::format;
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <map>
 #include <numeric>
 #include <optional>
@@ -60,6 +62,194 @@ namespace
         return true;
     }
 
+    /// One half of a merge, indexed to say whether it covers a given state.
+    ///
+    /// A state is a point with one coordinate per row and one more, its profit
+    /// negated, and covering is then being no larger in every coordinate. So
+    /// the states covering a given one are the intersection, over coordinates,
+    /// of a prefix of the half sorted on that coordinate, and a prefix asked
+    /// about always ends where the coordinate's value changes. Each such prefix
+    /// is kept as a bitset, unless one was kept fewer than 16 positions before
+    /// it. The intersection of the bitsets is states that certainly cover, and
+    /// whatever it misses lies in the fewer than 16 positions some coordinate's
+    /// prefix runs past its bitset, which are tried one at a time. Coordinates
+    /// take few values in practice, since weights are sums of a handful of
+    /// demands, so most prefixes have a bitset of their own.
+    ///
+    /// A state's twin, if the half has one, is also no larger in every
+    /// coordinate, so it is told apart first. Since a state in both halves is
+    /// covered by nothing (merge_to_frontier), finding one settles it, and the
+    /// half is sorted, as every layer is, so finding one is a binary search.
+    class CoverIndex
+    {
+    private:
+        static constexpr size_t gap = 16;
+
+        /// One coordinate: its distinct values ascending, and for each, how
+        /// many states have at most that value, which bitset to start from,
+        /// and how many states that bitset holds. `keys` is every state's key
+        /// in this coordinate's order, so that the states past a bitset are
+        /// read contiguously.
+        struct Coordinate
+        {
+            vector<long long> values;
+            vector<size_t> reach, bitset, bitset_reach;
+            vector<long long> keys;
+        };
+
+        size_t _dimensions, _size, _words;
+        vector<long long> _keys;
+        vector<Coordinate> _coordinates;
+        vector<std::uint64_t> _bitsets;
+        mutable vector<long long> _asked;
+        mutable vector<size_t> _value;
+        mutable vector<const std::uint64_t *> _reached;
+
+        [[nodiscard]] auto key(size_t state) const -> const long long *
+        {
+            return _keys.data() + state * _dimensions;
+        }
+
+        /// The order states sort in, weights first and then profit, read off
+        /// their keys, where the profit is negated.
+        [[nodiscard]] auto comes_before(const long long * a, const long long * b) const -> bool
+        {
+            auto rows = _dimensions - 1;
+            for (size_t row = 0; row < rows; ++row)
+                if (a[row] != b[row])
+                    return a[row] < b[row];
+            return a[rows] > b[rows];
+        }
+
+    public:
+        explicit CoverIndex(const LiftedCoverCutLayer & half, size_t rows) :
+            _dimensions(rows + 1), _size(half.size()), _words((half.size() + 63) / 64)
+        {
+            _keys.reserve(_size * _dimensions);
+            for (const auto & state : half) {
+                for (const auto & w : state.weights)
+                    _keys.push_back(w.raw_value);
+                _keys.push_back(-state.profit.raw_value);
+            }
+            for (size_t state = 1; state < _size; ++state)
+                if (! comes_before(key(state - 1), key(state)))
+                    throw ProofError{"a lifted cover cut's dynamic programme was handed a layer out of order"};
+
+            vector<std::pair<long long, size_t>> order(_size);
+            vector<size_t> counts;
+            vector<std::uint64_t> bits(_words);
+            size_t bitsets = 0;
+            for (size_t d = 0; d < _dimensions; ++d) {
+                // A counting sort where the values are few, as they usually
+                // are, and a comparison sort where they are not.
+                long long least = _size > 0 ? key(0)[d] : 0, most = least;
+                for (size_t state = 1; state < _size; ++state) {
+                    least = std::min(least, key(state)[d]);
+                    most = std::max(most, key(state)[d]);
+                }
+                if (static_cast<unsigned long long>(most - least) < 4 * _size) {
+                    counts.assign(static_cast<size_t>(most - least) + 2, 0);
+                    for (size_t state = 0; state < _size; ++state)
+                        ++counts[static_cast<size_t>(key(state)[d] - least) + 1];
+                    std::partial_sum(counts.begin(), counts.end(), counts.begin());
+                    for (size_t state = 0; state < _size; ++state)
+                        order[counts[static_cast<size_t>(key(state)[d] - least)]++] = {key(state)[d], state};
+                }
+                else {
+                    for (size_t state = 0; state < _size; ++state)
+                        order[state] = {key(state)[d], state};
+                    sort(order);
+                }
+                auto & coordinate = _coordinates.emplace_back();
+                coordinate.keys.reserve(_size * _dimensions);
+
+                // Every coordinate starts from the empty prefix's bitset.
+                std::fill(bits.begin(), bits.end(), 0);
+                _bitsets.insert(_bitsets.end(), bits.begin(), bits.end());
+                auto latest = bitsets++;
+                size_t latest_reach = 0;
+
+                for (size_t position = 0; position < _size; ++position) {
+                    auto [value, state] = order[position];
+                    coordinate.keys.insert(coordinate.keys.end(), key(state), key(state) + _dimensions);
+                    bits[state / 64] |= std::uint64_t{1} << (state % 64);
+                    if (position + 1 < _size && order[position + 1].first == value)
+                        continue;
+                    if (position + 1 - latest_reach >= gap) {
+                        _bitsets.insert(_bitsets.end(), bits.begin(), bits.end());
+                        latest = bitsets++;
+                        latest_reach = position + 1;
+                    }
+                    coordinate.values.push_back(value);
+                    coordinate.reach.push_back(position + 1);
+                    coordinate.bitset.push_back(latest);
+                    coordinate.bitset_reach.push_back(latest_reach);
+                }
+            }
+        }
+
+        /// Does some state of the half other than `state` itself cover it?
+        [[nodiscard]] auto covers(const LiftedCoverCutState & state) const -> bool
+        {
+            _asked.resize(_dimensions);
+            for (size_t row = 0; row + 1 < _dimensions; ++row)
+                _asked[row] = state.weights[row].raw_value;
+            _asked[_dimensions - 1] = -state.profit.raw_value;
+            const auto * asked = _asked.data();
+
+            // Per coordinate, the last of its values no larger than asked: no
+            // such value, and nothing in the half is no larger there.
+            _value.resize(_dimensions);
+            auto every_bitset_holds_some = true;
+            for (size_t d = 0; d < _dimensions; ++d) {
+                const auto & values = _coordinates[d].values;
+                auto found = static_cast<size_t>(std::upper_bound(values.begin(), values.end(), asked[d]) - values.begin());
+                if (found == 0)
+                    return false;
+                _value[d] = found - 1;
+                every_bitset_holds_some = every_bitset_holds_some && _coordinates[d].bitset_reach[found - 1] > 0;
+            }
+
+            size_t low = 0, high = _size;
+            while (low < high) {
+                auto middle = low + (high - low) / 2;
+                if (comes_before(key(middle), asked))
+                    low = middle + 1;
+                else
+                    high = middle;
+            }
+            if (low < _size && std::equal(key(low), key(low) + _dimensions, asked))
+                return false;
+
+            if (every_bitset_holds_some) {
+                _reached.resize(_dimensions);
+                for (size_t d = 0; d < _dimensions; ++d)
+                    _reached[d] = _bitsets.data() + _coordinates[d].bitset[_value[d]] * _words;
+                for (size_t word = 0; word < _words; ++word) {
+                    auto both = _reached[0][word];
+                    for (size_t d = 1; d < _dimensions && both; ++d)
+                        both &= _reached[d][word];
+                    if (both)
+                        return true;
+                }
+            }
+
+            for (size_t d = 0; d < _dimensions; ++d) {
+                const auto & coordinate = _coordinates[d];
+                for (auto position = coordinate.bitset_reach[_value[d]]; position < coordinate.reach[_value[d]]; ++position) {
+                    const auto * k = coordinate.keys.data() + position * _dimensions;
+                    size_t e = 0;
+                    while (e < _dimensions && k[e] <= asked[e])
+                        ++e;
+                    if (e == _dimensions)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+    };
+
     /// The next layer's frontier: every state of `left` and `taken` that no
     /// other state of either covers, sorted and without repeats. `left` is the
     /// previous layer's frontier, every state leaving the next member out, and
@@ -82,70 +272,30 @@ namespace
     /// so is `taken`, a shift of part of one; so no state is covered by another
     /// from its own half, and a state in both halves is covered by nothing.
     /// What is left to ask is whether a state of one half is covered by one of
-    /// the other with at least its profit, which with each half sorted by
-    /// profit is a prefix of it. The states kept are exactly those the
-    /// all-pairs sweep keeps, in the same order.
+    /// the other, which CoverIndex answers without visiting the half. The
+    /// states kept are exactly those the all-pairs sweep keeps, in the same
+    /// order.
     [[nodiscard]] auto merge_to_frontier(const LiftedCoverCutLayer & left, const LiftedCoverCutLayer & taken) -> LiftedCoverCutLayer
     {
-        // Each half flat and most-profitable first, so that "the states with at
-        // least this profit" is a prefix found by binary search, and the test
-        // over it is a tight loop over contiguous weights rather than a walk
-        // through one small vector per state.
-        struct Flat
-        {
-            size_t rows;
-            vector<long long> profits, weights;
-        };
-        auto flatten = [](const LiftedCoverCutLayer & states) {
-            vector<size_t> order(states.size());
-            std::iota(order.begin(), order.end(), size_t{0});
-            sort(order, [&](size_t a, size_t b) { return states[a].profit > states[b].profit; });
-            Flat flat{states.empty() ? 0 : states.front().weights.size(), {}, {}};
-            flat.profits.reserve(states.size());
-            flat.weights.reserve(states.size() * flat.rows);
-            for (auto k : order) {
-                flat.profits.push_back(states[k].profit.raw_value);
-                for (const auto & w : states[k].weights)
-                    flat.weights.push_back(w.raw_value);
-            }
-            return flat;
-        };
-        auto flat_left = flatten(left), flat_taken = flatten(taken);
+        // Every layer is sorted, and so then is `taken`, since shifting every
+        // state by the same amount keeps their order. CoverIndex relies on
+        // that and checks it, and it is what lets the survivors be merged
+        // rather than sorted.
+        auto rows = left.empty() ? 0 : left.front().weights.size();
+        CoverIndex left_index{left, rows}, taken_index{taken, rows};
 
-        // Is `state` covered by some state of `half` other than itself? Its
-        // twin, if it has one, is no larger and so has to be told apart; but a
-        // state in both halves is covered by nothing, so the first state that
-        // does cover it settles the question. Most tests fail on the first
-        // row, so the test stops at the first row that fails.
-        auto covered_by = [](const LiftedCoverCutState & state, const Flat & half) {
-            auto profit = state.profit.raw_value;
-            auto end = static_cast<size_t>(std::upper_bound(half.profits.begin(), half.profits.end(), profit, [](long long p, long long q) {
-                return p > q;
-            }) - half.profits.begin());
-            auto rows = half.rows;
-            const auto * asked = state.weights.data();
-            for (size_t k = 0; k < end; ++k) {
-                const auto * w = half.weights.data() + k * rows;
-                size_t row = 0;
-                bool equal = half.profits[k] == profit;
-                for (; row < rows && w[row] <= asked[row].raw_value; ++row)
-                    equal = equal && w[row] == asked[row].raw_value;
-                if (row == rows && ! equal)
-                    return true;
-            }
-            return false;
-        };
+        vector<LiftedCoverCutState> left_survivors, taken_survivors;
+        for (const auto & state : left)
+            if (! taken_index.covers(state))
+                left_survivors.push_back(state);
+        for (const auto & state : taken)
+            if (! left_index.covers(state))
+                taken_survivors.push_back(state);
 
         vector<LiftedCoverCutState> survivors;
-        survivors.reserve(left.size() + taken.size());
-        for (const auto & state : left)
-            if (! covered_by(state, flat_taken))
-                survivors.push_back(state);
-        for (const auto & state : taken)
-            if (! covered_by(state, flat_left))
-                survivors.push_back(state);
-
-        sort(survivors);
+        survivors.reserve(left_survivors.size() + taken_survivors.size());
+        std::merge(std::make_move_iterator(left_survivors.begin()), std::make_move_iterator(left_survivors.end()),
+            std::make_move_iterator(taken_survivors.begin()), std::make_move_iterator(taken_survivors.end()), std::back_inserter(survivors));
         survivors.erase(unique(survivors).begin(), survivors.end());
         return survivors;
     }
@@ -295,6 +445,168 @@ auto gcs::innards::lifted_cover_cut_optimum(const vector<vector<Integer>> & dema
         return LiftedCoverCutOptimum{nullopt, false};
 
     return LiftedCoverCutOptimum{largest_profit(programme.layers.back()), false};
+}
+
+/// One shared programme: the layers \ref build_programme would build over these
+/// rows under the full capacities, less any state at or above the ceiling,
+/// with each layer also kept flat for reading off.
+struct LiftedCoverCutLifting::Imp
+{
+    struct Shared
+    {
+        vector<size_t> rows;
+        vector<Integer> capacities;
+        vector<LiftedCoverCutLayer> layers;
+        vector<vector<long long>> profits, weights;
+    };
+
+    vector<Integer> capacities;
+    Integer profit_ceiling;
+    size_t state_budget;
+    vector<vector<Integer>> demands;
+    vector<Integer> coefficients;
+    map<vector<size_t>, Shared> shared;
+
+    auto flatten(Shared & programme) -> void
+    {
+        const auto & layer = programme.layers.back();
+        auto & profits = programme.profits.emplace_back();
+        auto & weights = programme.weights.emplace_back();
+        profits.reserve(layer.size());
+        weights.reserve(layer.size() * programme.rows.size());
+        for (const auto & state : layer) {
+            profits.push_back(state.profit.raw_value);
+            for (const auto & weight : state.weights)
+                weights.push_back(weight.raw_value);
+        }
+    }
+
+    /// Grow the programme until it has the layer after the first `members`.
+    auto extend(Shared & programme, size_t members) -> void
+    {
+        while (programme.layers.size() <= members) {
+            auto member = programme.layers.size() - 1;
+            const auto & left = programme.layers.back();
+            LiftedCoverCutLayer taken;
+            for (const auto & state : left) {
+                auto profit = state.profit + coefficients[member];
+                if (profit >= profit_ceiling)
+                    continue;
+                auto weights = state.weights;
+                auto fits = true;
+                for (size_t row = 0; row < programme.rows.size() && fits; ++row) {
+                    weights[row] += demands[programme.rows[row]][member];
+                    fits = weights[row] <= programme.capacities[row];
+                }
+                if (fits)
+                    taken.push_back(LiftedCoverCutState{move(weights), profit});
+            }
+            auto next = merge_to_frontier(left, taken);
+            programme.layers.push_back(move(next));
+            flatten(programme);
+        }
+    }
+};
+
+LiftedCoverCutLifting::LiftedCoverCutLifting(vector<Integer> capacities, Integer profit_ceiling, size_t state_budget) :
+    _imp(new Imp{move(capacities), profit_ceiling, state_budget, {}, {}, {}})
+{
+    _imp->demands.resize(_imp->capacities.size());
+}
+
+LiftedCoverCutLifting::~LiftedCoverCutLifting() = default;
+
+auto LiftedCoverCutLifting::add_member(const vector<Integer> & demands, Integer coefficient) -> void
+{
+    if (demands.size() != _imp->capacities.size())
+        throw ProofError{"a lifting member needs one demand per row"};
+    if (coefficient < 0_i || any_of(demands, [](Integer d) { return d < 0_i; }))
+        throw ProofError{"a lifting member's demands and coefficient cannot be negative"};
+    for (size_t row = 0; row < demands.size(); ++row)
+        _imp->demands[row].push_back(demands[row]);
+    _imp->coefficients.push_back(coefficient);
+}
+
+auto LiftedCoverCutLifting::optimum(const vector<Integer> & residual_capacities) -> LiftedCoverCutOptimum
+{
+    auto & imp = *_imp;
+    if (residual_capacities.size() != imp.capacities.size())
+        throw ProofError{"a lifting question needs one capacity per row"};
+    for (size_t row = 0; row < residual_capacities.size(); ++row)
+        if (residual_capacities[row] < 0_i || residual_capacities[row] > imp.capacities[row])
+            throw ProofError{"a lifting question's capacities must lie between zero and the ones it was built with"};
+
+    // The rows lifted_cover_cut_optimum would keep, and so the programme to read.
+    auto binding = binding_rows(imp.demands, residual_capacities);
+    auto & programme = imp.shared[binding];
+    if (programme.layers.empty()) {
+        programme.rows = binding;
+        for (auto row : binding)
+            programme.capacities.push_back(imp.capacities[row]);
+        programme.layers.push_back(LiftedCoverCutLayer{LiftedCoverCutState{vector<Integer>(binding.size(), 0_i), 0_i}});
+        imp.flatten(programme);
+    }
+
+    auto rows = binding.size();
+    vector<long long> room(rows), room_taking(rows);
+    auto ceiling = imp.profit_ceiling.raw_value;
+    auto members = imp.coefficients.size();
+
+    // Layer by layer, what build_programme does under the residual capacities:
+    // count the states it builds, stop where it would stop, and otherwise say
+    // what its last layer reaches. Its layer is this one's states that fit, and
+    // the states it builds from that are those plus the ones taking the member;
+    // a state of its at or above the ceiling is one of those, or the empty
+    // prefix's, since every earlier layer stopped short of one.
+    size_t states = 1;
+    for (size_t member = 0; member < members; ++member) {
+        imp.extend(programme, member);
+        for (size_t row = 0; row < rows; ++row) {
+            room[row] = residual_capacities[binding[row]].raw_value;
+            room_taking[row] = room[row] - imp.demands[binding[row]][member].raw_value;
+        }
+        auto coefficient = imp.coefficients[member].raw_value;
+        const auto & profits = programme.profits[member];
+        const auto * weights = programme.weights[member].data();
+        size_t left = 0, taken = 0;
+        auto reached_ceiling = false;
+        for (size_t k = 0; k < profits.size(); ++k) {
+            const auto * w = weights + k * rows;
+            auto fits = true, fits_taking = true;
+            for (size_t row = 0; row < rows && fits; ++row) {
+                fits = w[row] <= room[row];
+                fits_taking = fits_taking && w[row] <= room_taking[row];
+            }
+            if (! fits)
+                continue;
+            ++left;
+            reached_ceiling = reached_ceiling || profits[k] >= ceiling;
+            if (fits_taking) {
+                ++taken;
+                reached_ceiling = reached_ceiling || profits[k] + coefficient >= ceiling;
+            }
+        }
+
+        states += left + taken;
+        if (states > imp.state_budget)
+            return LiftedCoverCutOptimum{nullopt, true};
+        if (reached_ceiling)
+            return LiftedCoverCutOptimum{nullopt, false};
+    }
+
+    imp.extend(programme, members);
+    const auto & profits = programme.profits[members];
+    const auto * weights = programme.weights[members].data();
+    long long best = 0;
+    for (size_t k = 0; k < profits.size(); ++k) {
+        const auto * w = weights + k * rows;
+        auto fits = true;
+        for (size_t row = 0; row < rows && fits; ++row)
+            fits = w[row] <= residual_capacities[binding[row]].raw_value;
+        if (fits)
+            best = std::max(best, profits[k]);
+    }
+    return LiftedCoverCutOptimum{Integer{best}, false};
 }
 
 auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<ProofLine> & capacity_rows, const LiftedCoverCut & cut,
