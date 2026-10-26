@@ -3546,7 +3546,8 @@ so any difference is the encoding's.
   which collapses the runs where the profile is constant and takes the sweep
   from `O(n^2 * horizon)` to `O(Cn^2)`. Propagation performance only; the
   certificate is unchanged. Since #1126's running total, what it would shrink
-  is the joins alone, not the check (see "Where the sweep's time went").
+  is the joins alone, not the check (see "Where the sweep's time went"), and
+  #1126 was closed without it.
 - **Guarded pins for the profile term.** TTEF's pins are reason-backed and
   re-derived per firing, at 2.93 lines' worth per firing and 15,037x repetition.
   A one-time-point `derive_guarded_window_energy` row is keyed by `(task, time)`

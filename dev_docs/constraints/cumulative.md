@@ -6,8 +6,7 @@
 > **Open issues** #705 (four propagation and proof-size costs; #1285 made its
 > first, the time-table scans, `O(width + length)` rather than
 > `O(width × length)`, but they still visit every time point, and the other
-> three were not re-checked), #742 (edge-finding's `O(n³)` scan), #1126
-> (Cloutier and Quimper's Profile for the elastic rungs), #755 (energetic
+> three were not re-checked), #742 (edge-finding's `O(n³)` scan), #755 (energetic
 > edge-finding's cache key), #550 (the optional-task interaction of the
 > elastic rungs, parked), #833 (the horizon-sized arrays), #700 and #829 (the
 > makespan bound's window and its `deview` fixture), #868 (cross-solver
@@ -822,7 +821,7 @@ axis the four questions are answered on.
 
    No site uses an interval primitive. None needs one for correctness, since
    the domains are not read as sets. What is missing is a profile kept as
-   plateaus rather than as a flat array (#364, #1126) and, for the makespan
+   plateaus rather than as a flat array (#364) and, for the makespan
    scan, event-based candidates or a stopping bound (#1267).
 2. **The reason side.** The reason is `generic_reason` over every scoped
    variable. It is one or two bound literals per variable, plus one
@@ -2373,7 +2372,7 @@ Ranked by what they buy against what they cost.
    (pushed bounds, run-step counts and proof-line bounds per fixture) and the
    `cumulative_run_mutation_{toofar, drop}` lanes. What is left is the
    per-time chain where runs do not apply, and a profile kept as plateaus
-   (#364, #1126).
+   (#364).
 5. **Move `with_encoding` and `CumulativeEncoding` into `innards`** (#1238),
    beside the mutations, and stop reading `GCS_CUMULATIVE_ENCODING` outside
    test builds, or at least say in the header that any binary reads it.
