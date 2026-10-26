@@ -307,7 +307,7 @@ not wanted until a model needs one.
   `contradiction()` before `forget_proof_level`). The
   `proof_strategy` tags are shared with `Regular` and `BinPacking`.
   `subset_sum_strengthening` is **not** this family's: nothing here calls it.
-  Its callers are `cumulative.cc:3113` (`derive_subset_sum_strengthening`) and
+  Its callers are `cumulative.cc:3169` (`derive_subset_sum_strengthening`) and
   the `cumulative_strengthening` presolver (`cumulative_strengthening.cc:302`,
   `:462`); `lifted_cover_cut` has a layered DP of its own and does not call it.
   Its note says only that its layered derivation has "the shape" of the

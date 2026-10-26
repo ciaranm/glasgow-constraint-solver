@@ -550,7 +550,7 @@ sensitivity is `cumulative.md`'s.
 - **Unbounded or huge domains.** Every input is read through bounds. A
   `Cumulative` whose horizon is near `2⁶⁰` cannot get as far as this presolver:
   `Cumulative::prepare` throws `std::length_error` allocating a horizon-sized
-  vector (`prepare_cumulative_overload_check`, `cumulative.cc:506`), and
+  vector (`prepare_cumulative_overload_check`, `cumulative.cc:636`), and
   presolvers run after `prepare`. That is `cumulative.md`'s. At a horizon of
   10⁶ with lengths of 2.5 · 10⁵, this presolver posts its cuts and reports a
   bound of 750,000.

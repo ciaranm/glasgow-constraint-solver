@@ -454,7 +454,7 @@ relaxation's members per axis, the resource windows, the declared floors and
 whether each axis's row network fits. It also builds each axis's projection
 `CumulativeInputs`. That last build is `O(n)` unless `cumulative_projection`
 has the overload check on: then `prepare_cumulative_overload_check` sizes a
-prefix array by the **time axis's declared span** (`cumulative.cc:505-517`).
+prefix array by the **time axis's declared span** (`cumulative.cc:635-647`).
 `define_proof_model` writes the `O(n²)` encoding.
 
 `install_propagators` publishes each fitting axis as a donor (always), installs
@@ -481,7 +481,7 @@ array is the root cost that does dominate on a wide time axis; see
   earlier pair. This audit did not build an instance showing a second call
   doing more.
 - **The projection wakes on presences** (`disjunctive_2d.cc:712-718`), as a
-  posted `Cumulative` does (`cumulative.cc:924-927`), because a task joins
+  posted `Cumulative` does (`cumulative.cc:1054-1057`), because a task joins
   the profile only once present. At `7e1c4178` its triggers were the
   projected starts only, so an optional rectangle that became present was
   not seen until some start bound moved (#1252, fixed by #1276). On the
@@ -580,11 +580,11 @@ too. The declarations are the triggers' own, and they tell the truth. So a
   propagator, whose checked arithmetic can overflow on in-range inputs: at
   four sites #1223 and #1235 found, the overload check's profile prefix sum
   among them, and since #1292 at a fifth, the published not-first /
-  not-last sweep's one up-front check (`cumulative.cc:2400`, reached only
+  not-last sweep's one up-front check (`cumulative.cc:2454`, reached only
   with `not_first_not_last_published`). Since #1271 an overflow there
   throws `IntegerOverflow` with a message naming the capacity, heights and
   horizon
-  (`cumulative.cc:1206-1215`), through the projection too
+  (`cumulative.cc:1336-1345`), through the projection too
   (`disjunctive_2d.cc:722`): a clear error, by decision, rather than 128-bit
   arithmetic. Through a projection the prefix sum needs a time-axis span
   above 2³², since the resource window is capped near 2³¹. At that span the
@@ -608,7 +608,7 @@ too. The declarations are the triggers' own, and they tell the truth. So a
      call.
    - **The projection: a horizon walk.** It is `propagate_cumulative`, which
      allocates `mand_load` over the current span of the tasks' windows on every
-     call (`cumulative.cc:2040-2041`) and walks it. With overload on (the
+     call (`cumulative.cc:2170-2171`) and walks it. With overload on (the
      `CumulativeRules` default) its `prepare` also sizes a prefix array by the
      declared span.
      - Four rectangles fixed side by side on `x`, each `2^k` wide, with

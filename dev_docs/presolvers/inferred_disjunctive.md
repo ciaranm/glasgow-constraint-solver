@@ -426,7 +426,7 @@ the donor's definer on first ask, and determined by unit propagation on a
 solution like any donor flag.
 
 **At assertion levels above `Off`, under the default start-checkpoint
-encoding,** the donors' definers are never published (`cumulative.cc:940`
+encoding,** the donors' definers are never published (`cumulative.cc:1070`
 returns early). So the recovery and the recipe cite flags and labels that
 nothing defines, and VeriPB rejects the proof. At `Inferences` and
 `Backtracking` it stops with a syntax error on a label like
