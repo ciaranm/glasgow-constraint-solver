@@ -3,10 +3,10 @@
 > **Maturity** experimental ·
 > **Audited** 2026-10-04 at `7e1c4178`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1254, #1256, #1257 and part of #1255 ·
-> **Open issues** filed by this audit: #1255 (the lifting programme's cost
-> and its state budget; items 1 and 3 fixed by #1277 and #1291, the cost cut
-> again by #1408, and item 2 not taken).
+> **Open issues** filed by this audit: none.
 > **Fixed since the audit**: #1254 (certificate cost under start-checkpoint),
+> #1255 (the lifting programme's cost: items 1 and 3 by #1277 and #1291, the
+> cost cut again by #1408, which closed it, and item 2 not taken),
 > #1256 (the "cut short" note), #1257 (silent detection losses); see
 > [Re-audit, 2026-10-08](#re-audit-2026-10-08) and [Next
 > steps](#next-steps). Already open and touching this presolver: #703
@@ -30,7 +30,7 @@ fourth's three items. This pass brings the text into line with them at
 | Issue | Fixed by | What changed here |
 |---|---|---|
 | #1254, a recovered donor row cost about 7,200 lines under start-checkpoint | #1290, **by a chain step**, neither of the routes next step 1 listed | a capacity row is recovered from the row before it by a quadratic step, with the cubic scan as the fallback beyond about as many points as there are candidates (`checkpoint_recovery.cc:858–884`). The `pack001` certificate goes from 568,680 lines and 35.5 s of checking to 155,277 and 0.64 s. The five things to know, [Proof-time state](#proof-time-state), [makespan-bound](#rewrite-makespan-bound)'s proof size, [Tests](#tests), [Benchmarks](#benchmarks-and-examples), [Proof performance](#proof-performance), [Known limitations](#known-limitations), next step 1 |
-| #1255, the lifting programme's cost, items 1 and 3 | #1277 (compare frontier states by index), #1291 (merge the frontier half against half); **item 2, a state budget that counts comparisons, is open** | `J120_59_6`'s pass goes from 57 s to 11.8 s serially; `J120_19_1`'s is 33.0 s serially, where at `7e1c4178` it took 3 to 4 minutes in runs partly beside other jobs. The five things to know, [Initialisation](#initialisation-and-global-data), [CPU performance](#cpu-performance), the PSPLib table under [Benchmarks](#benchmarks-and-examples), [Known limitations](#known-limitations), next step 2 |
+| #1255, the lifting programme's cost, items 1 and 3 | #1277 (compare frontier states by index), #1291 (merge the frontier half against half); **item 2, a state budget that counts comparisons, was not taken**, and #1408, which shares a cover's lifting programmes, closed the issue | `J120_59_6`'s pass goes from 57 s to 11.8 s serially; `J120_19_1`'s is 33.0 s serially, where at `7e1c4178` it took 3 to 4 minutes in runs partly beside other jobs. The five things to know, [Initialisation](#initialisation-and-global-data), [CPU performance](#cpu-performance), the PSPLib table under [Benchmarks](#benchmarks-and-examples), [Known limitations](#known-limitations), next step 2 |
 | #1256, an `Important` note on almost every default run | #1274 | a drop by the output budget **at its default** is a `General` note only; an output budget the caller moved off its default still raises `Important`; a drop by the state budget raises it at any value. [Options](#options), [Evidence that it fired](#evidence-that-it-fired), [Known limitations](#known-limitations), next step 6 |
 | #1257, detection losses with no note | #1282 | `General` notes for posted members with no makespan link row, for members whose length is not a constant (one-value variables included), and for tasks split across donors by their length variables; two stats, `split_by_disagreeing_length` and `makespan_bounds_not_improving`, and a summary clause when the makespan argument certified nothing better than the makespan had. The one-value length is still left out of the makespan rule, which #1282 left to `cumulative.md`. [Variable kinds](#variable-kinds-and-views), [Relation to other families](#relation-to-other-families), [makespan-bound](#rewrite-makespan-bound), [Detection](#detection-and-its-failure-modes), [Evidence that it fired](#evidence-that-it-fired), [Known limitations](#known-limitations), next step 5 |
 
@@ -1486,7 +1486,8 @@ median of three runs; `k = 1000` is one run. #1290's body measured the
      proof-size or checking-time claim about these presolvers taken before
      #1290 has to be re-measured, as this re-audit did for this document's.
 2. **Bound the lifting programme's cost** (#1255). **Done but for its
-   middle bullet, which was not taken.**
+   middle bullet, which was not taken; #1408 closed the issue.** The state
+   budget's value is left to the choice of good defaults.
    - Drop the vector equality test from the sweep's inner loop: **done by
      #1277**, which compares indices. #1277's body measured 416.3 G →
      262.3 G `instructions:u` on `J120_59_6`, with the same output.
