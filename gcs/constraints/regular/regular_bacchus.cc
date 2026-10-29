@@ -267,10 +267,17 @@ auto RegularBacchus::prepare(Propagators &, State & initial_state, ProofModel * 
     _bridge = make_shared<Bridge>();
     _graph_idx = initial_state.add_constraint_state(RegularGraph(static_cast<long>(_vars.size()), _num_states));
 
-    _opb_alphabet.insert(_symbols.begin(), _symbols.end());
-    for (const auto & var : _vars)
-        for (const auto & val : initial_state.each_value_immutable(var))
-            _opb_alphabet.insert(val);
+    // Per-position OPB alphabet: the initial domain of that position's variable.
+    // Domain values absent from every transition get a "no transition" constraint
+    // emitted below, which is what veripb needs to verify the propagator's
+    // RUP-justified pruning of those values. A transition symbol outside a
+    // variable's domain gets no row at that position: the row would only mention
+    // a literal that is already false, nothing in the proof uses it, and naming
+    // it defines order atoms beyond the domain that cake_pb_cp's OPB lacks (#489).
+    _opb_alphabet.assign(_vars.size(), {});
+    for (size_t i = 0; i < _vars.size(); ++i)
+        for (const auto & val : initial_state.each_value_immutable(_vars[i]))
+            _opb_alphabet[i].insert(val);
 
     return true;
 }
@@ -285,7 +292,10 @@ auto RegularBacchus::define_proof_model(ProofModel & model, const State &) -> vo
         WPBSum exactly_1_true{};
         flags.emplace_back();
         for (long q = 0; q < _num_states; ++q) {
-            flags[idx].emplace_back(model.create_proof_flag(format("state{}is{}", idx, q)));
+            // cake_pb_cp names the "in state q at position idx" flag x[id][idx_q][st];
+            // match it, as Regular does.
+            flags[idx].emplace_back(
+                model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(idx), static_cast<long long>(q)}, "st"));
             exactly_1_true += 1_i * flags[idx][q];
         }
         model.add_constraint(move(exactly_1_true) == 1_i);
@@ -302,7 +312,7 @@ auto RegularBacchus::define_proof_model(ProofModel & model, const State &) -> vo
     fwd_lines.assign(_vars.size(), vector<unordered_map<Integer, ProofLine>>(_num_states));
     for (size_t idx = 0; idx < _vars.size(); ++idx) {
         for (long q = 0; q < _num_states; ++q) {
-            for (const auto & val : _opb_alphabet) {
+            for (const auto & val : _opb_alphabet[idx]) {
                 auto new_q = find_transition(_transitions[q], val);
                 if (new_q == -1) {
                     model.add_constraint(WPBSum{} + 1_i * (_vars[idx] != val) + 1_i * ! flags[idx][q] >= 1_i);
@@ -365,7 +375,7 @@ auto RegularBacchus::install_propagators(Propagators & propagators) -> void
 
         for (size_t i = 0; i < vars.size(); ++i) {
             for (long q = 0; q < ns; ++q) {
-                for (const auto & val : alphabet) {
+                for (const auto & val : alphabet[i]) {
                     auto new_q = find_transition(t[q], val);
                     if (new_q == -1)
                         continue;
@@ -451,7 +461,7 @@ auto RegularBacchus::install_propagators(Propagators & propagators) -> void
 
         // Variable-support AL1: vars[i]=v -> sum_{q: delta(q,v) def} t[i][q][v] >= 1.
         for (size_t i = 0; i < vars.size(); ++i) {
-            for (const auto & val : alphabet) {
+            for (const auto & val : alphabet[i]) {
                 WPBSum sum;
                 sum += 1_i * (vars[i] != val);
                 bool any = false;

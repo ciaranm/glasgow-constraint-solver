@@ -44,7 +44,7 @@ namespace gcs
         std::vector<Integer> _symbols;
         std::vector<std::vector<innards::ProofFlag>> _state_at_pos_flags;
         innards::ConstraintStateHandle _graph_idx;
-        std::set<Integer> _opb_alphabet;
+        std::vector<std::set<Integer>> _opb_alphabet;
 
         // Copy-style constructor used by clone(): takes the internal multi-target
         // representation (and the regex, if any) directly.
