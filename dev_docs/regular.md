@@ -128,8 +128,9 @@ state_0_is_0 >= 1                                     (start state pinned)
 ```
 
 and, for every layer `i ∈ 0..n-1`, every state `q`, and every value
-`val` in the OPB alphabet (the union of all transition keys and every
-variable's initial domain):
+`val` in position `i`'s OPB alphabet (`vars[i]`'s initial domain; a
+transition symbol outside it gets no row there, since the row would only
+mention a literal that is already false):
 
 - If `transitions[q]` has no entry for `val`:
   `(vars[i] != val) + ~state_i_is_q >= 1`

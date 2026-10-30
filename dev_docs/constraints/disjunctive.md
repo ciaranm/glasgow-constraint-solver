@@ -5,7 +5,8 @@
 > for #1243 to #1249 ·
 > **Open issues** filed by this audit: none is still open; filed since, from
 > the re-audit: #1299 (what #1248 left: the overload reason, reasons built
-> with proofs off, holes); more to file from [Next steps](#next-steps).
+> with proofs off, holes), since fixed; more to file from
+> [Next steps](#next-steps).
 > **Closed since the audit**: all seven it filed.
 > #1243 and #1244, two strength bugs that made the fixpoint depend on rule
 > order, by #1275. #1245 (time-tabling's scan) by #1279, #1246 (the folds) by
@@ -126,10 +127,10 @@ Five things to know before touching it.
   That is two tasks for the pairwise push and the two pairwise conflicts, and
   the pushed task and its blockers for time-tabling and presence
   falsification. The set rule, edge-finding and not-first / not-last still
-  name every task's start and variable duration, now built once at install.
-  The overload check names every start and its window's variable durations,
-  built at each firing as before. Every reason still states holes
-  (`generic_reason`). Both are #1299. #1283's body measured VeriPB's
+  name every task's start and variable duration, built once at install.
+  Since #1299 the overload check names only its window's starts and
+  presences, every reason states bounds and no holes (`bounds_reason`), and
+  with proofs off no reason is built. #1283's body measured VeriPB's
   `instructions:u` on the set rule's `ft06` proof at 32.7% fewer.
 
 The long design note is
@@ -529,9 +530,9 @@ the re-audit did not look for others.
 
 **Holes affect** is `derived` and says nothing. Every rule reads bounds only:
 `state.bounds`, `lower_bound`, `upper_bound`, `has_single_value`. A presence
-is `{0, 1}`, so it has no interior. Every reason does state holes, through
-`generic_reason`, but that is a cost, not a sensitivity. #1283 narrowed which
-tasks a reason names and left that as it was (#1299).
+is `{0, 1}`, so it has no interior. Every reason states bounds only, through
+`bounds_reason`; until #1299 they stated holes too, which was a cost, not a
+sensitivity.
 
 ### Mutable state and incrementality
 
@@ -662,22 +663,19 @@ its sensitivity, so nothing was declared through
    per-value iterators are used nowhere.
 2. **The reason side.** Since #1283 a reason names the tasks its
    certificate cites (see the [catalogue's preamble](#inference-catalogue)),
-   but it is still `generic_reason`, materialised **per run**, not per value
-   (#935): two bound literals per variable, plus one `not_in_range` per hole
-   run. Holes are never needed. Building the reason is still **not guarded
-   on `want_reasons()`**, but what is built changed:
+   materialised **per run**, not per value (#935). Since #1299 it is
+   `bounds_reason`, two bound literals per variable, and no longer one
+   `not_in_range` per hole run, which no rule needed. Everything is guarded
+   on `want_reasons()`, so with proofs off nothing below is built, not even
+   the per-call `presence_lits` list:
    - the set rule's, edge-finding's and not-first / not-last's whole-scope
-     reason is built once at install (`disjunctive.cc:458`), and each call
-     only adds the presence literals;
-   - a pairwise or zero-length reason builds a list of its two tasks'
-     variables at each inference (`reason_for_tasks`, `:543`);
-   - a time-tabling or presence reason is the whole scope with proofs off,
-     and the pushed task plus its chain's blockers with them on
-     (`chain_reason`, `:1559`);
-   - the overload check copies every start into a fresh list at each firing
-     (`:2787`).
-
-   The `presence_lits` list is built once per call.
+     reason is built once at install, and each call only adds the presence
+     literals;
+   - every other reason builds a list of its tasks' variables at each
+     inference, out of line (`reason_for_tasks`): two tasks for a pairwise
+     or zero-length reason, the pushed task and its chain's blockers for
+     time-tabling and presence falsification (`chain_reason`), and the
+     window's tasks for the overload check.
 3. **The proof side.**
    - The pairwise rules emit `O(1)` lines per dichotomy, each `O(bits)` terms,
      whatever the width. On the 8-task probe (`horizon.cc ... prove`), the
@@ -709,20 +707,20 @@ its sensitivity, so nothing was declared through
 
 Facts that hold for every rule:
 
-- **Reason.** Since #1283, `generic_reason` over the tasks the certificate
+- **Reason.** Since #1283, a reason over the tasks the certificate
   cites: for each, its start, its duration if that is a variable, and
-  `presences[i] = 1` if it is known present (`reason_for_tasks`,
-  `disjunctive.cc:543`). Per rule:
+  `presences[i] = 1` if it is known present (`reason_for_tasks`). Since
+  #1299 it is `bounds_reason`, stating no holes, and with proofs off it is
+  never built: every reason is empty. Per rule:
   - mandatory overlap, the pairwise detectable precedences and the strict
     zero-length check: the two tasks;
   - time-tabling and presence falsification: the pushed task and the
-    blockers its chain cites, with proofs on, and the whole scope with them
-    off, where nothing reads it (`chain_reason`, `:1559`);
+    blockers its chain cites (`chain_reason`);
   - the set-based precedence, edge-finding and both not-first / not-last
-    detections: every start and variable duration, built once at install
-    (`:458`), plus every task known present;
-  - the overload check: every start, its window's variable durations, and
-    every task known present (`:2787`).
+    detections: every start and variable duration, built once at install,
+    plus every task known present;
+  - the overload check: its window's starts and presences, and no
+    durations (#1299).
 
   It is per run, not per value, and not guarded on `want_reasons()`. An
   undecided presence is left out, because it has no fact to state. At
@@ -742,8 +740,10 @@ Facts that hold for every rule:
 - **Assertion shapes.** These were checked against `a` lines at
   `AssertionLevel::Inferences` with `tmp/fd-sched/disjunctive/assert/`, and
   the four `shapes.cc` fixtures were re-run at `0a5b4ec6`. Three
-  rules are conflicts that call `contradiction()` and assert `¬reason`:
-  mandatory overlap, overload, and the strict zero-length check. Every other
+  rules are conflicts that call `contradiction_or_stop()` and assert
+  `¬reason`: mandatory overlap, overload, and the strict zero-length check.
+  Since #1299 they report the failure without unwinding, and since #1405
+  so does every push (`infer_*_or_stop`). Every other
   rule asserts `conclusion ∨ ¬reason`. A failed push takes that shape too,
   and is closed by the backtrack.
 - **Offline reconstructibility, for every rule: `search`.** The baseline
@@ -794,7 +794,7 @@ Facts that hold for every rule:
   cross-variable limit in [`veripb-facts.md`](../veripb-facts.md).
 - **Reason** — the two tasks (#1283). The pols need only their start
   bounds and duration lower bounds.
-- **Assertion** — `¬reason`, from `contradiction()`. Checked:
+- **Assertion** — `¬reason`, from `contradiction_or_stop()`. Checked:
   `a 1 ~[a ≥ 0] 1 [a ≥ 2] 1 ~[b ≥ 1] 1 [b ≥ 3] >= 1`.
 - **Hint** — `hints::Disjunctive`.
 - **Offline reconstructibility** — `search` (preamble): find the pair whose
@@ -1093,12 +1093,13 @@ Facts that hold for every rule:
   `Cheaper` takes the network when the span exceeds `overload_crossover × w`
   and the window qualifies. A window that does not qualify falls back to the
   time-indexed certificate. Both certificates are ours.
-- **Reason** — every start, the window's variable durations and every
-  present task's presence, built at each firing (`disjunctive.cc:2787`);
-  #1283 left it as it was (#1299). The certificate cites the contained
-  tasks' bounds. Durations are counted at their **declared** lower bound, so the
-  bridge and the fold are reason-free and cacheable.
-- **Assertion** — `¬reason`, from `contradiction()`. Checked on
+- **Reason** — the window's starts and the presences of those known
+  present (#1299; until then every start, the window's variable durations
+  and every present task's presence). The certificate cites only the
+  contained tasks' start bounds, in its energy rows. Durations are counted at
+  their **declared** lower bound, so the bridge and the fold are reason-free
+  and cacheable, and no duration is needed.
+- **Assertion** — `¬reason`, from `contradiction_or_stop()`. Checked on
   `disjunctive_overload_test`'s `sharp` fixture: six literals, three tasks'
   bounds.
 - **Hint** — `hints::Disjunctive`.
@@ -1364,7 +1365,7 @@ Facts that hold for every rule:
   both `bf` flags unit-propagate to 0 and the separation clause fails.
 - **Reason** — the two tasks (#1283). At `7e1c4178` it was every task's
   bounds, and the `a` line named a third, irrelevant task, `y`.
-- **Assertion** — `¬reason`, from `contradiction()`. Checked at `0a5b4ec6`:
+- **Assertion** — `¬reason`, from `contradiction_or_stop()`. Checked at `0a5b4ec6`:
   `a 1 ~[z = 1] 1 ~[k = 0] >= 1`.
 - **Hint** — `hints::Disjunctive`.
 - **Offline reconstructibility** — `search`: the pair.
@@ -1577,6 +1578,16 @@ profile of the same run:
 - **Exception unwinding:** about 15%, in `__gxx_personality_v0`,
   `_Unwind_*` and the unnamed `libstdc++` addresses, from 5.4 million failures.
 - **`State::bounds`:** 3%.
+
+That unwinding is gone. Measured by DSO, as
+[`propagator-performance.md`](../propagator-performance.md) says to, it was
+47% of the default arm's `instructions:u` on `ft06 --deadline 54` at
+`73d4f444`, nearly all from pushes that empty a domain. #1299 stopped the
+three conflict rules throwing, and #1405 every push. The presence
+falsification still throws, because it fixes an undecided presence and so
+cannot fail. On the same 5,450,366 recursions, the default arm went from
+387.8·10⁹ instructions at `73d4f444` to 167.4·10⁹, with `libgcc_s` at 0%.
+The time-tabling comparison below predates both.
 
 Turning `time_table` off gives the same recursion count in fewer
 instructions. At `0a5b4ec6`, in `jss_gcs.cc` (below), whose default arm
@@ -1819,16 +1830,14 @@ way.
    task set, durations and time, under `overload_cache_bridge`. #1287's body
    measured edge-finding's `ft06` proof at 29.5 to 14.3 MB, and VeriPB's
    instructions at −6.5% for edge-finding and +3.5% for the set rule.
-6. **Narrow the reasons (#1248).** Partly done by #1283, for the tasks:
-   each rule names the tasks its certificate cites, and the window rules'
-   whole-scope reason is built once at install. The rest is filed as #1299,
-   with the overload reason as a third part. The other two parts are still
-   open. Holes are still stated, and the narrow pairwise and conflict reasons
-   are still built with proofs off; time-tabling's falls back to the prebuilt
-   whole scope without a logger (`disjunctive.cc:1560-1561`), and the overload
-   check's is built at each firing either way. #1283's body measured VeriPB's
+6. **Narrow the reasons (#1248).** Done by #1283, for the tasks: each rule
+   names the tasks its certificate cites, and the window rules' whole-scope
+   reason is built once at install. #1283's body measured VeriPB's
    instructions on `ft06` at −32.7% for the set rule's proof and −6.8% for
-   edge-finding's.
+   edge-finding's. The rest was #1299, now done: the overload check names
+   its window's starts and presences, reasons state no holes, and with
+   proofs off none is built. The same change stopped the three conflict
+   rules unwinding (`contradiction_or_stop`).
 7. **Expose `DisjunctiveRules` to the frontends.** At least `fzn-glasgow`,
    which needs a flag or annotation design, so the Challenge corpus can
    reach the rules.

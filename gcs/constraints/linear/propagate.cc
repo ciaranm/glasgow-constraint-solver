@@ -105,6 +105,117 @@ namespace
         return ExplicitReason{reason};
     }
 
+    // A term's least and greatest contribution to the forward sum, and its
+    // least to the inverse sum (minus its greatest to the forward one, negating
+    // once), specialised as the sweeps are.
+    auto least_contribution(const auto & cv, const pair<Integer, Integer> & b) -> Integer
+    {
+        using CV = std::decay_t<decltype(cv)>;
+        if constexpr (is_same_v<CV, SimpleIntegerVariableID>)
+            return b.first;
+        else if constexpr (is_same_v<CV, PositiveOrNegative<SimpleIntegerVariableID>>)
+            return cv.positive ? b.first : -b.second;
+        else {
+            auto c = get_coeff(cv);
+            return (c >= 0_i) ? (c * b.first) : (c * b.second);
+        }
+    }
+
+    auto greatest_contribution(const auto & cv, const pair<Integer, Integer> & b) -> Integer
+    {
+        using CV = std::decay_t<decltype(cv)>;
+        if constexpr (is_same_v<CV, SimpleIntegerVariableID>)
+            return b.second;
+        else if constexpr (is_same_v<CV, PositiveOrNegative<SimpleIntegerVariableID>>)
+            return cv.positive ? b.second : -b.first;
+        else {
+            auto c = get_coeff(cv);
+            return (c >= 0_i) ? (c * b.second) : (c * b.first);
+        }
+    }
+
+    auto inverse_least_contribution(const auto & cv, const pair<Integer, Integer> & b) -> Integer
+    {
+        using CV = std::decay_t<decltype(cv)>;
+        if constexpr (is_same_v<CV, SimpleIntegerVariableID>)
+            return -b.second;
+        else if constexpr (is_same_v<CV, PositiveOrNegative<SimpleIntegerVariableID>>)
+            return cv.positive ? -b.second : b.first;
+        else {
+            auto c = get_coeff(cv);
+            return (c >= 0_i) ? -(c * b.second) : -(c * b.first);
+        }
+    }
+
+    // A sweep's least sum, accumulated natively, with a mask of the magnitudes
+    // of what went into it. When the total, every term and the value the sweep
+    // compares against all lie within 2^60 of zero, nothing the sweep forms
+    // from them, whether a sum less one term, a remainder or a rounded
+    // quotient, can pass 2^63, so the sweep uses Integer arithmetic as it
+    // always has. Otherwise it holds its sums wide (see narrow_remainder): a
+    // sum over many variables declared across the whole bounded range, as an
+    // unbounded FlatZinc var int is, passes 2^63 though the answer needs no
+    // such value (#244, #250). Deciding once a sweep, rather than checking per
+    // term, keeps the common case as cheap as it was.
+    class SmallSum
+    {
+    private:
+        long long _sum = 0;
+        unsigned long long _magnitudes = 0;
+        bool _overflowed = false;
+
+        static auto magnitude_bits(long long v) -> unsigned long long
+        {
+            return static_cast<unsigned long long>(v ^ (v >> 63));
+        }
+
+    public:
+        SmallSum() = default;
+
+        explicit SmallSum(const WideSum & start)
+        {
+            if (auto n = start.narrow())
+                _sum = n->raw_value;
+            else
+                _overflowed = true;
+        }
+
+        auto add(Integer v) -> void
+        {
+            _overflowed |= add_overflows(_sum, v.raw_value, &_sum);
+            _magnitudes |= magnitude_bits(v.raw_value);
+        }
+
+        [[nodiscard]] auto small_total(Integer value) const -> optional<Integer>
+        {
+            if (_overflowed || (_magnitudes | magnitude_bits(_sum) | magnitude_bits(value.raw_value)) >= (1ULL << 60))
+                return nullopt;
+            return Integer{_sum};
+        }
+    };
+
+    // For the wide sweeps: the remainder a term's inference divides, the value
+    // less the other terms' least sum, formed exactly, as an Integer. It need
+    // not fit, and the inference never needs it to:
+    //  - below the term's least contribution, the constraint cannot hold, and
+    //    any such remainder wipes the term out just the same, so it becomes
+    //    least - 1, whose literal is one past the term's bound;
+    //  - at or above the term's greatest contribution, which is an Integer,
+    //    there is nothing to infer: nullopt.
+    // Between the two, it fits. The justification never reads the remainder:
+    // its pol derives the true bound, which implies the inferred one. The term
+    // is cv over bounds b, in the forward sum or, if inverse, the inverse one.
+    [[gnu::noinline]] auto narrow_remainder(const WideSum & remainder, Integer least, const auto & cv, const pair<Integer, Integer> & b, bool inverse)
+        -> optional<Integer>
+    {
+        if (remainder < WideSum{least})
+            return least - 1_i;
+        auto greatest = inverse ? -least_contribution(cv, b) : greatest_contribution(cv, b);
+        if (remainder >= WideSum{greatest})
+            return nullopt;
+        return remainder.narrow();
+    }
+
     // Returns false if the inference contradicted: the caller must stop immediately
     // (it may not read state again until backtrack). Uses the non-throwing
     // infer_*_or_stop path so a failure does not unwind via an exception. When an
@@ -243,21 +354,15 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
     // of negative ones, neither of which feeds lower_sum -- so one recompute at
     // the top of each sweep from the current bounds is exact, and picks up any
     // tightening a previous inverse sweep made.
-    // Summed exactly and narrowed once, so that only a total that does not fit
-    // throws: nine terms at the top of the bounded range and nine at the bottom
-    // sum to zero, but not in that order (dev_docs/integer-ranges.md).
-    auto compute_lower_sum = [&]() -> Integer {
-        WideSum s;
-        for (unsigned i = 0, e = coeff_vars.terms.size(); i != e; ++i) {
-            const auto & cv = coeff_vars.terms[i];
-            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-                s += bounds[i].first;
-            else {
-                auto coeff = get_coeff(cv);
-                s += (coeff >= 0_i) ? (coeff * bounds[i].first) : (coeff * bounds[i].second);
-            }
-        }
-        return s.narrow_or_throw();
+    // Summed natively when that is safe, and exactly otherwise (SmallSum), so
+    // that nine terms at the top of the bounded range and nine at the bottom
+    // sum to zero in any order (dev_docs/integer-ranges.md), and a total past
+    // 2^63 does not throw.
+    auto compute_small_lower_sum = [&]() -> SmallSum {
+        SmallSum s;
+        for (unsigned i = 0, e = coeff_vars.terms.size(); i != e; ++i)
+            s.add(least_contribution(coeff_vars.terms[i], bounds[i]));
+        return s;
     };
 
     // The forward (sum <= value) sweep reaches the <= fixpoint in one pass and is
@@ -289,21 +394,38 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
     for (bool first = true;; first = false) {
         auto inferences_before_forward = inference.count_inferences();
 
-        Integer lower_sum = compute_lower_sum();
-        for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
-            const auto & cv = coeff_vars.terms[p];
+        auto small_lower_sum = compute_small_lower_sum().small_total(value);
+        if (! small_lower_sum) [[unlikely]] {
+            WideSum lower_sum;
+            for (unsigned i = 0, e = coeff_vars.terms.size(); i != e; ++i)
+                lower_sum += least_contribution(coeff_vars.terms[i], bounds[i]);
+            for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+                const auto & cv = coeff_vars.terms[p];
+                auto least = least_contribution(cv, bounds[p]);
+                auto remainder = narrow_remainder(WideSum{value} - (lower_sum - least), least, cv, bounds[p], false);
+                if (remainder &&
+                    ! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), *remainder, get_coeff_or_bool(cv), false, proof_line,
+                        add_to_reason, hint))
+                    return PropagatorState::Enable;
+            }
+        }
+        else {
+            Integer lower_sum = *small_lower_sum;
+            for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+                const auto & cv = coeff_vars.terms[p];
 
-            Integer lower_without_me{0_i};
-            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-                lower_without_me = lower_sum - bounds[p].first;
-            else
-                lower_without_me = lower_sum - ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
-            Integer remainder = value - lower_without_me;
+                Integer lower_without_me{0_i};
+                if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
+                    lower_without_me = lower_sum - bounds[p].first;
+                else
+                    lower_without_me = lower_sum - ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
+                Integer remainder = value - lower_without_me;
 
-            if (! infer(
-                    inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
-                return PropagatorState::Enable; // contradiction: stop before reading the (now junk) state
-            // infer() has refreshed bounds[p]'s tightened side in place.
+                if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason,
+                        hint))
+                    return PropagatorState::Enable; // contradiction: stop before reading the (now junk) state
+                // infer() has refreshed bounds[p]'s tightened side in place.
+            }
         }
 
         // A clean forward sweep after the first iteration means the inverse's
@@ -312,38 +434,50 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             break;
 
         auto inferences_before_inverse = inference.count_inferences();
-        WideSum wide_inv_lower_sum;
-        for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-                wide_inv_lower_sum -= bounds[idx].second;
-            else {
-                auto coeff = get_coeff(cv);
-                wide_inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds[idx].first) : (-coeff * bounds[idx].second);
+        SmallSum small_inv_lower_sum;
+        for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
+            small_inv_lower_sum.add(inverse_least_contribution(cv, bounds[idx]));
+        auto small_inv_total = small_inv_lower_sum.small_total(-value);
+        if (! small_inv_total) [[unlikely]] {
+            WideSum inv_lower_sum;
+            for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
+                inv_lower_sum += inverse_least_contribution(cv, bounds[idx]);
+            for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+                const auto & cv = coeff_vars.terms[p];
+                auto least = inverse_least_contribution(cv, bounds[p]);
+                auto remainder = narrow_remainder(WideSum{-value} - (inv_lower_sum - least), least, cv, bounds[p], true);
+                if (remainder &&
+                    ! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), *remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
+                        add_to_reason, hint))
+                    return PropagatorState::Enable;
+                inv_lower_sum = inv_lower_sum - least + inverse_least_contribution(cv, bounds[p]);
             }
         }
-        Integer inv_lower_sum = wide_inv_lower_sum.narrow_or_throw();
+        else {
+            Integer inv_lower_sum = *small_inv_total;
 
-        for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
-            const auto & cv = coeff_vars.terms[p];
-            Integer inv_lower_without_me{0_i};
-            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-                inv_lower_without_me = inv_lower_sum + bounds[p].second;
-            else
-                inv_lower_without_me =
-                    inv_lower_sum + ((-get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
+            for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+                const auto & cv = coeff_vars.terms[p];
+                Integer inv_lower_without_me{0_i};
+                if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
+                    inv_lower_without_me = inv_lower_sum + bounds[p].second;
+                else
+                    inv_lower_without_me =
+                        inv_lower_sum + ((-get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
 
-            Integer inv_remainder = -value - inv_lower_without_me;
+                Integer inv_remainder = -value - inv_lower_without_me;
 
-            if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
-                    add_to_reason, hint))
-                return PropagatorState::Enable; // contradiction: stop before reading the (now junk) state
-            // infer() has refreshed bounds[p]'s tightened side in place.
+                if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
+                        add_to_reason, hint))
+                    return PropagatorState::Enable; // contradiction: stop before reading the (now junk) state
+                // infer() has refreshed bounds[p]'s tightened side in place.
 
-            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-                inv_lower_sum = inv_lower_without_me - bounds[p].second;
-            else
-                inv_lower_sum =
-                    inv_lower_without_me + ((-get_coeff(cv) >= 0_i) ? (-get_coeff(cv) * bounds[p].first) : (-get_coeff(cv) * bounds[p].second));
+                if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
+                    inv_lower_sum = inv_lower_without_me - bounds[p].second;
+                else
+                    inv_lower_sum =
+                        inv_lower_without_me + ((-get_coeff(cv) >= 0_i) ? (-get_coeff(cv) * bounds[p].first) : (-get_coeff(cv) * bounds[p].second));
+            }
         }
 
         // A clean inverse sweep means the forward's last output fed the inverse
@@ -560,22 +694,41 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
         auto inferences_before_forward = inference.count_inferences();
 
         // Forward (<=): coeff_p * x_p <= value - (lower_sum - contrib_p). Summed
-        // exactly and narrowed once, like compute_lower_sum.
-        WideSum wide_lower_sum = st.fixed_lower;
+        // natively or exactly, like propagate_linear's.
+        SmallSum small_lower_sum{st.fixed_lower};
         for (std::size_t k = 0; k != st.n_active; ++k)
-            wide_lower_sum += min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
-        Integer lower_sum = wide_lower_sum.narrow_or_throw();
+            small_lower_sum.add(min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]));
+        auto small_total = small_lower_sum.small_total(value);
+        if (! small_total) [[unlikely]] {
+            WideSum wide_lower_sum = st.fixed_lower;
+            for (std::size_t k = 0; k != st.n_active; ++k)
+                wide_lower_sum += min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+            for (std::size_t k = 0; k != st.n_active; ++k) {
+                auto p = active[k];
+                const auto & cv = coeff_vars.terms[p];
+                auto least = min_contrib(cv, bounds[p]);
+                auto remainder = narrow_remainder(WideSum{value} - (wide_lower_sum - least), least, cv, bounds[p], false);
+                if (remainder &&
+                    ! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), *remainder, get_coeff_or_bool(cv), false, proof_line,
+                        add_to_reason, hint))
+                    return PropagatorState::Enable;
+                wide_lower_sum = wide_lower_sum - least + min_contrib(cv, bounds[p]);
+            }
+        }
+        else {
+            Integer lower_sum = *small_total;
 
-        for (std::size_t k = 0; k != st.n_active; ++k) {
-            auto p = active[k];
-            const auto & cv = coeff_vars.terms[p];
-            Integer lower_without_me = lower_sum - min_contrib(cv, bounds[p]);
-            Integer remainder = value - lower_without_me;
-            if (! infer(
-                    inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
-                return PropagatorState::Enable;
-            // infer() has refreshed bounds[p]'s tightened side in place.
-            lower_sum = lower_without_me + min_contrib(cv, bounds[p]);
+            for (std::size_t k = 0; k != st.n_active; ++k) {
+                auto p = active[k];
+                const auto & cv = coeff_vars.terms[p];
+                Integer lower_without_me = lower_sum - min_contrib(cv, bounds[p]);
+                Integer remainder = value - lower_without_me;
+                if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason,
+                        hint))
+                    return PropagatorState::Enable;
+                // infer() has refreshed bounds[p]'s tightened side in place.
+                lower_sum = lower_without_me + min_contrib(cv, bounds[p]);
+            }
         }
 
         if (! equality || (! first && inference.count_inferences() == inferences_before_forward))
@@ -584,21 +737,40 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
         auto inferences_before_inverse = inference.count_inferences();
 
         // Backward (>=): mirror of the forward pass on the inverse sum.
-        WideSum wide_inv_lower_sum = -st.fixed_lower;
+        SmallSum small_inv_lower_sum{-st.fixed_lower};
         for (std::size_t k = 0; k != st.n_active; ++k)
-            wide_inv_lower_sum += inv_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
-        Integer inv_lower_sum = wide_inv_lower_sum.narrow_or_throw();
+            small_inv_lower_sum.add(inv_contrib(coeff_vars.terms[active[k]], bounds[active[k]]));
+        auto small_inv_total = small_inv_lower_sum.small_total(-value);
+        if (! small_inv_total) [[unlikely]] {
+            WideSum wide_inv_lower_sum = -st.fixed_lower;
+            for (std::size_t k = 0; k != st.n_active; ++k)
+                wide_inv_lower_sum += inv_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+            for (std::size_t k = 0; k != st.n_active; ++k) {
+                auto p = active[k];
+                const auto & cv = coeff_vars.terms[p];
+                auto least = inv_contrib(cv, bounds[p]);
+                auto remainder = narrow_remainder(WideSum{-value} - (wide_inv_lower_sum - least), least, cv, bounds[p], true);
+                if (remainder &&
+                    ! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), *remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
+                        add_to_reason, hint))
+                    return PropagatorState::Enable;
+                wide_inv_lower_sum = wide_inv_lower_sum - least + inv_contrib(cv, bounds[p]);
+            }
+        }
+        else {
+            Integer inv_lower_sum = *small_inv_total;
 
-        for (std::size_t k = 0; k != st.n_active; ++k) {
-            auto p = active[k];
-            const auto & cv = coeff_vars.terms[p];
-            Integer inv_lower_without_me = inv_lower_sum - inv_contrib(cv, bounds[p]);
-            Integer inv_remainder = -value - inv_lower_without_me;
-            if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
-                    add_to_reason, hint))
-                return PropagatorState::Enable;
-            // infer() has refreshed bounds[p]'s tightened side in place.
-            inv_lower_sum = inv_lower_without_me + inv_contrib(cv, bounds[p]);
+            for (std::size_t k = 0; k != st.n_active; ++k) {
+                auto p = active[k];
+                const auto & cv = coeff_vars.terms[p];
+                Integer inv_lower_without_me = inv_lower_sum - inv_contrib(cv, bounds[p]);
+                Integer inv_remainder = -value - inv_lower_without_me;
+                if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
+                        add_to_reason, hint))
+                    return PropagatorState::Enable;
+                // infer() has refreshed bounds[p]'s tightened side in place.
+                inv_lower_sum = inv_lower_without_me + inv_contrib(cv, bounds[p]);
+            }
         }
 
         if (inference.count_inferences() == inferences_before_inverse)

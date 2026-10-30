@@ -595,14 +595,17 @@ auto Regular::prepare(Propagators & propagators, State & initial_state, ProofMod
     _graph_idx = initial_state.add_constraint_state(RegularGraph(static_cast<long>(_vars.size()), _num_states));
     _dead_cache_idx = initial_state.add_constraint_state(DeadCache{vector<set<long>>(_vars.size() + 1)});
 
-    // Build the OPB alphabet: the union of transition keys and each var's initial
-    // domain. Domain values absent from every transition get a "no transition"
-    // constraint emitted below, which is what veripb needs to verify the
-    // propagator's RUP-justified pruning of those values.
-    _opb_alphabet.insert(_symbols.begin(), _symbols.end());
-    for (const auto & var : _vars)
-        for (const auto & val : initial_state.each_value_immutable(var))
-            _opb_alphabet.insert(val);
+    // Per-position OPB alphabet: the initial domain of that position's variable.
+    // Domain values absent from every transition get a "no transition" constraint
+    // emitted below, which is what veripb needs to verify the propagator's
+    // RUP-justified pruning of those values. A transition symbol outside a
+    // variable's domain gets no row at that position: the row would only mention
+    // a literal that is already false, nothing in the proof uses it, and naming
+    // it defines order atoms beyond the domain that cake_pb_cp's OPB lacks (#489).
+    _opb_alphabet.assign(_vars.size(), {});
+    for (size_t i = 0; i < _vars.size(); ++i)
+        for (const auto & val : initial_state.each_value_immutable(_vars[i]))
+            _opb_alphabet[i].insert(val);
 
     return true;
 }
@@ -639,7 +642,7 @@ auto Regular::define_proof_model(ProofModel & model, const State &) -> void
 
     for (size_t idx = 0; idx < _vars.size(); ++idx) {
         for (long q = 0; q < _num_states; ++q) {
-            for (const auto & val : _opb_alphabet) {
+            for (const auto & val : _opb_alphabet[idx]) {
                 const auto & targets = find_transitions(_transitions[q], val);
                 if (targets.empty()) {
                     // No transition for (q, val), so constrain ~(state_i = q /\ X_i = val).

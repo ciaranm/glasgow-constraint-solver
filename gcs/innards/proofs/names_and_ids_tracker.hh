@@ -375,7 +375,13 @@ namespace gcs::innards
          * call omits leaves that pol term with nothing to cancel against; that is
          * safe when the variable cannot take the value (its term is zero under the
          * reason anyway) and broken otherwise, which is why the filter must be the
-         * domain and not a guess. A value in `singled_out` that the variable cannot
+         * domain and not a guess. That holds for a `+[x = v]` term only. A pol
+         * term `~[x = v]`, as an at-most-one over values contributes, is *one*
+         * under the reason when the variable cannot take `v`, so it survives as
+         * slack; a sum that is then divided rounds that slack into its
+         * conclusion. A caller that divides must name every value whose
+         * `~[x = v]` it adds, taken or not (MinDistance's matching bound, #1224).
+         * A value in `singled_out` that the variable cannot
          * take is merely wasted --- it costs a term here and a cell in the partition
          * --- and callers whose value set is much bigger than one variable's domain
          * (a Hall set, a global cover, a union of domains) should filter it out with

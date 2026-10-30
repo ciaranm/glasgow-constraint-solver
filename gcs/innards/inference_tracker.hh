@@ -576,7 +576,8 @@ namespace gcs::innards
          * inferring against a contradicted state. See issue #820 for what this is
          * worth: a throw and unwind is ~1.6 us, against ~15 ns for a propagator
          * wake, so it is only worth converting a propagator that contradicts in
-         * bulk. The JustifyExplicitly overload can be added when a caller wants it.
+         * bulk. The JustifyExplicitly overload below is the same for an explicit
+         * justification.
          */
         [[nodiscard]] auto contradiction_or_stop(ProofLogger * const logger, const Justification & why, const Reason & reason,
             const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> PropagatorState
@@ -585,6 +586,18 @@ namespace gcs::innards
             if constexpr (Actual_::materialises_reasons)
                 if (logger)
                     logger->infer(FalseLiteral{}, why, materialise(reason, _state), assertion_hints);
+            _contradicted = true;
+            return PropagatorState::DisableUntilBacktrack;
+        }
+
+        template <typename Emit_, typename Hint_>
+        [[nodiscard]] auto contradiction_or_stop(ProofLogger * const logger, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> PropagatorState
+        {
+            _last_contradiction_reason = reason;
+            if constexpr (Actual_::materialises_reasons)
+                if (logger)
+                    infer_explicitly(*logger, FalseLiteral{}, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
             _contradicted = true;
             return PropagatorState::DisableUntilBacktrack;
         }

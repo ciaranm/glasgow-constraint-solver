@@ -35,8 +35,7 @@
 > state reads; no proof is known to need it).
 > Already open and touching this family: #841 (the OPB alphabet includes every
 > domain value), #1227 (the regex parser expands class ranges and quantifiers
-> value by value), #489 (cake chain fails when a domain is narrower than the
-> alphabet), #833 and #846 (large domains), #364 (the incrementality survey,
+> value by value), #833 and #846 (large domains), #364 (the incrementality survey,
 > which lists `regular` as already incremental), #200 (a unified layered-DAG
 > framework), #1210 (`Links`-level solution lines, generic), #868
 > (cross-solver comparisons; this document gives one, by hand). Tracked under
@@ -249,13 +248,11 @@ over 85,553 lines and 12.93 s over 363,327 lines are both about 36 µs a line),
 not because its scaffold adds no tax.
 
 **Does the option change the OPB model?** `Upfront` and `PerCall`: no, the
-rows and the flag names are identical. `Bacchus`: the same rows, but its state
-flags are named `state<i>is<q>` (rendered `f[k][state<i>is<q>]`) rather than
-`x[id][<i>_<q>][st]`, and its forward rows are labelled
+rows and the flag names are identical. `Bacchus`: the same rows and flag names, but
+its forward rows are labelled
 `@c[id][fwd<i>q<q>v<v>]` so that its root `pol` steps can cite them
-(`regular_bacchus.cc:287`, `:313`). So `Bacchus`'s OPB says the same thing
-under different names, and does not match `cake_pb_cp`'s; see [Cake
-conformity](#cake-conformity).
+(`regular_bacchus.cc:324`). So `Bacchus`'s OPB says the same thing with
+labels that `cake_pb_cp`'s lacks; see [Cake conformity](#cake-conformity).
 
 **`with_short_reasons(std::optional<bool>)`**, default `true`. Read only by
 `PerCall`, where it defines one proof flag per call reifying the call's whole
@@ -338,15 +335,15 @@ worth it: no Challenge model posts one.
 
 The same block for every strategy, McIlree's Encoding Procedure 5.1, extended
 to a non-deterministic automaton. With `n = |vars|`, states `Q = 0..S−1`, and
-the OPB alphabet `A` = the union of the transition keys **and every value of
-every variable's initial domain** (`regular.cc:602-605`):
+the OPB alphabet of position `i`, `A_i`, = **every value of `x_i`'s initial
+domain** (`regular.cc:598-608`):
 
 ```
 s[i][q]                proof flag, i ∈ 0..n, q ∈ Q            x[id][<i>_<q>][st]
 ∑_q s[i][q] = 1        for every layer i                       (two rows each)
 s[0][0] ≥ 1
 ∑_{f ∈ F} s[n][f] ≥ 1
-for i ∈ 0..n−1, q ∈ Q, v ∈ A:
+for i ∈ 0..n−1, q ∈ Q, v ∈ A_i:
   δ(q, v) = ∅:   ¬s[i][q] ∨ x_i ≠ v
   δ(q, v) ≠ ∅:   ¬s[i][q] ∨ x_i ≠ v ∨ ⋁_{q' ∈ δ(q, v)} s[i+1][q']
 ```
@@ -360,11 +357,11 @@ proof rather than in the model (see [Proof-time state](#proof-time-state)).
 
 **Size**, from the emission code and checked against the OPB of a counter
 automaton (`tmp/fd-dd/regular/size/`). The constraint's own block is
-`2(n+1) + 2 + n·S·|A|` rows. Terms: `2S(n+1)` in the exactly-ones, `1` and
+`2(n+1) + 2 + S·Σ_i |A_i|` rows. Terms: `2S(n+1)` in the exactly-ones, `1` and
 `|F|`, then `2 + |δ(q, v)|` per transition row and `2` per no-transition row.
 Measured: `n = 10`, `S = 2`, a two-symbol automaton over `0..1` gives 64 rows
 and 166 terms, exactly the formula; `S = 8`, 184 rows. Then the declared width
-enters through `A`: over `0..W−1` with the same two symbols, the block is
+enters through `A_i`: over `0..W−1` with the same two symbols, the block is
 `24 + 20W` rows (224, 2,024, 20,024 rows at `W = 10, 100, 1000`), and the
 literal layer adds `4(W+1)` rows per variable: `4W + 2` definitions of the `=`
 and `≥` atoms the rows name, and the variable's two bound rows (440, 4,040,
@@ -408,14 +405,16 @@ OPB. These cannot be chain-test cases yet, because the harness re-solves the
 
 Divergences:
 
-- **A domain narrower than the alphabet** fails the chain: a `{0}` variable
-  under a three-symbol automaton is rejected when VeriPB parses the proof
-  against cake's OPB, which defines no `≥` atom past the domain's `ub + 1`
-  (#489).
+- **A domain narrower than the alphabet** used to fail the chain (#489): the
+  OPB alphabet was every transition symbol and every variable's domain, so a
+  `{0}` variable under a two-symbol automaton named `x_i = 1`, defining `≥`
+  atoms past the domain's `ub + 1` that cake's OPB does not have. Each
+  position's alphabet is now its own variable's initial domain, which is what
+  cake encodes; the `regular_narrow_domain_sat` chain case covers it.
 - **`Bacchus` does not chain** whenever there is a transition row to cite: its
   proofs cite the `@c[id][fwd…]` labels, which cake's OPB lacks
-  (`regular_bacchus.cc:448-460` says so of the labels), and its flags are
-  named `f[k][state…]` where cake has `x[id][…][st]`. An empty sequence
+  (`regular_bacchus.cc:448-460` says so of the labels); its flags carry
+  cake's `x[id][…][st]` names. An empty sequence
   chain-verifies, since nothing is cited (`chain1.txt`, `empty_acc_b`). The
   `.scp` it writes is the same `regular` term, and re-solving it picks
   `Upfront`.
@@ -533,9 +532,9 @@ propagator reads it only when a logger exists.
 ### Initialisation and global data
 
 `prepare()` compiles a regex (building the `min..max` alphabet value by value,
-commented on #1227), builds the OPB alphabet by walking every variable's initial
-domain value by value (#841), and allocates the backtrackable `RegularGraph`
-and, for `Upfront`, the `DeadCache` (`regular.cc:572-605`).
+commented on #1227), builds one OPB alphabet per position by walking that
+variable's initial domain value by value (#841), and allocates the backtrackable
+`RegularGraph` and, for `Upfront`, the `DeadCache` (`regular.cc:572-608`).
 
 The graph itself is built on the first propagator call, not in an initialiser
 (`initialise_graph`, `regular.cc:153-232`): a forward pass over every value of
@@ -1229,8 +1228,7 @@ solves there, 40 with proofs, in 0.75 s; `regular_legacy_test` 50 (25),
   one (the "1-based alphabet with a hole" shape has its hole in the transition
   table, over `1..3`); branching makes holes, and the sweeps here cover holey
   domains.
-- **Wide domains**, the regex alphabet, and any domain narrower than the
-  alphabet in a chain case (#489).
+- **Wide domains** and the regex alphabet in a chain case.
 - **A non-deterministic automaton in a chain case or through the `.scp`
   reader** (#1335).
 - **Real instances:** none ported. `examples/nonogram` reads Challenge data

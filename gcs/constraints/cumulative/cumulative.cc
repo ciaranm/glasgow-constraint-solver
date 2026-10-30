@@ -153,6 +153,156 @@ namespace
         return sum;
     }
 
+    // What edge-finding's scan reads off a task: its bounds as the sweep
+    // snapshotted them, and the length and height it is counted at.
+    struct EdgeFindingTask
+    {
+        long long est, lct, length, height;
+    };
+
+    // Edge-finding's scan over one window's tasks, kept apart from the rest of
+    // the propagator (#742). The rule is O(n^3) over a sweep --- O(n^2)
+    // windows, each looking at every task --- and nearly all of that was spent
+    // turning tasks away: a task with both or neither of its ends in the
+    // window, one too light to pass detection, or one already where the push
+    // would put it. All of those are decided from the sweep's snapshot, so
+    // they are decided here, in plain arithmetic over a flat array and in a
+    // function of their own rather than deep inside the propagator's, and the
+    // propagator only sees the tasks still in question.
+    //
+    // Every test here is one the propagator's scan makes, in the same order,
+    // or (for the energetic charge, where a task's own share of the window
+    // needs the window-energy lemma) a necessary condition of one. So nothing
+    // that scan would have acted on is dropped, and the tasks to visit come in
+    // the order it would have looked at them; for the other two charges they
+    // are exactly the tasks it would have gone on to look at.
+    class EdgeFindingScan
+    {
+    public:
+        // How the window is charged, which is all that changes what the scan
+        // takes back out of it for the task being pushed.
+        enum class Charge
+        {
+            Contained,
+            TimeTable,
+            Energetic
+        };
+
+        // The tasks in the sweep's own order, which is a candidate's index.
+        explicit EdgeFindingScan(vector<EdgeFindingTask> tasks, Integer capacity) : _candidate_of(tasks.size())
+        {
+            // Edge-finding's `rest` is monotone in the pushed task's height and
+            // in nothing else about it, so walking the tasks tallest-first lets
+            // a window's scan stop at the first task that cannot be pushed
+            // instead of running to the end.
+            std::iota(_candidate_of.begin(), _candidate_of.end(), size_t{0});
+            sort(_candidate_of, [&](size_t x, size_t y) { return tasks[x].height > tasks[y].height; });
+            _by_height.reserve(tasks.size());
+            for (auto c : _candidate_of)
+                _by_height.push_back(tasks[c]);
+
+            // Checked once, so the scan can work in plain arithmetic. Every
+            // window lies inside [min est, max lct), so a width or a distance
+            // between two of its times is at most that span, and every figure
+            // the scan forms is a sum of at most two products of a height or
+            // the capacity with one of those, and two task energies.
+            if (! tasks.empty()) {
+                Integer lowest_est{tasks.front().est}, highest_lct{tasks.front().lct}, heaviest = 0_i;
+                for (const auto & t : tasks) {
+                    lowest_est = min(lowest_est, Integer{t.est});
+                    highest_lct = max(highest_lct, Integer{t.lct});
+                    heaviest = max(heaviest, Integer{t.height} * Integer{t.length});
+                }
+                (void)((abs(capacity) + Integer{_by_height.front().height}) * (highest_lct - lowest_est) * 2_i + heaviest * 2_i);
+            }
+        }
+
+        // Which candidate a position in the scan's order is.
+        [[nodiscard]] auto candidate_of(size_t rank) const -> size_t
+        {
+            return _candidate_of[rank];
+        }
+
+        // A task the propagator's scan has to look at, as a position in the
+        // scan's order, with how many it would have turned away as already
+        // held, at the lower and upper bound, since the last one. Those are
+        // counted only as the propagator reaches this task, so that a window
+        // abandoned partway, by a push that empties a domain, counts what the
+        // propagator's own scan would have counted before it stopped.
+        struct Visit
+        {
+            size_t rank;
+            unsigned long long held_lb_before, held_ub_before;
+        };
+
+        // The tasks the propagator's scan has to look at over [a, b), into
+        // `out` in the order it looks at them. Returns the already held ones
+        // after the last of them.
+        [[gnu::noinline]] auto to_visit(Charge charge, long long window_total, long long capacity, long long width, long long a, long long b,
+            vector<Visit> & out) const -> pair<unsigned long long, unsigned long long>
+        {
+            out.clear();
+            unsigned long long held_lb = 0, held_ub = 0;
+            auto supply = capacity * width;
+            for (size_t rank = 0; rank < _by_height.size(); ++rank) {
+                const auto & t = _by_height[rank];
+
+                // Heights descend, so once `rest` charged in full has gone
+                // non-positive it has for every task after this one. Taking the
+                // task's own share back out below only lowers it further.
+                if (window_total - (capacity - t.height) * width <= 0)
+                    break;
+
+                // Both ends in means contained, and already counted; neither
+                // means the task spans the window, where the closed form does
+                // not apply --- that case is what not-first / not-last is for.
+                auto starts_inside = t.est >= a;
+                if (starts_inside == (t.lct <= b))
+                    continue;
+
+                // A task's energetic share of the window is at least nothing,
+                // so detection with none of it taken back out is a necessary
+                // condition. What the share actually is takes the lemma, so
+                // everything finer is left to the propagator --- including
+                // `already held`, which it would not have counted for a task
+                // the exact `rest` turns away first.
+                if (charge == Charge::Energetic) {
+                    if (window_total + t.height * t.length <= supply)
+                        continue;
+                    out.push_back(Visit{rank, held_lb, held_ub});
+                    held_lb = held_ub = 0;
+                    continue;
+                }
+
+                auto own =
+                    charge == Charge::TimeTable ? t.height * std::max(0ll, std::min(t.est + t.length, b) - std::max(t.lct - t.length, a)) : 0ll;
+                auto other = window_total - own;
+                auto rest = other - (capacity - t.height) * width;
+                if (rest <= 0 || other + t.height * t.length <= supply)
+                    continue;
+
+                // The push moves the start ⌈rest / h⌉ in from the window's edge,
+                // which the snapshot already holds exactly when rest <= h · (the
+                // room its bound leaves): no division, and no asking the state.
+                // Bounds only tighten during a sweep, so what the snapshot holds
+                // the live bounds hold too. This is nearly all of the tasks
+                // that get this far.
+                if (rest <= t.height * (starts_inside ? t.est - a : b - t.lct)) {
+                    ++(starts_inside ? held_lb : held_ub);
+                    continue;
+                }
+
+                out.push_back(Visit{rank, held_lb, held_ub});
+                held_lb = held_ub = 0;
+            }
+            return pair{held_lb, held_ub};
+        }
+
+    private:
+        vector<size_t> _candidate_of;
+        vector<EdgeFindingTask> _by_height;
+    };
+
     // What each time point supplies to a window's contained set, for (TTHE-OC)
     // and (KAOC), which charge the window one time point at a time. Two arrays
     // indexed by t − t_lo carry it: the heights of the contained tasks that
@@ -2324,30 +2474,29 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
             // loop below simply does not run; no early exit needed.
             sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
 
-            // Edge-finding's `rest` is monotone in the pushed task's height and in
-            // nothing else about it, so walking the candidates tallest-first lets
-            // the scan stop at the first task that cannot be pushed instead of
-            // running to the end. That is what keeps the rule from turning the
-            // overload check's quadratic sweep cubic: most windows stop on the
-            // first task, and the `tallest` guard below is that first test hoisted
-            // out of the loop entirely.
-            vector<size_t> by_height;
+            // Which tasks a window's edge-finding scan looks at, and in what
+            // order, is EdgeFindingScan's to say. The `tallest` guard below is
+            // its first test hoisted out of the scan entirely: `rest` is
+            // monotone in the pushed task's height, and in nothing else about
+            // it.
+            optional<EdgeFindingScan> edge_finding_scan;
+            vector<EdgeFindingScan::Visit> edge_finding_visits;
             Integer tallest = 0_i, heaviest = 0_i;
             if (rules.edge_finding) {
                 ++cumulative_counters[rule_edge_finding_lb].calls;
                 ++cumulative_counters[rule_edge_finding_ub].calls;
-                by_height.resize(candidates.size());
-                for (size_t i = 0; i < candidates.size(); ++i)
-                    by_height[i] = i;
-                sort(by_height, [&](size_t x, size_t y) { return candidates[x].height > candidates[y].height; });
-                if (! candidates.empty())
-                    tallest = candidates[by_height.front()].height;
                 // Detection needs some task's whole energy to overflow the window
                 // alongside the contained ones, so the largest single task energy
                 // rules a window out for every task at once, exactly as `tallest`
                 // does for `rest`. One more multiplication, and it is free.
-                for (const auto & c : candidates)
+                vector<EdgeFindingTask> scan_tasks;
+                scan_tasks.reserve(candidates.size());
+                for (const auto & c : candidates) {
+                    tallest = max(tallest, c.height);
                     heaviest = max(heaviest, c.energy);
+                    scan_tasks.push_back(EdgeFindingTask{c.est.raw_value, c.lct.raw_value, c.length.raw_value, c.height.raw_value});
+                }
+                edge_finding_scan.emplace(move(scan_tasks), capacity);
             }
 
             vector<Integer> window_starts;
@@ -2804,27 +2953,29 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                         // which side of the window the pushed task hangs off. Two
                         // passes walked the same prefix twice for nothing, and the
                         // scan is where this rule's whole cost is.
-                        for (auto j_idx : by_height) {
-                            const auto & j = candidates[j_idx];
-
-                            // Heights descend, so once one task's `rest` has gone
-                            // non-positive every shorter one's has too. Test the
-                            // figure that charges the window in full here: taking
-                            // j's own contribution back out below only lowers
-                            // `rest`, so the early exit stays valid.
+                        //
+                        // Heights descend, so once one task's `rest` has gone
+                        // non-positive every shorter one's has too: the scan
+                        // stops there, testing the figure that charges the
+                        // window in full, since taking j's own contribution back
+                        // out below only lowers `rest`. It also leaves out a
+                        // task with both ends inside the window, which is
+                        // contained and already counted, and one with neither,
+                        // which spans the window, where the closed form below
+                        // does not apply --- that case is what not-first /
+                        // not-last is for. Which end is in decides which bound
+                        // moves.
+                        auto [held_lb_after, held_ub_after] =
+                            edge_finding_scan->to_visit(rule_energetic_edge_finding ? EdgeFindingScan::Charge::Energetic
+                                    : rule_time_table_edge_finding                  ? EdgeFindingScan::Charge::TimeTable
+                                                                                    : EdgeFindingScan::Charge::Contained,
+                                window_total.raw_value, capacity.raw_value, width.raw_value, a.raw_value, b.raw_value, edge_finding_visits);
+                        for (const auto & visit : edge_finding_visits) {
+                            cumulative_counters[rule_edge_finding_lb].already_true += visit.held_lb_before;
+                            cumulative_counters[rule_edge_finding_ub].already_true += visit.held_ub_before;
+                            const auto & j = candidates[edge_finding_scan->candidate_of(visit.rank)];
                             auto h_j = j.height;
-                            if (window_total - (capacity - h_j) * width <= 0_i)
-                                break;
-
-                            // A task with one end inside the window and one outside.
-                            // Both ends in means it is contained, and already
-                            // counted; neither means it spans the window, where the
-                            // closed form below does not apply --- that case is what
-                            // not-first / not-last is for. Which end is in decides
-                            // which bound moves.
-                            auto starts_inside = j.est >= a, ends_inside = j.lct <= b;
-                            if (starts_inside == ends_inside)
-                                continue;
+                            auto starts_inside = j.est >= a;
 
                             auto p_j = j.length;
 
@@ -2886,6 +3037,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                 pushed_in_sweep = true;
                             }
                         }
+                        cumulative_counters[rule_edge_finding_lb].already_true += held_lb_after;
+                        cumulative_counters[rule_edge_finding_ub].already_true += held_ub_after;
                     }
 
                     // Not-first / not-last. Edge-finding asks how far a task can be

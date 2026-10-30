@@ -835,7 +835,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   arithmetic of the incremental route and root simplification (potentials,
   reduced weights, keys, distances, and an untrailed potential that drifts
   down without bound) is plain `Integer`, and so are `difference_graph.cc`'s
-  Bellman-Ford bounds and cycle sums. Heavy chains, a
+  Bellman-Ford bounds and cycle sums (both since closed by decision: the
+  throws stay, and say they came from difference logic). Heavy chains, a
   chain with one redundant edge and a heavy negative cycle throw where the
   same rows as linears are refuted at once, through `--difference-logic`'s
   default too (`=====ERROR=====` from MiniZinc). Each issue lists the sites
@@ -940,12 +941,13 @@ variant](TEMPLATE.md#the-presolver-variant).
     bound,** so in the task lengths, and its checking time worse than linear.
   - **The lifting programme's frontier sweep** cost up to minutes per PSPLib
     J90 or J120 instance with proofs off. #1277 and #1291 (#1255) took
-    `J120_59_6` from 57 s to 12 s serially. `J120_19_1`, the slowest
-    measured, now takes 33 s serially (3 to 4 minutes at the audit, partly
-    beside other jobs). Its state budget still binds on at
-    least 102 of them, changing cuts or dropping ones it could not afford to
-    validate, and still counts states rather than comparisons (#1255,
-    open).
+    `J120_59_6` from 57 s to 12 s serially, and #1408, by sharing a cover's
+    programmes between its lifting subproblems, to 1.07 s. `J120_19_1` goes
+    from 33 s to 1.6 s (3 to 4 minutes at the audit, partly beside other
+    jobs), and the slowest of 3,984 RCPSP instances now takes 4.0 s. Its
+    state budget still binds on at least 102 of them, changing cuts or
+    dropping ones it could not afford to validate, and still counts states
+    rather than comparisons (#1255's item 2, not taken).
   - **An `Important` note fired on 556 of the 710 instances** for the
     published procedure's own output budget. Since #1274 (#1256) a drop at
     the default budget is a `General` note.

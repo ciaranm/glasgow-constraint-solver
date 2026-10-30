@@ -317,18 +317,19 @@ namespace
     /// positive coefficient to lift with and the exact value stops mattering.
     /// Sharing that machinery is not an economy: it is what makes a cut the
     /// procedure infers one the proof can reach, since both are asking the same
-    /// question of the same rows.
+    /// question of the same rows. `lifting` holds that programme for the whole
+    /// cover rather than rebuilding it per member, which gives the same answers
+    /// (#1255).
     struct Subproblem
     {
         optional<Integer> optimum;
         bool over_budget = false;
     };
 
-    [[nodiscard]] auto lifting_subproblem(const vector<vector<Integer>> & demands, const vector<Integer> & capacities,
-        const vector<Integer> & coefficients, const vector<size_t> & support, size_t member, Integer rhs, size_t state_budget) -> Subproblem
+    [[nodiscard]] auto lifting_subproblem(
+        LiftedCoverCutLifting & lifting, const vector<vector<Integer>> & demands, const vector<Integer> & capacities, size_t member) -> Subproblem
     {
-        vector<Integer> residual, support_coefficients;
-        vector<vector<Integer>> support_demands(capacities.size());
+        vector<Integer> residual;
         for (size_t row = 0; row < capacities.size(); ++row) {
             residual.push_back(capacities[row] - demands[row][member]);
             // A member that alone overshoots this row can never run, so nothing
@@ -339,13 +340,9 @@ namespace
             // below meaningless rather than merely empty.
             if (residual.back() < 0_i)
                 return Subproblem{0_i, false};
-            for (auto i : support)
-                support_demands[row].push_back(demands[row][i]);
         }
-        for (auto i : support)
-            support_coefficients.push_back(coefficients[i]);
 
-        auto answer = lifted_cover_cut_optimum(support_demands, support_coefficients, residual, rhs, state_budget);
+        auto answer = lifting.optimum(residual);
         return Subproblem{answer.value, answer.over_state_budget};
     }
 
@@ -394,13 +391,23 @@ namespace
             return a < b;
         });
 
-        auto support = cover;
+        auto column = [&](size_t task) {
+            vector<Integer> result;
+            for (const auto & row : demands)
+                result.push_back(row[task]);
+            return result;
+        };
+
+        LiftedCoverCutLifting lifting{capacities, rhs, state_budget};
+        for (auto i : cover)
+            lifting.add_member(column(i), coefficients[i]);
+
         size_t used = 0, over_budget = 0;
         for (auto member : remaining) {
             if (used >= budget)
                 break;
             ++used;
-            auto subproblem = lifting_subproblem(demands, capacities, coefficients, support, member, rhs, state_budget);
+            auto subproblem = lifting_subproblem(lifting, demands, capacities, member);
             if (subproblem.over_budget) {
                 // No answer means no coefficient: the task is left out, which
                 // weakens the cut rather than invalidating it. Counted, because
@@ -418,7 +425,7 @@ namespace
             if (lifted <= 0_i)
                 continue;
             coefficients[member] = lifted;
-            support.push_back(member);
+            lifting.add_member(column(member), lifted);
         }
 
         return Lifted{move(coefficients), rhs, used, over_budget};

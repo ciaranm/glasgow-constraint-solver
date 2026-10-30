@@ -141,9 +141,18 @@ range moves that step into the sum as a constant instead, so that
   been.
 
 A constraint whose own arithmetic genuinely needs more than 64 bits for
-in-range inputs throws then, during search: `DifferenceConstraints`, for
-example, forms Bellman-Ford path sums, and a chain of nine edges of weight
-`-max_bounded_value()` has a path sum past the end of `Integer`.
+in-range inputs throws then, during search.
+
+`DifferenceConstraints` (and the `difference_logic` presolver, which installs
+the same machinery) throws by decision (#1371, #1372). Its potentials,
+Dijkstra distances, reduced weights, Bellman-Ford bounds and cycle weights are
+`Integer`s, so a chain of nine edges of weight `-max_bounded_value()`, or a
+shorter one with a redundant edge, throws even where its answer, often a
+refutation by its first edge, needs no such value. Holding all of them wide
+would reach into the incremental route's heaps and the simplification stage.
+The `IntegerOverflow` says it came from difference logic, and
+`difference_constraints_test`'s near-edge lane checks that no route answers
+those shapes wrongly.
 
 `Cumulative` (posted, derived, or as `Disjunctive2D`'s projection) is the same
 case on a broader footing, by decision rather than by necessity (#1235, #1223).
@@ -163,6 +172,30 @@ blame and keeps the operation that overflowed, and `integer_ranges_test` pins
 each site with a twin just inside the limit that must solve. Revisit this if an
 application meets it.
 
+`Divide` and `Modulus` with proofs are a third case, also by decision
+(#1222). Their proof encoding is cake_pb_cp's, which multiplies the
+quotient's and the divisor's magnitudes bit by bit and sums that grid in its
+remainder rows, and it sizes `Divide`'s quotient magnitude from the
+quotient's declared domain. That grid's largest sum must fit in an
+`Integer`, so a quotient declared over the whole of `S` throws once the
+divisor has four bits, though `|q| <= |x|` may be tiny; sizing from `|x|`
+would fix it but makes the OPB differ from cake_pb_cp's, whose OPB the
+proof is checked against in workflow 2. `Modulus` sizes its quotient
+magnitude from the dividend, so it meets this only with a dividend view past
+`S` and a remainder declared over `S`, whose rows sum all three. Without
+proofs both solve. The
+`IntegerOverflow` names the constraint and the proof encoding, and
+`integer_ranges_test` pins each with a twin just inside the limit.
+
+A `Multiply` with a constant operand is a fourth, smaller one (#1221). It
+becomes a `LinearEquality` whose constant is built from the inputs: a
+constant operand times the other operand's view offset, which can pass
+`2^63` though the view's values are small, or the product of two constant
+operands. A view result's offset is folded into the latter first, so a
+product past `S` that the view can reach still solves; one that cannot be
+reached, or a `c·offset` that does not fit, throws an `IntegerOverflow`
+naming the rewrite rather than give the view an auxiliary.
+
 What it must not do is throw on a value nothing needs. The commonest way is a
 running sum whose total fits but whose partial sums do not: nine terms at the
 top of the range and nine at the bottom sum to zero, but not in that order. Sum
@@ -171,6 +204,10 @@ to 128 bits, and narrow only the total: `narrow()` says whether it fits,
 `narrow_or_throw("what")` throws if a needed total does not, and
 `divided_exactly_by` solves `c·x = total` for an `Integer` `x` even when the
 total does not fit. Linear's sums, Knapsack's caps and difference logic's
-cycle evidence use it. A saturating sum is *not* a substitute where the value
+cycle evidence use it. Linear's sweeps use it only when a cheap check
+says their native sums might overflow, and then narrow no total at all, only
+each term's remainder, which they clamp rather than saturate: below the
+term's least contribution, any remainder is a wipeout, and at or above its
+greatest contribution there is nothing to infer (#244). A saturating sum is *not* a substitute where the value
 feeds an inference: dividing a saturated remainder by a large coefficient gives
 a bound tighter than the true one.

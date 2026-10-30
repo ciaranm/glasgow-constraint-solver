@@ -266,6 +266,9 @@ this much of each".
 The same programme answers the lifting subproblem, which is not an economy but
 the point: the inference and the certificate ask the same question of the same
 rows, so a cut the procedure produces cannot be one the proof fails to reach.
+A cover's lifting subproblems are read off programmes shared between them,
+which give exactly the answers a programme of their own would (see [Dominated
+states](#dominated-states-which-is-what-keeps-this-small)).
 
 `validate_lifted_cover_cut` builds the programme and answers the only question
 worth asking of a candidate cut; `derive_lifted_cover_cut` emits it. Layer `i`
@@ -349,7 +352,7 @@ small whatever the capacities are. But "measured" is not "bounded", so
 separately from one that does not hold. It is never reached in the test suite,
 and the sweep asserts that.
 
-**Finding the frontier is where the time goes** on 120-task instances (#1255).
+**Finding the frontier was where the time went** on 120-task instances (#1255).
 The first version asked every pair of states in a layer whether one covers the
 other. Over four resources about seven states in ten survive, so that is
 quadratic in a layer that does not shrink, and on PSPLib J120 the pass took
@@ -360,20 +363,59 @@ leaves the next member out, together with the part of `A` that can take the
 member, shifted by its demands and coefficient. Both halves are antichains, so
 no state is covered by another from its own half, and a state in both halves
 is covered by nothing. So each state is tested only against the other half.
-Within that half, only the states with at least its profit can cover it, and
-with each half sorted by profit those form a prefix. The states kept are
-exactly the ones the all-pairs sweep keeps, in the same order, so the
-certificates, the budget's count and the cuts are all unchanged.
-`lifted_cover_cut_test` compares the two sweeps layer by layer on random
-programmes of up to fourteen members and four rows.
 
-Measured over all 2,040 PSPLib instances with proofs off, every counter and
-note is identical before and after. The pass takes about a third of the
-instructions on J90 and J120. On J120 the slowest instance falls from 412 s to
-83 s, and the 16 instances over two minutes fall to none, measured 48 at a
-time. On `J120_59_6` serially it is 48.7 s against 12.0 s. That is still not
-"well under a second": a layer over four resources stays wide whichever way
-its frontier is found.
+That test is a dominance question. Give a state one coordinate per resource
+and one more for its profit, negated, and covering is being no larger in every
+coordinate. The states no larger than a given one in a coordinate are a prefix
+of the half sorted on it, and the ones covering it are the intersection of
+those prefixes. `CoverIndex` keeps each prefix as a bitset, so the test is an
+`AND` over a few hundred words rather than a walk through the half. Weights
+are sums of a handful of demands and take few values, so there are few
+prefixes to keep. The states kept are exactly the ones the all-pairs sweep
+keeps, in the same order, so the certificates, the budget's count and the cuts
+are all unchanged. `lifted_cover_cut_test` compares the two sweeps layer by
+layer on random programmes of up to fourteen members and four rows.
+
+**The larger saving was not rebuilding the programme for every task.**
+Lifting a cover asks one lifting subproblem per remaining task, and from one
+question to the next only two things change:
+- the support grows by the task just lifted, which goes on the end;
+- the capacities are the full ones less the asking task's demands.
+
+So `LiftedCoverCutLifting` builds one programme under the full capacities, a
+layer at a time as questions need it, and reads each question's programme off
+it. That is exact because no demand or coefficient is negative. A state that
+fits the residual capacities got there through states that all fit, and
+anything covering it uses less and so fits too. So the residual programme's
+layer is the shared one's, less the states that do not fit, for every layer
+the residual programme builds before it stops. The shared programme keeps no
+state at or above the ceiling, and whether a question reaches one is read off
+the layer before.
+
+So every question gets the answer, the ceiling and the state count that a
+programme of its own would, and the state budget binds exactly where it did.
+A frontier depends on which rows it is taken over, so there is one shared
+programme per set of binding rows. `lifted_cover_cut_test` lifts random covers
+both ways and compares every answer, over-budget verdicts and ceilings
+included.
+
+Neither change moves a counter. Over 3,984 instances, every counter and note
+is identical before and after, with proofs off. The instances are:
+- all 2,894 single-mode RCPSP instances to hand (PSPLib, AT, BL, KSD15-d,
+  la_x, Pack and Pack-d);
+- the 1,090 multi-mode j10 and j20 instances.
+
+A build that also asked `lifted_cover_cut_optimum` every lifting subproblem
+found no disagreement on any of them.
+
+What they cost, after #1291 against after #1408:
+- **Instructions:** the pass takes 0.070× on J120, 0.084× on J90, 0.39× on
+  J60 and 0.28× on AT. Where the layers are narrow it moves little: 0.91×
+  on J30, 0.97× on Pack and 1.00× on the multi-mode instances.
+- **Wall time, 96 at a time:** J120's slowest instance falls from 82 s to
+  2.3 s, and the 54 instances over ten seconds to none.
+- **Serially:** `J120_59_6` takes 11.9 s against 1.07 s. It took 57 s
+  before #1277.
 
 The dropped states are never named in the proof. A transition landing on one is
 emitted straight into the state that covers it, which is valid for the same

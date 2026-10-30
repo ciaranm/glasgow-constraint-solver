@@ -466,17 +466,15 @@ auto MDD::prepare(Propagators &, State & initial_state, ProofModel * const) -> b
     _graph_idx = initial_state.add_constraint_state(MDDGraph(static_cast<long>(_vars.size()), _nodes_per_layer));
     _dead_cache_idx = initial_state.add_constraint_state(DeadCache{vector<set<long>>(_nodes_per_layer.size())});
 
-    // Per-layer OPB alphabet: union of transition-keys for that layer and each variable's
-    // initial domain. Values in the domain but with no transition need explicit "no-transition"
-    // constraints so the RUP-justified propagator pruning verifies.
+    // Per-layer OPB alphabet: the variable's initial domain. Values in the domain but with no
+    // transition need explicit "no-transition" constraints so the RUP-justified propagator
+    // pruning verifies. An edge on a value outside the domain gets no row: it would only say
+    // something about a literal that is already false, nothing in the proof uses it, and
+    // cake_pb_cp's encoding has no such row either.
     _opb_alphabet.assign(_vars.size(), {});
-    for (size_t i = 0; i < _vars.size(); ++i) {
-        for (const auto & node_map : _layer_transitions[i])
-            for (const auto & [val, _] : node_map)
-                _opb_alphabet[i].insert(val);
+    for (size_t i = 0; i < _vars.size(); ++i)
         for (const auto & val : initial_state.each_value_immutable(_vars[i]))
             _opb_alphabet[i].insert(val);
-    }
 
     return true;
 }
@@ -489,7 +487,10 @@ auto MDD::define_proof_model(ProofModel & model, const State &) -> void
         WPBSum exactly_1_true{};
         flags.emplace_back();
         for (long q = 0; q < _nodes_per_layer[idx]; ++q) {
-            flags[idx].emplace_back(model.create_proof_flag(format("mddnode{}is{}", idx, q)));
+            // cake_pb_cp names the "at node q in layer idx" flag x[id][idx_q][st];
+            // match it so the proof's state literals line up with cake's OPB.
+            flags[idx].emplace_back(
+                model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(idx), static_cast<long long>(q)}, "st"));
             exactly_1_true += 1_i * flags[idx][q];
         }
         model.add_constraint(move(exactly_1_true) == 1_i);
