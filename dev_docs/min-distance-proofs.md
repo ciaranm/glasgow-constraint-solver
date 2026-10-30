@@ -247,6 +247,14 @@ mirrors `justify_all_different_hall_set_or_violator` from `justify.cc`:
    values. `ThenRUP::Yes` then RUPs `z <= t-1` (or `false` on the contradiction
    path) under the reason, discharging those leftover literals.
 
+   Over a definition range wider than 100 values the at-least-one is an
+   interval cover (`..._over_cover`), which names only the values it is given.
+   Each position's cover is given exactly the sites the at-most-ones name for
+   it — every `a` in `A` with `i` in `positions_at[a]` — *including* root sites
+   the position has since lost. Leaving a lost site out (#1224) leaves its
+   `~[x_i=a]` uncancelled; that term is true under the reason, and the division
+   by `C` rounds it into the conclusion, which then no longer forces `g`.
+
 **Why the reason is the x domains.** `generic_reason(x)` (all `x` domains) is
 the reason; `z`'s own bound is *not* in it (the conclusion is about `z`). The
 current domains define `A` and, crucially, the leftover root-domain literals

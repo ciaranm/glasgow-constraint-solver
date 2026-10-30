@@ -748,28 +748,28 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                     if (auto line = emit_am1(lits))
                         final_pol.add(*line);
                 }
-                vector<Integer> still_possible;
+                // Each position's at-least-one names exactly the literals the
+                // at-most-ones above name for it: [x_i = a] for every a in A whose
+                // positions_at holds i. Every ~[x_i = a] there then cancels against
+                // a +[x_i = a] here, as it does against the per-value form. Naming
+                // only the sites x_i can still take is not enough: a site in x_i's
+                // root domain that it has since lost would leave its ~[x_i = a] in
+                // the sum, true under the reason, and the division by sum_c then
+                // rounds that slack into the conclusion and loses g (#1224). What
+                // is left over instead is +[x_i = a] for those lost sites, and the
+                // runs the rest of the definition range goes in as, all of which
+                // generic_reason(x) rules out.
+                vector<vector<Integer>> named(p);
+                for (const auto & site : A)
+                    for (auto pos : positions_at[static_cast<std::size_t>(site.raw_value)])
+                        named[pos].push_back(site);
                 for (std::size_t i = 0; i < p; ++i)
-                    if (! is_constant_variable(x[i])) {
+                    if (! is_constant_variable(x[i]))
                         // A constant position contributes a fixed selection whose
                         // [x_i = c] literal folds to the constant 1 in the pol
                         // arithmetic (and to 0 in the ~[x_i = c] at-most-one terms),
                         // so it needs no at-least-one line: it cancels exactly.
-                        //
-                        // Of the active site set, only the sites this position can
-                        // still take have to be named: the at-most-ones above are
-                        // over [x_pos = site] for sites in A, and A is the *union* of
-                        // the positions' domains, so naming all of it would name
-                        // sites this position has already lost. The runs the rest of
-                        // the definition range goes in as are ruled out by
-                        // generic_reason(x). sum_c counts at-most-one members, not
-                        // at-least-one terms, so the division is unaffected.
-                        still_possible.clear();
-                        for (const auto & site : A)
-                            if (state.in_domain(x[i], site))
-                                still_possible.push_back(site);
-                        final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(x[i], still_possible));
-                    }
+                        final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value_over_cover(x[i], named[i]));
                 final_pol.divide_by(sum_c);
                 final_pol.emit(*logger, ProofLevel::Temporary);
             };
