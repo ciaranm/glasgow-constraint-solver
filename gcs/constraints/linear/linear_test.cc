@@ -5,6 +5,7 @@
 
 #include <util/enumerate.hh>
 
+#include <compare>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -399,6 +400,102 @@ auto run_partial_sum_order_test(bool proofs, const string & mode) -> void
         }
 }
 
+// The reified forms decide their condition from the minimum and maximum the
+// sum can take, which must not throw for the same reasons (#1298). Two shapes:
+// run_partial_sum_order_test's, whose total is small but whose partial sums
+// are not, and 2^40 * a + 2^40 * b with a and b in {0, 2^22}, whose maximum,
+// 2^63, only the comparison with the right-hand side 2^50 needs. With a proof,
+// the half-reified rows genuinely need a reification constant past the end of
+// Integer, which the rule allows, so these run without one.
+auto run_reified_wide_sum_test(const string & mode) -> void
+{
+    auto post = [&](Problem & p, const WeightedSum & sum, Integer value, IntegerVariableCondition cond) {
+        if (mode == "eq_if")
+            p.post(LinearEqualityIf{sum, value, cond});
+        else if (mode == "eq_iff")
+            p.post(LinearEqualityIff{sum, value, cond});
+        else if (mode == "ne_if")
+            p.post(LinearNotEqualsIf{sum, value, cond});
+        else if (mode == "ne_iff")
+            p.post(LinearNotEqualsIff{sum, value, cond});
+        else if (mode == "le_if")
+            p.post(LinearLessThanEqualIf{sum, value, cond});
+        else if (mode == "le_iff")
+            p.post(LinearLessThanEqualIff{sum, value, cond});
+        else if (mode == "le_notif")
+            p.post(LinearLessThanEqualNotIf{sum, value, cond});
+        else if (mode == "ge_if")
+            p.post(LinearGreaterThanEqualIf{sum, value, cond});
+        else if (mode == "ge_iff")
+            p.post(LinearGreaterThanEqualIff{sum, value, cond});
+        else
+            throw UnimplementedException{};
+    };
+
+    // Whether r may take rv, given whether the comparison is less, equal or
+    // greater.
+    auto allowed = [&](std::strong_ordering cmp, int rv) {
+        bool holds = (mode.starts_with("eq") && cmp == 0) || (mode.starts_with("ne") && cmp != 0) || (mode.starts_with("le") && cmp <= 0) ||
+            (mode.starts_with("ge") && cmp >= 0);
+        if (mode.ends_with("_iff"))
+            return (rv == 1) == holds;
+        else if (mode.ends_with("_notif"))
+            return rv == 0 || ! holds;
+        else
+            return rv == 0 || holds;
+    };
+
+    {
+        print(cerr, "linear {} reified partial sum order:", mode);
+        cerr << flush;
+        const auto A = Integer::min_bounded_value(), B = Integer::max_bounded_value();
+        Problem p;
+        WeightedSum sum;
+        for (int i = 0; i < 9; ++i)
+            sum += 1_i * p.create_integer_variable(B, B);
+        for (int i = 0; i < 9; ++i)
+            sum += 1_i * p.create_integer_variable(A, A);
+        auto z = p.create_integer_variable(-2_i, 2_i);
+        sum += 1_i * z;
+        auto r = p.create_integer_variable(0_i, 1_i);
+        post(p, sum, 0_i, r == 1_i);
+
+        set<tuple<int, int>> expected, actual;
+        for (int v = -2; v <= 2; ++v)
+            for (int rv : {0, 1})
+                if (allowed(v <=> 0, rv))
+                    expected.emplace(v, rv);
+        println(cerr, " expecting {} solutions", expected.size());
+        solve_for_tests(p, nullopt, actual, tuple{z, r});
+        check_results(nullopt, expected, actual);
+    }
+
+    {
+        print(cerr, "linear {} reified wide total:", mode);
+        cerr << flush;
+        const auto top = Integer{1LL << 22};
+        Problem p;
+        auto a = p.create_integer_variable(vector{0_i, top});
+        auto b = p.create_integer_variable(vector{0_i, top});
+        auto r = p.create_integer_variable(0_i, 1_i);
+        WeightedSum sum;
+        sum += Integer{1LL << 40} * a;
+        sum += Integer{1LL << 40} * b;
+        post(p, sum, Integer{1LL << 50}, r == 1_i);
+
+        // In units of 2^40, the comparison is a + b against 2^10.
+        set<tuple<long long, long long, int>> expected, actual;
+        for (long long av : {0LL, 1LL << 22})
+            for (long long bv : {0LL, 1LL << 22})
+                for (int rv : {0, 1})
+                    if (allowed((av + bv) <=> (1LL << 10), rv))
+                        expected.emplace(av, bv, rv);
+        println(cerr, " expecting {} solutions", expected.size());
+        solve_for_tests(p, nullopt, actual, tuple{a, b, r});
+        check_results(nullopt, expected, actual);
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -566,6 +663,9 @@ auto main(int argc, char * argv[]) -> int
 
             if (view_wrap_config_is_effectively_bare(view_cfg, n_positions) && (mode == "eq" || mode == "ne" || mode == "le" || mode == "ge"))
                 run_partial_sum_order_test(proofs, mode);
+            if (view_wrap_config_is_effectively_bare(view_cfg, n_positions) && ! proofs &&
+                (mode.ends_with("_if") || mode.ends_with("_iff") || mode == "le_notif"))
+                run_reified_wide_sum_test(mode);
         }
     }
 
