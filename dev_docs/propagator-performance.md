@@ -447,6 +447,15 @@ hand, and `all_different_except`'s failure is
 which would need `propagate_gac_all_different` to return a verdict to its five
 callers. Both are mechanical; neither is one line.
 
+`disjunctive_strict` is converted (#1405), and it was worth far more than
+its single survey model suggests. The survey cannot reach its rules, but its
+default ones, time-tabling and detectable precedences, are reached, and each
+of their pushes can empty a domain. On `ft06 --deadline 54` with the default
+rules, 47% of the instructions were the unwinder, and converting every push
+took the run from 337.2G instructions to 167.4G on the same search, with
+`libgcc_s` at 0%. A propagator whose pushes are the usual way a node dies
+belongs on this list whatever the survey says.
+
 **Per-throw cost, measured on an identical completed search** (`gc_4_8`, 322 378
 clause conflicts): 5.65G instructions and 1.85G cycles, i.e. **17 500
 instructions and about 2.4 us** each. That is the number to multiply a

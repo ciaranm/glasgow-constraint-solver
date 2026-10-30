@@ -742,8 +742,8 @@ Facts that hold for every rule:
   the four `shapes.cc` fixtures were re-run at `0a5b4ec6`. Three
   rules are conflicts that call `contradiction_or_stop()` and assert
   `¬reason`: mandatory overlap, overload, and the strict zero-length check.
-  Since #1299 they report the failure without unwinding, which on `ft06` cost
-  more than the check itself. Every other
+  Since #1299 they report the failure without unwinding, and since #1405
+  so does every push (`infer_*_or_stop`). Every other
   rule asserts `conclusion ∨ ¬reason`. A failed push takes that shape too,
   and is closed by the backtrack.
 - **Offline reconstructibility, for every rule: `search`.** The baseline
@@ -1578,6 +1578,16 @@ profile of the same run:
 - **Exception unwinding:** about 15%, in `__gxx_personality_v0`,
   `_Unwind_*` and the unnamed `libstdc++` addresses, from 5.4 million failures.
 - **`State::bounds`:** 3%.
+
+That unwinding is gone. Measured by DSO, as
+[`propagator-performance.md`](../propagator-performance.md) says to, it was
+47% of the default arm's `instructions:u` on `ft06 --deadline 54` at
+`73d4f444`, nearly all from pushes that empty a domain. #1299 stopped the
+three conflict rules throwing, and #1405 every push. The presence
+falsification still throws, because it fixes an undecided presence and so
+cannot fail. On the same 5,450,366 recursions, the default arm went from
+387.8·10⁹ instructions at `73d4f444` to 167.4·10⁹, with `libgcc_s` at 0%.
+The time-tabling comparison below predates both.
 
 Turning `time_table` off gives the same recursion count in fewer
 instructions. At `0a5b4ec6`, in `jss_gcs.cc` (below), whose default arm
