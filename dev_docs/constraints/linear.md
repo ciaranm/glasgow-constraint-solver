@@ -74,7 +74,7 @@ into line with both at `0a5b4ec6`.
 | Issue | Fixed by | What changed here |
 |---|---|---|
 | #1035, trivial reason literals | #1055 | the bound pushes' reason leaves out a term at its declared bound when the term's bits imply that bound, when its boundary pin is already a unit, or, above `AssertionLevel::Links`, when it would have been pinned; the `pol`s leave out a bound the bits imply, no longer divide by the changed variable's coefficient, and are not emitted when no bound is added. The three things to know, Shared code, [Proof-time state](#proof-time-state), [Interval efficiency](#interval-efficiency) 2, the JP 3.15 departures, rules 1, 8 and 9, [Tests](#tests), [Benchmarks](#benchmarks-and-examples), [Proof performance](#proof-performance), [Known limitations](#known-limitations), Next step 1, [Prior art](#prior-art) and the [commentary](#developer-commentary) |
-| — (the integer-range arc) | #1214, #1215, #1220 | inputs must lie in `±(2⁶⁰ − 1)`, and a coefficient or right-hand side outside it is refused at construction, as is a condition value past one above the top; the sweeps' running sums are exact 128-bit `WideSum`s, so there only a total that does not fit throws, but the reified inequality's undecided check still sums in `Integer`; the fold state is 24 bytes: [Robustness and limits](#robustness-and-limits), [Mutable state](#mutable-state-and-incrementality), [Tests](#tests), [Known limitations](#known-limitations), Next step 4 |
+| — (the integer-range arc) | #1214, #1215, #1220 | inputs must lie in `±(2⁶⁰ − 1)`, and a coefficient or right-hand side outside it is refused at construction, as is a condition value past one above the top; the sweeps' running sums are exact 128-bit `WideSum`s, as is the reified inequality's undecided check since #1298, and since #244 the sweeps narrow only each term's remainder, so no total throws; the fold state is 24 bytes: [Robustness and limits](#robustness-and-limits), [Mutable state](#mutable-state-and-incrementality), [Tests](#tests), [Known limitations](#known-limitations), Next step 4 |
 | — (#1200, #1206) | #1208 | 14 `…_view_mixed_late` lanes ([Tests](#tests)) |
 | — (front-end integer range) | #1217 | four `lin_strict_*_edge` chain cases ([Cake conformity](#cake-conformity)) |
 
@@ -598,8 +598,9 @@ undecided reified equality or a `Tabulated` equality does not.
 - **Running sums are exact** since #1220: the lower and inverse sums, the
   incremental `fixed_lower`, `tidy_up_linear`'s constant, the not-equals and
   undecided-equality accumulators, `Tabulated`'s callbacks and the slack cover
-  are 128-bit `WideSum`s, and there only a total that does not fit throws.
-  Before it, nine terms at the top of the range and nine at the bottom, summed
+    are 128-bit `WideSum`s, or, for the sweeps since #244, native sums that
+  are used only when they are known to be safe (below). Before #1220, nine
+  terms at the top of the range and nine at the bottom, summed
   in that order, threw though their total was 0. The reified inequality's
   undecided check was missed then and caught up in #1298: it sums its minimum
   and maximum in `WideSum` too and never narrows them, since only the
@@ -607,8 +608,26 @@ undecided reified equality or a `Tabulated` equality does not.
   (two terms of coefficient `2⁴⁰` over `0..2²²`) decides rather than throws.
   With proofs on, these reified forms throw the model writer's "cannot size
   the reification constant" first, which is allowed. Solving `c·x = r` uses
-  `WideSum::divided_exactly_by`. The per-term remainder arithmetic is
-  unchanged: saturating it would be unsound.
+    `WideSum::divided_exactly_by`.
+- **The sweeps choose their arithmetic once a sweep** (#244, `SmallSum` in
+  `propagate.cc`). Each sums its terms' least contributions natively, with
+  an overflow flag and a mask of the magnitudes. When the total, every
+  contribution and the right-hand side lie within `2⁶⁰` of zero, nothing
+  the sweep forms from them, whether a sum less one term, a remainder or a
+  rounded quotient, can pass `2⁶³`, and it runs the `Integer` loop it
+  always has. Otherwise it sums exactly in `WideSum`s, and
+  `narrow_remainder` turns each term's remainder into an `Integer`: below
+  the term's least contribution it becomes that least less one (a wipeout
+  either way, whose literal is one past the term's bound rather than at a
+  value far outside its domain), and at or above its greatest contribution
+  there is nothing to infer; in between it fits. The justification never
+  reads the remainder: its `pol` derives the true bound, which implies the
+  inferred one. Saturating instead would be unsound, since dividing a
+  saturated remainder by a large coefficient gives too tight a bound.
+  Checking per term instead cost 10 to 25% more instructions on
+  `magic_series 100` and `magic_square 5`, whose sweeps are a dozen or so
+  instructions a term; the per-sweep choice measured −0.1% and +1.6%, with
+  identical search.
 - **Overflow**: coefficient × bound products are checked `Integer` arithmetic
   and **throw** `IntegerOverflow` on overflow; they never wrap. Measured at
   `0a5b4ec6`: with coefficients of `2⁴⁰` and bounds of `2²⁹` to `2³⁰`, the
@@ -618,16 +637,17 @@ undecided reified equality or a `Tabulated` equality does not.
   coefficient, whose forward sweep multiplies it by an upper bound. With
   proofs on, the model writer refuses those rows first, before search, with an
   `IntegerOverflow` that says which quantities may be to blame (#852).
-  **A total past `2⁶³` throws too**, even when every product fits: two terms
-  of coefficient `2⁴⁰` over `[2²², 2²² + 1]` make the `≤` and the equality
-  throw `a sum does not fit in an Integer` (`WideSum::narrow_or_throw`, from
-  the lower sum, `propagate.cc:260`), and with proofs on that throw still
-  comes from the propagator, not the writer. Over `0..2²²` the `≤` and the
-  equality solve. **The propagator's throws name no constraint**, and a
-  total's names no product either. A sweep's product or lower sum past `2⁶³`
-  is a value the sweep needs, so under `integer-ranges.md` it is a limit an
-  arithmetic constraint may have, not a bug; the reified inequality's
-  undecided sums above are the exception.
+  **A total past `2⁶³` no longer throws** (#244): two terms of coefficient
+  `2⁴⁰` over `[2²², 2²² + 1]` against `max_bounded_value()`, whose least sum
+  is exactly `2⁶³`, used to make the `≤`, the `≥` and the equality throw `a
+  sum does not fit in an Integer` from the lower sum; now the `≤` and the
+  equality find no solution and the `≥` four, with proofs too. This is what
+  `fzn-glasgow`'s unbounded `var int`s, given the whole bounded range, met
+  in a sum of more than eight of them (`work-task-variation`, #244, #250).
+  **The propagator's product throws name no constraint**. A sweep's
+  product past `2⁶³` is a value the sweep needs, so under
+  `integer-ranges.md` it is a limit an arithmetic constraint may have, not a
+  bug.
 - **Negative values and zero**: negative coefficients are first-class
   throughout, and the chain has negative-coefficient and sign-bit lanes. A
   zero coefficient is dropped by `tidy_up_linear`.
@@ -1381,12 +1401,10 @@ reification condition cannot be written at all (#310).
   on a model with many long reified inequalities (#1034; at `00797a97`, and
   2.3× per node at `0a5b4ec6`). It was 1.6–3× faster where there are a few
   long sums, at `00797a97`.
-- **A coefficient times a bound, or a sum of them, past `2⁶³` throws**
-  `IntegerOverflow` from inside propagation, naming no constraint (a product's
-  message names the product; a total's names nothing). With proofs on, the
-  model writer refuses a row whose products are too large first; a total
-  past `2⁶³` in the `≤` or the equality still throws from the propagator,
-  while for a reified inequality the writer refuses first. Inputs outside
+- **A coefficient times a bound past `2⁶³` throws** `IntegerOverflow` from
+  inside propagation, naming the product but no constraint. With proofs on,
+  the model writer refuses a row whose products are too large first. (A sum
+  of products past `2⁶³` no longer throws, since #244.) Inputs outside
   `±(2⁶⁰ − 1)` are refused at construction (#1215).
 - **A reified equality waits for its last unfixed term** before deciding its
   condition, even when its bounds already exclude the value. This costs nothing

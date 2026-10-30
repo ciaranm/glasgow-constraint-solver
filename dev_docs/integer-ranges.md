@@ -195,6 +195,10 @@ to 128 bits, and narrow only the total: `narrow()` says whether it fits,
 `narrow_or_throw("what")` throws if a needed total does not, and
 `divided_exactly_by` solves `c·x = total` for an `Integer` `x` even when the
 total does not fit. Linear's sums, Knapsack's caps and difference logic's
-cycle evidence use it. A saturating sum is *not* a substitute where the value
+cycle evidence use it. Linear's sweeps use it only when a cheap check
+says their native sums might overflow, and then narrow no total at all, only
+each term's remainder, which they clamp rather than saturate: below the
+term's least contribution, any remainder is a wipeout, and at or above its
+greatest contribution there is nothing to infer (#244). A saturating sum is *not* a substitute where the value
 feeds an inference: dividing a saturated remainder by a large coefficient gives
 a bound tighter than the true one.

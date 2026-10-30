@@ -1,3 +1,4 @@
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
@@ -5,6 +6,7 @@
 
 #include <util/enumerate.hh>
 
+#include <bit>
 #include <compare>
 #include <cstdlib>
 #include <functional>
@@ -496,6 +498,74 @@ auto run_reified_wide_sum_test(const string & mode) -> void
     }
 }
 
+// Nine terms over the whole bounded range: their least sum, 9 * min, and
+// greatest, 9 * max, both pass the end of Integer, as do the remainders the
+// sweeps divide. That is fzn-glasgow's unbounded var int (#244, #250), and the
+// answer needs none of those values: a remainder past the top infers nothing,
+// and one past the bottom is a wipeout. The linear constraint is posted first,
+// so it sees the full range before the comparisons cut each term to 0..1.
+// Then a total past the bottom of Integer: nine terms at the top of the range
+// summed against 0, so the constraint fails at the root.
+auto run_wide_total_test(bool proofs, const string & mode) -> void
+{
+    const auto A = Integer::min_bounded_value(), B = Integer::max_bounded_value();
+    for (auto threshold : {std::optional<std::size_t>{}, std::optional<std::size_t>{0}})
+        for (bool infeasible : {false, true}) {
+            print(cerr, "linear {} wide total{}{}{}", mode, infeasible ? " infeasible" : "", threshold ? " incremental" : "",
+                proofs ? " with proofs:" : ":");
+            cerr << flush;
+
+            Problem p;
+            auto x = infeasible ? (mode == "ge" ? p.create_integer_variable_vector(9, A, A + 1_i) : p.create_integer_variable_vector(9, B - 1_i, B))
+                                : p.create_integer_variable_vector(9, A, B);
+            auto z = p.create_integer_variable(0_i, 1_i);
+            WeightedSum sum;
+            for (auto & v : x)
+                sum += 1_i * v;
+            sum += -1_i * z;
+
+            if (mode == "eq") {
+                LinearEquality c{sum, 0_i};
+                c.with_incremental_threshold(threshold);
+                p.post(c);
+            }
+            else if (mode == "le")
+                p.post(LinearLessThanEqual{sum, 0_i, threshold});
+            else
+                p.post(LinearGreaterThanEqual{sum, 0_i, threshold});
+            if (! infeasible)
+                for (auto & v : x) {
+                    p.post(GreaterThanEqual{v, 0_c});
+                    p.post(LessThanEqual{v, 1_c});
+                }
+
+            // With x in {0, 1}^9 and z in {0, 1}: sum x = z, sum x <= z, or
+            // sum x >= z.
+            set<tuple<int, int>> expected, actual;
+            if (! infeasible)
+                for (int mask = 0; mask < 512; ++mask)
+                    for (int zv : {0, 1}) {
+                        int n = std::popcount(static_cast<unsigned>(mask));
+                        if ((mode == "eq" && n == zv) || (mode == "le" && n <= zv) || (mode == "ge" && n >= zv))
+                            expected.emplace(mask, zv);
+                    }
+            println(cerr, " expecting {} solutions", expected.size());
+
+            auto proof_name = proofs ? make_optional("linear_test_wide_total_" + mode + (infeasible ? "_infeasible" : "") + threshold_proof_suffix() +
+                                           (std::getenv("GCS_LINEAR_SLACK_WATCH_THRESHOLD") ? "_slack" : "") + (threshold ? "_incremental" : ""))
+                                     : nullopt;
+            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                int mask = 0;
+                for (const auto & [i, v] : enumerate(x))
+                    mask |= static_cast<int>(s(v).raw_value) << i;
+                actual.emplace(mask, static_cast<int>(s(z).raw_value));
+                return true;
+            }},
+                proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+            check_results(proof_name, expected, actual);
+        }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -666,6 +736,8 @@ auto main(int argc, char * argv[]) -> int
             if (view_wrap_config_is_effectively_bare(view_cfg, n_positions) && ! proofs &&
                 (mode.ends_with("_if") || mode.ends_with("_iff") || mode == "le_notif"))
                 run_reified_wide_sum_test(mode);
+            if (view_wrap_config_is_effectively_bare(view_cfg, n_positions) && (mode == "eq" || mode == "le" || mode == "ge"))
+                run_wide_total_test(proofs, mode);
         }
     }
 
