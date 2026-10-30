@@ -49,7 +49,7 @@ namespace gcs
         std::vector<Integer> _symbols;
         std::shared_ptr<Bridge> _bridge;
         innards::ConstraintStateHandle _graph_idx;
-        std::set<Integer> _opb_alphabet;
+        std::vector<std::set<Integer>> _opb_alphabet;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;

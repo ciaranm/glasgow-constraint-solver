@@ -1381,18 +1381,20 @@ propagation work in #833.
 | #845 | `Power`, `PowerTable` | O(D) | a row of an enumerated relation | no — it *is* a table |
 
 **`Regular` and `MDD` are the easy ones, and the fix needs no checker feature.**
-Both deliberately widen their OPB alphabet beyond the transition keys to the
-variables' initial domains — `Regular` to *every value of every variable's
-initial domain* (`regular.cc:602-605`), `MDD` per layer, to that layer's own
-variable's domain (`mdd.cc:470-477`) — purely so that a value with no
-transition gets an explicit `(x_i ≠ val) ∨ ¬(state_i = q)` row — the comment says
+Both take each position's OPB alphabet to be that position's variable's
+initial domain (`regular.cc:598-608`, `mdd.cc:469-477`) — purely so that a value
+with no transition gets an explicit `(x_i ≠ val) ∨ ¬(state_i = q)` row — the
+comment says
 it is "what veripb needs to verify the propagator's RUP-justified pruning of
 those values". But a value outside the transition keys entirely has no transition
 at *any* state, so the honest statement about it is not one row per state, it is
 `x_i ∈ alphabet`. The complement of a k-element key set inside a domain is at most
 k+1 intervals, so that is O(|alphabet|) range rows instead of O(states × D), with
 no dependence on the width at all. The measured 18042 → 180042 rows for a
-*two-state, one-symbol* automaton is all no-transition rows.
+*two-state, one-symbol* automaton is all no-transition rows. One more
+constraint on that fix: `cake_pb_cp` encodes `regular` with one row per state
+and domain value, so range rows would leave our OPB no longer matching cake's
+and break the verified chain unless cake changes too.
 
 What needs checking before believing that: whether the propagator's RUP pruning
 of an out-of-alphabet value still goes through against range rows. A range row

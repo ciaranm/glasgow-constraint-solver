@@ -75,8 +75,7 @@ there is no separate "true" node, and any subset of the last layer can accept.
 
 The constructor (`mdd.cc:438–454`) checks that `nodes_per_layer` has `n + 1`
 entries and starts with 1, that `layer_transitions` has `n` layers and each has
-at least `nodes_per_layer[i]` node maps (extra maps are never read as nodes,
-though their keys still enter the OPB alphabet, `mdd.cc:472–474`), and every
+at least `nodes_per_layer[i]` node maps (extra maps are never read), and every
 transition value against `±(2⁶⁰ − 1)` (`require_bounded`, since #1215). It does
 **not** check targets or terminals against the node counts (#1333; see
 [Robustness and limits](#robustness-and-limits)).
@@ -230,12 +229,14 @@ exactly-one rows half-reified on the condition, as `Regular`'s would.
 
 ### OPB encoding
 
-With `N_i = nodes_per_layer[i]`, and `A_i` the layer's **alphabet**, the union
-of layer `i`'s transition keys and `vars[i]`'s declared domain
-(`mdd.cc:470–477`):
+With `N_i = nodes_per_layer[i]`, and `A_i` the layer's **alphabet**, the
+values of `vars[i]`'s declared domain (`mdd.cc:469–477`). An edge on a value
+outside the domain gets no row: the row would only mention a literal that is
+already false, nothing in the proof uses it, and naming it would define order
+atoms that `cake_pb_cp`'s encoding does not have.
 
 ```
-state[i][q] for i = 0..n, q < N_i              proof flags mddnode<i>is<q>
+state[i][q] for i = 0..n, q < N_i              proof flags x[id][<i>_<q>][st]
 for i = 0..n:          Σ_q state[i][q] = 1                       (two rows)
                        state[0][0] ≥ 1
                        Σ_{f ∈ accepting} state[n][f] ≥ 1
@@ -265,7 +266,7 @@ unassigned.
   per `(q, v)` with no transition, so `3·E + 2·(Σ N_i |A_i| − E)` for `E`
   transitions;
 - plus the **definitions of the equality atoms** the chains name, two rows per
-  value of `A_i` that lies inside `vars[i]`'s domain, and the order atoms they
+  value of `A_i`, and the order atoms they
   are built from, whose rows carry one term per bit. A 0/1 variable needs none,
   since its atoms are its bit.
 
@@ -296,9 +297,12 @@ by ID; every derivation is RUP over the database.
 
 ### Cake conformity
 
-None. `cake_pb_cp` has no `mdd` keyword (its binary names `table`, `regular`
-and the `lex_` forms among others), so there is no chain case. The `.scp`
-writer's `mdd` term is GCS's own grammar (`mdd.cc:557–595`: the variables,
+No chain case yet. The `cake_pb_cp` on CakePB's `develop` (at `6441df8`) has
+no `mdd` keyword; the CakePB developers have one in progress, which reads the
+`.scp` term below. Against their small cases the rows above are theirs, up to
+labels: the flag names and the alphabet (the declared domain, with no row for
+an edge outside it) were both changed to match after they reported the
+mismatches. The `.scp` writer's `mdd` term is GCS's own grammar (`mdd.cc:557–595`: the variables,
 `nodes_per_layer`, per layer and node a sorted `(symbol target)` list, and the
 terminals), and `gcs/scp_reader.cc:914–947` reads it back; `scp_reader_test` checks
 an enumeration and a write, read, write round trip.
@@ -329,11 +333,10 @@ an enumeration and a write, read, write round trip.
   backtrack. The Top scaffolding is never deleted.
   `decision-diagram-proof-strategies.md` explains why deleting it is not safe in
   general; for `MDD` nothing tries.
-- **Naming:** the flags are `f[k][mddnode<i>is<q>]`, with `k` a counter over
-  the whole model, so two `MDD`s' flags never collide but the name does not
-  carry the constraint ID. An external tool finds a constraint's flags by the
-  OPB comment `* constraint mdd <id>` that precedes its rows, or by rebuilding
-  the diagram from the `.scp` entry with that ID.
+- **Naming:** the flags are `x[id][<i>_<q>][st]`, the
+  `create_proof_flag(ConstraintID, {i, q}, "st")` form `Regular` uses, so they
+  carry the constraint ID and match the names `cake_pb_cp` gives its node
+  flags.
 - **In the OPB versus the proof:** every flag is in the OPB
   (`create_proof_flag` in `define_proof_model`); no auxiliary is introduced
   inside the proof.
@@ -346,8 +349,8 @@ an enumeration and a write, read, write round trip.
 
 `prepare()` (`mdd.cc:461–480`) allocates the two backtrackable slots, an empty
 `MDDGraph` and a `DeadCache` with one set per layer, and computes the OPB
-alphabets: one pass over each layer's maps, and one `std::set<Integer>` insert
-per declared domain value (`mdd.cc:470–477`). It does this **with proofs off as
+alphabets: one `std::set<Integer>` insert per declared domain value
+(`mdd.cc:469–477`). It does this **with proofs off as
 well**, where nothing reads the alphabet, and it is the largest per-value walk
 at the root then: two variables of `0..3·10⁶` take 3.45 s to the root at
 `86caad24` (`probes/widestale.cc 2 1 3000000 root`), and the fact-check's copy
@@ -756,8 +759,8 @@ support (#1352); `MDD`'s finds the one target by `find_transition`
     a 1 ~i[x[1]][eq1] 1 ~i[x[0]][ge0] 1 i[x[0]][ge3] 1 ~i[x[1]][ge0] 1 i[x[1]][ge3] 1 ~i[x[2]][ge0] 1 i[x[2]][ge3] >= 1::mdd:((constraint_id _1));
     ```
   - after the branch `x[0] = 2`, with `x[1]`'s 1 already gone (the cascade); at
-    `Off` the same inference is preceded by three lemmas, `¬mddnode1is1`,
-    `¬mddnode1is0` and `¬mddnode2is0`, each under the same reason:
+    `Off` the same inference is preceded by three lemmas, `¬x[_1][1_1][st]`,
+    `¬x[_1][1_0][st]` and `¬x[_1][2_0][st]`, each under the same reason:
     ```
     a 1 ~i[x[1]][eq2] 1 ~i[x[0]][eq2] 1 ~i[x[1]][ge0] 1 i[x[1]][ge3] 1 i[x[1]][eq1] 1 ~i[x[2]][eq0] >= 1::mdd:((constraint_id _1));
     ```

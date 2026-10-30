@@ -78,7 +78,7 @@ namespace gcs
         std::shared_ptr<Bridge> _bridge;
         innards::ConstraintStateHandle _graph_idx;
         innards::ConstraintStateHandle _dead_cache_idx;
-        std::set<Integer> _opb_alphabet;
+        std::vector<std::set<Integer>> _opb_alphabet;
 
         // Copy-style constructor used by clone(): takes the internal multi-target
         // representation (and the regex, if any) directly.

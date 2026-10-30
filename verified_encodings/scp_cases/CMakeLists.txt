@@ -383,9 +383,14 @@ add_scp_chain_test(lin_strict_lt_edge_iff_sat none)
 # sat is a parity DFA (an even number of 1s), unsat an automaton whose only
 # accepting state is unreachable in three steps, ternary_sat a sum-mod-3 DFA over
 # 0..2 -- a wider eq/ge ladder, exercising the bridge off a binary domain.
-add_scp_chain_test(regular_sat          none)
-add_scp_chain_test(regular_unsat        none)
-add_scp_chain_test(regular_ternary_sat  none)
+# narrow_domain_sat has symbols outside its variables' domains (#489): 0 under
+# X0 = 1, 1 and 2 above X1 = 0, and 2 in no domain at all. Cake encodes each
+# position over its own variable's domain only, so a row on such a symbol would
+# define order atoms past the domain that cake's OPB lacks.
+add_scp_chain_test(regular_sat               none)
+add_scp_chain_test(regular_unsat             none)
+add_scp_chain_test(regular_ternary_sat       none)
+add_scp_chain_test(regular_narrow_domain_sat none)
 
 # none (chain-only): disjunctive / disjunctive2d. The tasks [start, start+length)
 # (resp. rectangles [x,x+w) x [y,y+h)) pairwise do not overlap. The solver's
