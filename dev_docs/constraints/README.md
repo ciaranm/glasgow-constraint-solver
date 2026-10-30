@@ -835,7 +835,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   arithmetic of the incremental route and root simplification (potentials,
   reduced weights, keys, distances, and an untrailed potential that drifts
   down without bound) is plain `Integer`, and so are `difference_graph.cc`'s
-  Bellman-Ford bounds and cycle sums. Heavy chains, a
+  Bellman-Ford bounds and cycle sums (both since closed by decision: the
+  throws stay, and say they came from difference logic). Heavy chains, a
   chain with one redundant edge and a heavy negative cycle throw where the
   same rows as linears are refuted at once, through `--difference-logic`'s
   default too (`=====ERROR=====` from MiniZinc). Each issue lists the sites

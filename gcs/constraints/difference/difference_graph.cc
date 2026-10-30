@@ -42,6 +42,34 @@ using std::ranges::find_if;
 
 namespace
 {
+    // Wraps the initialiser or the propagator so that an IntegerOverflow from
+    // it says what overflowed. Potentials, Dijkstra distances, reduced weights,
+    // Bellman-Ford bounds and cycle weights are Integers, and a path or cycle
+    // of edges whose weights lie near the edge of the bounded range passes 2^63
+    // after a handful of edges, even where the answer needs no such value.
+    // Rather than carry every one of them wide through the incremental route's
+    // heaps and the simplification stage, that stands as the error, by
+    // decision as for Cumulative (#1371, #1372; dev_docs/integer-ranges.md),
+    // keeping the operation that overflowed.
+    auto explaining_overflow(auto f)
+    {
+        return [f = move(f)](const State & state, auto & inference, ProofLogger * const logger) mutable -> decltype(auto) {
+            try {
+                return f(state, inference, logger);
+            }
+            catch (const IntegerOverflow & e) {
+                string inner = e.what();
+                if (inner.starts_with("unexpected problem: "))
+                    inner.erase(0, string{"unexpected problem: "}.size());
+                throw IntegerOverflow{"difference logic (DifferenceConstraints, or the difference_logic presolver): a path, cycle or "
+                                      "potential does not fit in an Integer. Its shortest-path arithmetic sums edge weights along paths "
+                                      "and cycles, so weights near Integer::max_bounded_value() can be chained only a few times; see "
+                                      "dev_docs/integer-ranges.md (" +
+                    inner + ")"};
+            }
+        };
+    }
+
     // Publishes the simplification counters on the way out, whichever way out it
     // is.
     //
@@ -1293,9 +1321,9 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, Stat
     // in it writes OPB content --- but because the stage's classification of a
     // conditional edge reads the state, so the later it runs the more it knows.
     propagators.install_initialiser(
-        [nodes = graph.nodes, static_bounds = graph.static_bounds, disallowed_conditions = move(graph.disallowed_conditions),
-            edge_lines = graph.edge_lines, simplify = move(simplify), root_graph,
-            number_of_nodes](const State & state, auto & inference, ProofLogger * const logger) {
+        explaining_overflow([nodes = graph.nodes, static_bounds = graph.static_bounds, disallowed_conditions = move(graph.disallowed_conditions),
+                                edge_lines = graph.edge_lines, simplify = move(simplify), root_graph,
+                                number_of_nodes](const State & state, auto & inference, ProofLogger * const logger) {
             // A half-reified edge whose condition says `cond -> 0 <= d' with
             // d < 0 says `!cond', and saying so is a soundness obligation, not a
             // nicety: dropping the edge would licence solutions in which cond
@@ -1313,14 +1341,13 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, Stat
 
             run_difference_root_simplification(state, inference, logger, number_of_nodes, root_graph->arcs, root_graph->arc_conditions, edge_lines,
                 simplify, root_graph->round_bound);
-        },
+        }),
         InitialiserPriority::Expensive);
 
-    propagators.install(
-        constraint_id,
-        [nodes = move(graph.nodes), static_bounds = move(graph.static_bounds), edge_lines = move(graph.edge_lines), incremental = move(incremental),
-            memory = DifferencePropagatorMemory{}, trail_mark_handle, first_call_pending = true,
-            root_graph](const State & state, auto & inference, ProofLogger * const logger) mutable -> PropagatorState {
+    propagators.install(constraint_id,
+        explaining_overflow([nodes = move(graph.nodes), static_bounds = move(graph.static_bounds), edge_lines = move(graph.edge_lines),
+                                incremental = move(incremental), memory = DifferencePropagatorMemory{}, trail_mark_handle, first_call_pending = true,
+                                root_graph](const State & state, auto & inference, ProofLogger * const logger) mutable -> PropagatorState {
             auto & arcs = root_graph->arcs;
             auto & arc_conditions = root_graph->arc_conditions;
             auto & round_bound = root_graph->round_bound;
@@ -1451,6 +1478,6 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, Stat
             // (run_hole_snap_test in difference_constraints_test.cc pins this,
             // for both routes.)
             return PropagatorState::Enable;
-        },
+        }),
         triggers);
 }

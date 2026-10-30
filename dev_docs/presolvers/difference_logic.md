@@ -1746,11 +1746,11 @@ These are phrased as a user meets them:
      3.3 s.
 
    Measure serially before landing it.
-2. **The overflows** (#1371, #1372). These are `difference.md`'s to fix, in the
-   machinery. Which sites each shape meets, and what each fix covers, are those
-   issues'. Once they are fixed, the presolver configurations x shapes table
-   under [Robustness and limits](#robustness-and-limits) is the presolver's
-   test: every cell should solve. An earlier version of this document suggested
+2. **The overflows** (#1371, #1372). Closed by keeping the throws, which now
+   say they came from difference logic (see `difference.md`, Known
+   limitations), so the presolver configurations x shapes table under
+   [Robustness and limits](#robustness-and-limits) stands: its throwing cells
+   are a deliberate limit, not a defect. An earlier version of this document suggested
    seeding the potentials with the variables' bounds. It was never tried, and it
    is withdrawn.
 3. **#1309** (open): deduplicate the install's two scope loops (the scope and

@@ -542,9 +542,10 @@ namespace
         }
 
         // Over the boundary: nine such edges, each in range, whose path weight
-        // is past the end of Integer. Bellman-Ford forms it, and Integer
-        // refuses: an arithmetic constraint may throw when a sum it needs does
-        // not fit, but must never wrap.
+        // is past the end of Integer. The shortest-path arithmetic forms it,
+        // and Integer refuses: by decision (#1371, #1372), difference logic
+        // throws then, saying so, rather than carry its potentials and
+        // distances wide; but it must never wrap.
         {
             Problem p;
             auto x = p.create_integer_variable_vector(10, Integer::min_bounded_value(), big, "x");
@@ -557,7 +558,9 @@ namespace
             try {
                 static_cast<void>(solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }}));
             }
-            catch (const IntegerOverflow &) {
+            catch (const IntegerOverflow & e) {
+                if (! string{e.what()}.contains("difference logic"))
+                    throw UnexpectedException{string{"difference's IntegerOverflow does not say where it came from: "} + e.what()};
                 threw = true;
             }
             if (! threw)
@@ -580,6 +583,96 @@ namespace
     // - a chain of edges of weight B in both directions, which root
     //   simplification's all-pairs shortest paths summed past 2^63, though no
     //   path longer than a domain can make any edge redundant.
+    // The shapes of #1371 and #1372: chains and cycles of edges of weight
+    // -max_bounded_value(), with extra edges that put a sum past 2^63 into a
+    // potential, a reduced weight, a Dijkstra key or a cycle check, on every
+    // route. Difference logic may throw there, saying so (the decision in
+    // dev_docs/integer-ranges.md), but whenever it answers, it must give the
+    // answer the same edges give posted as linear inequalities.
+    auto run_near_edge_shapes_test() -> void
+    {
+        const auto M = Integer::max_bounded_value();
+        struct Shape
+        {
+            string name;
+            int chain;
+            bool full;
+            bool closing_cycle;
+            bool redundant_edge;
+            bool reified_closing_edge;
+            bool z_edge;
+        };
+        const vector<Shape> shapes{{"chain-8 full", 8, true, false, false, false, false}, {"chain-9 full", 9, true, false, false, false, false},
+            {"chain-9 0..1", 9, false, false, false, false, false}, {"chain-10 full", 10, true, false, false, false, false},
+            {"cycle-8 full", 8, true, true, false, false, false}, {"cycle-8 0..1", 8, false, true, false, false, false},
+            {"cycle-9 full", 9, true, true, false, false, false}, {"A full", 8, true, false, true, false, false},
+            {"A 0..1", 8, false, false, true, false, false}, {"B full", 8, true, false, false, true, false},
+            {"B 0..1", 8, false, false, false, true, false}, {"Z", 8, false, false, false, false, true}};
+
+        for (const auto & shape : shapes) {
+            // Each edge is (from, to, weight, reified on b), meaning
+            // b -> x[from] - x[to] <= weight; index chain + 1 is z.
+            vector<tuple<int, int, Integer, bool>> edges;
+            for (int i = 0; i < shape.chain; ++i)
+                edges.emplace_back(i, i + 1, -M, false);
+            if (shape.closing_cycle)
+                edges.emplace_back(shape.chain, 0, -M, false);
+            if (shape.redundant_edge)
+                edges.emplace_back(0, shape.chain, 8_i, false);
+            if (shape.reified_closing_edge)
+                edges.emplace_back(shape.chain, 0, -M, true);
+            if (shape.z_edge)
+                edges.emplace_back(shape.chain + 1, shape.chain, M, false);
+
+            auto build = [&](Problem & p) {
+                auto x = p.create_integer_variable_vector(shape.chain + 1, shape.full ? -M : 0_i, shape.full ? M : 1_i, "x");
+                x.push_back(p.create_integer_variable(M, M, "z"));
+                auto b = p.create_integer_variable(0_i, 1_i, "b");
+                return pair{x, b};
+            };
+
+            Problem reference;
+            {
+                auto [x, b] = build(reference);
+                for (const auto & [from, to, weight, reified] : edges) {
+                    WeightedSum sum;
+                    sum += 1_i * x[from];
+                    sum += -1_i * x[to];
+                    if (reified)
+                        reference.post(LinearLessThanEqualIf{sum, weight, b == 1_i});
+                    else
+                        reference.post(LinearLessThanEqual{sum, weight});
+                }
+            }
+            auto expected = solve_with(reference, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }}).solutions;
+
+            for (bool incremental : {true, false})
+                for (bool simplify : {true, false}) {
+                    print(cerr, "difference near-edge {}{}{}:", shape.name, incremental ? "" : " from scratch", simplify ? "" : " unsimplified");
+                    cerr << flush;
+                    Problem p;
+                    auto [x, b] = build(p);
+                    vector<DifferenceEdge> posted;
+                    for (const auto & [from, to, weight, reified] : edges)
+                        posted.push_back(reified ? DifferenceEdge{x[from], x[to], weight, b == 1_i} : DifferenceEdge{x[from], x[to], weight});
+                    p.post(DifferenceConstraints{posted}.incrementally(incremental).simplifying_at_root(simplify));
+                    try {
+                        auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }});
+                        if (stats.solutions != expected)
+                            throw UnexpectedException{"difference near-edge " + shape.name + ": found " + to_string(stats.solutions) +
+                                " solutions, where the same edges as linear inequalities have " + to_string(expected)};
+                        println(cerr, " {} solutions", stats.solutions);
+                    }
+                    catch (const IntegerOverflow & e) {
+                        if (! string{e.what()}.contains("difference logic"))
+                            throw UnexpectedException{
+                                "difference near-edge " + shape.name + ": an IntegerOverflow that does not say where it came from: " + e.what()};
+                        println(cerr, " IntegerOverflow");
+                    }
+                }
+        }
+    }
+
     auto run_heavy_edge_test(bool proofs) -> void
     {
         const auto A = Integer::min_bounded_value(), B = Integer::max_bounded_value();
@@ -1447,6 +1540,7 @@ auto main(int argc, char * argv[]) -> int
 
     if (bare) {
         if (mode == "basic") {
+            run_near_edge_shapes_test();
             for (bool incremental : {true, false}) {
                 run_transitive_test(incremental);
                 run_hole_snap_test(incremental);
