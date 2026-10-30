@@ -1577,6 +1577,67 @@ makes the same push and unit propagation closes the conclusion's RUP whatever
 the derivation above it says, so the fixture measures nothing. Six mutation
 lanes, all rejected.
 
+### The scan, and what it costs (#742)
+
+The inferences cost nothing measurable; finding them is the whole cost. Capping
+firings at zero leaves the scan running in full with a search identical to the
+rule being off, so the difference is the scan. On `data_pack/pack021`, 2,630,518
+recursions either way:
+
+| | cycles | instructions | |
+|---|---|---|---|
+| edge-finding off | 143.5G | 495.7G | |
+| scan, nothing fires, before #742 | 221.2G | 781.2G | 1.54x |
+| scan, nothing fires, now | 174.8G | 625.8G | 1.22x |
+
+Over that run 805M windows were swept, 174M got past the per-window guards, and
+each of those looked at about 19 of the instance's 23 tasks, 3.36G visits in all.
+38% of the visits were to a task with both ends in the window or neither, 35%
+failed detection, 24% found the task already where the push would put it, and
+under 1% would have fired. The scan cost about 85 instructions a visit, in checked
+`Integer` arithmetic, a `State` lookup for the already-held test, and a
+division, deep inside a function long past the compiler's inlining budget.
+
+All of those tests read the sweep's snapshot, so `EdgeFindingScan` makes them
+up front, in a function of its own over a flat array, in plain arithmetic whose
+range is checked once a call. The already-held test is asked of the snapshot,
+as `rest <= h_j · (room the bound leaves)` rather than through `⌈rest / h_j⌉`:
+bounds only tighten during a sweep, so what the snapshot holds the live bound
+holds too, and the state is asked only for a task the snapshot cannot settle.
+The propagator's loop body is unchanged and runs over the tasks that are left,
+in the same order, so the search, the proofs and every rule counter are
+unchanged. (`already_true` is carried per task left, not per window, so that a
+window abandoned partway by a push that empties a domain counts what the old
+scan counted before it stopped.)
+
+Measured on `pack021` with the rule firing, at identical search and identical
+counters: edge-finding 0.76x the cycles of before, TTEF 0.70x, the energetic
+form 0.97x (its cost is the window-energy lemma per task per window, which the
+filter cannot reach). Over `data_pack` and `data_bl` at 60 s, the 37 instances
+that close under both versions close with identical recursion counts, and on
+the 58 that time out the new scan gets through a geometric mean of 1.20x the
+nodes (0.99x to 1.74x), with a better incumbent on two and a worse one on none.
+Twenty-four proofs (four arms on six instances) are byte-identical, `.opb` and
+`.pbp`.
+
+The same sweep says the rule now pays even on the instances #742 was filed
+over, where it used to be a loss: against the rule off, it closes 37 instances
+to 35, and its incumbent is better on three and worse on none (main's scan
+already got the same closures, and no worse incumbent). Turning it on by
+default is a separate decision.
+
+**Tried and not kept: masks over the task orders.** A task's being inside at
+one end is `est >= a` XOR `lct <= b`, and both terms are prefixes of a fixed
+order of the tasks, as is the set heavy enough to pass detection. Masks per
+prefix length, built once a call, take the visits from 3.36G to 0.85G. But
+building them costs three sorts and as many allocations a call, which on
+instances of 20 to 30 tasks is more than the visits they save (+21% cycles per
+recursion on a PSPLIB J60 instance), and on the larger ones they won by a few
+percent where they won at all. What is left after them is almost entirely tasks
+already held, which depend on the pair of task and window and are not a prefix
+of anything; Vilim's Theta-Lambda tree, with the responsible set reported for
+the certificate, is still the route to doing better than cubic.
+
 ## TTEF: the same certificate, with the profile added (#696)
 
 Time-table extended edge-finding is to edge-finding what `(TTOC)` is to the
@@ -3495,8 +3556,11 @@ so any difference is the encoding's.
   bounds, so the latter repeat far less. Weakening the guards deliberately, to
   buy reuse at the price of a looser bound, is the experiment.
 - **Edge-finding's scan (#742).** The rule is certified and its inferences cost
-  nothing measurable, but the window x task sweep that finds them is O(n^3) and
-  taxes the solve about 1.5x at identical search. Propagation performance, not
+  nothing measurable, but the window x task sweep that finds them is O(n^3).
+  The constant factors are taken (see [the scan](#the-scan-and-what-it-costs-742)),
+  leaving about 1.2x at identical search; better than that needs Vilim's
+  Theta-Lambda tree, made to report the set it used. Whether the rule should
+  now be on by default is a separate question. Propagation performance, not
   proof logging.
 - **Guarded contribution rows.** A variable-height task's conversion is
   reason-backed and re-derived per firing, one line per time point of the

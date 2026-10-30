@@ -718,6 +718,15 @@ over several instances, serially, with glibc's malloc thresholds pinned
 since heap history otherwise changes how often per-node state is mapped and
 unmapped). Parallel wall-clock A/Bs at this size are noise.
 
+Edge-finding's scan, inside that phase, went the rest of the way (#742). Its
+per-task tests, which turn away all but about one task in a hundred, moved into a
+small function of their own over a flat array, in plain arithmetic checked once
+a call; the commonest of them, whether the push is already held, is asked of the
+sweep's snapshot by a multiplication before the state is asked at all. Same
+tests, same order, byte-identical proofs, and 0.76x the cycles with the rule on.
+The inner loop of a cubic rule, buried in a function this size, is worth lifting
+out before reaching for a better algorithm.
+
 ### Data derived from a shared input belongs to the input, not to the constraint
 
 A propagator that precomputes something from bulk input holds one copy per

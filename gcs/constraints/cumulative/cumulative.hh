@@ -97,8 +97,9 @@ namespace gcs
         ///
         /// Certified, in both directions. Off by default because the sweep that
         /// finds the firings is O(n^3) and taxes the solve whether or not
-        /// anything fires (#742); the inferences themselves cost nothing
-        /// measurable.
+        /// anything fires; the inferences themselves cost nothing measurable.
+        /// #742 took that tax from about 1.55x to about 1.2x at identical
+        /// search, and left the default where it was.
         bool edge_finding = false;
 
         /// Strengthen edge-finding with the mandatory-part load of the tasks
