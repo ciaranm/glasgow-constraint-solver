@@ -52,6 +52,11 @@ namespace gcs
      * product; past that, solving with proofs enabled throws an
      * IntegerOverflow when the proof model is built.
      *
+     * A constant operand makes this a LinearEquality, whose constant is the
+     * product of two constant operands or a constant operand times the other
+     * operand's view offset. If that does not fit, posting throws an
+     * IntegerOverflow saying so, with or without proofs.
+     *
      * \ingroup Constraints
      * \sa LinearEquality
      */

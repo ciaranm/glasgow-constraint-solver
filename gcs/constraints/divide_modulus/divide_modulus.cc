@@ -1522,9 +1522,40 @@ auto Divide::prepare(Propagators &, State & initial_state, ProofModel * const) -
     return true;
 }
 
+namespace
+{
+    // The encoding multiplies |q| by |y| bit by bit, and its remainder rows sum
+    // that grid. Its magnitudes are sized as cake_pb_cp sizes them, Divide's
+    // |q| from q's declared domain and Modulus's from x's, so that the OPB
+    // stays the verified encoder's. A wide operand can therefore leave a row
+    // whose constants do not fit in an Integer, though every solution is small.
+    // Rather than encode differently from cake_pb_cp, that stands as the error
+    // (#1222; dev_docs/integer-ranges.md), and says here what is to blame,
+    // keeping the original message.
+    auto define_proof_model_divide_modulus_explaining_overflow(InstallState & st, const ConstraintID & owner, bool expose_quotient,
+        const IntegerVariableID & x, const IntegerVariableID & y, const IntegerVariableID & out, ProofModel & model) -> void
+    {
+        try {
+            define_proof_model_divide_modulus(st, owner, expose_quotient, x, y, out, model);
+        }
+        catch (const IntegerOverflow & e) {
+            string inner = e.what();
+            if (inner.starts_with("unexpected problem: "))
+                inner.erase(0, string{"unexpected problem: "}.size());
+            throw IntegerOverflow{string{expose_quotient ? "Divide" : "Modulus"} +
+                ": the proof encoding does not fit in an Integer. It multiplies the magnitudes of the quotient and the divisor bit by "
+                "bit and sums that product with the dividend and the remainder in one row, sizing the quotient's magnitude from " +
+                (expose_quotient ? "the quotient's declared domain" : "the dividend's") +
+                " as cake_pb_cp does, so with proofs the operands' domains must leave room for those rows: declare them no wider than "
+                "they need to be; see dev_docs/integer-ranges.md (" +
+                inner + ")"};
+        }
+    }
+}
+
 auto Divide::define_proof_model(ProofModel & model, const State &) -> void
 {
-    define_proof_model_divide_modulus(_install, constraint_id(), true, _x, _y, _quotient, model);
+    define_proof_model_divide_modulus_explaining_overflow(_install, constraint_id(), true, _x, _y, _quotient, model);
 }
 
 auto Divide::install_propagators(Propagators & propagators) -> void
@@ -1570,7 +1601,7 @@ auto Modulus::prepare(Propagators &, State & initial_state, ProofModel * const) 
 
 auto Modulus::define_proof_model(ProofModel & model, const State &) -> void
 {
-    define_proof_model_divide_modulus(_install, constraint_id(), false, _x, _y, _remainder, model);
+    define_proof_model_divide_modulus_explaining_overflow(_install, constraint_id(), false, _x, _y, _remainder, model);
 }
 
 auto Modulus::install_propagators(Propagators & propagators) -> void

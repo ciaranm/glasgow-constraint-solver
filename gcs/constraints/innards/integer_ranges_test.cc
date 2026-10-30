@@ -719,6 +719,147 @@ namespace
         }
     }
 
+    // Divide's and Modulus's proof encoding is cake_pb_cp's, which multiplies
+    // the quotient's and the divisor's magnitudes bit by bit and sums that grid
+    // in its remainder rows, sizing Divide's quotient magnitude from the
+    // quotient's declared domain and Modulus's from the dividend. A wide
+    // operand then leaves a row whose constants do not fit, so with proofs that
+    // is an IntegerOverflow saying what is to blame, never a wrong answer
+    // (#1222); without proofs, and for the twin just inside the limit, it
+    // solves. 10..11 / 5..8 is 1 or 2, so eight solutions; (B - 2 .. B) + B
+    // mod 3 has one remainder each, so three. Modulus needs both the dividend
+    // past S and a remainder declared over S to overflow: the rows sum all
+    // three.
+    auto run_divide_modulus_encoding_test(bool proofs) -> void
+    {
+        struct Case
+        {
+            string name;
+            function<void(Problem &)> post;
+            long long solutions;
+            bool overflows_with_proofs;
+        };
+
+        // |y| has four bits, so a quotient magnitude of n bits needs
+        // (2^n - 1) * 15 plus |x| to fit: n = 59 does, and S's 60 does not.
+        auto divide = [](Problem & p, Integer q_magnitude) {
+            p.post(Divide{
+                p.create_integer_variable(10_i, 11_i), p.create_integer_variable(5_i, 8_i), p.create_integer_variable(-q_magnitude, q_magnitude)});
+        };
+        auto modulus = [](Problem & p, Integer offset) {
+            p.post(Modulus{p.create_integer_variable(B - 2_i, B) + offset, constant_variable(3_i), p.create_integer_variable(A, B)});
+        };
+
+        vector<Case> cases{{"Divide quotient over S", [&](Problem & p) { divide(p, B); }, 8, true},
+            {"Divide quotient inside the encoding's limit", [&](Problem & p) { divide(p, Integer{(1LL << 59) - 1}); }, 8, false},
+            {"Modulus dividend view past S", [&](Problem & p) { modulus(p, B); }, 3, true},
+            {"Modulus dividend at the top of S", [&](Problem & p) { modulus(p, 0_i); }, 3, false}};
+
+        for (const auto & [name, post, expected, overflows_with_proofs] : cases) {
+            bool expect_overflow = proofs && overflows_with_proofs;
+            println(cerr, "integer ranges: {}{}: expecting {}", name, proofs ? " with proofs" : "",
+                expect_overflow ? string{"IntegerOverflow"} : std::to_string(expected) + " solutions");
+            Problem p;
+            post(p);
+            long long solutions = 0;
+            string proof_name = "integer_ranges_divide_modulus";
+            try {
+                solve_with(p,
+                    SolveCallbacks{
+                        .solution = [&](const CurrentState &) -> bool {
+                            ++solutions;
+                            return true;
+                        },
+                        .stats_report = silent_stats_report() //
+                    },
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+            }
+            catch (const innards::IntegerOverflow & e) {
+                if (! expect_overflow)
+                    throw;
+                if (! string{e.what()}.contains("the proof encoding does not fit in an Integer"))
+                    throw UnexpectedException{name + ": the IntegerOverflow does not say what overflowed: " + e.what()};
+                continue;
+            }
+            if (expect_overflow)
+                throw UnexpectedException{name + ": solved, but was expected to overflow, so this case no longer tests the limit"};
+            if (solutions != expected)
+                throw UnexpectedException{name + ": found " + std::to_string(solutions) + " solutions, expected " + std::to_string(expected)};
+            if (proofs)
+                verify_proof_and_clean_up(proof_name);
+        }
+    }
+
+    // A Multiply with a constant operand becomes a linear equality whose
+    // constant is built from the inputs: the product of two constant operands,
+    // or a constant times the other operand's view offset. Two constants
+    // whose product lies past S still solve when the result is a view that can
+    // reach it, since the view's offset is folded first (#1221); where the
+    // constant genuinely does not fit, the IntegerOverflow says so. Each throw
+    // has a twin just inside the limit.
+    auto run_multiply_constant_operand_test(bool proofs) -> void
+    {
+        struct Case
+        {
+            string name;
+            function<void(Problem &)> post;
+            optional<long long> expected;
+        };
+
+        const auto two_59 = Integer{1LL << 59};
+        // x + B is 0 or 1, so c * (x + B) is 0 or c: two solutions, but the
+        // linear form's constant is c * B.
+        auto times_view = [](Problem & p, Integer c) {
+            auto x = p.create_integer_variable(A, A + 1_i);
+            p.post(Multiply{constant_variable(c), x + B, p.create_integer_variable(A, B)});
+        };
+
+        vector<Case> cases{{"Multiply constant times a view, constant past Integer", [&](Problem & p) { times_view(p, -B); }, nullopt},
+            // 8B < 2^63, so 8 is the widest constant whose product with B fits.
+            {"Multiply constant times a view, constant inside Integer", [&](Problem & p) { times_view(p, -8_i); }, 2},
+            // 3 * 2^59 is past S, but z + B reaches it at z = 3 * 2^59 - B.
+            {"Multiply two constants into a view past S",
+                [&](Problem & p) { p.post(Multiply{3_c, constant_variable(two_59), p.create_integer_variable(A, B) + B}); }, 1},
+            // Without the view, no z in S can be 3 * 2^59.
+            {"Multiply two constants past S", [&](Problem & p) { p.post(Multiply{3_c, constant_variable(two_59), p.create_integer_variable(A, B)}); },
+                nullopt},
+            {"Multiply two constants inside S",
+                [&](Problem & p) { p.post(Multiply{1_c, constant_variable(two_59), p.create_integer_variable(A, B)}); }, 1}};
+
+        for (const auto & [name, post, expected] : cases) {
+            println(cerr, "integer ranges: {}{}: expecting {}", name, proofs ? " with proofs" : "",
+                expected ? std::to_string(*expected) + " solutions" : string{"IntegerOverflow"});
+            Problem p;
+            long long solutions = 0;
+            string proof_name = "integer_ranges_multiply_constant";
+            try {
+                post(p);
+                solve_with(p,
+                    SolveCallbacks{
+                        .solution = [&](const CurrentState &) -> bool {
+                            ++solutions;
+                            return true;
+                        },
+                        .stats_report = silent_stats_report() //
+                    },
+                    proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+            }
+            catch (const innards::IntegerOverflow & e) {
+                if (expected)
+                    throw;
+                if (! string{e.what()}.contains("Multiply with a constant operand"))
+                    throw UnexpectedException{name + ": the IntegerOverflow does not say what overflowed: " + e.what()};
+                continue;
+            }
+            if (! expected)
+                throw UnexpectedException{name + ": solved, but was expected to overflow, so this case no longer tests the limit"};
+            if (solutions != *expected)
+                throw UnexpectedException{name + ": found " + std::to_string(solutions) + " solutions, expected " + std::to_string(*expected)};
+            if (proofs)
+                verify_proof_and_clean_up(proof_name);
+        }
+    }
+
     // An objective that is a view at either end of the range, minimised and
     // maximised. A view beyond the range used to be too wide for a bit vector
     // of its own, and the conclusion then claimed a bound that included the
@@ -772,6 +913,8 @@ auto main(int argc, char * argv[]) -> int
         run_auxiliary_tests(proofs);
         run_all_different_except_test(proofs);
         run_cumulative_energy_test(proofs);
+        run_divide_modulus_encoding_test(proofs);
+        run_multiply_constant_operand_test(proofs);
         for (auto c : {A, B})
             for (bool negate : {false, true})
                 for (bool maximise : {false, true})
