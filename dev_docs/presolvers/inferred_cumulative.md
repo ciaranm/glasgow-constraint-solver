@@ -3,9 +3,10 @@
 > **Maturity** experimental ·
 > **Audited** 2026-10-04 at `7e1c4178`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1254, #1256, #1257 and part of #1255 ·
-> **Open issues** filed by this audit: #1255 (the lifting programme's cost
-> and its state budget; items 1 and 3 fixed by #1277 and #1291, item 2 open).
+> **Open issues** filed by this audit: none.
 > **Fixed since the audit**: #1254 (certificate cost under start-checkpoint),
+> #1255 (the lifting programme's cost: items 1 and 3 by #1277 and #1291, the
+> cost cut again by #1408, which closed it, and item 2 not taken),
 > #1256 (the "cut short" note), #1257 (silent detection losses); see
 > [Re-audit, 2026-10-08](#re-audit-2026-10-08) and [Next
 > steps](#next-steps). Already open and touching this presolver: #703
@@ -29,7 +30,7 @@ fourth's three items. This pass brings the text into line with them at
 | Issue | Fixed by | What changed here |
 |---|---|---|
 | #1254, a recovered donor row cost about 7,200 lines under start-checkpoint | #1290, **by a chain step**, neither of the routes next step 1 listed | a capacity row is recovered from the row before it by a quadratic step, with the cubic scan as the fallback beyond about as many points as there are candidates (`checkpoint_recovery.cc:858–884`). The `pack001` certificate goes from 568,680 lines and 35.5 s of checking to 155,277 and 0.64 s. The five things to know, [Proof-time state](#proof-time-state), [makespan-bound](#rewrite-makespan-bound)'s proof size, [Tests](#tests), [Benchmarks](#benchmarks-and-examples), [Proof performance](#proof-performance), [Known limitations](#known-limitations), next step 1 |
-| #1255, the lifting programme's cost, items 1 and 3 | #1277 (compare frontier states by index), #1291 (merge the frontier half against half); **item 2, a state budget that counts comparisons, is open** | `J120_59_6`'s pass goes from 57 s to 11.8 s serially; `J120_19_1`'s is 33.0 s serially, where at `7e1c4178` it took 3 to 4 minutes in runs partly beside other jobs. The five things to know, [Initialisation](#initialisation-and-global-data), [CPU performance](#cpu-performance), the PSPLib table under [Benchmarks](#benchmarks-and-examples), [Known limitations](#known-limitations), next step 2 |
+| #1255, the lifting programme's cost, items 1 and 3 | #1277 (compare frontier states by index), #1291 (merge the frontier half against half); **item 2, a state budget that counts comparisons, was not taken**, and #1408, which shares a cover's lifting programmes, closed the issue | `J120_59_6`'s pass goes from 57 s to 11.8 s serially; `J120_19_1`'s is 33.0 s serially, where at `7e1c4178` it took 3 to 4 minutes in runs partly beside other jobs. The five things to know, [Initialisation](#initialisation-and-global-data), [CPU performance](#cpu-performance), the PSPLib table under [Benchmarks](#benchmarks-and-examples), [Known limitations](#known-limitations), next step 2 |
 | #1256, an `Important` note on almost every default run | #1274 | a drop by the output budget **at its default** is a `General` note only; an output budget the caller moved off its default still raises `Important`; a drop by the state budget raises it at any value. [Options](#options), [Evidence that it fired](#evidence-that-it-fired), [Known limitations](#known-limitations), next step 6 |
 | #1257, detection losses with no note | #1282 | `General` notes for posted members with no makespan link row, for members whose length is not a constant (one-value variables included), and for tasks split across donors by their length variables; two stats, `split_by_disagreeing_length` and `makespan_bounds_not_improving`, and a summary clause when the makespan argument certified nothing better than the makespan had. The one-value length is still left out of the makespan rule, which #1282 left to `cumulative.md`. [Variable kinds](#variable-kinds-and-views), [Relation to other families](#relation-to-other-families), [makespan-bound](#rewrite-makespan-bound), [Detection](#detection-and-its-failure-modes), [Evidence that it fired](#evidence-that-it-fired), [Known limitations](#known-limitations), next step 5 |
 
@@ -135,15 +136,13 @@ Five things to know before touching it.
   - With lengths fixed and the horizon multiplied by a hundred, it stays at
     31,361 to 31,532 lines.
   - Without a makespan the root proof is 720 lines at every scale.
-- **The presolver's own CPU time is tens of seconds on the worst PSPLib
-  J120 instances.** With proofs off and serially, `J120_19_1` spends 33.0 s
-  in it (278.8 G `instructions:u`), and `J120_59_6`, the audit's CPU
-  instance, 11.8 s (86.2 G). At `7e1c4178` `J120_59_6` took 57 s serially,
-  and `J120_19_1` 3 to 4 minutes in runs partly beside other jobs, so only
-  the first comparison is like for like.
-  #1277 and #1291 (#1255) made the lifting subproblems' frontier sweep
-  cheaper; the sweep is still where the time goes, and the state budget
-  still counts states rather than comparisons.
+- **The presolver's own CPU time is a few seconds at most.** With proofs
+  off and serially, `J120_19_1` spends 1.6 s in it (9.4 G
+  `instructions:u`), and `J120_59_6`, the audit's CPU instance, 1.07 s
+  (5.6 G). The slowest of 3,984 RCPSP instances, AT's `st103_25`, takes
+  4.0 s. At `0a5b4ec6`, before #1408, `J120_19_1` took 33.0 s and
+  `J120_59_6` 11.8 s, and at `7e1c4178` `J120_59_6` took 57 s (#1255). The
+  lifting subproblems are still where the time goes.
 
 ## What it is
 
@@ -235,10 +234,10 @@ Measured here, with the default budget of 20,000 lifting calls:
     killed 41), and their counts are unknown.
   - **`J120_19_1`.** One killed instance, at `7e1c4178` it finished outside a
     batch in about 3 to 4 minutes (248.8 s and 176.2 s in two runs, both
-    partly beside other jobs) with 4,683 calls. At `0a5b4ec6` it takes 33.0 s
-    serially, still with 4,683 lifting subproblems (38 over the state
-    budget, 3 cuts dropped, 2 posted). So the call budget is not what makes
-    those slow.
+    partly beside other jobs) with 4,683 calls. At `0a5b4ec6` it took 33.0 s
+    serially, and since #1408 1.6 s, still with 4,683 lifting subproblems
+    (38 over the state budget, 3 cuts dropped, 2 posted). So the call budget
+    is not what made those slow.
 - **The 710 MiniZinc-set instances:** 25 of the la_x instances exhausted it.
   They have 300, 400, 450, 600 and 675 tasks, five of each. It cost them
   nothing, since every la_x cut is dominated anyway.
@@ -1002,11 +1001,12 @@ proof (the marker comment; the `markers` lane asserts it).
   budget. That is a lower bound, since killed runs hit it too: `J120_59_6`
   has 7 subproblems over, and `J120_19_1` has 38 over, 3 cuts dropped and 2
   posted. Either way the posted result is not the published procedure's.
-  #1277 and #1291 did not move where it binds, since the budget counts the
-  states built, before the frontier sweep: #1291's body reports every counter
-  identical on the 2,040 PSPLib instances, and `J120_59_6` still has 7 over
-  at `0a5b4ec6`. The sweep was not re-run here. Making the budget count
-  comparisons instead is #1255's open item 2, and would move it.
+  #1277, #1291 and #1408 did not move where it binds, since the budget
+  counts the states built, before the frontier sweep: #1291's body reports
+  every counter identical on the 2,040 PSPLib instances, as does #1408's on
+  those and the other 1,944 RCPSP and multi-mode instances, and `J120_59_6`
+  still has 7 over. Making the budget count comparisons instead was #1255's
+  item 2, and was not taken.
   - **Subproblems over budget.** 57 instances had lifting subproblems over it,
     511 in all. Each over-budget subproblem leaves its task out of the cut. The
     later tasks then meet a smaller support, so they can lift *higher*: a
@@ -1077,7 +1077,12 @@ proof (the marker comment; the `markers` lane asserts it).
   all-pairs reference frontier and compares it with the certificate's layer
   by layer, on every validated cut of its 4,000 random trials and on 300
   wider programmes; #1291's body reports three sabotages of the sweep that
-  it catches.
+  it catches. Since #1408 it also lifts 600 random covers the way the
+  presolver does, asking every subproblem of `LiftedCoverCutLifting` and of
+  `lifted_cover_cut_optimum` and requiring the same answer, ceiling and
+  budget verdict. Budgets small enough to bind and ceilings low enough to
+  reach make each of the three outcomes, and a row not binding, happen
+  hundreds of times.
 - **`cumulative_wide_horizon`**: horizon 10⁵, at most 200 per-time names.
 - **`rcpsp_dzn_inferred`** (with `InferredDisjunctive`) and
   **`rcpsp_dzn_inferred_cumulative_mutated`**: end to end from a `.dzn` file.
@@ -1120,8 +1125,9 @@ proof (the marker comment; the `markers` lane asserts it).
   `multimode/`.
 - **For CPU benchmarking of the presolver itself:** PSPLib J120 with proofs
   off, run serially (the times move several-fold under load), and compared
-  by `instructions:u`. `J120_59_6` spends 11.8 s in the pass at `0a5b4ec6`
-  (57 s at `7e1c4178`). Pack, BL and KSD15_D take milliseconds. la_x posts
+  by `instructions:u`. `J120_59_6` spends 1.07 s in the pass since #1408
+  (11.8 s at `0a5b4ec6`, 57 s at `7e1c4178`), and AT's `st103_25`, the
+  slowest now, 4.0 s. Pack, BL and KSD15_D take milliseconds. la_x posts
   nothing: unit demands under capacities 2 and 3 make every cut dominated by
   its own row.
 - **For proof verification:** Pack, deadline one below the certified bound,
@@ -1205,22 +1211,43 @@ body measured the index comparison alone at 416.3 G → 262.3 G
 `instructions:u` with `examples/rcpsp`, and #1291's body 48.7 s → 12.0 s
 serially for the half-against-half merge on top of it.
 
-**Where the time goes.** On `J120_59_6` at `0a5b4ec6`, `perf`'s sample
-attribution puts about 92% of samples under `build_programme`, the lifting
-subproblems' dynamic programme, and about 87% under `merge_to_frontier`
-(inlined into it), the frontier merge. That is where to look, not a saving:
-the merge is still quadratic in a layer at worst, and over four resources
-the layers are wide Pareto sets.
-- **The state budget does not stop it.** The budget (100,000 states per
-  programme) counts states built, not comparisons. On this instance it cut
-  off only 7 of 6,441 subproblems, so nothing stops a programme that is
-  merely slow. That is #1255's open item 2, which #1291's body leaves to
-  Ciaran as a call about cuts against time.
+**Since #1408**, measured on 2026-10-27 at its head on fataepyc-10, the same
+way but with `examples/rcpsp --dzn … --infer-cumulative --timeout 0.01`, one
+instance per core complex, against `main` at `73d4f444`:
+
+| Instance | Subproblems | `instructions:u` before / after | Wall before | Wall after |
+|---|---:|---:|---:|---:|
+| `pack007` | 1258 | 53.3 M / 64.4 M | 0.070 s | 0.063 s |
+| PSPLib `J30_10_1` | 2777 | 170.8 M / 165.5 M | 0.062 s | 0.062 s |
+| PSPLib `J120_10_1` | 3549 | 0.91 G / 0.31 G | 0.21 s | 0.12 s |
+| PSPLib `J120_59_6` | 6441 | 86.8 G / 5.6 G | 11.9 s | 1.07 s |
+| PSPLib `J120_19_1` | 4683 | 279.7 G / 9.4 G | 33.0 s | 1.6 s |
+| PSPLib `J120_20_7` | 5093 | 666.4 G / 12.6 G | 81.0 s | 2.1 s |
+| AT `st103_25` | 15867 | 129.1 G / 21.2 G | 19.3 s | 4.0 s |
+
+Every `inferred_cumulative` counter and note is the same before and after,
+here and on all 3,984 RCPSP and multi-mode instances of #1408's sweep.
+`pack007`'s pass costs more instructions than before, since a merge now
+builds an index over each half however few states it has; over all of Pack
+the pass takes 0.97× the instructions.
+
+**Where the time goes.** On `J120_59_6` since #1408, `perf`'s sample
+attribution puts about 87% of cycles under `lift_cover`, which is the
+lifting subproblems, and 8% under `validate_lifted_cover_cut`.
+- **About two thirds is building the shared programmes**: 44% in
+  `CoverIndex::covers`, the coverage test, and 11% in building the indices.
+- **About a fifth is reading questions off them**:
+  `LiftedCoverCutLifting::optimum`'s filtering, at 21%.
+- **The state budget still does not stop a slow programme.** It counts
+  states built, and on this instance it cut off only 7 of 6,441
+  subproblems. Making it count comparisons was #1255's item 2, which was
+  not taken.
+- **Before #1408**, at `0a5b4ec6`, about 92% of samples were under
+  `build_programme` and 87% under `merge_to_frontier`, with one programme
+  built from scratch per subproblem.
 - **Before #1277 and #1291**, at `7e1c4178`, about 94% of the time was in
-  `build_programme`, nearly all of it `reduce_to_frontier`'s all-pairs sweep,
-  with every pair first compared for equality as whole states. The audit
-  measured an index comparison in a scratch build at 57.2 s → 48.2 s; that is
-  #1277 on `main` now, and #1291 replaced the sweep.
+  `build_programme`, nearly all of it `reduce_to_frontier`'s all-pairs
+  sweep, with every pair first compared for equality as whole states.
 
 **What the corpus does not exercise.** No instance here has a `Disjunctive2D`
 donor or optional tasks. The time is all in Algorithm 2, not detection.
@@ -1421,10 +1448,10 @@ median of three runs; `k = 1000` is one run. #1290's body measured the
   `largest_capacity_bound` is not. Since #1282 a `General` note says which
   of these it is, and how many members it cost.
 - On instances with 100+ tasks and several resources, the pass can take
-  tens of seconds with proofs off: 33.0 s on `J120_19_1` and 11.8 s on
-  `J120_59_6`, serially (at `7e1c4178`, 3 to 4 minutes partly beside other
-  jobs, and 57 s serially). Under
-  #1291's 48-way load, 54 J120 instances still took over 10 s.
+  seconds with proofs off: 4.0 s on AT's `st103_25`, 2.1 s on `J120_20_7`
+  and 1.6 s on `J120_19_1`, serially. Before #1408 those were 19.3 s,
+  81 s and 33.0 s, and at `7e1c4178` `J120_19_1` took 3 to 4 minutes partly
+  beside other jobs.
 - With a makespan, the root proof grows linearly with the makespan bound (so
   with the task lengths), and at the largest size measured checking grows
   faster (93 s for 3.1 M lines). Pack_d certificates now check: #1290's body
@@ -1459,22 +1486,29 @@ median of three runs; `k = 1000` is one run. #1290's body measured the
      proof-size or checking-time claim about these presolvers taken before
      #1290 has to be re-measured, as this re-audit did for this document's.
 2. **Bound the lifting programme's cost** (#1255). **Done but for its
-   middle bullet**; #1255 stays open for it.
+   middle bullet, which was not taken; #1408 closed the issue.** The state
+   budget's value is left to the choice of good defaults.
    - Drop the vector equality test from the sweep's inner loop: **done by
      #1277**, which compares indices. #1277's body measured 416.3 G →
      262.3 G `instructions:u` on `J120_59_6`, with the same output.
-   - Make the state budget count pair comparisons: **open**. #1291's body
-     leaves it to Ciaran, since it would drop more cuts where it bites, a
-     call about cuts against time.
+   - Make the state budget count pair comparisons: **not taken**. It would
+     drop more cuts where it bites, trading strength for time, and the
+     programme was made cheaper instead.
    - Replace the all-pairs frontier sweep with a sort-based one: **done by
      #1291**, as a merge of the two antichain halves with a binary-searched
-     prefix per state. It keeps the same states in the same order, so the
-     budget binds where it did. `J120_59_6` is now 11.8 s serially.
+     prefix per state, and the prefix replaced by `CoverIndex`'s bitsets in
+     #1408. Both keep the same states in the same order, so the budget
+     binds where it did.
 
-   Reusing layers across lifting subproblems does not work as things stand:
+   Reusing layers across lifting subproblems was thought not to work, since
    each runs on capacities minus the member's demand, with its own binding
-   rows and profit ceiling. It would need a capacity-independent
-   formulation.
+   rows. It does, without a capacity-independent formulation: #1408 builds
+   one programme per set of binding rows under the full capacities and reads
+   each subproblem's off it, with the same answers, ceilings and state
+   counts. That was most of #1408's saving: the pass takes 0.070× the
+   instructions on J120 and 0.084× on J90, with every counter and note
+   identical on 3,984 RCPSP and multi-mode instances, and `J120_59_6` is
+   1.07 s serially.
 3. **Name a makespan over long tasks in a lane,** so the bound and the root
    proof are large. Then decide what the makespan derivation's superlinear
    checking should cost. That is the runtime rule's, in `cumulative.md`; the
