@@ -346,7 +346,7 @@ None, and none wanted: a presolver's rewrite is unconditional.
     `cumulative_donors` (`constraints/cumulative/donor_view`).
   - `install_derived_cumulative` and `cumulative_task_window`.
   - The subset-sum utility's only other non-test caller is Cumulative's
-    knapsack overload (KAOC, `cumulative.cc:3105`). #1281 changed how
+    knapsack overload (KAOC, `cumulative.cc:3169`). #1281 changed how
     `largest_subset_sum_at_most` reads its answer off the bitset, a word at a
     time from the top (`subset_sum_strengthening.cc:116–119`), not what it
     returns, so KAOC's derivations are as before.

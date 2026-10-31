@@ -2173,7 +2173,9 @@ optimum. **The knapsack cap is what pays**: it more than halves the search and
 closes ten more instances at the same wall time. **The elastic cap alone does
 not**: 0.693x of the search, but it closes *fewer* instances than leaving it off,
 because its per-time-point scan costs more than the pruning returns --- the same
-verdict not-first / not-last got, and for the same reason.
+verdict not-first / not-last got, and for the same reason. (#1126 has since taken
+most of that scan away; "Where the sweep's time went" below has both rungs
+against today's default rules.)
 
 And on top of the edge-finding family, which is the question that decides
 whether it is worth having at all --- over the 39 instances both arms closed:
@@ -2270,11 +2272,73 @@ A capacity above 4096 falls back to the elastic cap, since the bitset is
 `capacity + 1` bits at every time point (scheduling capacities are nothing like
 that --- Cloutier & Quimper report `C <= 122` across their benchmarks).
 
-Propagation is `O(n^2 * horizon)` rather than Cloutier & Quimper's `O(Cn^2)`:
-their doubly linked Profile collapses the runs where the profile is constant, and
-this keeps a flat array plus the incremental bitset (their Algorithm 3 shift-or)
-per time point. Same trade as #742 for edge-finding's scan, and the same answer
---- what is missing is propagation performance, not proof content.
+Propagation keeps a flat array plus the incremental bitset (their Algorithm 3
+shift-or) per time point, where Cloutier & Quimper's doubly linked Profile
+collapses the runs where the profile is constant, so it is `O(n^2 * horizon)` in
+the worst case rather than their `O(Cn^2)`. What is missing is propagation
+performance, not proof content.
+
+### Where the sweep's time went (#1126)
+
+#1126 asked how much of the rungs' time was the per-time arrays, before building
+the Profile to shrink them. Probed with cycle counters around each part, on
+twelve PSPLIB multi-mode `j10`/`j20` instances with (KAOC) on, serial and pinned:
+
+| part | share of all cycles |
+|---|---|
+| allocating the arrays | 0.1% |
+| resetting them for each window start | 1.2% |
+| a task joining the window (height, shift-or) | 9.4% |
+| **the check: what `[a, b)` supplies, summed afresh** | **39.8%** |
+
+The arrays were not the cost. The check was: every time the window's right edge
+advanced, it walked all of `[a, b)` (18.5 time points on average) to sum what
+each supplies, and built and sorted a vector of per-point gains, even though
+almost no window fires. The Profile would have shrunk that walk only to the
+runs it crosses, 8.3 on average.
+
+So the walk is gone instead. What the window supplies is kept as a running
+total, updated by each join at the time points the joining task covers: every
+time point a contained task is optional at lies inside `[a, b)`, and every other
+one supplies nothing, so the total is exactly the sum the walk computed. The
+check compares against it, and only a window that fires walks its time points,
+to choose which to strengthen. The comparison, the strengthened set and the
+certificate are the ones before, so search is identical and the proofs are
+byte for byte the same (thirteen runs of each rung, ten multi-mode and three
+`data_bl`, each checked by VeriPB).
+
+Measured at 60 s with proofs off, instructions and cycles over the instances
+both builds closed, where the search is identical:
+
+| family | rung | instructions | cycles |
+|---|---|---|---|
+| multi-mode `j10` + `j20` (1,090) | (TTHE-OC) | 0.725x | 0.774x |
+| | (KAOC) | 0.592x | 0.601x |
+| `data_bl` + `data_pack` (95) | (TTHE-OC) | 0.631x | 0.680x |
+| | (KAOC) | 0.588x | 0.598x |
+
+which turns the comparison with the default rules, over the instances every arm
+closed:
+
+| family | default | + (TTHE-OC) | + (KAOC), before | + (KAOC) | closed: default, (KAOC) |
+|---|---|---|---|---|---|
+| multi-mode, 995 | 623 s | 810 s | 981 s | **583 s** | 1,006, **1,009** |
+| `data_bl` + `data_pack`, 39 | 114 s | 109 s | 186 s | **103 s** | 39, **41** |
+
+(seconds of cycles at the fixed 2.3 GHz). (KAOC) is now cheaper than not
+running it, on both families, and closes more. (TTHE-OC) on its own still does
+not pay on the multi-mode family, where it barely moves the search.
+
+Two things in the code are there for the default rules rather than for these.
+The state lives in an `ElasticSupply` that exists only when a rung is on, and
+the firing block is a lambda of its own: with it inline, GCC compiled the window
+loop about 1% worse with every rung off, which never reaches it. Kept out of
+line, the default rules come out at 0.992x instructions on the multi-mode family
+and 0.984x on the single-mode one.
+
+What a Profile would still buy is in the joins: a join writes every time point
+the task is optional at, about eight on these instances, where the Profile would
+touch the runs.
 
 ## The start-checkpoint encoding, beside the time-indexed one (#780)
 
@@ -3542,7 +3606,9 @@ so any difference is the encoding's.
 - **Cloutier & Quimper's Profile.** The doubly linked list over time points,
   which collapses the runs where the profile is constant and takes the sweep
   from `O(n^2 * horizon)` to `O(Cn^2)`. Propagation performance only; the
-  certificate is unchanged.
+  certificate is unchanged. Since #1126's running total, what it would shrink
+  is the joins alone, not the check (see "Where the sweep's time went"), and
+  #1126 was closed without it.
 - **Guarded pins for the profile term.** TTEF's pins are reason-backed and
   re-derived per firing, at 2.93 lines' worth per firing and 15,037x repetition.
   A one-time-point `derive_guarded_window_energy` row is keyed by `(task, time)`
