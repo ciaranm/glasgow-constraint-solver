@@ -225,8 +225,9 @@ initial lower bound is negative, or a capacity is negative.
 [^reif]: Glasgow's `mznlib` has no `_reif` predicate, so the standard library's
     reified decomposition is used; it agrees with Gecode by hand.
 
-**Differential checks, all against `86caad24`.** `cake_pb_cp` has no
-`binpacking` rule, so no route is chain-checked at all; each was diffed
+**Differential checks, all against `86caad24`.** These took `cake_pb_cp` to
+have no `binpacking` rule (it has one; see [Cake
+conformity](#cake-conformity)), so no route was chain-checked; each was diffed
 directly, classifying the status markers (`==========`,
 `=====UNSATISFIABLE=====`, `=====ERROR=====`, no marker) and agreeing only on
 status and solution set together. Harnesses and reproducers are in
@@ -270,9 +271,8 @@ status and solution set together. Harnesses and reproducers are in
   three choices is part of the `.scp`, and `constraint_type()` is
   `binpacking` whatever they are (`bin_packing.cc:2025–2028`).
   `scp_reader_test` enumerates both forms (`:1640`) and round-trips them
-  (`:1741`). Proofs through `glasgow_scp_solver` verify (workflow 1);
-  `cake_pb_cp` prints "unsupported constraint: binpacking" and exits 0. See
-  [Cake conformity](#cake-conformity).
+  (`:1741`). Proofs through `glasgow_scp_solver` verify (workflow 1), and
+  `cake_pb_cp` encodes both forms. See [Cake conformity](#cake-conformity).
 
 ### Options
 
@@ -458,14 +458,24 @@ the `DagBridge` keeps their `ProofLine`s (`opb_lines`, `:1703–1706`) and Stage
 3's pols cite them (the terminal lines under `PerCall`; the cap-exceeded,
 lower-bound, interior-hole and terminal pols under `Upfront`), as do Stage 4's
 pols. Stage 2's RUPs reach the rows by unit propagation and cite nothing. The
-code calls the labels internal (`:1891–1892`): no cake rule reads them.
+labels are `cake_pb_cp`'s own for the same rows.
 
 ### Cake conformity
 
-None. `cake_pb_cp` has no `binpacking` rule ("unsupported constraint:
-binpacking", exit status 0), `verified_encodings/scp_cases` has no
-`binpacking` case, and so no chain test covers this family. The proofs are
-checked against the solver's own OPB only (workflow 1), where they verify. The
+`cake_pb_cp` encodes both forms, with the same rows under the same labels
+(`@c[id][<b>_le]`, and `@c[id][<b>_ge]` for loads); this section used to say
+it had no rule, which the binary built from CakeML `cp_enc_new` at `91fe2e2b8`
+contradicts. Checked by hand there (#1416), the chain verifies, cake's
+core check included, on:
+
+- items over `0..2`, both forms, satisfiable and unsatisfiable;
+- the capacities form with `{0, 1}` items.
+
+It **fails** on the loads form with `{0, 1}` items, satisfiable or not, at a
+RUP over the root scaffolding's `bpat` flags; `main` fails the same way, so
+that is a gap in the chain, not a regression. `verified_encodings/scp_cases`
+has no `binpacking` case yet, so no chain test covers the family; its proofs
+are checked against the solver's own OPB (workflow 1), where they verify. The
 `.scp` round-trips (`scp_reader_test.cc:1741`).
 
 ### Proof-time state
@@ -1585,7 +1595,8 @@ scratch `tmp/fd-bp/bin_packing/`):
   and #1347 stayed hidden.
 - **Wide shapes**: a large size under `Upfront`, beyond the one `Clean` row
   with unit sizes.
-- **The `.scp` against cake**: there is no rule to chain against.
+- **The `.scp` against cake**: no registered chain case, and the loads form
+  with `{0, 1}` items fails the chain (see [Cake conformity](#cake-conformity)).
 - **Real instances:** none of the corpus models is ported.
 
 ### Benchmarks and examples
@@ -1838,8 +1849,7 @@ proofs on (Stage 4's choice of which bins to count is made from the load's
 kind, not from whether a proof is written). One wrong-answer route has a
 verified proof: XCSP3's condition form proves the mistranslated model
 `UNSATISFIABLE` (#1345), which no checker of this family can catch, since
-the mistranslation is in the `.scp` it starts from and `cake_pb_cp` has no
-`binpacking` rule anyway.
+the mistranslation is in the `.scp` it starts from.
 
 ### Known limitations
 

@@ -1903,8 +1903,8 @@ auto BinPacking::define_proof_model(ProofModel & model, const State &) -> void
     // into the bridge so per-call pol steps can reference them (variable-load
     // cap-exceed / load-bound filtering). Plain add_constraint returns void
     // now, so the labelled overload is used to obtain the referable line
-    // handles; the @c[id][role] labels are internal (BinPacking is not a
-    // cake-encoded constraint).
+    // handles; the @c[id][<b>_le] / [<b>_ge] labels are cake_pb_cp's own for
+    // these rows.
     auto num_bins = _have_loads ? _loads.size() : _capacities.size();
 
     // A view gets its own bit vector the first time it appears as an integer
