@@ -543,21 +543,9 @@ auto ProofModel::register_bits_variable_encoding(
     // uses it alone, for a variable whose encoding is introduced inside the proof
     // (e.g. via ProofLogger::introduce_bits_of) rather than asserted in the model.
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
-    // See CakeBitNaming: cake's arg_sort always signs its sorted-value variables, so
-    // force a sign bit (at -2^(number of value bits)) even for a non-negative range.
-    if (bit_naming && bit_naming->add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does && 0_i == negative_bit_coeff)
-        negative_bit_coeff = -power2(highest_bit_shift + 1_i);
     vector<pair<Integer, XLiteral>> bits;
     auto & tracker = names_and_ids_tracker();
     tracker.track_variable_name(id, name);
-
-    // cake's arg_sort sorted-value variables (the ones carrying this flag) are free
-    // signed bit-sums with no OPB bound line; their [lo, hi] bounds are entailed only
-    // through the conditional value/position channels, so they are not RUP-derivable
-    // boundary literals. Tell need_gevar not to pin them -- ArgSort derives them once,
-    // explicitly, at proof start instead.
-    if (bit_naming && bit_naming->add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does)
-        tracker.note_bounds_not_trivially_derivable(id);
 
     // With a CakeBitNaming, a bit is named v[id][values...][annotation] (as
     // create_proof_flag_values would); the value bits carry the bit number as the

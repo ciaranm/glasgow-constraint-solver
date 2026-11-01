@@ -679,20 +679,6 @@ namespace gcs::innards
         auto note_bounds_not_trivially_derivable(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
 
         /**
-         * Note that this variable's order-encoding (ge) atom definitions carry @i[..][ge]
-         * labels that a cake_pb_cp OPB does not create (it reifies each atom per value
-         * under its own @c[peq..] labels). need_gevar then recovers those labels
-         * in-proof: when it creates such a gevar it queues an `ia` (implies-add) line
-         * re-declaring each half's reification under our @i label at proof start, checked
-         * implied against whatever reifies the atom in the OPB (our own @i line in
-         * workflow 1, cake's @c[peq..] in workflow 2). The order-chain `pol`s then resolve
-         * against the recovered labels either way. Used for ArgSort's permutation
-         * variables, whose eq atoms are OPB constraint terms/guards (matching cake) and so
-         * are forced model-time under @i labels.
-         */
-        auto note_recover_atom_labels_in_proof(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
-
-        /**
          * \brief Claim each of these `c[id][role]` labels for rows about to be
          * emitted, throwing ProofError if any is already taken or if the pack
          * repeats one.
