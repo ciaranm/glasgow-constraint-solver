@@ -2184,6 +2184,20 @@ auto NamesAndIDsTracker::tracked_bounds(const SimpleOrProofOnlyIntegerVariableID
     return _imp->integer_variable_definition_bounds.at(id);
 }
 
+auto NamesAndIDsTracker::declared_bounds(const IntegerVariableID & id) const -> pair<Integer, Integer>
+{
+    return overloaded{//
+        [&](const SimpleIntegerVariableID & v) -> pair<Integer, Integer> { return tracked_bounds(v); },
+        [&](const ViewOfIntegerVariableID & v) -> pair<Integer, Integer> {
+            auto [lower, upper] = tracked_bounds(v.actual_variable);
+            if (v.negate_first)
+                return pair{-upper + v.then_add, -lower + v.then_add};
+            return pair{lower + v.then_add, upper + v.then_add};
+        },
+        [&](const ConstantIntegerVariableID & v) -> pair<Integer, Integer> { return pair{v.const_value, v.const_value}; }}
+        .visit(id);
+}
+
 auto NamesAndIDsTracker::track_bound_rows(const SimpleOrProofOnlyIntegerVariableID & id, ProofLine lower_row, ProofLine upper_row) -> void
 {
     _imp->integer_variable_bound_rows.emplace(id, pair{lower_row, upper_row});

@@ -227,10 +227,18 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
     HalfReifyOnConjunctionOf reif;
     gch::small_vector<size_t, dimensions_> elem;
 
+    // Only the indices each index variable can take, by its declared bounds, get
+    // a row: for any other, the row's condition is false under the bound rows, so
+    // the row says nothing, and cake_pb_cp does not write it either (#1413).
+    auto & tracker = model.names_and_ids_tracker();
     function<auto(unsigned)->void> build_implication_constraints = [&](unsigned d) {
         auto s = get_dimension_size<dimensions_>(d, *_array);
+        auto [lower, upper] = tracker.declared_bounds(_index_vars.at(d));
         for (size_t x = 0; x != s; ++x) {
-            reif.push_back(_index_vars.at(d) == Integer(x) + _index_starts.at(d));
+            auto index = Integer(x) + _index_starts.at(d);
+            if (index < lower || index > upper)
+                continue;
+            reif.push_back(_index_vars.at(d) == index);
             elem.push_back(x);
             if (elem.size() == dimensions_) {
                 // this still works out fine if the variable is actually a constant

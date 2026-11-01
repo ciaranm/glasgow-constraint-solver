@@ -54,6 +54,8 @@ auto ValuePrecede::define_proof_model(ProofModel & model, const State &) -> void
     if (n == 0)
         return;
 
+    auto & tracker = model.names_and_ids_tracker();
+
     // OPB encoding, matching cake_pb_cp's value_precede / seq_precede encoder
     // (cp_to_ilp_lexicographicalScript.sml): one proof-only first-occurrence
     // index pos[v] per distinct chain value v, with the sentinel value n meaning
@@ -100,21 +102,38 @@ auto ValuePrecede::define_proof_model(ProofModel & model, const State &) -> void
                 "pge", WPBSum{} + 1_i * pos_v >= Integer{static_cast<long long>(k)}));
         pge.emplace(v, move(ges));
 
+        // Whether vars[i] can be v at all, by its declared bounds. Where it cannot,
+        // [vars[i] = v] is false under the bound rows, so it is left out of the rows
+        // below, as cake_pb_cp does (#1413).
+        auto may_be_v = [&](size_t i) {
+            auto [lower, upper] = tracker.declared_bounds(_vars[i]);
+            return v >= lower && v <= upper;
+        };
+
         // Upper bound: (vars[i] = v) -> pos[v] <= i. The role is keyed by both the
         // position i and the value v: these rows live inside the per-value loop, so a
         // position-only role would collide across values (#604), giving the .opb several
         // different rows under one name. cake keys them the same way ("<i>ub_<v>").
+        // Where vars[i] cannot be v the row says nothing, so it is not written.
         for (size_t i = 0; i < n; ++i)
-            model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ub_" + v.to_string(),
-                WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(i)}, HalfReifyOnConjunctionOf{{_vars[i] == v}});
+            if (may_be_v(i))
+                model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ub_" + v.to_string(),
+                    WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(i)}, HalfReifyOnConjunctionOf{{_vars[i] == v}});
 
-        // Existence: [pos[v] >= i+1] OR (exists k <= i. vars[k] = v). Value-keyed for
-        // the same reason as the upper bound above.
+        // Existence: pos[v] = i -> vars[i] = v, as [pos[v] < i] OR [pos[v] >= i+1] OR
+        // vars[i] = v (for i = 0 the first disjunct is false and is left out).
+        // Value-keyed for the same reason as the upper bound above. With the upper
+        // bounds these pin pos[v] to v's first occurrence, or n, just as the
+        // cumulative form [pos[v] >= i+1] OR (exists k <= i. vars[k] = v) did, and
+        // each of those is RUP from these: they are a linear number of literals in
+        // place of a quadratic one (#1413).
         for (size_t i = 0; i < n; ++i) {
             WPBSum existence;
-            existence += 1_i * pge.at(v)[i]; // [pos[v] >= i+1]
-            for (size_t k = 0; k <= i; ++k)
-                existence += 1_i * (_vars[k] == v);
+            if (i > 0)
+                existence += 1_i * ! pge.at(v)[i - 1]; // [pos[v] < i]
+            existence += 1_i * pge.at(v)[i];           // [pos[v] >= i+1]
+            if (may_be_v(i))
+                existence += 1_i * (_vars[i] == v);
             model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ex_" + v.to_string(), move(existence) >= 1_i);
         }
     }

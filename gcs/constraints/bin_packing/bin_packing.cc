@@ -1924,11 +1924,18 @@ auto BinPacking::define_proof_model(ProofModel & model, const State &) -> void
             if (const auto * view = std::get_if<ViewOfIntegerVariableID>(&load))
                 static_cast<void>(model.names_and_ids_tracker().need_view(*view));
 
+    // An item that cannot go in a bin, by its declared bounds, contributes
+    // nothing to that bin's row, so its term is left out, as cake_pb_cp does
+    // (#1413).
+    auto & tracker = model.names_and_ids_tracker();
     for (size_t b = 0; b < num_bins; ++b) {
         auto bin_idx = Integer(static_cast<long long>(b));
         WPBSum sum;
-        for (const auto & [i, item] : enumerate(_items))
-            sum += _sizes[i] * (item == bin_idx);
+        for (const auto & [i, item] : enumerate(_items)) {
+            auto [lower, upper] = tracker.declared_bounds(item);
+            if (bin_idx >= lower && bin_idx <= upper)
+                sum += _sizes[i] * (item == bin_idx);
+        }
 
         if (_have_loads) {
             // The labelled equality overload returns {LE-half, GE-half}. Store

@@ -423,8 +423,10 @@ and in the constant-capacity form:
 written by `model.add_labelled_constraint` (`bin_packing.cc:1912–1932`). The
 term for item `i` is its equality literal at `b`, so a row has one term per
 item, not one per bit. A constant item's term is a constant and is folded into
-the degree; a zero size leaves the term out; a constant load is folded into
-the degree (it has no bits). It is **definitional** given what `prepare()`
+the degree; a zero size leaves the term out; an item whose declared bounds
+exclude `b` leaves its term out, since the bound rows make it 0 (#1413, as
+`cake_pb_cp` does in step); a constant load is folded into the degree (it has
+no bits). It is **definitional** given what `prepare()`
 refuses: the rows say only that each bin's sizes sum to its load, or stay
 within its capacity. The rows alone do not say that an item is in some bin; an
 item domain inside `0..m−1` says it, which is why `prepare()` refuses one
@@ -433,8 +435,8 @@ every flag lives in the
 proof.
 
 **Size: `m` rows (capacities) or `2m` (loads).** Row `b` has one term per
-non-constant item with a non-zero size, **including items whose domain does
-not contain `b`** (their literal is never true, but the term is written), plus
+non-constant item with a non-zero size whose declared bounds include `b` (an
+item whose domain merely has a hole at `b` still gets its term), plus
 `bits(loads[b]) = ⌈log₂(ub(loads[b]) + 1)⌉` terms for the load in the load form.
 So `m · n′` terms in the capacity form and `2m · (n′ + bits)` in the load form,
 for `n′` such items: linear in `n` and `m`, logarithmic in the loads' widths,

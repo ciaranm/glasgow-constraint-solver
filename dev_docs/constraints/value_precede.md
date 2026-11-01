@@ -31,10 +31,11 @@ Three things to know before touching it.
 - **Its reason is the whole scope.** Every removal names every variable's
   bounds and holes, 8 to 13 literals on a six-variable probe, where the
   earlier positions' `≠ s` literals would do.
-- **Its encoding is quadratic in the array per chain value.** Each chain value
-  gets a proof-only index, `n` reified flags, `n` upper-bound rows and `n`
-  existence rows of up to `n` terms each. That matches `cake_pb_cp` label for
-  label, and it is width-independent.
+- **Its encoding is linear in the array per chain value.** Each chain value
+  gets a proof-only index, `n` reified flags, up to `n` upper-bound rows and
+  `n` existence rows of at most three terms each. That matches `cake_pb_cp`
+  label for label once cake makes the same change (#1413), and it is
+  width-independent.
 
 ## What it is
 
@@ -130,12 +131,26 @@ pos[v] ≤ n                                              @c[id][ubn_v]
 [pos[v] ≥ k]  ⇔  pos[v] ≥ k,  k = 1..n                  n fully reified flags
 for i in 0..n-1:
   x_i = v  ⇒  pos[v] ≤ i                                @c[id][<i>ub_v]
-  [pos[v] ≥ i+1]  ∨  x_0 = v ∨ … ∨ x_i = v              @c[id][<i>ex_v]
+  ¬[pos[v] ≥ i]  ∨  [pos[v] ≥ i+1]  ∨  x_i = v          @c[id][<i>ex_v]
 ```
 
 The upper-bound rows cap `pos[v]` at the first occurrence and the existence
 rows push it up to it, so `pos[v]` is exactly the index of `v`'s first
-occurrence, or `n`. Then for each consecutive pair `(s, t)`, numbered `j`:
+occurrence, or `n`. An existence row says `pos[v] = i ⇒ x_i = v`; at `i = 0`
+its first disjunct is false and is not written. Unit propagation climbs them:
+with `x_0, …, x_{i−1} ≠ v`, row 0 gives `[pos[v] ≥ 1]`, row 1 then
+`[pos[v] ≥ 2]`, and so on to `[pos[v] ≥ i]`.
+
+Where `x_i` cannot be `v`, by its declared bounds, `x_i = v` is false under the
+bound rows: the upper-bound row says nothing and is not written, and the
+existence row leaves the term out. The same rule applies wherever an
+`x = v` term appears in Among, `GlobalCardinality` and `BinPacking`.
+
+**Until #1413** the existence rows were cumulative,
+`[pos[v] ≥ i+1] ∨ x_0 = v ∨ … ∨ x_i = v`, and every row was written whatever
+the bounds. Each old row is RUP from the new rows (`i` steps up the climb
+above), and the two sets pin `pos[v]` identically, so nothing that reads
+`pos[v]` changed; `cake_pb_cp` makes the same change in step (#1413). Then for each consecutive pair `(s, t)`, numbered `j`:
 
 ```
 s ≠ t:   ¬[pos[t] ≥ n]  ⇒  pos[t] − pos[s] ≥ 1          @c[id][<j>pr]
@@ -145,11 +160,13 @@ s = t:   pos[s] ≥ n                                     @c[id][<j>nos]
 **It is definitional.** Every row is the constraint's meaning or the definition
 of an auxiliary.
 
-**Size.** Per distinct chain value, `n` reified flags, `2n + 1` rows, and
-`n(n + 1)/2 + n` literal occurrences in the existence rows; plus one row per
-pair. So `Θ(k·n)` rows and `Θ(k·n²)` terms for `k` distinct chain values. It is
-**independent of domain width**, and mentions only the `x_i = v` literals of
-chain values.
+**Size.** Per distinct chain value, `n` reified flags, at most `2n + 1` rows,
+and at most `3n − 1` literal occurrences in the existence rows; plus one row
+per pair. So `Θ(k·n)` rows and `Θ(k·n)` terms for `k` distinct chain values;
+before #1413 the existence rows alone were `n(n + 1)/2 + n` terms per value.
+On `value_precede (1 2)` over 50 variables in `0..2`, they go from 2,650
+literals to 298, and the OPB from 124,563 bytes to 93,095. It is **independent
+of domain width**, and mentions only the `x_i = v` literals of chain values.
 
 ### Labels
 
@@ -159,7 +176,10 @@ one. No rule cites a row by label: every inference is a plain RUP.
 ### Cake conformity
 
 `scp_chain_value_precede_{sat,nonexact_sat,unsat}` all chain-verify, in `none`
-mode. Measured under #604: the label sets are **identical** to cake's, and every
+mode. Since #1413 the existence rows, and the rows about values a variable
+cannot take, differ from cake's until cake makes the same change; the chain
+still verifies, since each old row is RUP from the new ones and the dropped
+terms are false. Measured under #604, before that: the label sets are **identical** to cake's, and every
 row of the constraint's own compares equal (`opbdiff --match-labels`: 60
 matching, 3 differing, 0 only on either side, on `value_precede_sat`). The three
 differing rows are the variables' boundary reifications `@i[X][ge0][r]`, the
@@ -383,10 +403,9 @@ chain over six variables in `0..3`, 64 for a three-value chain, all that form.
   gives `pos[t] ≤ i` by unit propagation; since `i < n`, that bound and the
   flag's reification `pos[t] ≥ n` are opposing bounds on one bit sum
   (Theorem 2.7), so `[pos[t] ≥ n]` is false, which switches on the precede row
-  `pos[t] − pos[s] ≥ 1`. Meanwhile the existence row
-  `[pos[s] ≥ i] ∨ x₀ = s ∨ … ∨ x_{i−1} = s` has every disjunct but the flag
-  false under the reason, so `[pos[s] ≥ i]` holds and its reification gives
-  `pos[s] ≥ i`. Then the lower bound `pos[s] ≥ i`, the difference row
+  `pos[t] − pos[s] ≥ 1`. Meanwhile the existence rows for `s` at `0, …, i − 1`
+  climb under the reason, each `x_{i'} = s` disjunct being false, to
+  `[pos[s] ≥ i]`, and its reification gives `pos[s] ≥ i`. Then the lower bound `pos[s] ≥ i`, the difference row
   `pos[t] − pos[s] ≥ 1` and the upper bound `pos[t] ≤ i` are Theorem 2.9's
   contradictory triple, with `B = 1`. When no position holds `s` the same
   chain runs with the existence rows forcing `pos[s] ≥ n` instead, against the
@@ -414,7 +433,7 @@ chain over six variables in `0..3`, 64 for a three-value chain, all that form.
 - **Gaps** — `None.`
 - **Tightness** — `Not shown.` No mutation lane. The corruption to try: drop
   one earlier position's `≠ s` from the reason; the RUP should then fail,
-  since that position's existence disjunct is no longer false.
+  since that position's existence row no longer climbs.
 
 ### Rule: repeated-value-absent
 
@@ -596,8 +615,8 @@ layer, not in this family: see [Proof performance](#proof-performance).)
    the only position before `β` that can hold `s` is `α`, infer `x_α = s`.
    Tracking the second possible position of `s`, as their algorithm does, makes
    it `O(n)` tests per call like the rest. The proof is a RUP of the same shape
-   as rule 1: under `x_α ≠ s`, the existence row for `s` at `β − 1` has no true
-   disjunct, and `x_β = t` gives the contradiction. Filed as #1145. It would
+   as rule 1: under `x_α ≠ s`, the existence rows for `s` climb to
+   `[pos[s] ≥ β]`, and `x_β = t` gives the contradiction. Filed as #1145. It would
    make each pair GAC over distinct variables (the rule-1-plus-forcing closure
    matches brute force on 30,000 distinct-variable pairs, and differs on 182 of
    the 23,174 trials that repeat a variable:

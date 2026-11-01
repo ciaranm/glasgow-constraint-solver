@@ -145,11 +145,20 @@ auto GlobalCardinality::define_proof_model(ProofModel & model, const State &) ->
     // An empty sum here means the variable's domain and the cover are disjoint,
     // so `0 >= 1` is the right row: the constraint is unsatisfiable, and saying
     // so definitionally is better than needing a propagator to discover it.
+    //
+    // In every row here, a value outside a variable's declared bounds contributes
+    // nothing, so its term is left out, as cake_pb_cp does (#1413). For a constant
+    // that is every value but its own.
+    auto & tracker = model.names_and_ids_tracker();
+    auto may_take = [&](const IntegerVariableID & var, Integer value) {
+        auto [lower, upper] = tracker.declared_bounds(var);
+        return value >= lower && value <= upper;
+    };
     if (_closed)
         for (const auto & [i, var] : enumerate(_vars)) {
             WPBSum sum;
             for (const auto & value : _values)
-                if (! is_literally_false(var == value))
+                if (may_take(var, value))
                     sum += 1_i * (var == value);
             model.add_labelled_constraint(constraint_id(), std::to_string(i) + "_al1", sum >= 1_i);
         }
@@ -157,7 +166,8 @@ auto GlobalCardinality::define_proof_model(ProofModel & model, const State &) ->
     for (const auto & [j, value] : enumerate(_values)) {
         WPBSum sum;
         for (const auto & var : _vars)
-            sum += 1_i * (var == value);
+            if (may_take(var, value))
+                sum += 1_i * (var == value);
         // cake_pb_cp labels the per-value count equality @c[<id>][<j>_le]/[<j>_ge]:
         // the value index lives in the annotation tag, not the constraint name (a
         // name-embedded index could collide with a sibling constraint's name).

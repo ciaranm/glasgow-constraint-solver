@@ -433,11 +433,14 @@ is 1.8 times the size of the other two spellings on `roster`. It is also why
 **`Among(X, S, Z)`**:
 
 ```
-Σ_i Σ_{v ∈ S} X_i=v  =  BinEnc(Z)                labelled le / ge
+Σ_i Σ_{v ∈ S ∩ [lb X_i, ub X_i]} X_i=v  =  BinEnc(Z)          labelled le / ge
 ```
 
-That is `n · |S|` terms in one row, with constants in `X` folded into the
-right-hand side. It is linear in `|S|`, so a set given as a wide range costs a
+That is up to `n · |S|` terms in one row, with constants in `X` folded into the
+right-hand side. A value outside `X_i`'s declared bounds would add a term the
+bound rows make 0, so it is left out, with its atom (#1413; `cake_pb_cp` makes
+the same change in step). On #1413's repro, `among (X Y) (1 5) N` with
+`X ∈ 0..2`, `Y ∈ 4..6`, the OPB loses 12 of 24 atom rows. It is linear in `|S|`, so a set given as a wide range costs a
 wide row, and MiniZinc hands `fzn_among` its set as an explicit list.
 
 **`NValue(Z, X)`** is Encoding Procedure 3.8, restricted: for each value `v`
@@ -458,12 +461,15 @@ width of the union of the domains**, which is #843: at widths `10³` and `10⁴`
 
 ```
 for each cover index j:
-    Σ_i X_i=V_j  =  BinEnc(C_j)                    labelled <j>_le / <j>_ge
+    Σ_{i : V_j ∈ [lb X_i, ub X_i]} X_i=V_j  =  BinEnc(C_j)      labelled <j>_le / <j>_ge
 if closed, for each position i:
-    Σ_{j : X_i=V_j not literally false} X_i=V_j ≥ 1        labelled <i>_al1
+    Σ_{j : V_j ∈ [lb X_i, ub X_i]} X_i=V_j ≥ 1                  labelled <i>_al1
 ```
 
-That is `O(n · m)` terms, independent of any width. A closed variable whose
+That is `O(n · m)` terms, independent of any width. As for `Among`, a term
+whose value is outside the variable's declared bounds is left out (#1413):
+until then the count rows kept it, and the closed rows left out only a
+constant's other values. A closed variable whose
 domain misses the cover gets the row `0 ≥ 1`, deliberately: the constraint is
 then unsatisfiable, and saying so in the model is better than leaving a
 propagator to discover it. The level never changes the encoding.
