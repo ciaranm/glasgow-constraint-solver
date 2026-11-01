@@ -260,14 +260,18 @@ encodings still diverge (#358). The writer spells the or-equal forms
 `lex_greater_equal` / `lex_less_equal`, as cake does. `_not` and `_not_if`
 round-trip through the solver's own reader but have no cake counterpart.
 
-`LexSmartTable` writes `lex_smart_table`, cake's keyword, but its OPB is the
-full `SmartTable` encoding, several times the size of cake's rows. Since #1183
-it has two chain cases, both `none`, which pin an empty common prefix:
-`lex_smart_table_empty_right_sat` and `lex_smart_table_empty_left_unsat`
-(`verified_encodings/scp_cases/CMakeLists.txt:524–534`). A table of one row
-chains; from two rows on, the elaboration step fails on a per-row selector
-flag (`f[0][t0]`) that cake's OPB names differently, as for the `smart_table`
-cases. #1183 checked that cake builds the same equal-prefix row.
+`LexSmartTable` writes `lex_smart_table`, cake's keyword, and since #1412 its
+OPB is cake's: cake desugars `lex_smart_table` into the same rows, in the same
+order, and the `SmartTable` encoding is now cake's, names included (see
+[`smart_table.md`](smart_table.md#cake-conformity)). So every instance chains,
+and `opbdiff` finds the two OPBs equivalent (`(A B) >lex (C D)` over `0..2`,
+by hand). Since #1183 it has two chain cases, which pin an empty common
+prefix: `lex_smart_table_empty_left_unsat`, `strict` since #1412, and
+`lex_smart_table_empty_right_sat`, `none` because its one row has no entries,
+which cake writes with a coefficient 0 (#358). Before #1412, from two rows on
+the elaboration step failed on a per-row selector flag (`f[0][t0]`) that
+cake's OPB named differently. #1183 checked that cake builds the same
+equal-prefix row.
 
 ### Proof-time state
 

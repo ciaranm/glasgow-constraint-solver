@@ -86,6 +86,17 @@ namespace gcs
         std::vector<IntegerVariableID> _selectors;
         std::vector<innards::ProofFlag> _pb_selectors;
 
+        // Each `in` entry's defining flag, with its variable and its distinct
+        // values in order, recorded by define_proof_model() for the root
+        // initialiser that install_propagators() installs.
+        struct InSetFlag
+        {
+            innards::ProofFlag flag;
+            IntegerVariableID var;
+            std::vector<Integer> values;
+        };
+        std::vector<InSetFlag> _in_set_flags;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;

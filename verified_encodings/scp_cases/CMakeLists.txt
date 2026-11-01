@@ -509,34 +509,43 @@ add_scp_chain_test(table_unsat            none)
 add_scp_chain_test(negative_table_sat     none)
 add_scp_chain_test(negative_table_unsat   none)
 
-# none (chain-only): smart_table, a disjunction over rows, each row a conjunction
-# of entries -- (v1 op v2) (binary), (v op c) (unary value) or (v in|notin (c...))
-# (unary set), with op one of < <= = != > >=. The solver and cake_pb_cp agree on
-# this row-delimited s-expr shape. Stays none, and the cases stay narrow, for two
-# reasons. The solver's row and entry flags are not named like cake's (f[N][t<i>]
-# against x[_1][k]), so any proof step that cites one, such as a tree-filtering
-# lemma, fails against cake's OPB; and the consolidated unary entries cite
-# literal definitions (i[V][ge<k>] and their reverse halves) that our OPB writes
-# and cake's does not (#358's divergence). Either can fail an unsat case as well
-# as a sat one. sat is therefore a single A <= B row (enumerating the ordered
-# pairs); unsat is two rows whose only entries force a variable out of its domain.
-add_scp_chain_test(smart_table_sat        none)
+# smart_table, a disjunction over rows, each row a conjunction of entries --
+# (v1 op v2) (binary), (v op c) (unary value) or (v in|notin (c...)) (unary set),
+# with op one of < <= = != > >=. The solver's encoding is cake_pb_cp's, names
+# included (#1412): row flags x[_1][k], one sgt/slt/seq flag per ordered pair of
+# variables, a unary value entry as its own literal, a set entry as a flag over
+# the listed values. So any table chains. A case stays none only where opbdiff
+# reports a row that is trivially true on both sides, which cake writes with a
+# literal coefficient 0 and the solver with 1 (#358): an atom past a bound, an
+# empty set, an entry-free row.
+add_scp_chain_test(smart_table_sat        strict)
 add_scp_chain_test(smart_table_unsat      none)
 # A row whose entry names C, which the scope (A B) does not list. cake_pb_cp
 # encodes the entry all the same, and the solver used to abort on it (#1119).
-add_scp_chain_test(smart_table_outside_scope_sat  none)
+add_scp_chain_test(smart_table_outside_scope_sat  strict)
+# Three rows over all six binary operators, sharing and negating pair flags.
+add_scp_chain_test(smart_table_mixed_ops_sat      strict)
+# Binary entries alongside unary value entries.
+add_scp_chain_test(smart_table_unary_sat          strict)
+# Every entry kind: each binary operator, a reversed pair, every unary operator,
+# in and notin with empty, duplicated and out-of-domain values.
+add_scp_chain_test(smart_table_entry_kinds_sat    none)
+# A set flag is a disjunction, so the solver derives at the root which values
+# each `in` set excludes. Each case needs one kind of those lines: a set's ends,
+# and an interior gap. Without them the proof fails, here and against our own OPB.
+add_scp_chain_test(smart_table_in_set_ends_unsat  none)
+add_scp_chain_test(smart_table_in_set_gap_unsat   none)
 
-# none (chain-only): lex_smart_table, which desugars to a SmartTable with one
-# row per common-prefix position, plus an equal-prefix row when vars_1 is the
-# longer array. Once that table has two or more rows its proof fails at the
-# elaboration step, by citing a per-row selector flag (f[0][t0]) that cake's OPB
-# names differently, as above; a one-row table chains. These two cases pin the
-# empty common prefix in both directions: cake encodes an empty vars_2 as a
-# single entry-free row that every assignment matches, and an empty vars_1 as
-# no row at all. The first is the row LexSmartTable once failed to build when
-# vars_1 is the longer array (issue #1138), which made it report no solution.
+# lex_smart_table, which desugars to a SmartTable with one row per common-prefix
+# position, plus an equal-prefix row when vars_1 is the longer array, exactly as
+# cake_pb_cp desugars it, so the two encodings agree flag for flag. These two
+# cases pin the empty common prefix in both directions: cake encodes an empty
+# vars_2 as a single entry-free row that every assignment matches (none, for that
+# row's coefficient), and an empty vars_1 as no row at all. The first is the row
+# LexSmartTable once failed to build when vars_1 is the longer array (issue
+# #1138), which made it report no solution.
 add_scp_chain_test(lex_smart_table_empty_right_sat   none)
-add_scp_chain_test(lex_smart_table_empty_left_unsat  none)
+add_scp_chain_test(lex_smart_table_empty_left_unsat  strict)
 
 # none (chain-only): three more cake-ready globals whose writers already emit
 # cake_pb_cp's shape, so they are one reader function away from the chain.
