@@ -471,9 +471,15 @@ core check included, on:
 - items over `0..2`, both forms, satisfiable and unsatisfiable;
 - the capacities form with `{0, 1}` items.
 
-It **fails** on the loads form with `{0, 1}` items, satisfiable or not, at a
-RUP over the root scaffolding's `bpat` flags; `main` fails the same way, so
-that is a gap in the chain, not a regression. `verified_encodings/scp_cases`
+It **fails** on the loads form with `{0, 1}` items, satisfiable or not, and
+`main` fails the same way. The cause is #1193: for a `{0, 1}` item our OPB
+spells `[x = b]` as the bit (`~i[x][b0]` for bin 0, `i[x][b0]` for bin 1),
+where cake's spells it `i[x][eq0]` / `i[x][eq1]`. The Stage 3 pols add the
+bin row, by its label, to scaffolding lines written over the bit, so against
+cake's row the item terms do not cancel and the closing RUP fails (at the
+terminal-node step `¬bpat ∨ ¬[load ≥ w + 1]`). Respelling only cake's bin rows
+over the bit makes both failing proofs verify against its otherwise unchanged
+OPB, so nothing else is involved. `verified_encodings/scp_cases`
 has no `binpacking` case yet, so no chain test covers the family; its proofs
 are checked against the solver's own OPB (workflow 1), where they verify. The
 `.scp` round-trips (`scp_reader_test.cc:1741`).
