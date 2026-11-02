@@ -37,10 +37,37 @@ its reification at a `ProofLevel` (in the PBP); the position/value-indexed
 `create_proof_flag_fully_reifying` emits labelled reification lines to the OPB.
 
 ⁴ A view variable goes through `create_proof_only_integer_variable_in_proof`, so
-the OPB gets its `V − sX = c` link pair (`@c[view_of_…][viewle/viewge]`) and
+the OPB gets its `V − sX = c` link pair (`@w[X][c][le]` and `@w[X][c][ge]`) and
 nothing else. Its bound lines are one `pol` apiece over that pair and the
 underlying's bound rows, derived at the top of the proof rather than asserted,
 which is why it is this row and not the `create_proof_only_integer_variable` one.
+
+## Names in the PB files
+
+What a variable's bits and atoms are called in the `.opb` and `.pbp` is part of
+the contract with cake_pb_cp, which writes its own OPB from the `.scp` alone, so
+a name may depend only on what the `.scp` says. `NamesAndIDsTracker::pb_base_of`
+is the one place that decides it, and the bits (`[b0]`, `[sign]`), atoms
+(`[ge5]`, `[eq5]`, `[in3_7]`) and their definition labels (`@…[ge5][r]`) all
+hang off the base it gives:
+
+| Variable | Base | For example |
+|---|---|---|
+| a real variable `X` | `i[X]` | `i[X][b0]`, `i[X][ge5]`, `@i[X][lb]` |
+| a view `X + c` or `-X + c` | `w[X][c]`, `w[-X][c]` | `w[X][2][b0]`, `w[-X][0][sign]`, `@w[X][2][ge5][r]`, link rows `@w[X][2][le]` / `[ge]` |
+| any other proof-only variable | `p[index_name]` | `p[3_pos0][b1]`, labels `@po[3][…]` |
+
+A view's name says which view it is, never when it was registered: the offset is
+always written, so `X + 0` is `w[X][0]`, and `+` is not legal in a VeriPB name,
+which is why the sign goes on `X`. Other proof-only variables are named by
+creation index, which is fine because cake never sees them, or by cake's own
+flag scheme (`CakeBitNaming`) where it does. cake's flags use `b[`, `x[`, `v[`
+and `n[`, and its rows `c[`, so none of those letters is available for a
+variable.
+
+Transcripts in the per-constraint documents quote the names as they were when
+they were measured, and those from before this scheme spell a view
+`p[<index>_view_of_X_plus_c]` with link rows `@c[view_of_X_plus_c][viewle]`.
 
 ## The two axes, and the one primitive underneath
 

@@ -147,10 +147,11 @@ auto main() -> int
     }
     int view_rows = 0, link_rows = 0;
     for (std::string line; std::getline(opb, line);) {
-        if (line.starts_with("preserved:") || std::string::npos == line.find("view_of_"))
+        if (line.starts_with("preserved:") || std::string::npos == line.find("w["))
             continue;
         ++view_rows;
-        if (line.starts_with("@c[view_of_x_plus_17][view") || line.starts_with("@c[neg_view_of_y_plus_-7][view"))
+        if (line.starts_with("@w[x][17][le]") || line.starts_with("@w[x][17][ge]") || line.starts_with("@w[-y][-7][le]") ||
+            line.starts_with("@w[-y][-7][ge]"))
             ++link_rows;
     }
     if (view_rows != 4 || link_rows != 4) {
