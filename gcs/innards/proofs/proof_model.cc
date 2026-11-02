@@ -419,10 +419,11 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
 
     if (0_i == lower && 1_i == upper) {
         names_and_ids_tracker().track_variable_name(id, name);
-        // Name the single PB variable as bit 0 (`i[name][b0]`), matching how
-        // cake_pb_cp encodes a {0,1} variable. For a {0,1} variable the bit-0
-        // literal *is* the (== 1)/(== 0) literal, so those eq associations below
-        // alias it directly; only the name differs. We still emit just the one
+        // The single PB variable is the variable's only bit. A real variable's is
+        // named `z[name]`, so the files show it is a whole {0,1} variable rather
+        // than bit 0 of a vector; a proof-only one keeps the default bit name. For
+        // a {0,1} variable the bit literal *is* the (== 1)/(== 0) literal, so those
+        // eq associations below alias it directly. We still emit just the one
         // (tautological) line -- cake additionally emits an upper-bound line, but
         // VeriPB no longer pins the constraint count, and references are relative.
         //
@@ -436,7 +437,8 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
         // it lazily as the standard reified pair over the bit, exactly as for a
         // bits-encoded variable. (The two `red` lines are created in-proof on
         // first use, so the OPB is unchanged.)
-        auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, 0_i);
+        auto bit_name = std::holds_alternative<SimpleIntegerVariableID>(id) ? optional<string>{"z[" + name + "]"} : nullopt;
+        auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, 0_i, bit_name);
         _imp->opb += "1 ";
         _imp->opb += names_and_ids_tracker().pb_file_string_for(eqvar);
         _imp->opb += " >= 0 ;\n";
