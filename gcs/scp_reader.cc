@@ -64,6 +64,7 @@
 #include <utility>
 #include <vector>
 
+using std::get;
 using std::map;
 using std::move;
 using std::nullopt;
@@ -135,11 +136,36 @@ namespace
         return span<const SExpr>{parts}.subspan(1);
     }
 
-    // Resolve an argument to a variable: a declared name, or an integer constant
-    // mapped to a ConstantIntegerVariableID. Anywhere a variable name may appear
-    // in a .scp, a constant integer may appear in its place.
+    // A view, written the way NamesAndIDsTracker::s_expr_name_of renders one:
+    // (X + c) or (-X + c), a declared name, negated or not, plus an offset that
+    // is always written, even when it is 0. A declared name never starts with
+    // `-` (Problem::check_name), so the sign cannot be part of the name.
+    auto resolve_view(const map<string, IntegerVariableID> & variables, const SExpr & e) -> IntegerVariableID
+    {
+        const auto & parts = e.as_list();
+        if (parts.size() != 3 || ! parts[0].is_atom() || ! parts[1].is_atom() || parts[1].as_atom() != "+" || ! parts[2].is_atom())
+            throw ScpReadError{"a view must be (X + c) or (-X + c)"};
+
+        auto name = parts[0].as_atom();
+        bool negate_first = name.starts_with('-');
+        if (negate_first)
+            name.erase(0, 1);
+        auto var = variables.find(name);
+        if (var == variables.end())
+            throw ScpReadError{"a view is over an unknown variable '" + name + "'"};
+
+        // Every declared variable is a SimpleIntegerVariableID, since the
+        // variables section is the only thing that creates them.
+        return ViewOfIntegerVariableID{get<SimpleIntegerVariableID>(var->second), negate_first, as_integer(parts[2])};
+    }
+
+    // Resolve an argument to a variable: a declared name, an integer constant
+    // mapped to a ConstantIntegerVariableID, or a view. Anywhere a variable name
+    // may appear in a .scp, a constant integer or a view may appear in its place.
     auto resolve_variable(const map<string, IntegerVariableID> & variables, const SExpr & e) -> IntegerVariableID
     {
+        if (e.is_list())
+            return resolve_view(variables, e);
         const auto & a = e.as_atom();
         if (auto it = variables.find(a); it != variables.end())
             return it->second;
@@ -191,8 +217,11 @@ namespace
             problem.post_named(constraint, label);
     }
 
-    // A reification condition is the triple (variable op value), where op is the
-    // s_expr_name_of(VariableConditionOperator) spelling.
+    // A reification condition is the triple (variable op value), where op is one
+    // of cake_pb_cp's six comparison symbols. The writer only uses the four of
+    // them that s_expr_name_of(VariableConditionOperator) spells, and the other
+    // two are stored the way the solver stores them everywhere: `x <= v` as
+    // `x < v + 1` and `x > v` as `x >= v + 1`.
     auto resolve_condition(const map<string, IntegerVariableID> & variables, const SExpr & triple) -> IntegerVariableCondition
     {
         const auto & parts = children_of(triple, "a reification condition");
@@ -211,6 +240,10 @@ namespace
             return {var, GreaterEqual, value};
         if (op == "<")
             return {var, Less, value};
+        if (op == "<=")
+            return {var, Less, value + 1_i};
+        if (op == ">")
+            return {var, GreaterEqual, value + 1_i};
         throw ScpReadError{"unknown reification-condition operator '" + op + "'"};
     }
 
@@ -602,7 +635,7 @@ namespace
         // (binary), (v op c) (unary value), or (v in|notin (c...)) (unary set),
         // with op one of < <= = != > >=. cake_pb_cp parses exactly this. A
         // comparison's operand is a binary entry when it names a declared variable
-        // and a unary-value entry when it is an integer constant.
+        // or is a view, and a unary-value entry when it is an integer constant.
         if (terms.size() != 4)
             throw ScpReadError{"smart_table is (label smart_table (rows...) (vars...))"};
         SmartTuples tuples;
@@ -620,8 +653,8 @@ namespace
                         values.push_back(as_integer(v));
                     row.push_back(op == "in" ? SmartTable::in_set(var, move(values)) : SmartTable::not_in_set(var, move(values)));
                 }
-                else if (auto it = variables.find(entry[2].as_atom()); it != variables.end())
-                    row.push_back(smart_table_comparison(var, op, it->second));
+                else if (entry[2].is_list() || variables.contains(entry[2].as_atom()))
+                    row.push_back(smart_table_comparison(var, op, resolve_variable(variables, entry[2])));
                 else
                     row.push_back(smart_table_comparison(var, op, as_integer(entry[2])));
             }
@@ -1052,8 +1085,6 @@ namespace
         const auto & parts = children_of(spec[0], "the prob_type specification");
         if (parts.size() != 2 || ! parts[0].is_atom() || (parts[0].as_atom() != "minimize" && parts[0].as_atom() != "maximize"))
             throw ScpReadError{"a prob_type objective is (minimize var) or (maximize var)"};
-        if (! parts[1].is_atom())
-            throw ScpReadError{"a prob_type objective's variable must be an atom"};
         return ObjectiveSpec{parts[0].as_atom() == "maximize", parts[1]};
     }
 
@@ -1065,8 +1096,9 @@ namespace
         // The writer renders a constant objective as (minimize 3), so an
         // undeclared atom is legitimate -- but only when it really is an
         // integer. Anything else is a typo, and silently turning it into a
-        // constant would optimise something the document never mentioned.
-        if (! variables.contains(spec.variable.as_atom()) && ! optional_integer(spec.variable))
+        // constant would optimise something the document never mentioned. A
+        // view, (minimize (X + 3)), is checked by resolve_view.
+        if (spec.variable.is_atom() && ! variables.contains(spec.variable.as_atom()) && ! optional_integer(spec.variable))
             throw ScpReadError{"the prob_type objective names an unknown variable '" + spec.variable.as_atom() + "'"};
 
         return Objective{resolve_variable(variables, spec.variable), spec.maximize ? ObjectiveDirection::Maximise : ObjectiveDirection::Minimise};

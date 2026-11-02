@@ -34,8 +34,8 @@ namespace gcs
      * The distinction is what lets the constraint tests assert writer/reader
      * *symmetry* — that every keyword Constraint::s_expr() can emit is one
      * read_scp accepts — without also demanding that every instance round-trip
-     * (a view operand, say, renders as `(-X + 17)`, which is a known and
-     * separate reader limitation).
+     * (a non-deterministic automaton, say, is a shape the public constructors
+     * cannot rebuild, which is a known and separate reader limitation).
      *
      * \ingroup Core
      */
@@ -76,7 +76,8 @@ namespace gcs
          * are inverses: a `(maximize V)` spec gives back V with
          * ObjectiveDirection::Maximise, and handing that to Problem::maximise()
          * reinstates the original objective. A constant objective (the writer
-         * renders one as `(minimize 3)`) comes back as a constant variable.
+         * renders one as `(minimize 3)`) comes back as a constant variable, and a
+         * view (`(maximize (-X + 2))`) as the view.
          */
         std::optional<Objective> objective;
     };
@@ -110,11 +111,16 @@ namespace gcs
      * means adding its case below. An unknown keyword raises
      * ScpUnsupportedConstraintError rather than being silently dropped.
      *
-     * What the reader does *not* promise is that every *instance* round-trips.
-     * A view operand renders as an s-expression list (`(-X + 17)`), which this
-     * grammar does not parse, and a few constraints accept shapes their public
-     * constructors cannot rebuild (a non-deterministic automaton, say). Those
-     * raise a plain ScpReadError. Throws SExprParseError on malformed input.
+     * Anywhere a variable may appear, so may an integer constant or a view,
+     * written as NamesAndIDsTracker::s_expr_name_of renders one: `(X + c)` or
+     * `(-X + c)`, with the offset always written. A reification condition takes
+     * all six of cake_pb_cp's comparison symbols, `=`, `!=`, `>=`, `>`, `<=` and
+     * `<`, although the writer only uses `=`, `!=`, `>=` and `<`.
+     *
+     * What the reader does *not* promise is that every *instance* round-trips:
+     * a few constraints accept shapes their public constructors cannot rebuild
+     * (a non-deterministic automaton, say). Those raise a plain ScpReadError.
+     * Throws SExprParseError on malformed input.
      *
      * \returns The variables by name, and the objective if there was one.
      */

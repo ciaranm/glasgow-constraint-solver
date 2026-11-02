@@ -23,8 +23,11 @@ document is exactly four tagged sections, in order:
 ```
 
 `prob_type` is the bare atom `decide` or `enumerate`, or the list
-`(minimize var)` / `(maximize var)`. `innards::write_scp` emits this and
-`gcs::read_scp` consumes it, returning an objective as `ScpModel::objective`
+`(minimize var)` / `(maximize var)`. Anywhere a variable may appear, including
+here, so may an integer constant or a view, written `(X + c)` or `(-X + c)`
+with the offset always present; cake_pb_cp's grammar does not have view terms
+yet, so a document with one is the solver's alone. `innards::write_scp` emits
+this and `gcs::read_scp` consumes it, returning an objective as `ScpModel::objective`
 (its variable and direction, mirroring `Problem::optional_objective()`) without
 posting it, so that enumerating an optimisation document stays possible —
 `glasgow_scp_solver` is the caller that hands it to `Problem::minimise()` or
@@ -79,11 +82,15 @@ Two checks enforce it, between them covering everything that writes a `.scp`:
 
 Two narrower things neither check demands:
 
-- **Not every instance need round-trip.** A view operand renders as
-  `(-X + 17)`, which the grammar does not parse; a plain `ScpReadError` is
-  tolerated. Only a missing *keyword* fails. The cost is that a model whose
-  first unreadable thing is a view hides any bad keyword later in the same file
-  — `n_queens` is one — which is part of why both lanes exist.
+- **Not every instance need round-trip.** A shape the public constructors
+  cannot rebuild, such as a non-deterministic automaton, raises a plain
+  `ScpReadError`, which is tolerated. Only a missing *keyword* fails. The cost
+  is that a model whose first unreadable thing is such a shape hides any bad
+  keyword later in the same file, which is part of why both lanes exist. Views
+  were once the common case of this (`n_queens` was one), before the reader
+  learned view terms: in the constraint suite, 10,046 test `.scp` files failed
+  to read back on a view, and the 19 non-deterministic automata are now all
+  that is left.
 - **Test-fixture constraints are exempt**, by the `test_...` naming convention
   (`test_tabulated_product`, `test_product_fragment`). Use that prefix for an
   ad-hoc Constraint that exists only to drive one piece of proof machinery.
@@ -285,7 +292,7 @@ enum class ProofCheck { None, SelfVerify, CakeChain };
 The whole point of Part A is the *edge cases* (small/awkward domains, views, dup
 variables). The original blocker was gate (2), which no longer applies — so what
 remains is gate (1): the random generator will happily build instances of
-constraints cake has no rule for, and views, which nothing parses. A `CakeChain`
+constraints cake has no rule for, and views, which cake does not parse. A `CakeChain`
 arm would need to fall back per instance on those rather than fail.
 
 ### Hook points

@@ -1401,6 +1401,105 @@ TEST_CASE("read_scp: a constant integer can stand in for a variable anywhere")
     CHECK(all_diff == set<map<string, long long>>{{{"A", 0}, {"B", 2}}, {{"A", 2}, {"B", 0}}});
 }
 
+TEST_CASE("read_scp: a view can stand in for a variable anywhere")
+{
+    // Every solution of X, Y in 0..3 satisfying `keep`, as the enumeration
+    // would report it, so that each check below is against the whole solution
+    // set: a check that only looked at the solutions found would pass on none.
+    auto all_xy = [](auto keep) {
+        set<map<string, long long>> result;
+        for (long long x = 0; x <= 3; ++x)
+            for (long long y = 0; y <= 3; ++y)
+                if (keep(x, y))
+                    result.insert({{"X", x}, {"Y", y}});
+        return result;
+    };
+    auto read = [](const string & constraint) {
+        return enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints " + constraint + ") (prob_type enumerate) )");
+    };
+
+    // An operand, either way round: Y = X + 1, and Y = -X + 3.
+    CHECK(read("(_1 equals (X + 1) Y)") == all_xy([](auto x, auto y) { return y == x + 1; }));
+    CHECK(read("(_1 equals (-X + 3) Y)") == all_xy([](auto x, auto y) { return y == 3 - x; }));
+    // The offset is always written, so the identity view is (X + 0).
+    CHECK(read("(_1 equals (-X + 0) (-Y + 0))") == all_xy([](auto x, auto y) { return x == y; }));
+    // A member of a list.
+    CHECK(read("(_1 all_different ((X + 1) Y (-X + 4)))") == all_xy([](auto x, auto y) { return x + 1 != y && y != 4 - x && x + 1 != 4 - x; }));
+    // The variable of a reification condition: Y < 2 if X + 1 >= 3.
+    CHECK(read("(_1 less_than_if ((X + 1) >= 3) Y 2)") == all_xy([](auto x, auto y) { return x + 1 < 3 || y < 2; }));
+    // A term of a linear constraint: 2(X + -1) + Y <= 2.
+    CHECK(read("(_1 lin_less_equal (2 (X + -1) 1 Y) 2)") == all_xy([](auto x, auto y) { return 2 * (x - 1) + y <= 2; }));
+    // An element index: Y = (5 6 7 8)[-X + 3].
+    CHECK(read("(_1 element (5 6 7 8) ((-X + 3) 0) (Y + 5))") == all_xy([](auto x, auto y) { return y + 5 == 5 + (3 - x); }));
+}
+
+TEST_CASE("read_scp: a reification condition takes all six of cake's comparison symbols")
+{
+    // Y >= 1  <->  X op 1, over X in 0..3: the writer spells only =, !=, >= and
+    // <, but cake_pb_cp also reads <= and >, so a hand-written .scp may use them.
+    auto read = [](const string & op) {
+        return enumerate("( (version 1) (variables (X 0 3) (Y 0 1)) (constraints (_1 or ((X " + op + " 1)) (Y >= 1))) (prob_type enumerate) )");
+    };
+    auto expected = [](auto holds) {
+        set<map<string, long long>> result;
+        for (long long x = 0; x <= 3; ++x)
+            result.insert({{"X", x}, {"Y", holds(x) ? 1 : 0}});
+        return result;
+    };
+
+    CHECK(read("=") == expected([](auto x) { return x == 1; }));
+    CHECK(read("!=") == expected([](auto x) { return x != 1; }));
+    CHECK(read(">=") == expected([](auto x) { return x >= 1; }));
+    CHECK(read(">") == expected([](auto x) { return x > 1; }));
+    CHECK(read("<=") == expected([](auto x) { return x <= 1; }));
+    CHECK(read("<") == expected([](auto x) { return x < 1; }));
+    CHECK_THROWS_AS(read("=="), ScpReadError);
+}
+
+TEST_CASE("read_scp: a malformed view throws")
+{
+    auto read = [](const string & term) {
+        return enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 equals " + term + " Y)) (prob_type enumerate) )");
+    };
+
+    CHECK_NOTHROW(read("(X + 1)"));
+    CHECK_THROWS_AS(read("(X - 1)"), ScpReadError);       // the writer always adds, with a signed offset
+    CHECK_THROWS_AS(read("(X + Y)"), ScpReadError);       // the offset is an integer
+    CHECK_THROWS_AS(read("(X)"), ScpReadError);           // the offset is always written
+    CHECK_THROWS_AS(read("(X + 1 2)"), ScpReadError);     // and there is only one of it
+    CHECK_THROWS_AS(read("(Q + 1)"), ScpReadError);       // over a declared variable
+    CHECK_THROWS_AS(read("(--X + 1)"), ScpReadError);     // negated at most once
+    CHECK_THROWS_AS(read("(3 + 1)"), ScpReadError);       // and not over a constant
+    CHECK_THROWS_AS(read("((X + 1) + 1)"), ScpReadError); // nor over another view
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 3)) (constraints) (prob_type (minimize (Q + 1))) )"), ScpReadError);
+}
+
+TEST_CASE("read_scp: views survive write -> read -> write unchanged")
+{
+    // Views as operands, list members, a condition's variable and the
+    // objective, so that each place the reader resolves a variable is fed
+    // what the writer actually renders.
+    Problem original;
+    auto x = original.create_integer_variable(0_i, 3_i, "X");
+    auto y = original.create_integer_variable(0_i, 6_i, "Y");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(Equals{x + 3_i, y});
+    original.post(LessThanIf{-x + 4_i, y, c >= 1_i});
+    original.post(AllDifferent{{x + 1_i, y, -x}});
+    original.maximise(-y + 2_i);
+    auto scp_a = prove_to_scp(original, "scp_reader_views_a");
+    CHECK(scp_a.contains("(_1 equals (X + 3) Y)"));
+    CHECK(scp_a.contains("(prob_type (maximize (-Y + 2)))"));
+
+    Problem rebuilt;
+    auto model = read_scp(rebuilt, scp_a);
+    REQUIRE(model.objective);
+    CHECK(model.objective->direction == ObjectiveDirection::Maximise);
+    CHECK(model.objective->variable == IntegerVariableID{-std::get<SimpleIntegerVariableID>(model.variables.at("Y")) + 2_i});
+    rebuilt.maximise(model.objective->variable);
+    CHECK(prove_to_scp(rebuilt, "scp_reader_views_b") == scp_a);
+}
+
 TEST_CASE("read_scp: constraint labels and variable names round-trip via the map")
 {
     Problem problem;
@@ -1650,7 +1749,8 @@ TEST_CASE("write_scp: an objective keeps its direction and its offset")
     // The objective used to be stored as a variable to minimise, so maximise()
     // became the minimisation of a negated view, and the writer then dropped
     // the view's offset: minimise(X + 3) was written as (minimize X), and
-    // minimise(-X + 3) as (maximize X). Now both files say what was posted.
+    // minimise(-X + 3) as (maximize X). Now both files say what was posted,
+    // and the reader gives back exactly the objective that was posted.
     // The OPB's objective line is min: or max:, as posted, over X's own bits
     // with the offset as its constant, so that VeriPB's conclusion is the
     // posted objective's value.
@@ -1693,6 +1793,12 @@ TEST_CASE("write_scp: an objective keeps its direction and its offset")
 
         CHECK(scp.contains(c.prob_type));
         CHECK(objective_line == c.objective_line);
+
+        Problem rebuilt;
+        auto model = read_scp(rebuilt, scp);
+        REQUIRE(model.objective);
+        CHECK(model.objective->variable == c.objective(std::get<SimpleIntegerVariableID>(model.variables.at("X"))));
+        CHECK(model.objective->direction == (c.maximise ? ObjectiveDirection::Maximise : ObjectiveDirection::Minimise));
     }
 }
 

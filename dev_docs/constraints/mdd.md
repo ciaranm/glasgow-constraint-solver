@@ -179,8 +179,9 @@ agreement (`tmp/fd-dd/mdd/frontends/`, at
 - **`.scp`**: the probe below writes a `.scp` with every proof, and
   `glasgow_scp_solver --all` on it finds the expected number of solutions in
   every one of 530 plain, aliased and larger cases. With views, the reader
-  cannot parse the writer's view terms (`expected an atom, found a list`), which
-  is the reader's known limitation, recorded in `path.md` and `subgraph.md`.
+  used to reject the writer's view terms (`expected an atom, found a list`). It
+  reads them now, through the same `resolve_variable_list` as everything else,
+  but the view cases were not part of the 530.
 - **CPMpy, `gcspy`:** no binding.
 
 ### Options
