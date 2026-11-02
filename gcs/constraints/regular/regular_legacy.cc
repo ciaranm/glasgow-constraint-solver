@@ -594,16 +594,7 @@ auto RegularLegacy::s_expr(const ProofModel * const model) const -> SExpr
     if (_regex && 0 == num_states) {
         auto lo = Integer::max_value(), hi = Integer::min_value();
         for (const auto & var : _vars) {
-            auto [l, u] = overloaded{[&](const SimpleIntegerVariableID & v) -> pair<Integer, Integer> { return tracker.tracked_bounds(v); },
-                [&](const ViewOfIntegerVariableID & v) -> pair<Integer, Integer> {
-                    auto [al, au] = tracker.tracked_bounds(v.actual_variable);
-                    if (v.negate_first)
-                        return {-au + v.then_add, -al + v.then_add};
-                    return {al + v.then_add, au + v.then_add};
-                },
-                [&](const ConstantIntegerVariableID & v) -> pair<Integer, Integer> {
-                    return {v.const_value, v.const_value};
-                }}.visit(var);
+            auto [l, u] = tracker.declared_bounds(var);
             lo = min(lo, l);
             hi = max(hi, u);
         }

@@ -91,11 +91,17 @@ auto Among::clone() const -> unique_ptr<Constraint>
 auto Among::define_proof_model(ProofModel & model, const State &) -> void
 {
     // very easy PB encoding: sum up over the condition that each variable equals one of the
-    // value of interest options, and make that equal the how many variable.
+    // value of interest options, and make that equal the how many variable. A value
+    // outside a variable's declared bounds contributes nothing, so leave its term out,
+    // as cake_pb_cp does (#1413).
+    auto & tracker = model.names_and_ids_tracker();
     WPBSum sum;
-    for (auto & var : _vars)
+    for (auto & var : _vars) {
+        auto [lower, upper] = tracker.declared_bounds(var);
         for (auto & val : _values_of_interest)
-            sum += 1_i * (var == val);
+            if (val >= lower && val <= upper)
+                sum += 1_i * (var == val);
+    }
     _sum_line = model.add_labelled_constraint(constraint_id(), "le", "ge", sum == 1_i * _how_many);
 }
 

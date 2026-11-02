@@ -1,0 +1,1 @@
+( (version 1) (variables (X 0 1) (Y 0 2) (Z 1 3)) (constraints (_1 value_precede (0 3) (X Y Z))) (prob_type enumerate) )

@@ -360,6 +360,9 @@ add_scp_chain_test(global_cardinality_gac_unsat    none)
 # the same ones boundsglobalcardinalityclosed exercises -- but only this keyword
 # reaches them from the GAC propagator, which is a different set of proof steps.
 add_scp_chain_test(global_cardinality_gac_closed_sat none)
+# #1413: values a variable's declared bounds exclude get no term (or, for an
+# unreachable Element index, no row); cake drops them in step.
+add_scp_chain_test(gcc_closed_out_of_bounds_sat     none)
 
 # none (chain-only): the reified linear forms. cake reads the reification as a
 # leading (var op value) triple on lin_equals / lin_less_equal, exactly as the
@@ -577,6 +580,9 @@ add_scp_chain_test(at_most_one_sat             none)
 add_scp_chain_test(at_most_one_unsat           none)
 add_scp_chain_test(among_sat                   none)
 add_scp_chain_test(among_unsat                 none)
+# #1413: values a variable's declared bounds exclude get no term (or, for an
+# unreachable Element index, no row); cake drops them in step.
+add_scp_chain_test(among_out_of_bounds_sat     none)
 
 # none (chain-only): symmetric_all_different (the assignment is an involution: if
 # var i takes value start + j then var j takes value start + i). cake's encoder is
@@ -605,6 +611,10 @@ add_scp_chain_test(symmetric_all_different_unsat  none)
 # solver labels its rows as cake does; see its own case below.)
 add_scp_chain_test(element_2d_sat              none)
 add_scp_chain_test(element_2d_unsat            none)
+# #1413: values a variable's declared bounds exclude get no term (or, for an
+# unreachable Element index, no row); cake drops them in step.
+add_scp_chain_test(element_unreachable_index_sat     none)
+add_scp_chain_test(element_2d_unreachable_index_sat  none)
 
 # none (chain-only): value_precede / seq_precede_chain. Both build a proof-only
 # first-occurrence index pos[v] per chain value (the sentinel n meaning "v is
@@ -647,6 +657,9 @@ add_scp_chain_test(element_2d_unsat            none)
 add_scp_chain_test(value_precede_sat            none)
 add_scp_chain_test(value_precede_nonexact_sat   none)
 add_scp_chain_test(value_precede_unsat          none)
+# #1413: values a variable's declared bounds exclude get no term (or, for an
+# unreachable Element index, no row); cake drops them in step.
+add_scp_chain_test(value_precede_out_of_bounds_sat  none)
 add_scp_chain_test(seq_precede_chain_sat            none)
 add_scp_chain_test(seq_precede_chain_nonexact_sat   none)
 add_scp_chain_test(seq_precede_chain_unsat          none)

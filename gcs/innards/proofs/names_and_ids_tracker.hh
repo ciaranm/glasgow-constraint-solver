@@ -650,6 +650,15 @@ namespace gcs::innards
         [[nodiscard]] auto tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::pair<Integer, Integer>;
 
         /**
+         * The declared bounds of a model variable, a view or a constant: a
+         * variable's tracked_bounds, mapped through the view for a view, and the
+         * value itself for a constant. The OPB's bound rows make [id = v] false
+         * for any v outside them, so a constraint may leave such a term out of
+         * a row without changing what the row says, as cake_pb_cp does (#1413).
+         */
+        [[nodiscard]] auto declared_bounds(const IntegerVariableID & id) const -> std::pair<Integer, Integer>;
+
+        /**
          * Track the OPB bound-row references (lower row, upper row) for a
          * bits-encoded variable, so that proof steps can combine them by pol
          * (ProofLogger::introduce_bits_of derives a linear form's own bound

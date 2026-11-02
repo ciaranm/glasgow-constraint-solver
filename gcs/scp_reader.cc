@@ -887,9 +887,9 @@ namespace
         // has constant size sizes[i] and goes in bin items[i]. The tagged fifth
         // term picks the form: `loads` gives one load *variable* per bin (each
         // exactly the total size in that bin), `capacities` one constant upper
-        // bound per bin. cake_pb_cp has no binpacking rule, so this shape is
-        // ours; the tag is what keeps the two forms apart, since both trailing
-        // lists are per-bin and the same length.
+        // bound per bin. This is cake_pb_cp's shape for binpacking, both forms;
+        // the tag is what keeps them apart, since both trailing lists are
+        // per-bin and the same length.
         if (terms.size() != 6)
             throw ScpReadError{"binpacking is (label binpacking (items...) (sizes...) loads|capacities (per-bin...))"};
         auto items = resolve_variable_list(variables, terms[2], "the binpacking item list");

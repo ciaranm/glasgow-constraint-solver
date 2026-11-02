@@ -1,0 +1,1 @@
+( (version 1) (variables (X 0 2) (Y 4 6) (N 0 4)) (constraints (_1 among (X Y) (1 5) N)) (prob_type enumerate) )

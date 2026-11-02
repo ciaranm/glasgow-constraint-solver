@@ -1,0 +1,1 @@
+( (version 1) (variables (X 0 2) (Y 4 6) (Z 1 5) (C1 0 3) (C5 0 3)) (constraints (_1 gacglobalcardinalityclosed (X Y Z) (1 5) (C1 C5))) (prob_type enumerate) )

@@ -272,11 +272,11 @@ propagating. Both are separate families.
 
 ### OPB encoding
 
-**One half-reified equality per array cell**, guarded by the conjunction of
-index literals that selects it:
+**One half-reified equality per reachable array cell**, guarded by the
+conjunction of index literals that selects it:
 
 ```
-for each cell (x₁, …, x_d):
+for each cell (x₁, …, x_d) with each x_k + start_k in index_k's declared bounds:
     (index₁ = x₁ + start₁) ∧ … ∧ (index_d = x_d + start_d)
         ->  BinEnc(result) - BinEnc(array[x₁]…[x_d]) = 0
               split into two rows, le and ge, each half-reified
@@ -285,10 +285,17 @@ if any dimension has length zero:
     0 >= 1
 ```
 
+A cell an index variable cannot select, by its declared bounds, gets no row:
+its guard is false under the bound rows, so the row would say nothing
+(#1413; `cake_pb_cp` makes the same change in step). Until #1413 every cell got
+its rows, 6 to 8 per cell with the guard's literal definitions; `element` over
+100 cells with the index in `0..1` wrote all 100.
+
 The encoding is **definitional** — every row states part of what the constraint
 means — and it is the first in the arc that is **linear in the size of the
 model object** rather than logarithmic. Measured, one `Element` over an array of
-`n` variables, counting the rows in the constraint's own OPB block:
+`n` variables whose index can select every cell, counting the rows in the
+constraint's own OPB block:
 
 | | |
 |---|---|
