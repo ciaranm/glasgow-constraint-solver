@@ -120,11 +120,11 @@ Degenerate cases, each checked:
 [^cpmpy]: CPMpy has no such global, and `gcspy` binds no
     `DifferenceConstraints` (no hit for `difference` anywhere under `python/`).
 [^scp]: `(id difference ((x y d) (x y d (b = 1)) ...))`. Constants appear as
-    integers in either operand position. A view operand is *written* as a list,
-    `((x + 2) (y + -1) -3)`, which the reader refuses ("expected an atom, found
-    a list"); that is the general reader limitation `scp_reader.hh` records
-    for every view operand, not this family's. `cake_pb_cp` has no `difference`
-    keyword (see [Cake conformity](#cake-conformity)).
+    integers in either operand position, and a view operand is written and
+    read as a view term, `((x + 2) (y + -1) -3)`. The reader used to refuse
+    those ("expected an atom, found a list"), as it did every view operand.
+    `cake_pb_cp` has no `difference` keyword (see [Cake
+    conformity](#cake-conformity)).
 
 `examples/difference_chain` (`--variant=global`) and `examples/rcpsp`
 (`--variant=global`, and `--machine=difference` for conditional edges) post
@@ -1563,8 +1563,8 @@ with `comparison`.
   wrongly. Carrying every potential, distance and bound wide through the
   heaps and the simplification stage was judged not worth it for weights
   this close to `2^60`.
-- **The `.scp` writer writes view operands the reader cannot read back**, and
-  `cake_pb_cp` cannot check this family at all.
+- **`cake_pb_cp` cannot check this family at all.** The `.scp` writer's view
+  operands do read back now, so the solver can re-solve its own `.scp`.
 - **Root simplification can dominate a dense unconditional model**, at 82% of
   the solve on Example 8; `simplifying_at_root(false)` (or `--simplify off`)
   is the switch.

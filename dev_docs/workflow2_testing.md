@@ -23,8 +23,11 @@ document is exactly four tagged sections, in order:
 ```
 
 `prob_type` is the bare atom `decide` or `enumerate`, or the list
-`(minimize var)` / `(maximize var)`. `innards::write_scp` emits this and
-`gcs::read_scp` consumes it, returning an objective as `ScpModel::objective`
+`(minimize var)` / `(maximize var)`. Anywhere a variable may appear, including
+here, so may an integer constant or a view, written `(X + c)` or `(-X + c)`
+with the offset always present; cake_pb_cp's grammar does not have view terms
+yet, so a document with one is the solver's alone. `innards::write_scp` emits
+this and `gcs::read_scp` consumes it, returning an objective as `ScpModel::objective`
 (its variable and direction, mirroring `Problem::optional_objective()`) without
 posting it, so that enumerating an optimisation document stays possible —
 `glasgow_scp_solver` is the caller that hands it to `Problem::minimise()` or
@@ -65,12 +68,13 @@ Two checks enforce it, between them covering everything that writes a `.scp`:
 - **Constraint tests, in process.** `verify_proof_and_dispose` calls
   `test_innards::check_scp_writer_reader_symmetry`, which reads the test's own
   `.scp` back and fails if a keyword has no case
-  (`ScpUnsupportedConstraintError`). A new constraint's own test is what catches
-  the omission.
+  (`ScpUnsupportedConstraintError`) or if a case rejects what the writer put
+  under it. A new constraint's own test is what catches the omission.
 - **Examples, benchmarks and frontends.** `run_test_and_verify.bash` runs
   `glasgow_scp_solver --parse-only` over the `.scp` the run wrote. That binary
-  exits **2** for an unknown keyword and **1** for any other read failure, and
-  only 2 fails the test. Its path comes from `build/scp_solver_path`, which
+  exits **2** for an unknown keyword, **3** for a shape it cannot rebuild (see
+  below) and **1** for any other read failure, and everything but 0 and 3 fails
+  the test. Its path comes from `build/scp_solver_path`, which
   CMake generates beside the binaries, so no `add_test` registration needed
   changing; the check simply skips outside a build tree. This lane matters
   because some constraints are only ever posted by an example — `LexSmartTable`
@@ -79,11 +83,17 @@ Two checks enforce it, between them covering everything that writes a `.scp`:
 
 Two narrower things neither check demands:
 
-- **Not every instance need round-trip.** A view operand renders as
-  `(-X + 17)`, which the grammar does not parse; a plain `ScpReadError` is
-  tolerated. Only a missing *keyword* fails. The cost is that a model whose
-  first unreadable thing is a view hides any bad keyword later in the same file
-  — `n_queens` is one — which is part of why both lanes exist.
+- **Not every instance need round-trip.** A shape the public constructors
+  cannot rebuild raises `ScpUnrebuildableShapeError`, which both checks
+  tolerate. There is one: a non-deterministic automaton, which cake accepts but
+  `Regular` has no public constructor for. Any other read failure fails, so the
+  cost is only that a model whose first unreadable thing is an automaton hides a
+  bad keyword later in the same file, which is part of why both lanes exist.
+  Both lanes used to tolerate every read failure, because views were
+  unreadable: in the constraint suite 10,046 test `.scp` files failed on a
+  view, and `n_queens` was one of the examples. Once the reader learned view
+  terms the 19 automata were all that was left in the suite, every example's
+  `.scp` read back cleanly, and the checks were narrowed to automata.
 - **Test-fixture constraints are exempt**, by the `test_...` naming convention
   (`test_tabulated_product`, `test_product_fragment`). Use that prefix for an
   ad-hoc Constraint that exists only to drive one piece of proof machinery.
@@ -285,7 +295,7 @@ enum class ProofCheck { None, SelfVerify, CakeChain };
 The whole point of Part A is the *edge cases* (small/awkward domains, views, dup
 variables). The original blocker was gate (2), which no longer applies — so what
 remains is gate (1): the random generator will happily build instances of
-constraints cake has no rule for, and views, which nothing parses. A `CakeChain`
+constraints cake has no rule for, and views, which cake does not parse. A `CakeChain`
 arm would need to fall back per instance on those rather than fail.
 
 ### Hook points

@@ -348,12 +348,13 @@ the solver's own. It round-trips through `read_scp` (`scp_reader_test.cc`: a
 write identity over all five graph classes), and the six hand-written `.scp`
 files above agree with Gecode.
 
-**A `.scp` from a MiniZinc path model cannot be read back at all** whenever
-the endpoints are variables. The endpoint shift of the MiniZinc overrides arrives as
-`(_2 equals t (X_INTRODUCED_35_ + 3))`, and neither `read_scp` nor cake parses
-a view term ("expected an atom, found a list"). This is the known exclusion
-#432 records ("views are excluded throughout"). It is generic, not this
-family's, and it would stop a chain before cake even if cake had a `path`
+**A `.scp` from a MiniZinc path model cannot be chained** whenever the
+endpoints are variables. The endpoint shift of the MiniZinc overrides arrives
+as `(_2 equals t (X_INTRODUCED_35_ + 3))`, a view term. `read_scp` used to
+refuse it ("expected an atom, found a list") and now reads it, so the solver
+can re-solve the file, but cake's grammar has no view terms. This is the known
+exclusion #432 records ("views are excluded throughout"). It is generic, not
+this family's, and it would stop a chain at cake even if cake had a `path`
 keyword.
 
 ### Proof-time state
@@ -1093,9 +1094,11 @@ The children's gaps are theirs: see [`reachable.md`](reachable.md) and
   endpoint variable or two.
 - **With proofs, the graph size is limited by the reachability unfolding**,
   `Θ(n(n + m))` OPB rows.
-- **A `.scp` written from a MiniZinc model cannot be re-solved or chained**:
-  the endpoint shift becomes a view, which the `.scp` reader does not parse,
-  and cake has no `path` anyway.
+- **A `.scp` written from a MiniZinc model can be re-solved, but not
+  chained.** The endpoint shift becomes a view, such as `(X_INTRODUCED_10_ +
+  1)`, which the `.scp` reader used to reject and now reads: a four-node model
+  with free endpoints re-solves to the same 24 solutions MiniZinc reports. cake
+  has no `path`, and no view terms, so there is no chain.
 
 ### Next steps
 

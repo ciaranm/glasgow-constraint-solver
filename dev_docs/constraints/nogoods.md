@@ -150,10 +150,9 @@ descended sibling is kept, including a first sibling `x ≠ v` or `x ∉ I`.
 
 [^scp]: Read and written by us only. `cake_pb_cp` prints `unsupported
     constraint: nogoods` and writes an empty OPB, exiting 0, so there is no
-    chain case. A view in a literal is written as `((x + 1) = 2)`, which the
-    reader refuses (`expected an atom, found a list`); that is the reader's
-    general view limitation ([`workflow2_testing.md`](../workflow2_testing.md)),
-    not this family's. Range literals throw in `s_expr()`
+    chain case. A view in a literal is written as `((x + 1) = 2)`, and read
+    back as one. The reader used to refuse it (`expected an atom, found a
+    list`), as it did every view. Range literals throw in `s_expr()`
     (`names_and_ids_tracker.cc:2872-2876`).
 
 [^grow]: The learned store is installed on the propagators, not posted, so

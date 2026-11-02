@@ -176,8 +176,8 @@ the proof-innards tests under `gcs/` (`reification_test`, `invar_test`, the
 `range_witness_*` set) — leave the checking to `run_test_and_verify.bash`, which
 runs the binary with `--prove`, checks the proof with `veripb`, and then reads
 back any `.scp` it wrote with `glasgow_scp_solver --parse-only`, so that a
-constraint whose keyword `read_scp` cannot handle is reported by the program
-that posted it:
+constraint `read_scp` cannot read back is reported by the program that posted
+it:
 
 ```shell
 ./run_test_and_verify.bash ./build/reification_test

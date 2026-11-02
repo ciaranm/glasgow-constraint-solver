@@ -178,8 +178,9 @@ namespace gcs::test_innards
     }
 
     /**
-     * \brief Assert that read_scp has a case for every constraint keyword the
-     * test's `.scp` contains.
+     * \brief Assert that read_scp can read the test's `.scp` back: that it has
+     * a case for every constraint keyword there, and that each case accepts
+     * what the writer put under it.
      *
      * Writer/reader symmetry is not automatic: Constraint::s_expr() is a
      * per-constraint override, so a new constraint can write a keyword read_scp
@@ -189,22 +190,19 @@ namespace gcs::test_innards
      * encoder is even invoked. Running this from every proving constraint test
      * means a new constraint's own test is what catches it.
      *
-     * **Only ScpUnsupportedConstraintError fails; every other exception is
-     * swallowed**, and that is deliberate rather than an oversight. Re-posting
-     * into a throwaway Problem is an extra probe alongside the solve the test
-     * already did, so anything it throws that is not a missing keyword is a
-     * limitation of the probe, not a finding about the constraint under test —
-     * a view operand the grammar cannot parse, an instance shape the public
-     * constructors cannot rebuild, or a name Problem::check_name() rejects (the
-     * anonymous `_N` case was exactly that, and it is not an ScpReadError at
-     * all). Anything genuinely wrong with posting would already have failed the
-     * real solve above.
+     * **Every read failure fails, except ScpUnrebuildableShapeError**: a
+     * well-formed instance in a shape the public constructors cannot rebuild (a
+     * non-deterministic automaton is the only one). A missing keyword is
+     * reported as such; anything else -- a malformed term, a view or condition
+     * the reader cannot parse, a name Problem::check_name() rejects -- is the
+     * writer and reader disagreeing about a keyword they both know, and is
+     * reported with the reader's message.
      *
-     * Catching narrowly would mean every proving constraint test — which is all
-     * of them — could start failing on an unrelated reader limitation, so the
-     * blast radius is the reason for the wide catch, not carelessness. Posting
-     * into a throwaway Problem is cheap next to the solve and veripb run that
-     * precede it.
+     * The catch was once wide, because views made 10,046 of the suite's `.scp`
+     * files unreadable and narrowing it would have failed every one of those
+     * tests on an unrelated limitation. Once the reader learned view terms,
+     * the 19 automata were the only failures left, and a wide catch had
+     * stopped buying anything but a place for the next disagreement to hide.
      *
      * Constraint types named `test_...` are exempt: a few tests define an ad-hoc
      * Constraint to drive one piece of proof machinery (see
@@ -228,8 +226,11 @@ namespace gcs::test_innards
                 throw UnexpectedException{
                     std::string{"the .scp writer emitted a constraint read_scp cannot read ("} + e.what() + "): add a case to gcs/scp_reader.cc"};
         }
-        catch (const std::exception &) {
-            // Not a missing keyword, so not this guard's business: see above.
+        catch (const ScpUnrebuildableShapeError &) {
+            // A known reader limitation, not a writer/reader disagreement: see above.
+        }
+        catch (const std::exception & e) {
+            throw UnexpectedException{std::string{"read_scp could not read back the .scp the writer emitted ("} + e.what() + ")"};
         }
     }
 
@@ -252,13 +253,12 @@ namespace gcs::test_innards
      * the space they keep.
      *
      * Opt-in, and strict where the symmetry check is deliberately forgiving.
-     * read_scp does not promise that every *instance* round-trips -- a view
-     * operand does not render as a term the grammar parses, and the anonymous
-     * `_N` variable names a test usually gets are not names Problem::check_name()
-     * accepts -- so a caller has to hand this an instance that can round-trip,
-     * bare handles under names of its own choosing. In exchange, anything thrown
-     * from here is a finding about the writer rather than a limitation of the
-     * probe.
+     * read_scp does not promise that every *instance* round-trips -- a
+     * non-deterministic automaton, for one, is a shape the public constructors
+     * cannot rebuild -- so a caller has to hand this an instance that can
+     * round-trip, with variables under names of its own choosing. In exchange,
+     * anything thrown from here is a finding about the writer rather than a
+     * limitation of the probe.
      */
     inline auto check_scp_round_trip_solutions(
         const std::string & proof_name, const std::vector<std::string> & variable_names, const std::set<std::vector<int>> & expected) -> void

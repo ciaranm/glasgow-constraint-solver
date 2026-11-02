@@ -96,13 +96,18 @@ auto main(int argc, char * argv[]) -> int
         model = read_scp(problem, text);
     }
     catch (const ScpUnsupportedConstraintError & e) {
-        // Distinguished from every other read failure by its exit status, so a
+        // The two typed read failures get exit statuses of their own, so a
         // caller checking writer/reader symmetry can tell "this reader has no
-        // case for that keyword" (a gap to fix) from "this reader knows the
-        // keyword but cannot rebuild this instance" (a view operand, say --- a
-        // documented limitation). See run_test_and_verify.bash.
+        // case for that keyword" (2, a gap to fix) and "this reader knows the
+        // keyword but cannot rebuild this shape" (3, a non-deterministic
+        // automaton --- a documented limitation) from every other read failure
+        // (1). See run_test_and_verify.bash.
         println(cerr, "Error: {}", e.what());
         return 2;
+    }
+    catch (const ScpUnrebuildableShapeError & e) {
+        println(cerr, "Error: {}", e.what());
+        return 3;
     }
     catch (const std::exception & e) {
         println(cerr, "Error: {}", e.what());

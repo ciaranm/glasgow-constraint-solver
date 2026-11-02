@@ -353,12 +353,13 @@ start anywhere in `−3..5`, and the root probe's domains span `−3..4`.
 - *Front ends:* MiniZinc cannot produce a view, so `all_equal([x, x + 1])`
   arrives with an auxiliary variable and an `int_lin_eq`. It fails correctly,
   in 1,001 propagations over `0..1000`, as the two constraints hand the bound
-  back and forth (`mzn/rep1.mzn`). XCSP3's `allEqual` and the `.scp` reader
-  take plain variables and constants only: the reader rejects a view argument
-  such as `(x0 + 1)` with `expected an atom, found a list`. So views, and with
-  them offset and opposite-sign repeats, reach the family only from the C++
-  API. A plain repeat also comes from `.scp` and XCSP3, and from MiniZinc
-  after aliasing.
+  back and forth (`mzn/rep1.mzn`). XCSP3's `allEqual` takes plain variables
+  and constants only. The `.scp` reader used to as well, rejecting a view
+  argument such as `(x0 + 1)` with `expected an atom, found a list`, but it
+  now reads view terms: `(x0 (x0 + 1))` has no solutions and `(x0 (-x0 + 2))`
+  forces `x0 = 1`, as they should. So views, and with them offset and
+  opposite-sign repeats, reach the family from the C++ API and from `.scp`. A
+  plain repeat also comes from XCSP3, and from MiniZinc after aliasing.
 
 **Overflow.** `hi + 1_i` in the upper-bound push goes through
 `Integer::operator+`, which throws `IntegerOverflow` rather than wrap. A bound
