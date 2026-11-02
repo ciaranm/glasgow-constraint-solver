@@ -21,7 +21,7 @@ namespace gcs::innards
      * cake_pb_cp's value-flag scheme, instead of the default `p[index_name][b]`:
      * value bit b becomes `v[id][indices..._b][value_annotation]` and a
      * two's-complement variable's sign bit becomes `v[id][indices...][sign_annotation]`
-     * (required when the range is negative, or when the sign bit is forced below). The bits are still the variable's bits;
+     * (required when the range is negative). The bits are still the variable's bits;
      * only their names change. Passing one to create_proof_only_integer_variable also
      * makes the variable a free bit-sum (no OPB bound lines), matching how cake encodes
      * these auxiliaries. Mirrors NamesAndIDsTracker::create_proof_flag_values.
@@ -32,14 +32,6 @@ namespace gcs::innards
         std::vector<long long> indices;
         std::string value_annotation;
         std::optional<std::string> sign_annotation;
-
-        // cake's arg_sort encodes its sorted-value variables in two's complement
-        // *unconditionally*, emitting a sign bit even when the value can never be
-        // negative -- so to match it here we have to add a redundant sign bit for a
-        // non-negative variable too. This exists only to reproduce that; the right
-        // fix is for cake's arg_sort encoder to drop the sign bit when the range is
-        // non-negative, after which this flag (and its embarrassing name) can go.
-        bool add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does = false;
 
         // Which flag family the bits render in: the default `v[id][...]` (Values,
         // matching create_proof_flag_values, e.g. arg_sort/sort/value_precede) or

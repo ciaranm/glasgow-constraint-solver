@@ -1,0 +1,1 @@
+( (version 1) (variables (Y 0 4) (Z 0 6)) (constraints (_1 smart_table ( ((Y in (0 3 4)) (Y != 0) (Z in (0 1 2 6)) (Z != 6) (Z > Y)) ) (Y Z))) (prob_type enumerate) )

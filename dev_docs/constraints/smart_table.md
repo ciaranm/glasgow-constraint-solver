@@ -8,17 +8,19 @@
 > (#1120). **Fixed since the audit**: #1119 (an entry over a variable outside
 > the scope aborted the solve), by #1213, and #1121 (`LexSmartTable` and
 > `AtMostOneSmartTable` hints named no constraint), by #1182; see [Re-audit,
-> 2026-10-08](#re-audit-2026-10-08). Filed from the review of this audit:
-> building the proof model does up to quadratic work in a unary-entry
-> variable's width (#1127); every tree of a row copies the whole scope's
-> domains on every call (#1128).
+> 2026-10-08](#re-audit-2026-10-08). Since #1412 the encoding is
+> `cake_pb_cp`'s, names included, which also fixes #1127 and *chain row
+> flags* below. Filed from the review of this audit: building the proof model
+> did up to quadratic work in a unary-entry variable's width (#1127, fixed by
+> #1412); every tree of a row copies the whole scope's domains on every call
+> (#1128).
 > **Not filed**, and cited below by a short name in italics: a value removal
 > asserted with no reason at the `Definitions`, `Links` and `Inferences`
 > assertion levels, so the hints-only proof asserts false clauses, a defect
 > `Circuit` shares (*assertion reasons*), left by decision until the hints-only
 > mode is taken up for the justifier; the `cake_pb_cp` chain failing on the
-> solver's row-flag names (*chain row flags*); and the rest of the per-call
-> cost (*per-call cost*), both low priority. Already open and touching this family:
+> solver's row-flag names (*chain row flags*, fixed by #1412); and the rest of
+> the per-call cost (*per-call cost*), low priority. Already open and touching this family:
 > #833 (the large-domain policy, whose audit lane marks all three smart-table
 > rows `KnownTrip`), #364 (incrementality survey), #868 (cross-solver). Tracked
 > under #871.
@@ -270,112 +272,134 @@ algorithm. They are also reached differently: `Table` from every front end,
 
 ### OPB encoding
 
-The thesis's Encoding Procedure 4.1 for the rows. The entries differ from its
-Encoding Procedure 4.2 in several places, listed after the table.
+`cake_pb_cp`'s encoding, row for row and name for name (#1412). The rows are
+the thesis's Encoding Procedure 4.1; the entries differ from its Encoding
+Procedure 4.2, as listed after the table.
 
 ```
-Σ_i t_i ≥ 1                                    at least one row holds
-t_i ⇒ Σ_{e ∈ row i} flag(e) ≥ |row i|          row i holds if selected
-¬t_i ⇒ Σ_{e ∈ row i} ¬flag(e) ≥ 1              ... and only then
+x[id][k]  ⇔  Σ_{e ∈ row k} lit(e) ≥ |row k|      row k holds, two-way: @x[id][k][r], @x[id][k][f]
+Σ_k x[id][k] ≥ 1                                  @c[id][al1]
 ```
 
-So `t_i` is fully reified and set by unit propagation on a complete assignment,
-which `solx` needs. The entry flags:
+So each row flag is fully reified and set by unit propagation on a complete
+assignment, which `solx` needs. Below, `t_k` is row `k`'s flag `x[id][k]`, as
+the thesis names it. Each entry `e` (the `e`-th of row `k`) is one
+literal:
 
-| Entry | Flag | Rows |
+| Entry | `lit(e)` | Rows |
 |---|---|---|
-| `a < b`, `a ≤ b`, `a > b`, `a ≥ b` | `bin_lt` etc., fully reifying `BinEnc(b) − BinEnc(a) ≥ 1` and so on | 2 |
-| `a = b` | `bin_eq`: `bin_eq ⇒ BinEnc(a) − BinEnc(b) = 0`, and `¬bin_eq ⇒ gt ∨ lt` with `gt`, `lt` fully reified | 7 |
-| `a ≠ b` | its own `bin_eq` flag, the two halves swapped | 7 |
-| unary entries on one variable, consolidated | `inset`: `inset ⇒ Σ_{v ∈ D₀ \ S} [a ≠ v] ≥ |D₀ \ S|`, `¬inset ⇒ Σ_{v ∈ S} [a ≠ v] ≥ |S|` | 2, or 1 when `S` is empty |
+| `a > b`, `a ≤ b` | `sgt`, `¬sgt`: `sgt ⇔ a − b ≥ 1` | 2 for the pair |
+| `a < b`, `a ≥ b` | `slt`, `¬slt`: `slt ⇔ b − a ≥ 1` | 2 for the pair |
+| `a = b`, `a ≠ b` | `seq`, `¬seq`: `seq ⇔ ¬sgt ∧ ¬slt` | 2, plus `sgt` and `slt` if new |
+| `a op c` | the literal itself: `a ≥ 5` is `[a ≥ 5]`, `a ≠ 3` is `¬[a = 3]` | its definition, if new |
+| `a ∈ S`, `a ∉ S` | `sset`, `¬sset`: `sset ⇔ Σ_{v ∈ S} [a = v] ≥ 1` | 2, plus `S`'s equality literals |
 
-A binary entry's flag is shared by every row that has the same entry, keyed
-on `(a, b, op)`.
+The `sgt`, `slt` and `seq` flags are kept per ordered pair `(a, b)` as
+written, so `b > a` is `(b, a)`'s `sgt`, not `(a, b)`'s `slt`. Each is created
+by the first entry that needs it, wherever it is, and named after that entry:
+`x[id][k_e][sgt]`, with halves `@x[id][k_e][sgt][r]` and `[f]`. Every later
+entry on the pair, in any row and under any of the six operators, reads the
+same three flags. A set flag `x[id][k_e][sset]` belongs to its entry alone.
+`S` is as listed, with values outside `a`'s domain and repeats; an empty `S`
+makes `sset` false.
 
 **Where the entries differ from the thesis.**
 
-- **Unary entries are consolidated.** Before encoding a row, every unary entry
-  on one variable, value or set, is merged into a single `in` set: the values
-  of the variable's **initial domain** `D₀` that satisfy all of them. The
-  reason is #40, found by random testing: with stacked unary entries encoded
-  separately, "unsupported values fail to unit propagate", in the words of the
-  `stacked_unary` test. The thesis encodes a value entry `a ≥ 5` as the literal
-  itself; here it becomes a set over `D₀`, one equality literal per value.
-- **Sets** are stated over every value of `D₀`: `inset ⇒ [a ≠ v]` for each
-  `v ∈ D₀ \ S`, and the reverse direction `¬inset ⇒ Σ_{v ∈ S} [a ≠ v] ≥ |S|`.
-  The thesis's `GenericR` (Equation 3.45) states the set by its two bounds
-  plus one `[a ≠ v]` per missing value inside them. Both are per value.
-- **Every order relation** (`<`, `≤`, `>`, `≥`) and `≠` gets a flag of its own
-  here. The thesis's Encoding Procedure 4.2 has cases only for `≥`, `<`, `=`
-  and `≠`, reusing the `≥` and `=` flags, negated, for `<` and `≠`.
-- **`=`** is a half reification of an equality plus a disjunction of strict
-  flags. The thesis makes it a conjunction of two `≥` flags. Both are set by
-  unit propagation on a complete assignment.
+- **A value entry is its own literal,** as in the thesis. The thesis has no
+  set entry; its `GenericR` (Equation 3.45) states a set by its two bounds
+  plus one `[a ≠ v]` per missing value inside them. Here a set is a
+  disjunction over its listed values, so it costs `O(|S|)` whatever the
+  domain. That disjunction does not unit propagate to the values it leaves
+  out, which the proof makes up for at the root (see [Proof-time
+  state](#proof-time-state)).
+- **`<` and `≥` share a flag, as do `>` and `≤`,** where Encoding Procedure
+  4.2 has a case for `≥` and reuses it for `<`: the same idea, in the other
+  direction for `<`.
+- **`=`** is a conjunction of the two strict flags' negations; the thesis's
+  is a conjunction of two `≥` flags. Both are set by unit propagation on a
+  complete assignment.
 
-**Definitional**, and a function of the declared domains. **Size**: the flag
-and row counts above, plus the literal definitions the shared layer writes. A
-binary entry is logarithmic in width; a unary entry is **linear in its
-variable's initial width**, through the equality literals of the consolidated
-set. Measured at `c9ceea25` (`tmp/fd-smarttable/width/`, two variables in
-`0..W`, one row):
+**Until #1412** the encoding was the solver's own: rows `t_i` that were
+half-reified both ways, one flag per `(a, b, op)` (a `=` or `≠` key got its own
+`gt` and `lt` as well, so one pair under all six operators had 10 flags
+against 3 now), and every unary entry on a variable consolidated into one
+set over the variable's **initial domain**, one equality literal per value
+(#40). That made a single `x ≥ 5` linear in `x`'s width, and building it up to
+quadratic (#1127).
 
-| Row | OPB lines at W = 10² | 10³ | 10⁴ |
-|---|---|---|---|
-| `{x < y}` | 11 | 11 | 11 |
-| `{x ≥ 5, y ≤ W − 5}` | 825 | 8,025 | 80,025 |
+**Definitional**, and a function of the entries alone, not the domains.
+**Size**: the rows above, plus the literal definitions the shared layer
+writes. A binary entry is logarithmic in width and a value entry constant; a
+set entry is linear in `|S|`. Measured at #1412 and, in brackets, on its base
+`c9289fd9`, one variable over `0..W`, one row, to proof start
+(`tmp/cake1412/construct/`):
+
+| Row | OPB rows, W = 16,000 | 128,000 |
+|---|---|---|
+| `{x ≥ 1}` | 8 (64,014 before #1412) | 8 (512,014) |
+| `{x ∈ {1..W}}` | 64,010 (64,014) | 512,010 (512,014) |
 
 ### Labels
 
-`None` that anything uses. The fully reified entry flags' two definition rows
-carry the flag's own labels, `@f[N][bin_lt][r]` and `@f[N][bin_lt][f]`, but no
-proof line cites a label: every step is a RUP against the database. The row
-rows, the at-least-one row and the set rows are unlabelled. The flags are named
-`f[N][t<i>]`, `f[N][bin_lt]`, `f[N][gt]`, `f[N][inset]` and so on, where `N`
-is the proof model's global flag counter, so a flag's name depends on what was
-posted before it.
+Cake's, so that the solver's OPB and cake's line up and a proof step that
+names a flag means the same thing against either: `x[id][k]` for row `k`,
+`x[id][k_e][sgt|slt|seq|sset]` for the entry flags, each with `[r]`/`[f]`
+halves, and `@c[id][al1]`. Under `LexSmartTable` and `AtMostOneSmartTable`,
+`id` is the posted baseline's (#1182). No proof line cites a label: every step
+is a RUP against the database, and names the row flags as literals.
 
 ### Cake conformity
 
-| Case | Chain | `opbdiff` |
-|---|---|---|
-| `scp_chain_smart_table_sat` (`{A ≤ B}`, enumerate) | full workflow 2 | `none` |
-| `scp_chain_smart_table_unsat` (two rows each forcing a value out of its domain) | full workflow 2 | `none` |
-| `scp_chain_smart_table_outside_scope_sat` (`((A < C))` over scope `(A B)`, enumerate), since #1213 | full workflow 2 | `none` |
+Every table chain-verifies, by construction: the two encodings are the same.
+`opbdiff` still reports rows that are trivially true on both sides, which
+cake writes with a literal coefficient 0 and the solver with 1, #358's
+divergence: an atom past a variable's bounds (`x = 3` over `0..2`), an empty
+set, a row with no entries. Cases with none of those are `strict`.
 
-All three chain-verify at `0a5b4ec6`, run by hand with cake on the path
-(`tmp/fd871-comments-1008/tables/probes/chain/`); the first two did at
-`c9ceea25` too. All three are deliberately narrow: #1213's body reports that a
-richer out-of-scope table fails the chain at step 3 just as it does with `C`
-in the scope, which is the gap below, not the scope. Cake
-names the rows and entries differently: `x[_1][k]` for row `k`,
-`x[_1][k_j][slt]` for its entries, and `c[_1][al1]` for the at-least-one row.
-Beyond the first two cases, run through `run_scp_chain.bash` at `c9ceea25`
-(`tmp/fd-smarttable/scp/`):
-
-| Extra case | Result |
+| Case | `opbdiff` |
 |---|---|
-| `{A = B}`, enumerate | verifies |
-| two tables of binary entries, UNSAT | verifies |
-| three rows of binary entries `<`, `=`, `>`, `≠`, `≥`, enumerate | fails: a tree-filtering lemma cites `f[0][t0]`, which cake's OPB never defines |
-| two rows of order entries only (`(A < B) (B ≤ C)`, `(A > C) (B ≥ A)`), enumerate | fails at the lemma `rup 1 ~f[0][t0] 1 ~i[A][ge3] 1 i[B][ge4] >= 1`: on cake's OPB, `f[0][t0]` is set and nothing follows from it. The same proof verifies against our own OPB |
-| two rows, binary plus one unary `B ≥ 2`, enumerate | fails: the proof cites `i[B][ge0]`, defined in our OPB (for the consolidated set) and not in cake's |
-| the `smart_table_small` rows, enumerate | fail the same way |
-| the `smart_table_small` rows plus a second table `((C = 2) (A = 1))`, UNSAT | verifies on our OPB; on cake's, VeriPB stops at proof line 4: "The label `@i[A][ge4][r]` is not assigned", a literal definition our OPB has and cake's does not |
+| `scp_chain_smart_table_sat` (`{A ≤ B}`) | `strict` |
+| `scp_chain_smart_table_unsat` (two rows each forcing a value out of its domain) | `none` |
+| `scp_chain_smart_table_outside_scope_sat` (`((A < C))` over scope `(A B)`), since #1213 | `strict` |
+| `scp_chain_smart_table_mixed_ops_sat` (three rows over all six binary operators) | `strict` |
+| `scp_chain_smart_table_unary_sat` (binary and value entries) | `strict` |
+| `scp_chain_smart_table_entry_kinds_sat` (every entry kind, empty and out-of-domain sets) | `none` |
+| `scp_chain_smart_table_in_set_{ends,gap}_unsat` (the root lines below) | `none` |
+| `scp_chain_lex_smart_table_empty_left_unsat` | `strict` |
+| `scp_chain_lex_smart_table_empty_right_sat` (an entry-free row) | `none` |
 
-So two causes, not one. The comment above the chain cases gives the row-flag
-names as the reason for `none`, but puts the enumeration limit on equality and
-set entries and #358, and a table of order entries alone fails too. The same
-comment says "The refutation (unsat) verifies regardless (RUP)". That is true
-of the in-tree case but not in general: the UNSAT case in the last row fails,
-by the second cause below (the comment is corrected on both counts by
-#1396, open). The first cause is the row flags' names,
-which matters for any proof whose steps need a row flag. The second is the
-consolidated unary encoding's literals, which is #358's divergence, closed as
-wontfix on 2026-06-30 (*chain row flags*).
+`LexSmartTable` desugars exactly as cake does, so it chains too.
+`AtMostOneSmartTable` writes each entry as `x_j ≠ val` with `val` a constant,
+a binary entry, where cake makes it a value entry: the OPBs differ, but define
+the same rows under the same names, and the chain verifies (an at-most-one of
+three over `0..2`, 20 solutions, by hand).
+
+Before #1412 only narrow tables chained: proofs cited the solver's row flags
+`f[N][t<i>]`, which cake's OPB never defines, and the consolidated unary
+entries' literal definitions (*chain row flags*). All ten tables in
+`tmp/fd-smarttable/scp/`, among them the ones recorded as failing then (three
+rows of binary entries, order entries only, binary plus unary entries, the
+`smart_table_small` rows with and without a second table), now chain, and
+`opbdiff` finds nothing in them beyond coefficient-0 atom rows.
 
 ### Proof-time state
 
-- **At the root**: nothing beyond the OPB. No initialiser, no scaffolding.
+- **At the root, at `AssertionLevel::Off` only**: for each `in` entry, the
+  values its flag excludes. `sset` says only that `a` takes one of `S`'s
+  values, and unit propagation on that disjunction does not rule out a value
+  outside `S`, which the removal justifications need. So an initialiser at
+  `SimpleDefinition` priority writes, for `S = {s_1 < … < s_m}`, one RUP line
+  for each end and one for each gap, at `ProofLevel::Top`:
+  `¬sset ∨ [a ≥ s_1]`, `¬sset ∨ [a < s_k + 1] ∨ [a ≥ s_{k+1}]`,
+  `¬sset ∨ [a < s_m + 1]`. Each is RUP because the order literals falsify
+  every `[a = s_k]`. That is `O(|S|)` lines, against the `O(|D₀|)` rows the
+  consolidated encoding wrote per entry before #1412. Both kinds are
+  load-bearing: without the gap lines `scp_chain_smart_table_in_set_gap_unsat`
+  fails VeriPB against the solver's own OPB, and without the end lines
+  `scp_chain_smart_table_in_set_ends_unsat` and `mixed_same_var` do.
+  Either end line can stand in for the other in a two-set conflict, so
+  neither is load-bearing alone. A value entry needs nothing: its literal
+  reaches the excluded values through the order literals directly.
 - **Lazily, per call, at any assertion level**: with short reasons on, a
   flag `f[N][sr]`, two `red` lines fully reifying the call's whole reason, at
   `ProofLevel::Top`. It is made after the call has worked out which rows are
@@ -393,12 +417,11 @@ wontfix on 2026-06-30 (*chain row flags*).
     call that filters, whether or not it infers.
   - **Per-tuple steps** at `ProofLevel::Temporary`, inside each removal's and
     each contradiction's justification, deleted with it.
-- **Naming.** No row a justification depends on is labelled. An external
-  tool finds the row flags by
-  their `t<i>` suffix in row order under the constraint's comment in the OPB:
-  `* constraint smart_table _N`, or the parent's type and ID under a
-  baseline (`* constraint lex_smart_table _8`). It finds the entry flags by structure
-  only.
+- **Naming.** Cake's (see [Labels](#labels)), so an external tool finds row
+  `k`'s flag as `x[id][k]`, and an entry's as `x[id][k_e][…]` at the entry
+  that first needed it, `id` being the parent's under a baseline
+  (`lex_smart_table _8`). Before #1412 the flags were `f[N][t<i>]` and the
+  like, `N` the model's global flag counter.
 - **OPB versus proof.** Row and entry flags are in the OPB, and all are set by
   unit propagation on a solution. The `sr` flags are proof-only extension
   variables.
@@ -413,19 +436,16 @@ wontfix on 2026-06-30 (*chain row flags*).
 - **The constructor**: the aliasing and cycle checks, a union-find per row.
 - **`prepare()`**: allocates one `{0, 1}` `State` variable per row, the
   solver-side selector.
-- **`define_proof_model()`**, with proofs on only: consolidates each row's
-  unary entries by walking each such variable's initial domain, and writes the
-  rows above. The rows it writes are linear in that width, but the work of
-  building them is up to quadratic in it (#1127). Each initial-domain value is
-  looked up in the consolidated set `S` with a linear `std::count`, so
-  `|D₀| × |S|` comparisons per consolidated entry: `W(W + 1)` for `x ≥ 1` over
-  `0..W`, but `6(W + 1)` for `x ≤ 5`. The consolidation itself takes each input
-  set entry by value, copying and scanning it once per domain value, so
-  `|D₀| × Σ|input set|` more. It is quadratic when `S` or an input set is
-  `Θ(W)`. See [Interval efficiency](#interval-efficiency).
+- **`define_proof_model()`**, with proofs on only: writes the rows above,
+  entry by entry, keeping the binary flags per ordered pair in a map, and
+  records each `in` entry's flag with its sorted, distinct values. Linear in
+  the entries and the listed values; nothing walks a domain. Until #1412 it
+  consolidated each row's unary entries by walking each such variable's
+  initial domain, up to quadratic work in that width (#1127).
 - **`install_propagators()`**: builds each row's forest once
   (`build_forests`), rooting each tree at the row's first-mentioned variable
-  that is not yet in a tree.
+  that is not yet in a tree, and installs the root initialiser for the `in`
+  entries' lines (see [Proof-time state](#proof-time-state)).
 
 ### Propagator inventory
 
@@ -483,9 +503,9 @@ order-only entry such as `x < y` still loses supports when a hole appears.
   with one row `{x < y}` take 1.27 s and 146 MB for four propagator calls
   (release, `c9ceea25`, fataepyc-09, 2026-09-26, pinned with `taskset -c 40`
   and `GLIBC_TUNABLES`). `10⁹` was not run. Separately, with proofs on, one unary
-  entry `x ≥ 1` over `0..128,000` takes 4.1 s to reach the start of the proof,
-  against 1.75 s once its linear membership scan becomes a binary search
-  (#1127; release, `c9ceea25`, fataepyc-10, 2026-09-29). See [Interval
+  entry `x ≥ 1` over `0..128,000` took 4.1 s to reach the start of the proof
+  (#1127; release, `c9ceea25`, fataepyc-10, 2026-09-29); since #1412 it is a
+  single literal and takes under a millisecond. See [Interval
   efficiency](#interval-efficiency).
 - **Negative values and zero.** Tested (`wide_constants` over `−59..58`,
   `stacked_unary` over `−1..4`) and in the brute-force checks. The 5,000-table
@@ -518,31 +538,27 @@ behind it.
 3. **Proofs.** One justification per removed value, each `|T| + 1` RUP steps.
    A `=` entry's filtering lemmas are one per discarded value, the order entries'
    one per side, `≠`'s one. There is no width gate anywhere. The encoding is
-   linear in a unary-entry variable's width ([OPB encoding](#opb-encoding)),
-   but **building it is up to quadratic** in that width (#1127):
-   `define_proof_model` looks each initial-domain value up in the consolidated
-   set `S` with a linear scan (`|D₀| × |S|`), and the consolidation copies and
-   scans each input set entry once per value (`|D₀| × Σ|input set|`). That is
-   quadratic when `S` or an input set is `Θ(W)`, as in both rows below; an
-   entry `x ≤ 5` costs only `6(W + 1)` comparisons. Measured on a release
-   build of `c9ceea25`, fataepyc-10, 2026-09-29, pinned to one core, as the
-   median of three runs of the wall time from entering `solve_with` to
-   `after_proof_started`, with the OPB and proof written to tmpfs
-   (`tmp/fd-smarttable/codex-r1/construct.cc`, `construct_shm.out`; one
-   variable over `0..W`, one row, short reasons off):
+   constant per value entry and linear in a set entry's listed values
+   ([OPB encoding](#opb-encoding)), and building it is linear too. Until #1412
+   a unary entry was linear in its variable's width, and **building it was up
+   to quadratic** in that width (#1127): `define_proof_model` looked each
+   initial-domain value up in the consolidated set with a linear scan. Measured
+   at #1412 and on its base `c9289fd9`, fataepyc-08, 2026-11-01, pinned to one
+   core, the median of three runs of the wall time from entering `solve_with`
+   to `after_proof_started`, with the OPB and proof written to tmpfs
+   (`tmp/cake1412/construct/`, from `tmp/fd-smarttable/codex-r1/construct.cc`;
+   one variable over `0..W`, one row, short reasons off):
 
    | Row | W = 16,000 | 32,000 | 64,000 | 128,000 |
    |---|---|---|---|---|
-   | `{x ≥ 1}` | 0.23 s | 0.53 s | 1.45 s | 4.14 s |
-   | same, sorted lookup | 0.20 s | 0.42 s | 0.86 s | 1.75 s |
-   | `{x ∈ {1..W}}` | 0.32 s | 0.93 s | 3.44 s | 12.0 s |
-   | same, sorted lookup and no per-value copy | 0.20 s | 0.43 s | 0.87 s | 1.77 s |
+   | `{x ≥ 1}`, before | 0.23 s | 0.54 s | 1.43 s | 4.32 s |
+   | `{x ≥ 1}`, since #1412 | 0.0009 s | 0.0009 s | 0.0009 s | 0.0009 s |
+   | `{x ∈ {1..W}}`, before | 0.33 s | 0.92 s | 3.12 s | 11.2 s |
+   | `{x ∈ {1..W}}`, since #1412 | 0.20 s | 0.43 s | 0.89 s | 1.78 s |
 
-   The "sorted lookup" rows link a variant of `smart_table.cc`
-   (`codex-r1/st_sortedscan.cc`, and `st_sortedscan_v2.cc`, which also takes
-   the set entry by reference). Each writes an OPB and a proof byte-identical to
-   the unmodified build's at every width above, and grows linearly. Without
-   proofs, `define_proof_model` does not run and none of this is paid.
+   The "before" rows reproduce the audit's figures at `c9ceea25` to within a
+   few per cent. Without proofs, `define_proof_model` does not run and none
+   of this is paid.
 4. **The audit lane.** Three rows, all `KnownTrip`: `SmartTable` (two wide
    variables, one row `{v0 = v1}`), `LexSmartTable` and `AtMostOneSmartTable`.
    None is in the proof-size case. The rows do not vary unary or set entries,
@@ -564,8 +580,9 @@ the selector has no proof counterpart, and it is set with
 killed the row, it follows from the tree-filtering lemmas written by the call
 that found the row dead. Those are at `ProofLevel::Current`, so they survive
 into every node below it, and the dead row writes no new ones. If only a
-unary entry killed it, no lemma was written and none is needed: the set's
-flag rows give it from the encoding alone.
+unary entry killed it, no lemma was written and none is needed: a value
+entry's literal gives it from the encoding, and a set entry's flag with its
+root lines (see [Proof-time state](#proof-time-state)).
 
 **Lemmas from earlier calls are load-bearing.** A mutation that keeps each
 call's lemmas only until that call ends
@@ -598,8 +615,9 @@ sequence`:
 
 The thesis proves the sequence correct (the correctness proof of JP 4.1,
 resting on Theorem 3.2). Its precondition is that each row's binary entries
-form a forest, which the constructor enforces. Unary entries need no lemma:
-the consolidated set's flag gives the equality literals directly.
+form a forest, which the constructor enforces. Unary entries need no lemma
+per call: a value entry is its own literal, and a set entry's values are
+bounded by its root lines.
 
 **Why the lemmas are needed.** The thesis's Example 4.3: `W < X < Y < Z` over
 `−2..0`, one row. Unit propagation over the bit-sum encoding of `W < X` does
@@ -772,7 +790,7 @@ no search.
 | `smart_table_constraint_outside_scope` | since #1213: eight tables whose entries name a variable, a view or a constant outside the scope, an empty scope among them; exact set against brute force, GAC at every node on all three variables, in the scope or not; VeriPB |
 | `smart_table_dup` | the aliasing and cycle rejections (#1014), and `LexSmartTable({a, b}, {b, a})` rejected at solve time; since #1182 also each baseline solved at `AssertionLevel::Inferences`, requiring `smart_table` hints that name the posted constraint (`_1`) and none that says `unnamed` (`smart_table_dup_test.cc:61-89`, `:155-168`) |
 | `smart_table_{small, lex, am1, random}` | the examples, through `run_test_and_verify.bash` |
-| `scp_chain_smart_table_{sat, unsat, outside_scope_sat}` | the cake chain ([Cake conformity](#cake-conformity)); the third since #1213 |
+| `scp_chain_smart_table_*`, `scp_chain_lex_smart_table_*` | the cake chain ([Cake conformity](#cake-conformity)); `outside_scope_sat` since #1213, the cases over every entry kind and the two for the `in` entries' root lines since #1412 |
 
 - **Seeds.** The test's instances are fixed, including the `mixed` view
   wraps, so the seed it announces changes nothing. The `smart_table_random`
@@ -938,11 +956,9 @@ time at this level measures nothing useful.
 
 - Two binary entries that close a cycle within a row are rejected, not
   handled.
-- Wide domains are unusable: the propagator walks values, and a unary entry
-  makes the OPB linear in its variable's width (#833) and the work of building
-  it up to quadratic (#1127).
-- Its proofs chain through `cake_pb_cp` only on narrow shapes (*chain row
-  flags*).
+- Wide domains are unusable: the propagator walks values (#833). The OPB no
+  longer does: since #1412 a value entry is one literal and a set entry is
+  linear in its listed values (#1127).
 - No front end posts it.
 
 ### Next steps
@@ -972,16 +988,11 @@ time at this level measures nothing useful.
    the whole scope's once per tree (#1128), keeping #994's rule that no tree
    grants support until every tree of its row is feasible. Then, unfiled
    (*per-call cost*): a flat per-variable index instead of the hash maps,
-   reused buffers, and `get_unrestricted` per row precomputed. **And the
-   construction cost** (#1127): look each initial-domain value up in the
-   consolidated set by binary search or a sorted merge, not `std::count`, and
-   take each input set entry by reference and sorted, not by value. Both leave
-   the OPB and proof byte-identical on the probes in [Interval
-   efficiency](#interval-efficiency). Low priority while nothing posts the
-   constraint.
-7. **The chain** (*chain row flags*): whether it is wanted, and if so cake's
-   names for the row and entry flags. The chain-case comment should say what
-   limits it either way (done by #1396, open).
+   reused buffers, and `get_unrestricted` per row precomputed. Low priority
+   while nothing posts the constraint. **The construction cost** (#1127) is
+   **done by #1412**, which removed the consolidation altogether.
+7. **The chain** (*chain row flags*). **Done by #1412**: the encoding is
+   cake's, names included, so every table chains.
 8. **Tidying.** Remove `provable_entry_member` and its commented-out call.
    Claim idempotence (it holds, and buys under 2% of calls). Do not drop the
    tree-filtering lemmas of calls that infer nothing: later calls cite earlier
@@ -1011,8 +1022,10 @@ time at this level measures nothing useful.
 
   The implementation here is the thesis's, which describes it as a
   straightforward implementation of Mairy et al.
-- **What is ours.** The consolidation of unary entries into one set per
-  variable (#40), the view handling (#1090) and the cycle rejection (#1016).
+- **What is ours.** The `in` entries' root lines (#1412; before it, the
+  consolidation of unary entries into one set per variable, #40), the view
+  handling (#1090) and the cycle rejection (#1016). The entry encoding is
+  `cake_pb_cp`'s.
   The two-pass tree filtering, leaves up then root down, is Mairy et al.'s;
   #1007 made the implementation match it.
 

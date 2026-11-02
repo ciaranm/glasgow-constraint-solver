@@ -18,8 +18,10 @@ namespace gcs::innards
      *
      * `before[ip][i]` is the flag "x[ip] comes before x[i]" under the total order
      * (value, then original index); `before_fwd`/`before_rev` are its two
-     * reification halves. `pos[i]` is the stable rank of x[i] (the position it is
-     * sent to in y), defined as the sum of the `before` flags; `rank_ge[i]` /
+     * reification halves. The diagonal `before[i][i]` would always be false, so it
+     * is never created and its entries are left default-constructed. `pos[i]` is
+     * the stable rank of x[i] (the position it is sent to in y), defined as the
+     * sum of the off-diagonal `before` flags; `rank_ge[i]` /
      * `rank_le[i]` are the two halves of that defining equality. See
      * dev_docs/sortedness.md.
      */

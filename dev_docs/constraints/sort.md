@@ -134,14 +134,14 @@ This is `cake_pb_cp`'s `cencode_sort` and `cencode_argsort`
 
 ```
 y[i] ≤ y[i+1]                                           @c[id][<i>]
-before[ip][i]  ⇔  x[ip] − x[i] ≤ (ip < i ? 0 : −1)      n² flags x[id][<ip>_<i>][bf], two-way reified
+before[ip][i]  ⇔  x[ip] − x[i] ≤ (ip < i ? 0 : −1)      n(n−1) flags x[id][<ip>_<i>][bf], ip ≠ i, two-way reified
 pos[i] ∈ 0..n−1                                         proof-only, w bits v[id][<i>_<b>][pos]
-pos[i] = Σ_ip before[ip][i]                             @c[id][rle<i>], @c[id][rge<i>]
+pos[i] = Σ_{ip ≠ i} before[ip][i]                       @c[id][rle<i>], @c[id][rge<i>]
 bits(pos[i]) spell j  ⇒  y[j] = x[i]                    @c[id][cle<i>_<j>], @c[id][cge<i>_<j>]
 ```
 
 `before[ip][i]` is "`x[ip]` comes before `x[i]` in the order by value, then by
-index"; the diagonal is always false and is counted, as cake does. So `pos[i]`
+index"; the diagonal would always be false, so neither side creates it. So `pos[i]`
 is `x[i]`'s stable rank, a **function of `x` alone**, which is what lets a
 solution pin every auxiliary by unit propagation, and lets a wrong leaf be
 refuted by plain RUP. The channel is guarded by the conjunction of `pos[i]`'s
@@ -169,13 +169,13 @@ ties it to the stable rank; the tie-break row is the stability clause.
 an auxiliary's definition, and the auxiliaries are determined by `x` (and `p`).
 **Size:** `Θ(n²)` rows (the `before` flags and the channel), and
 `Θ(n²·(log n + log W))` literal occurrences for domains of width `W`: the
-`before` rows alone are `n²` comparisons over bit sums of `Θ(log W)` bits.
+`before` rows alone are `n(n−1)` comparisons over bit sums of `Θ(log W)` bits.
 `ArgSort` adds another `Θ(n²)` rows. **Logarithmic in domain
 width**: nothing is per value, so the row count does not depend on width, and
 only the bit sums' literals grow, with the bit width. The fact-check measured
 `Sort` at `n = 10` going from 85 KB at `W = 9` to 541 KB at `W = 10⁹`
-(`sortwidth.cc`). Measured for `Sort` over `0..n−1`: 469 rows at `n = 10`,
-1,739 at 20, 6,679 at 40, 26,159 and 8.8 MB at 80.
+(`sortwidth.cc`). Measured for `Sort` over `0..n−1`: 449 rows at `n = 10`,
+1,699 at 20, 6,599 at 40, 25,999 and 8.8 MB at 80.
 
 ### Labels
 
@@ -185,34 +185,26 @@ there so that the solver's OPB and cake's line up.
 
 ### Cake conformity
 
-`scp_chain_{sort,arg_sort}_{sat,unsat}` chain-verify in `none` mode. `Sort`'s
-encoding is cake's row for row, and `ArgSort`'s is up to the differences
-below, so the propagator's steps resolve against cake's OPB. The `Sort` cases
-stay `none` for the literal-encoding divergence (#358) the whole section
-shares. The `ArgSort` cases would stay `none` after #358 too: of their three
-differences, the omitted `plb`/`pub` rows and the `rcge0_k` coefficients are
-not literal encoding. By the fact-check's `opbdiff` runs, `sort_sat` would pass
-`strict` and `sort_unsat` differs by one `@i[Y1][ub]` row. The `ArgSort` cases
-(`arg_sort_sat` and `arg_sort_unsat` alike) differ three ways, 100 rows
-matching, 43 differing and 18 only in cake's:
+`scp_chain_{sort,arg_sort}_{sat,unsat}` chain-verify in `none` mode. Both
+encodings are cake's row for row (against `cake_pb_cp` built from CakeML
+`cp_enc_new` at `91fe2e2b8`), so the propagators' steps resolve against cake's
+OPB. The cases stay `none` for the literal-encoding divergence (#358) the whole
+section shares, and nothing else: `sort_sat` passes `opbdiff` outright,
+`sort_unsat` differs by one `@i[Y1][ub]` row, and `arg_sort_sat` and
+`arg_sort_unsat` each have 131 rows matching and 6 differing, all of them
+tautologies where cake gives a literal coefficient 0 and the solver 1 (three
+`@i[P<j>][ge0][r]` atom halves and three `rcge0_k` rows).
 
-- `p`'s literal definitions: the solver's 42 `@i[P][ge|eq][f|r]` rows against
-  cake's 54 `@c[_1][peq*]`;
-- cake's six `plb*` / `pub*` range rows, which the solver omits because
-  `define_bound` returns early when `p`'s declared domain already fits;
-- three `rcge0_k` rows where cake gives the guard coefficient 0 and the solver
-  1, both tautologies.
+One accommodation makes `ArgSort` line up: cake encodes each `y[j]` as a free
+bit sum with no bound rows, signed only when some `x` can be negative, so the
+solver names `y`'s bits to match and derives `y[j]`'s range in the proof, once,
+at the root (see [Proof-time state](#proof-time-state)).
 
-Two accommodations make `ArgSort` line up:
-
-- cake encodes each `y[j]` as a free, always-signed bit sum with no bound rows,
-  so the solver names `y`'s bits to match (including a sign bit even over a
-  non-negative range) and derives `y[j]`'s range in the proof, once, at the root
-  (see [Proof-time state](#proof-time-state));
-- cake reifies each `p[j]`'s `≥` atoms under its own labels, so the solver marks
-  `p`'s atoms for their labels to be recovered in the proof (an `ia`
-  re-declaration), so that its order-chain `pol` steps resolve against either
-  OPB.
+Until `cp_enc_new` at `91fe2e2b8` (#1412), cake also emitted the always-false
+diagonal `before[i][i]`, always signed `y`, and reified `p`'s atoms under its
+own `@c[_1][peq*]` labels, and the solver matched all three, the last by
+recovering its own `@i[P][ge]` labels in the proof with an `ia` line. All three
+went when cake changed.
 
 ### Proof-time state
 
@@ -239,8 +231,8 @@ Two accommodations make `ArgSort` line up:
 
 ### Initialisation and global data
 
-`Sort::prepare()` checks the lengths. `ArgSort::prepare()` also marks `p`'s
-atoms for label recovery, pins `p`'s range with `define_bound`, finds `x`'s
+`Sort::prepare()` checks the lengths. `ArgSort::prepare()` also pins `p`'s
+range with `define_bound`, finds `x`'s
 overall range, and allocates the `n` internal `y`. `define_proof_model()`
 builds the encoding and keeps the witness (`before`, `pos`, the rank lines),
 which every justification reads. The two initialisers above are the only root
@@ -793,10 +785,10 @@ the permutation facts alone.
 
 | n | OPB rows | Proof lines | Proof bytes | VeriPB |
 |---|---|---|---|---|
-| 10 | 469 | 3,274 | 206 KB | 0.03 s |
-| 20 | 1,739 | 22,844 | 1.57 MB | 0.33 s |
-| 40 | 6,679 | 170,884 | 12.2 MB | 5.74 s |
-| 80 | 26,159 | 1,322,564 | 96.4 MB | 118 s |
+| 10 | 449 | 3,274 | 206 KB | 0.03 s |
+| 20 | 1,699 | 22,844 | 1.57 MB | 0.33 s |
+| 40 | 6,599 | 170,884 | 12.2 MB | 5.74 s |
+| 80 | 25,999 | 1,322,564 | 96.4 MB | 118 s |
 
 **Lines grow by 7 to 8 per doubling: cubic.** At `n = 80` about 75% of them are
 the transitivity lines (`2n(n − 1)(n − 2)`) and 19% the pairwise at-most-one

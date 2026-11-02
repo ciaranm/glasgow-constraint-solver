@@ -260,12 +260,14 @@ auto run_mixed_same_var_test(bool proofs, const string & mode) -> void
     }
 }
 
-// Several unary entries restricting the same variable inside one tuple
-// must be consolidated into a single restriction in the PB encoding, or
-// unsupported values fail to unit propagate. The first instance is an
-// originally-failing case found by random testing (issue #40, from
-// random_smart_table seed 792395939); it has no solutions. The second
-// mixes stacked unary entries with binary entries and has solutions.
+// Several unary entries restricting the same variable inside one tuple. Unit
+// propagation must still rule out every value they leave unsupported: issue
+// #40 found it did not, and was fixed by consolidating them into one set over
+// the domain; since #1412 each is its own literal, and an `in` entry's
+// exclusions are derived at the root. The first instance is the
+// originally-failing case found by random testing (from random_smart_table
+// seed 792395939); it has no solutions. The second mixes stacked unary
+// entries with binary entries and has solutions.
 auto run_stacked_unary_test(bool proofs, const string & mode) -> void
 {
     auto proof_basename = "smart_table_test_" + mode;

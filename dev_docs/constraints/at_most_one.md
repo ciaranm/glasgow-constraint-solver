@@ -210,14 +210,16 @@ adds one more.
 - A variable `val` also chain-verifies (`(at_most_one (A B C) V)`, 60
   solutions, `tmp/fd-small/at_most_one/chain/varval.scp`), though no case
   registers one.
-- `at_most_one_smart_table` does not chain. With a variable `val`, cake
-  refuses the `.scp` (`expected integer, got: V`). With a constant, VeriPB
-  rejects the solver's proof against cake's OPB at its first tuple step,
-  `rup 1 ~f[0][t0] 1 ~i[C][eq1] >= 1`, which cites `SmartTable`'s own tuple
-  flag `f[0][t0]`; cake's OPB, about the same size, names its tuple flags
-  `x[_1][i]` under `@c[_1][al1]` and never defines `f[0][t0]`. The `.scp`
-  reader's comment gives the OPB's size as the reason, which is not it
-  (corrected by #1396, open).
+- `at_most_one_smart_table` chains with a constant `val`, since #1412, by
+  hand (`{A, B, C} ⊆ 0..2`, `val = 1`, 20 solutions); no case registers it.
+  With a variable `val`, cake refuses the `.scp` (`expected integer, got: V`).
+  Since #1412 `SmartTable` names its row flags `x[_1][i]` as cake does. Before
+  it, VeriPB rejected the solver's proof against cake's OPB at its first
+  tuple step, `rup 1 ~f[0][t0] 1 ~i[C][eq1] >= 1`, which cited the solver's
+  own row flag `f[0][t0]`. The OPBs still differ: the solver writes each
+  entry `x_j ≠ val` as a binary entry against the constant, with its own
+  `seq` flag, where cake writes the literal `¬[x_j = val]`; the rows mean the
+  same.
 
 The registration's comment groups this case with `all_different_except` and
 `among` as diverging because "their per-value / per-pair encodings reference

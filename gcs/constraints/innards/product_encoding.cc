@@ -53,14 +53,14 @@ auto gcs::innards::product_enc::emit_magnitude_channel(ProofModel & model, const
     // bits; for a non-negative operand this is just [0, ub], unchanged.
     auto mag_ub = max(abs(initial_state.lower_bound(v)), abs(initial_state.upper_bound(v)));
     auto mag = model.create_proof_only_integer_variable(0_i, mag_ub, "mult_mag_" + naming.role_prefix() + letter,
-        IntegerVariableProofRepresentation::Bits, CakeBitNaming{owner, naming.bit_indices({axis}), "bin", std::nullopt, false, true});
+        IntegerVariableProofRepresentation::Bits, CakeBitNaming{owner, naming.bit_indices({axis}), "bin", std::nullopt, true});
     return emit_channel_rows(model, owner, v, mag, naming.role_prefix(), letter);
 }
 
 auto gcs::innards::product_enc::emit_magnitude_channel(ProofModel & model, const ConstraintID & owner, IntegerVariableID v,
     SimpleIntegerVariableID mag, Integer mag_bit_max, long long axis, const string & letter, const string & mag_name) -> MagnitudeChannel
 {
-    model.register_state_variable_bits_in_proof(mag, 0_i, mag_bit_max, mag_name, CakeBitNaming{owner, {axis}, "bin", std::nullopt, false, true});
+    model.register_state_variable_bits_in_proof(mag, 0_i, mag_bit_max, mag_name, CakeBitNaming{owner, {axis}, "bin", std::nullopt, true});
     return emit_channel_rows(model, owner, v, mag, string{}, letter);
 }
 

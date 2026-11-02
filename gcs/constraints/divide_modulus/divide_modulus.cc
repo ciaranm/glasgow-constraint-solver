@@ -1368,8 +1368,8 @@ namespace
             auto y_eff = y, x_eff = x, r_eff = out;
             auto q_eff = st.aux; // the free quotient magnitude
 
-            model.register_state_variable_bits_in_proof(st.aux, 0_i, st.aux_bit_max, "aux_modulus_quotient" + to_string(st.aux.index),
-                CakeBitNaming{owner, {0}, "bin", nullopt, false, true});
+            model.register_state_variable_bits_in_proof(
+                st.aux, 0_i, st.aux_bit_max, "aux_modulus_quotient" + to_string(st.aux.index), CakeBitNaming{owner, {0}, "bin", nullopt, true});
 
             emit_cake_magnitude_channel(model, owner, y_eff, st.divisor_mag, 1, "Y", "aux_modulus_absdivisor");
             auto absy = st.divisor_mag.var;

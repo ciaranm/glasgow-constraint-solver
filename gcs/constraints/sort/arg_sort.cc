@@ -32,7 +32,6 @@
 #include <sstream>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 using namespace gcs;
@@ -72,17 +71,6 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
 
     if (_x.empty())
         return false;
-
-    // cake_pb_cp reifies each permutation variable's ge atoms per value under its own
-    // @c[peq..] labels, so the @i[P][ge] labels this solver gives them are absent from
-    // cake's OPB. Mark them so need_gevar recovers those labels in-proof (an `ia`
-    // re-declaration under our @i label), letting the order-chain pols resolve against
-    // both our own OPB and cake's. Must be set before any ge atom is introduced
-    // (define_bound below, and the channel guards later).
-    if (optional_model)
-        for (const auto & v : _p)
-            if (auto s = std::get_if<SimpleIntegerVariableID>(&v))
-                optional_model->names_and_ids_tracker().note_recover_atom_labels_in_proof(*s);
 
     // The permutation values live in [offset, offset + n - 1]; pin those bounds
     // so the index arithmetic (and the OPB index range) is sound.
@@ -124,24 +112,24 @@ auto ArgSort::define_proof_model(ProofModel & model, const State &) -> void
     // permutation p to the stable rank pos, and lets install_propagators()
     // hand it to the sortedness propagator.
     //
-    // cake encodes each sorted-value y[j] as a proof-only, always-signed free
-    // bit-sum (v[id][j_b][y] value bits + a forced v[id][j][ysgn] sign bit even
-    // when the range is non-negative), with no OPB bound lines. Name y's bits to
-    // match, so the in-proof introduction of y's atoms lines up with cake's.
+    // cake encodes each sorted-value y[j] as a proof-only free bit-sum
+    // (v[id][j_b][y] value bits, plus a v[id][j][ysgn] sign bit when some x can
+    // be negative), with no OPB bound lines. Name y's bits to match, so the
+    // in-proof introduction of y's atoms lines up with cake's. With no bound lines,
+    // y's bounds are not a trivial consequence of the OPB, so need_gevar must not
+    // pin them: install_propagators() derives them once instead.
     //
     // The bits carry the constraint id but the atoms carry y's own name, which a
     // state variable's are rendered from verbatim, so that name has to be unique
     // too: with the position alone, a second ArgSort's atoms took the first's
     // names, and the proof conflated two different variables.
     vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
-    for (size_t j = 0; j < _y.size(); ++j)
+    for (size_t j = 0; j < _y.size(); ++j) {
         model.set_up_integer_variable(_y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j) + "_" + std::to_string(_y[j].index),
             IntegerVariableProofRepresentation::Bits,
-            CakeBitNaming{.id = _constraint_id,
-                .indices = {static_cast<long long>(j)},
-                .value_annotation = "y",
-                .sign_annotation = "ysgn",
-                .add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does = true});
+            CakeBitNaming{.id = _constraint_id, .indices = {static_cast<long long>(j)}, .value_annotation = "y", .sign_annotation = "ysgn"});
+        model.names_and_ids_tracker().note_bounds_not_trivially_derivable(_y[j]);
+    }
     _witness = define_sortedness_proof_model(model, _constraint_id, _x, y_ids, /*arg_sort_labels=*/true);
 
     // These constraints conform to cake_pb_cp's cencode_argsort

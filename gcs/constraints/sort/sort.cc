@@ -107,15 +107,17 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
 
     // (b) before[ip][i] : x[ip] precedes x[i] in the (value, then original index)
     // order. The index tie-break is constant per pair, so each flag is a plain
-    // comparison: ip < i ties to ip (before iff x[ip] <= x[i]); ip >= i ties to i
-    // (before iff x[ip] < x[i]) -- the diagonal ip == i is then always false. Named
-    // x[id][ip_i][bf] (halves @x[id][ip_i][bf][r]/[f]); cake also emits the diagonal
-    // and counts it in the rank sum, so we do too.
+    // comparison: ip < i ties to ip (before iff x[ip] <= x[i]); ip > i ties to i
+    // (before iff x[ip] < x[i]). The diagonal ip == i would always be false, so,
+    // like cake, we never create it. Named x[id][ip_i][bf] (halves
+    // @x[id][ip_i][bf][r]/[f]).
     w.before.assign(n, std::vector<ProofFlag>(n));
     w.before_fwd.assign(n, std::vector<ProofLine>(n));
     w.before_rev.assign(n, std::vector<ProofLine>(n));
     for (size_t i = 0; i < n; ++i)
         for (size_t ip = 0; ip < n; ++ip) {
+            if (ip == i)
+                continue;
             auto bound = (ip < i) ? 0_i : -1_i;
             auto flag = model.create_proof_flag(cid, std::vector<long long>{static_cast<long long>(ip), static_cast<long long>(i)}, "bf");
             auto [fwd, rev] = model.add_two_way_reified_constraint(WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, flag);
@@ -133,14 +135,15 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
         w.pos.push_back(model.create_proof_only_integer_variable(0_i, Integer(n) - 1_i, "sort_pos_" + std::to_string(i),
             IntegerVariableProofRepresentation::Bits, CakeBitNaming{cid, std::vector<long long>{static_cast<long long>(i)}, "pos", std::nullopt}));
 
-    // (d) pos[i] = sum over ip of before[ip][i] (including the always-false
-    // diagonal, as cake does). @c[id][rge<i>] is pos >= rank, @c[id][rle<i>] is
-    // pos <= rank; the bound proofs pol against ge, the permutation proof needs both.
+    // (d) pos[i] = sum over ip != i of before[ip][i]. @c[id][rge<i>] is pos >= rank,
+    // @c[id][rle<i>] is pos <= rank; the bound proofs pol against ge, the
+    // permutation proof needs both.
     for (size_t i = 0; i < n; ++i) {
         WPBSum rank;
         rank += 1_i * w.pos[i];
         for (size_t ip = 0; ip < n; ++ip)
-            rank += -1_i * w.before[ip][i];
+            if (ip != i)
+                rank += -1_i * w.before[ip][i];
         auto [le, ge] = model.add_labelled_constraint(cid, "rle" + std::to_string(i), "rge" + std::to_string(i), move(rank) == 0_i);
         w.rank_ge.push_back(ge);
         w.rank_le.push_back(le);
