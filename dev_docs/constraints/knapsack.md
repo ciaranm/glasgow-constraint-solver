@@ -364,7 +364,7 @@ of variable:
   way over the view's range (`need_view`, `names_and_ids_tracker.cc:1994–2031`).
   The view machinery also writes rows to the OPB, once per view in the
   model, not per row, and shared with any other constraint that names it:
-  - two link rows, `@c[<view>][viewle]` and `[viewge]`, each with the view's
+  - two link rows, `@w[X][c][le]` and `[ge]`, each with the view's
     bits plus the underlying variable's (plus the underlying's sign bit when
     it is declared with a negative lower bound), written by the first
     constraint to name the view;

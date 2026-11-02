@@ -179,7 +179,8 @@ caught as well.
 The check is confined to the `c[id][role]` namespace — it runs in the
 `ConstraintID`-taking `add_labelled_constraint` overloads, which is what
 every constraint uses. The variable-encoding namespaces (`@i[name][...]`
-for a real variable, `@po[index][...]` for a proof-only one) are out of
+for a real variable, `@w[X][c][...]` for a view, `@po[index][...]` for any
+other proof-only one) are out of
 scope deliberately: those rows may be deleted and re-emitted to keep the
 proof database small, so a repeat there is by design.
 

@@ -132,7 +132,7 @@ Plain variables, constants and views of either sign are all accepted, and the
 propagator is the same for all of them: it reads `bounds()` and infers bounds.
 
 **The proof handles views too.** A view is given its own bit-sum proof variable
-with `viewle`/`viewge` channel rows (see
+with `@w[X][c][le]`/`[ge]` link rows (see
 [`view-proof-logging.md`](../view-proof-logging.md)), and the chain row is
 written over that variable. So the row's constant stays the chain's step, 0 or
 1, whatever the view's offset or sign, and the argument in the [Inference
