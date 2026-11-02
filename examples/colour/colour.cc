@@ -208,7 +208,7 @@ auto main(int argc, char * argv[]) -> int
                 if (k_colours)
                     println("{}-colouring: {}", *k_colours, vertices | transform(cref(s)));
                 else
-                    println("{} colours: {}", s(*p.optional_minimise_variable()) + 1_i, vertices | transform(cref(s)));
+                    println("{} colours: {}", s(p.optional_objective()->variable) + 1_i, vertices | transform(cref(s)));
                 return ! stop_at_first;
             },
             .branch = *brancher,

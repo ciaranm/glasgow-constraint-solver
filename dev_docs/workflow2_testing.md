@@ -24,20 +24,22 @@ document is exactly four tagged sections, in order:
 
 `prob_type` is the bare atom `decide` or `enumerate`, or the list
 `(minimize var)` / `(maximize var)`. `innards::write_scp` emits this and
-`gcs::read_scp` consumes it, returning an objective as
-`ScpModel::minimise_variable` (a `(maximize V)` comes back as the negated view,
-mirroring `Problem::optional_minimise_variable()`) without posting it, so that
-enumerating an optimisation document stays possible — `glasgow_scp_solver` is
-the caller that hands it to `Problem::minimise()`.
+`gcs::read_scp` consumes it, returning an objective as `ScpModel::objective`
+(its variable and direction, mirroring `Problem::optional_objective()`) without
+posting it, so that enumerating an optimisation document stays possible —
+`glasgow_scp_solver` is the caller that hands it to `Problem::minimise()` or
+`Problem::maximise()`. The objective is written exactly as it was posted, so
+`maximise(X + 2)` is `(maximize (X + 2))`, not a minimisation of some negated
+view.
 
-For the chain to check a maximisation at all, the two ends have to agree on how
-the objective is *encoded*, not just what it is. cake re-derives `(maximize V)`
-as `min: -1 i[V][b0] -2 i[V][b1] ...` over V's own bits, so an offset-free
-negated objective — exactly what `Problem::maximise()` stores — is deviewed the
-same way rather than being hosted on its own proof-only bit vector
-(`ProofModel::write_preamble`). A hosted vector is invisible to cake, and the
-solver's proof would cite view-linking labels (`@c[neg_view_of_V][viewle]`)
-that cake's OPB has no counterpart for, failing the chain on an unknown label.
+For the chain to check an optimisation at all, the two ends have to agree on
+how the objective is *encoded*, not just what it is. cake re-derives
+`(maximize V)` as `min: -1 i[V][b0] -2 i[V][b1] ...` over V's own bits, and the
+solver writes every objective that way (`ProofModel::write_preamble`): over the
+underlying variable's bits, negated for a maximisation, with a view's offset as
+the objective's constant. An objective never gets a proof-only bit vector of its
+own. One would be invisible to cake, and the solver's proof would cite
+view-linking labels that cake's OPB has no counterpart for.
 
 The reader rejects any version other than 1
 outright rather than guessing at an unknown grammar, which is what makes a

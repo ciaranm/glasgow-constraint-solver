@@ -1408,7 +1408,7 @@ TEST_CASE("read_scp: constraint labels and variable names round-trip via the map
     CHECK(model.variables.size() == 2);
     CHECK(model.variables.contains("X"));
     CHECK(model.variables.contains("Y"));
-    CHECK_FALSE(model.minimise_variable);
+    CHECK_FALSE(model.objective);
 }
 
 TEST_CASE("read_scp: a solver-written .scp survives write -> read -> write unchanged")
@@ -1567,16 +1567,20 @@ TEST_CASE("read_scp: the prob_type spec is checked, and a malformed one throws")
     CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize Q)) )"), ScpReadError);
 }
 
-TEST_CASE("read_scp: the objective comes back as a variable to minimise")
+TEST_CASE("read_scp: the objective comes back with its direction")
 {
     // The objective is resolved but not posted: the caller decides whether to
     // optimise, so a Problem read from an optimisation .scp still enumerates
-    // until Problem::minimise() is called with what came back.
+    // until Problem::minimise() or Problem::maximise() is called with what came
+    // back.
     auto solve_objective = [](string_view scp) {
         Problem problem;
         auto model = read_scp(problem, scp);
-        REQUIRE(model.minimise_variable);
-        problem.minimise(*model.minimise_variable);
+        REQUIRE(model.objective);
+        if (model.objective->direction == ObjectiveDirection::Minimise)
+            problem.minimise(model.objective->variable);
+        else
+            problem.maximise(model.objective->variable);
 
         map<string, long long> best;
         solve_with(problem, //
@@ -1605,16 +1609,16 @@ TEST_CASE("read_scp: the objective comes back as a variable to minimise")
     // as an undeclared name.
     Problem problem;
     auto model = read_scp(problem, "( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize 3)) )");
-    REQUIRE(model.minimise_variable);
-    CHECK(*model.minimise_variable == constant_variable(3_i));
+    REQUIRE(model.objective);
+    CHECK(model.objective->variable == constant_variable(3_i));
+    CHECK(model.objective->direction == ObjectiveDirection::Minimise);
 }
 
 TEST_CASE("read_scp: an objective survives write -> read -> write unchanged")
 {
-    // The reader's objective mirrors Problem::optional_minimise_variable(), so
-    // handing it back to Problem::minimise() must reproduce the same .scp --
-    // including for maximise, which is stored as a negated view and so is the
-    // case that a sense flip would silently break.
+    // The reader's objective mirrors Problem::optional_objective(), so handing
+    // it back must reproduce the same .scp -- including for maximise, the case
+    // that a sense flip would silently break.
     for (bool maximise : {false, true}) {
         Problem original;
         auto x = original.create_integer_variable(0_i, 4_i, "X");
@@ -1628,12 +1632,67 @@ TEST_CASE("read_scp: an objective survives write -> read -> write unchanged")
 
         Problem rebuilt;
         auto model = read_scp(rebuilt, scp_a);
-        REQUIRE(model.minimise_variable);
-        rebuilt.minimise(*model.minimise_variable);
+        REQUIRE(model.objective);
+        CHECK(model.objective->direction == (maximise ? ObjectiveDirection::Maximise : ObjectiveDirection::Minimise));
+        if (model.objective->direction == ObjectiveDirection::Minimise)
+            rebuilt.minimise(model.objective->variable);
+        else
+            rebuilt.maximise(model.objective->variable);
         auto scp_b = prove_to_scp(rebuilt, "scp_reader_obj_b");
 
         CHECK(scp_a == scp_b);
         CHECK(scp_a.contains(maximise ? "(prob_type (maximize X))" : "(prob_type (minimize X))"));
+    }
+}
+
+TEST_CASE("write_scp: an objective keeps its direction and its offset")
+{
+    // The objective used to be stored as a variable to minimise, so maximise()
+    // became the minimisation of a negated view, and the writer then dropped
+    // the view's offset: minimise(X + 3) was written as (minimize X), and
+    // minimise(-X + 3) as (maximize X). Now both files say what was posted.
+    // The OPB's min: line is over X's own bits with the offset as its
+    // constant, negated for a maximisation, so that VeriPB's conclusion is the
+    // posted objective's value.
+    struct Case
+    {
+        IntegerVariableID (*objective)(SimpleIntegerVariableID);
+        bool maximise;
+        string prob_type;
+        string min_line;
+    };
+
+    vector<Case> cases{{[](SimpleIntegerVariableID x) -> IntegerVariableID { return x + 3_i; }, false, "(prob_type (minimize (X + 3)))",
+                           "min: 1 i[X][b0] 2 i[X][b1] 4 i[X][b2] 3 ;"},
+        {[](SimpleIntegerVariableID x) -> IntegerVariableID { return x - 2_i; }, true, "(prob_type (maximize (X + -2)))",
+            "min: -1 i[X][b0] -2 i[X][b1] -4 i[X][b2] 2 ;"},
+        {[](SimpleIntegerVariableID x) -> IntegerVariableID { return -x + 3_i; }, false, "(prob_type (minimize (-X + 3)))",
+            "min: -1 i[X][b0] -2 i[X][b1] -4 i[X][b2] 3 ;"},
+        {[](SimpleIntegerVariableID x) -> IntegerVariableID { return -x; }, true, "(prob_type (maximize (-X + 0)))",
+            "min: 1 i[X][b0] 2 i[X][b1] 4 i[X][b2] ;"},
+        {[](SimpleIntegerVariableID x) -> IntegerVariableID { return x; }, true, "(prob_type (maximize X))",
+            "min: -1 i[X][b0] -2 i[X][b1] -4 i[X][b2] ;"}};
+
+    for (const auto & c : cases) {
+        Problem problem;
+        auto x = problem.create_integer_variable(0_i, 4_i, "X");
+        auto y = problem.create_integer_variable(0_i, 4_i, "Y");
+        problem.post(LessThan{x, y});
+        if (c.maximise)
+            problem.maximise(c.objective(x));
+        else
+            problem.minimise(c.objective(x));
+
+        solve_with(problem, SolveCallbacks{}, std::make_optional<ProofOptions>(ProofFileNames{"scp_writer_objective"}));
+        std::ifstream scp_in{"scp_writer_objective.scp"}, opb_in{"scp_writer_objective.opb"};
+        string scp{std::istreambuf_iterator<char>{scp_in}, std::istreambuf_iterator<char>{}};
+        string min_line;
+        std::getline(opb_in, min_line);
+        for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
+            std::remove((string{"scp_writer_objective"} + ext).c_str());
+
+        CHECK(scp.contains(c.prob_type));
+        CHECK(min_line == c.min_line);
     }
 }
 

@@ -140,11 +140,16 @@ also call.
   the view is made, so every view fits; the `bits_encoding_fits` checks that
   guarded registration remain only as guards.
 - **The one deliberate exception is the objective.** `write_preamble`
-  writes a plain negation, which is what `Problem::maximise` stores, over
-  the underlying variable, because that is what cake_pb_cp derives from
-  `(maximize x)`. The line that restates `min:` after each `soli` spells
-  the objective the same way, whatever has been registered since (issue
-  #1206).
+  writes every objective over the underlying variable's bits: a view
+  `sX + c` contributes `s` times X's bits, and its offset `c` becomes the
+  objective's constant (`objective_linear_form`). An objective is a linear
+  expression rather than an argument of a row, so it never registers a
+  view, and the value VeriPB concludes with is the posted objective's. A
+  maximisation is written as the minimisation of its negation, which is
+  what cake_pb_cp derives from `(maximize x)`. Every line that restates
+  the objective --- the `e` line after each `soli`, and the bound before a
+  conclusion --- spells it the same way, whatever has been registered
+  since (issue #1206).
 
 The `_view_mixed_late` test lanes check this: they post a constraint over
 every view after the constraint under test, which registers each view as

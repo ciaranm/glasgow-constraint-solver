@@ -64,7 +64,7 @@ auto gcs::innards::write_scp(const string & file_name, const Problem & problem, 
     // whether to emit a `preserved:` set -- which veripb needs to
     // log/exclude solutions, so with the alternative `decide` only
     // refutation (UNSAT) proofs would verify through the chain.
-    if (auto objective = problem.optional_minimise_variable())
+    if (auto objective = problem.optional_objective())
         println(rendered, "    (prob_type {})", model->names_and_ids_tracker().s_expr_render_of(*objective));
     else
         println(rendered, "    (prob_type enumerate)");

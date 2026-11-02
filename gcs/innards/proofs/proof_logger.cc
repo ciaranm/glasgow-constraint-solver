@@ -187,7 +187,6 @@ struct ProofLogger::Imp
     // Whether the `min:` line spelled a view objective over the underlying
     // variable's bits; copied from the ProofModel in start_proof. See the `e`
     // line in solution().
-    bool objective_written_over_underlying = false;
 
     string proof_file;
     // A proof is many short lines; the default stream buffer makes for a
@@ -270,8 +269,8 @@ auto ProofLogger::advance_proof_line_number() -> ProofLineNumber
     return ProofLineNumber{++_imp->proof_line.number};
 }
 
-auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_variables_and_values,
-    const optional<pair<IntegerVariableID, Integer>> & optional_minimise_variable_and_value) -> void
+auto ProofLogger::solution(
+    const vector<pair<IntegerVariableID, Integer>> & all_variables_and_values, const optional<pair<Objective, Integer>> & objective_and_value) -> void
 {
     write_indent();
     _imp->proof << "% solution\n";
@@ -284,12 +283,12 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         }
             .visit(var);
 
-    _imp->proof << (optional_minimise_variable_and_value ? "soli" : "solx");
+    _imp->proof << (objective_and_value ? "soli" : "solx");
 
     WPBSum blocking_sum{};
 
     for (const auto & [var, val] : all_variables_and_values) {
-        if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
+        if (! objective_and_value && _imp->assertion_level > AssertionLevel::Definitions)
             blocking_sum += 1_i * (var != val);
 
         overloaded{
@@ -302,8 +301,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             }, //
             [&](const ViewOfIntegerVariableID & var) {
                 if (_imp->assertion_level > AssertionLevel::Definitions) {
-                    // An unregistered view (e.g. an objective too wide to
-                    // host its own bit vector) is witnessed through the
+                    // An unregistered view is witnessed through the
                     // underlying's bits at the deviewed value instead.
                     if (auto v_id = names_and_ids_tracker().find_view(var))
                         _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*v_id, val);
@@ -343,53 +341,42 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     // down, so nothing could carry the clause's preserved-variable assignment
     // across to the atoms a backtrack clause is written in, and the deletion
     // check would have to fail.
-    auto solution_level =
-        (optional_minimise_variable_and_value || _imp->assertion_level > AssertionLevel::Definitions) ? ProofLevel::Top : ProofLevel::Current;
+    auto solution_level = (objective_and_value || _imp->assertion_level > AssertionLevel::Definitions) ? ProofLevel::Top : ProofLevel::Current;
     auto solution_line = record_proof_line(advance_proof_line_number(), solution_level);
 
     // The objective-improving constraint's line, and the atom line beside it,
     // both of which the next solution supersedes.
     optional<pair<ProofLine, ProofLine>> soli_lines;
 
-    if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
-        // soli and no links => have to assert the objective improving constraint
-        visit(
-            [&](const auto & id) {
-                auto atom_line = emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
-                    AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
-                soli_lines.emplace(solution_line, atom_line);
-            },
-            optional_minimise_variable_and_value->first);
-    else if (optional_minimise_variable_and_value)
-        // normal soli, emit e line for trimmer
-        visit(
-            [&](const auto & id) {
-                // The `e` line restates the constraint VeriPB has just derived
-                // from `min:`, so it has to spell the objective the way `min:`
-                // did. When that went over the underlying variable's bits (a
-                // plain negation, which is what maximise() stores, or a view too
-                // wide for its own bit vector), and a constraint has registered
-                // the view since, which only the plain negation allows, it would
-                // otherwise be spelled over the view's bits here, and the check
-                // fails (issue #1206). `min:` drops the view's offset, so the
-                // bound moves by it.
-                auto bound = optional_minimise_variable_and_value->second - 1_i;
-                _imp->proof << "e ";
-                if constexpr (std::is_same_v<std::decay_t<decltype(id)>, ViewOfIntegerVariableID>) {
-                    if (_imp->objective_written_over_underlying)
-                        emit_inequality_to(names_and_ids_tracker(),
-                            WPBSum{} + (id.negate_first ? -1_i : 1_i) * id.actual_variable <= bound - id.then_add, _imp->proof);
-                    else
-                        emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= bound, _imp->proof);
-                }
-                else
-                    emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= bound, _imp->proof);
-                _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
+    if (objective_and_value) {
+        // What the `soli` has just made VeriPB add: the posted objective,
+        // strictly better than this solution's value. The atom says it in
+        // literals, and the next solution supersedes both.
+        const auto & [objective, value] = *objective_and_value;
+        auto improving = objective.direction == ObjectiveDirection::Minimise ? objective.variable < value : objective.variable >= value + 1_i;
 
-                auto atom_line = emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
-                soli_lines.emplace(solution_line, atom_line);
-            },
-            optional_minimise_variable_and_value->first);
+        if (_imp->assertion_level > AssertionLevel::Definitions) {
+            // soli and no links => have to assert the objective improving constraint
+            auto atom_line = emit(AssertProofRule{}, WPBSum{} + 1_i * improving >= 1_i, ProofLevel::Top,
+                AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
+            soli_lines.emplace(solution_line, atom_line);
+        }
+        else {
+            // Normal soli: an `e` line for the trimmer, restating the
+            // constraint VeriPB has just derived from `min:`, so spelled the
+            // way `min:` was, over the objective's linear form (issue #1206).
+            auto [variable, coefficient, constant] = objective_linear_form(objective.variable);
+            _imp->proof << "e ";
+            if (objective.direction == ObjectiveDirection::Minimise)
+                emit_inequality_to(names_and_ids_tracker(), WPBSum{} + coefficient * variable <= value - 1_i - constant, _imp->proof);
+            else
+                emit_inequality_to(names_and_ids_tracker(), WPBSum{} + coefficient * variable >= value + 1_i - constant, _imp->proof);
+            _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
+
+            auto atom_line = emit_rup_proof_line(WPBSum{} + 1_i * improving >= 1_i, ProofLevel::Top);
+            soli_lines.emplace(solution_line, atom_line);
+        }
+    }
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
         // solx and no links => have to assert the blocking constraint. At the
         // same level as the solx itself: it is the same fact said in literals
@@ -498,16 +485,27 @@ auto ProofLogger::conclude_complete_enumeration(Integer number_of_solutions) -> 
     end_proof();
 }
 
-auto ProofLogger::conclude_optimality(IntegerVariableID var, Integer value) -> void
+auto ProofLogger::conclude_optimality(const Objective & objective, Integer value) -> void
 {
-    conclude_bounds(var, value, value);
+    conclude_bounds(objective, value, value);
 }
 
-auto ProofLogger::conclude_bounds(IntegerVariableID minimise_variable, Integer lower, Integer upper) -> void
+auto ProofLogger::conclude_bounds(const Objective & objective, Integer root_bound, Integer incumbent) -> void
 {
-    emit_rup_proof_line(WPBSum{} + 1_i * minimise_variable >= lower, ProofLevel::Top);
-    _imp->proof << "output NONE;\n";
-    _imp->proof << "conclusion BOUNDS " << lower << " " << upper << ";\n";
+    // Over the objective's linear form, as `min:` was written. VeriPB's bounds
+    // are on what `min:` says, which for a maximisation is the negation of the
+    // posted objective.
+    auto [variable, coefficient, constant] = objective_linear_form(objective.variable);
+    if (objective.direction == ObjectiveDirection::Minimise) {
+        emit_rup_proof_line(WPBSum{} + coefficient * variable >= root_bound - constant, ProofLevel::Top);
+        _imp->proof << "output NONE;\n";
+        _imp->proof << "conclusion BOUNDS " << root_bound << " " << incumbent << ";\n";
+    }
+    else {
+        emit_rup_proof_line(WPBSum{} + coefficient * variable <= root_bound - constant, ProofLevel::Top);
+        _imp->proof << "output NONE;\n";
+        _imp->proof << "conclusion BOUNDS " << -root_bound << " " << -incumbent << ";\n";
+    }
     end_proof();
 }
 
@@ -805,7 +803,6 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
     // derived-line numbering is internally consistent; relativisation cancels any
     // difference from cake's count at reference time.
     _imp->proof_line.number += model.number_of_constraints().number;
-    _imp->objective_written_over_underlying = model.objective_written_over_underlying();
 }
 
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber

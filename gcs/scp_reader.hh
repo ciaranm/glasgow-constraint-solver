@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SCP_READER_HH
 
 #include <gcs/exception.hh>
+#include <gcs/objective.hh>
 #include <gcs/problem-fwd.hh>
 #include <gcs/variable_id.hh>
 
@@ -68,17 +69,16 @@ namespace gcs
         std::map<std::string, IntegerVariableID> variables;
 
         /**
-         * \brief The objective variable, to minimise, or nullopt for a `decide`
-         * or `enumerate` document.
+         * \brief The objective, or nullopt for a `decide` or `enumerate`
+         * document.
          *
-         * This mirrors Problem::optional_minimise_variable(), so that reader and
-         * writer are inverses: a `(maximize V)` spec gives back the negated view
-         * of V, exactly what Problem::maximise() would have stored, and feeding
-         * it to Problem::minimise() reinstates the original objective. A
-         * constant objective (the writer renders one as `(minimize 3)`) comes
-         * back as a constant variable.
+         * This mirrors Problem::optional_objective(), so that reader and writer
+         * are inverses: a `(maximize V)` spec gives back V with
+         * ObjectiveDirection::Maximise, and handing that to Problem::maximise()
+         * reinstates the original objective. A constant objective (the writer
+         * renders one as `(minimize 3)`) comes back as a constant variable.
          */
-        std::optional<IntegerVariableID> minimise_variable;
+        std::optional<Objective> objective;
     };
 
     /**
@@ -99,8 +99,8 @@ namespace gcs
      * deliberately *not* posted to `problem`: setting it would commit the caller
      * to optimising, and there is no way to unset it afterwards, so a caller who
      * wants to enumerate an optimisation instance (as the workflow-2 chain
-     * harness does) could not. Call Problem::minimise() with
-     * ScpModel::minimise_variable to honour it.
+     * harness does) could not. Call Problem::minimise() or Problem::maximise()
+     * with ScpModel::objective to honour it.
      *
      * The reader is expected to accept **every** keyword Constraint::s_expr()
      * can write: the workflow-2 chain harness re-solves the `.scp` as its first
