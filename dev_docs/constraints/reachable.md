@@ -160,15 +160,15 @@ complete and none was an `=====ERROR=====`). The empty node set is the one disag
 only because `min` of an empty index set is undefined and MiniZinc flattens the
 constraint to `false`, with a warning.
 
-**`.scp`.** `read_reachable` (`scp_reader.cc:710–735`) resolves the root and
-every `ns` and `es` entry with `resolve_variable`, which accepts atoms only, so
-a model with a view anywhere in this constraint writes a `.scp` the solver
-cannot read back (`S-expression error: expected an atom, found a list`). That
-is the reader's general limitation, recorded in [`in.md`](in.md) and
-[`all_equal.md`](all_equal.md), not this family's. With plain variables the
-round trip enumerates the same 100 (undirected) and 27 (directed) solutions as
-the C++ model and both proofs verify (`tmp/fd-graph/reachable/views/`, mode
-`wide`). The writer does not record `with_cut_forcing`, so a model posted with
+**`.scp`.** `read_reachable` resolves the root and every `ns` and `es` entry
+with `resolve_variable`. That used to accept atoms only, so a model with a view
+anywhere in this constraint wrote a `.scp` the solver could not read back
+(`S-expression error: expected an atom, found a list`), as for every family.
+It now takes view terms too. The round trip enumerates the same 100
+(undirected) and 27 (directed) solutions as the C++ model, both with plain
+variables (mode `wide`, where both proofs also verify) and in the eight probe
+files with a view, such as `(r + 3)` or `(-x0 + 1)`
+(`tmp/fd-graph/reachable/views/`). The writer does not record `with_cut_forcing`, so a model posted with
 the forcing off propagates more strongly when read back.
 
 ### Options

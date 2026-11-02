@@ -301,12 +301,14 @@ Checked beyond the suite, on 120 random models (`tmp/fd-small/in/chain/rnd/`,
   are equivalent row for row (the fact-check checked them exhaustively over
   0/1 assignments), and the chains verify. No suite case posts a constant
   `var`.
-- **A view anywhere in the model can't go through the chain at all.** The
-  `.scp` writer spells a view as a list, `(_1 + -1)`, and the reader's
-  `resolve_variable` (`scp_reader.cc:141`) accepts only atoms. The solver
-  therefore rejects its own `.scp` at step 1, with `S-expression error:
-  expected an atom, found a list`. That hit 44 of the 60 view models. This is
-  the reader's limitation, not `In`'s.
+- **A view anywhere in the model can't go through the chain yet.** The `.scp`
+  writer spells a view as a list, `(_1 + -1)`. The solver's own reader used to
+  accept only atoms there, so the solver rejected its own `.scp` at step 1,
+  with `S-expression error: expected an atom, found a list`, which hit 44 of
+  the 60 view models. The reader now takes view terms, so step 1 passes, but
+  cake_pb_cp's grammar has no view terms either, so the chain stops at step 2
+  instead, with `invalid sexpression at var/const position`. This is cake's
+  limitation, not `In`'s.
 
 ### Proof-time state
 

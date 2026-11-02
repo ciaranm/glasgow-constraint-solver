@@ -132,12 +132,11 @@ its proof verifies (49 solutions).
 **The `.scp` route** was checked on 900 random instances (distinct variables,
 constants, positive sharing; seed 11), each written by the solver and read back
 by `glasgow_scp_solver --all`: every solution count matches brute force
-(`proofs/scpsweep.sh`). With views in the arrays, 277 of 300 files are refused
-on reading with `S-expression error: expected an atom, found a list`: the writer
-spells a view as a list, `(-_4 + 1)`, and `resolve_variable`
-(`scp_reader.cc:141`) takes atoms only. That is the reader's limitation, as
-[`in.md`](in.md) and [`all_equal.md`](all_equal.md) record, not this family's.
-The 23 files without a view agree.
+(`proofs/scpsweep.sh`). With views in the arrays, 277 of 300 files used to be
+refused on reading with `S-expression error: expected an atom, found a list`:
+the writer spells a view as a list, `(-_4 + 1)`, and `resolve_variable` took
+atoms only. It now takes view terms, and re-reading the same 300 files, all
+300 counts match brute force.
 
 ### Options
 
@@ -720,7 +719,6 @@ the propagator infers the same with proofs on and off.
 - **An edge endpoint outside `1..N`** in MiniZinc's six-argument spelling is an
   error, where the stdlib forces that edge out.
 - **No `cake_pb_cp` chain**: cake has no encoder.
-- **No views from `.scp`**, which is the reader's limitation.
 
 ### Next steps
 
