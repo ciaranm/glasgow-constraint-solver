@@ -11,6 +11,7 @@
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
+#include <gcs/objective.hh>
 #include <gcs/proof.hh>
 
 #include <map>
@@ -117,7 +118,7 @@ namespace gcs::innards
          * Log that a solution has been found.
          */
         auto solution(const std::vector<std::pair<IntegerVariableID, Integer>> & all_variables_with_values,
-            const std::optional<std::pair<IntegerVariableID, Integer>> & objective_to_minimise) -> void;
+            const std::optional<std::pair<Objective, Integer>> & objective_and_value) -> void;
 
         /**
          * Log that we are backtracking.
@@ -165,14 +166,19 @@ namespace gcs::innards
         auto conclude_complete_enumeration(Integer number_of_solutions) -> void;
 
         /**
-         * Log that we have reached an optimality conclusion at the end of the proof.
+         * Log that we have reached an optimality conclusion at the end of the
+         * proof, with the objective's value as the posted objective measures it.
          */
-        auto conclude_optimality(IntegerVariableID var, Integer obj) -> void;
+        auto conclude_optimality(const Objective & objective, Integer value) -> void;
 
         /**
-         * Log that we have found some bounds but not proved optimality at the end of the proof.
+         * Log that we have found some bounds but not proved optimality at the
+         * end of the proof. The root bound is the best value the objective
+         * could take at the root (its lower bound when minimising, its upper
+         * bound when maximising), and the incumbent is the best value found,
+         * both as the posted objective measures them.
          */
-        auto conclude_bounds(IntegerVariableID var, Integer lower, Integer upper) -> void;
+        auto conclude_bounds(const Objective & objective, Integer root_bound, Integer incumbent) -> void;
 
         /**
          * Log that we have not reached a conclusion at the end of the proof.

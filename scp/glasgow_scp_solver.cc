@@ -126,13 +126,17 @@ auto main(int argc, char * argv[]) -> int
     // a value it needs over in-range inputs does not fit in an Integer
     // (dev_docs/integer-ranges.md). Report it rather than abort.
     try {
-        if (model.minimise_variable)
-            problem.minimise(*model.minimise_variable);
+        if (model.objective) {
+            if (model.objective->direction == ObjectiveDirection::Minimise)
+                problem.minimise(model.objective->variable);
+            else
+                problem.maximise(model.objective->variable);
+        }
 
         // With an objective, every solution is just the next bound on the way to
         // the optimum, so the search must run to completion however --all is set;
         // the last solution printed is the optimal one.
-        bool find_all = options_vars.contains("all") || model.minimise_variable.has_value();
+        bool find_all = options_vars.contains("all") || model.objective.has_value();
         auto stats = solve_with(problem, //
             SolveCallbacks{              //
                 .solution = [&](const CurrentState & state) -> bool {

@@ -97,8 +97,9 @@ namespace
             Literals guesses;
             if (this_branch_guess)
                 guesses.push_back(*this_branch_guess);
-            if (problem.optional_minimise_variable() && objective_value) {
-                auto objective_bound = *problem.optional_minimise_variable() < *objective_value;
+            if (auto objective = problem.optional_objective(); objective && objective_value) {
+                auto objective_bound = objective->direction == ObjectiveDirection::Minimise ? objective->variable < *objective_value
+                                                                                            : objective->variable >= *objective_value + 1_i;
                 switch (state.infer(objective_bound)) {
                 case Inference::Contradiction: objective_failure = true; break;
                 case Inference::NoChange: break;
@@ -130,12 +131,13 @@ namespace
                         vector<pair<IntegerVariableID, Integer>> vars_and_values;
                         for (const auto & v : problem.all_normal_variables())
                             vars_and_values.emplace_back(v, state(v));
-                        logger->solution(vars_and_values,
-                            problem.optional_minimise_variable().transform([&](const IntegerVariableID & var) { return pair{var, state(var)}; }));
+                        logger->solution(vars_and_values, problem.optional_objective().transform([&](const Objective & objective) {
+                            return pair{objective, state(objective.variable)};
+                        }));
                     }
 
-                    if (problem.optional_minimise_variable())
-                        objective_value = state(*problem.optional_minimise_variable());
+                    if (auto objective = problem.optional_objective())
+                        objective_value = state(objective->variable);
 
                     ++stats.solutions;
                     ++number_of_solutions;
@@ -232,7 +234,7 @@ namespace
         // `soli` rather than `solx` and deletes its superseded bounds by hand,
         // so nothing core ever lands at a search level and no clause here needs
         // promoting.
-        auto backtrack_clause_set = (this_subtree_contains_solution && ! problem.optional_minimise_variable()) ? ClauseSet::Core : ClauseSet::Derived;
+        auto backtrack_clause_set = (this_subtree_contains_solution && ! problem.optional_objective()) ? ClauseSet::Core : ClauseSet::Derived;
 
         // Restart-nogood learning: each sibling refuted at this frame before the
         // cutoff yields a reduced nld-nogood --- the positive decisions on the path
@@ -322,8 +324,8 @@ auto gcs::solve_with(
     auto state = problem.create_state_for_new_search(optional_proof ? optional_proof->model() : nullptr);
 
     if (optional_proof) {
-        if (problem.optional_minimise_variable())
-            optional_proof->model()->minimise(*problem.optional_minimise_variable());
+        if (auto objective = problem.optional_objective())
+            optional_proof->model()->set_objective(*objective);
 
         optional_proof->model()->preserve(problem.all_normal_variables());
 
@@ -406,9 +408,12 @@ auto gcs::solve_with(
     if (presolve_success)
         propagators.choose_optional_interior_pruning();
 
-    Integer objective_lower_bound_for_proof = 0_i;
-    if (optional_proof && problem.optional_minimise_variable())
-        objective_lower_bound_for_proof = state.lower_bound(*problem.optional_minimise_variable());
+    // The best value the objective could take, as of the root: what a proof
+    // that ends without proving optimality can still claim as its bound.
+    Integer objective_root_bound_for_proof = 0_i;
+    if (auto objective = problem.optional_objective(); optional_proof && objective)
+        objective_root_bound_for_proof =
+            objective->direction == ObjectiveDirection::Minimise ? state.lower_bound(objective->variable) : state.upper_bound(objective->variable);
 
     if (initialisation_success && presolve_success) {
         bool child_contains_solution = false;
@@ -453,9 +458,9 @@ auto gcs::solve_with(
 
         if (search_result == SearchResult::Complete) {
             if (optional_proof) {
-                if (problem.optional_minimise_variable()) {
+                if (auto objective = problem.optional_objective()) {
                     if (objective_value)
-                        optional_proof->logger()->conclude_optimality(*problem.optional_minimise_variable(), *objective_value);
+                        optional_proof->logger()->conclude_optimality(*objective, *objective_value);
                     else
                         optional_proof->logger()->conclude_unsatisfiable(true);
                 }
@@ -472,10 +477,9 @@ auto gcs::solve_with(
         else {
             // finished without a full conclusion
             if (optional_proof) {
-                if (problem.optional_minimise_variable()) {
+                if (auto objective = problem.optional_objective()) {
                     if (objective_value)
-                        optional_proof->logger()->conclude_bounds(
-                            *problem.optional_minimise_variable(), objective_lower_bound_for_proof, *objective_value);
+                        optional_proof->logger()->conclude_bounds(*objective, objective_root_bound_for_proof, *objective_value);
                     else
                         optional_proof->logger()->conclude_none();
                 }
@@ -488,7 +492,7 @@ auto gcs::solve_with(
     }
     else {
         if (optional_proof)
-            optional_proof->logger()->conclude_unsatisfiable(problem.optional_minimise_variable().has_value());
+            optional_proof->logger()->conclude_unsatisfiable(problem.optional_objective().has_value());
         if (callbacks.completed)
             callbacks.completed();
     }

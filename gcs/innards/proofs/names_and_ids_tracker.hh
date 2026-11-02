@@ -13,6 +13,7 @@
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/s_expr.hh>
+#include <gcs/objective.hh>
 #include <gcs/proof.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
@@ -1127,11 +1128,11 @@ namespace gcs::innards
         [[nodiscard]] auto s_expr_name_of(VariableConditionOperator op) const -> std::string;
 
         /**
-         * Render an objective variable as the `.scp` `prob_type` spec:
-         * `(minimize <name>)` or `(maximize <name>)`, matching cake_pb_cp's
-         * spelling (a view that negates its variable becomes a maximize).
+         * Render an objective as the `.scp` `prob_type` spec, `(minimize
+         * <term>)` or `(maximize <term>)`, with the direction and the term
+         * exactly as posted: a view stays a view, offset and all.
          */
-        [[nodiscard]] auto s_expr_render_of(IntegerVariableID id) const -> std::string;
+        [[nodiscard]] auto s_expr_render_of(const Objective & objective) const -> std::string;
 
         /**
          * Get the s-expr *term* for a variable: s_expr_name_of() parsed into an

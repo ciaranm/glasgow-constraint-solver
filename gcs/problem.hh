@@ -9,6 +9,7 @@
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/lifetime.hh>
+#include <gcs/objective.hh>
 #include <gcs/presolver.hh>
 #include <gcs/proof.hh>
 #include <gcs/stats.hh>
@@ -339,9 +340,10 @@ namespace gcs
         [[nodiscard]] auto each_variable_with_bounds_and_name() const -> std::generator<std::tuple<IntegerVariableID, Integer, Integer, std::string>>;
 
         /**
-         * What is our objective variable, to minimise?
+         * \brief The objective given to minimise() or maximise(), if either
+         * was called, with its variable and direction exactly as posted.
          */
-        [[nodiscard]] auto optional_minimise_variable() const -> std::optional<IntegerVariableID>;
+        [[nodiscard]] auto optional_objective() const -> std::optional<Objective>;
 
         ///@}
     };

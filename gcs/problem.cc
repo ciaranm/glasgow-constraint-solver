@@ -64,7 +64,7 @@ struct Problem::Imp
     deque<tuple<SimpleIntegerVariableID, Integer, Integer, string>> integer_variables{};
     deque<unique_ptr<Presolver>> presolvers{};
     vector<IntegerVariableID> problem_variables{};
-    optional<IntegerVariableID> optional_minimise_variable{};
+    optional<Objective> optional_objective{};
     unordered_set<string> names;
     unsigned long long next_anon_variable = 0;
     unsigned long long next_constraint_number = 0;
@@ -258,17 +258,17 @@ auto Problem::each_presolver() const -> generator<Presolver &>
 
 auto Problem::minimise(IntegerVariableID var) -> void
 {
-    _imp->optional_minimise_variable = var;
+    _imp->optional_objective = Objective{var, ObjectiveDirection::Minimise};
 }
 
 auto Problem::maximise(IntegerVariableID var) -> void
 {
-    _imp->optional_minimise_variable = -var;
+    _imp->optional_objective = Objective{var, ObjectiveDirection::Maximise};
 }
 
-auto Problem::optional_minimise_variable() const -> optional<IntegerVariableID>
+auto Problem::optional_objective() const -> optional<Objective>
 {
-    return _imp->optional_minimise_variable;
+    return _imp->optional_objective;
 }
 
 auto Problem::all_normal_variables() const -> const vector<IntegerVariableID> &

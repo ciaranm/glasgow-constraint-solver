@@ -1057,11 +1057,10 @@ namespace
         return ObjectiveSpec{parts[0].as_atom() == "maximize", parts[1]};
     }
 
-    // The objective as a variable to minimise, mirroring what
-    // Problem::minimise() / Problem::maximise() would have stored -- so a
-    // caller can hand it straight back to Problem::minimise(), and so that
+    // The objective, mirroring what Problem::minimise() / Problem::maximise()
+    // would have stored -- so a caller can hand it straight back, and so that
     // reader and writer are inverses.
-    auto resolve_objective(const map<string, IntegerVariableID> & variables, const ObjectiveSpec & spec) -> IntegerVariableID
+    auto resolve_objective(const map<string, IntegerVariableID> & variables, const ObjectiveSpec & spec) -> Objective
     {
         // The writer renders a constant objective as (minimize 3), so an
         // undeclared atom is legitimate -- but only when it really is an
@@ -1070,8 +1069,7 @@ namespace
         if (! variables.contains(spec.variable.as_atom()) && ! optional_integer(spec.variable))
             throw ScpReadError{"the prob_type objective names an unknown variable '" + spec.variable.as_atom() + "'"};
 
-        auto variable = resolve_variable(variables, spec.variable);
-        return spec.maximize ? -variable : variable;
+        return Objective{resolve_variable(variables, spec.variable), spec.maximize ? ObjectiveDirection::Maximise : ObjectiveDirection::Minimise};
     }
 
     auto read_element_2d(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
@@ -1583,6 +1581,6 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
             throw ScpUnsupportedConstraintError{op};
     }
 
-    auto minimise_variable = objective.transform([&](const ObjectiveSpec & spec) { return resolve_objective(variables, spec); });
-    return ScpModel{move(variables), minimise_variable};
+    auto resolved_objective = objective.transform([&](const ObjectiveSpec & spec) { return resolve_objective(variables, spec); });
+    return ScpModel{move(variables), resolved_objective};
 }

@@ -71,8 +71,7 @@ struct ProofModel::Imp
 
     ProofLineNumber number_of_constraints{0};
 
-    optional<IntegerVariableID> optional_minimise_variable;
-    bool objective_written_over_underlying = false;
+    optional<Objective> optional_objective;
     optional<vector<IntegerVariableID>> preserved_variables;
     unsigned long long proof_only_integer_variable_nr = 0;
 
@@ -717,34 +716,6 @@ auto ProofModel::write_preamble() -> void
     if (_imp->streaming)
         throw UnexpectedException{"proof model preamble has already been written"};
 
-    // A view objective is rendered over its own proof-only bit vector, so
-    // register it now (this appends BinEnc(V)'s set-up rows to the pending
-    // text, where they land just after the variable rows). This also
-    // guarantees find_view succeeds for the objective later, e.g. in the
-    // solution-logging soli path. There are two exceptions, both of which stay
-    // unregistered so that min: falls back to deviewing through the underlying:
-    //
-    //  - a view whose bit vector cannot be represented at all -- negating a
-    //    FlatZinc unbounded-int objective spans one more bit than an Integer
-    //    holds;
-    //
-    //  - a plain negation, which is what Problem::maximise() stores. Its bit
-    //    vector would be an extra proof-only variable that cake_pb_cp cannot
-    //    know about: cake re-derives a `(maximize V)` .scp as `min: -1 i[V][b0]
-    //    ...` straight over V's own bits, so an objective hosted on its own
-    //    vector leaves the solver's proof citing view-linking labels that
-    //    cake's OPB has no counterpart for, and the workflow-2 chain cannot
-    //    check a maximisation at all. Deviewing writes exactly cake's line.
-    //    Only the offset-free case is done this way: `then_add` shifts the
-    //    objective by a constant that the deviewed min: cannot carry, and the
-    //    .scp cannot express either (it renders as a bare `(maximize V)`).
-    if (_imp->optional_minimise_variable)
-        if (auto * view = std::get_if<ViewOfIntegerVariableID>(&*_imp->optional_minimise_variable)) {
-            auto [v_lo, v_hi] = names_and_ids_tracker().view_bounds(*view);
-            if (bits_encoding_fits(v_lo, v_hi) && ! (view->negate_first && view->then_add == 0_i))
-                static_cast<void>(names_and_ids_tracker().need_view(*view));
-        }
-
     try {
         _imp->opb_stream.exceptions(ios::failbit | ios::badbit);
         _imp->opb_stream.open(_imp->opb_file, ios::out);
@@ -753,33 +724,17 @@ auto ProofModel::write_preamble() -> void
         // as it is produced instead of being buffered until the counts are
         // known.
 
-        if (_imp->optional_minimise_variable) {
-            _imp->opb_stream << "min: ";
-            overloaded{
-                [&](const SimpleIntegerVariableID & v) {
-                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
-                        _imp->opb_stream << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                },                                                                          //
-                [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; }, //
-                [&](const ViewOfIntegerVariableID & v) {
-                    // Registered just above whenever its bit vector is
-                    // representable; otherwise fall back to deviewing through
-                    // the underlying (the objective's constant offset doesn't
-                    // matter for optimisation order).
-                    if (auto v_id = names_and_ids_tracker().find_view(v)) {
-                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*v_id))
-                            _imp->opb_stream << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    }
-                    else {
-                        _imp->objective_written_over_underlying = true;
-                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
-                            _imp->opb_stream << (v.negate_first ? -bit_value : bit_value) << " "
-                                             << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    }
-                } //
-            }
-                .visit(*_imp->optional_minimise_variable);
-
+        if (_imp->optional_objective) {
+            // `min:` or `max:`, as posted. The constant is written whenever it
+            // is not zero: it does not change which solutions are optimal, but
+            // it does change the objective values the proof concludes with, and
+            // those should be the posted objective's.
+            auto [variable, coefficient, constant] = objective_linear_form(_imp->optional_objective->variable);
+            _imp->opb_stream << (_imp->optional_objective->direction == ObjectiveDirection::Minimise ? "min: " : "max: ");
+            for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(variable))
+                _imp->opb_stream << coefficient * bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+            if (constant != 0_i)
+                _imp->opb_stream << constant << " ";
             _imp->opb_stream << ";\n";
         }
 
@@ -839,21 +794,26 @@ auto ProofModel::finalise() -> void
     }
 }
 
-auto ProofModel::objective_written_over_underlying() const -> bool
-{
-    return _imp->objective_written_over_underlying;
-}
-
 auto ProofModel::number_of_constraints() const -> ProofLineNumber
 {
     return _imp->number_of_constraints;
 }
 
-auto ProofModel::minimise(const IntegerVariableID & var) -> void
+auto ProofModel::set_objective(const Objective & objective) -> void
 {
     if (_imp->streaming)
         throw UnexpectedException{"objective must be set before the OPB preamble is written"};
-    _imp->optional_minimise_variable = var;
+    _imp->optional_objective = objective;
+}
+
+auto gcs::innards::objective_linear_form(const IntegerVariableID & var) -> ObjectiveLinearForm
+{
+    return overloaded{
+        [&](const SimpleIntegerVariableID & v) { return ObjectiveLinearForm{v, 1_i, 0_i}; },                                                //
+        [&](const ViewOfIntegerVariableID & v) { return ObjectiveLinearForm{v.actual_variable, v.negate_first ? -1_i : 1_i, v.then_add}; }, //
+        [&](const ConstantIntegerVariableID &) -> ObjectiveLinearForm { throw UnimplementedException{}; }                                   //
+    }
+        .visit(var);
 }
 
 auto ProofModel::preserve(vector<IntegerVariableID> vars) -> void

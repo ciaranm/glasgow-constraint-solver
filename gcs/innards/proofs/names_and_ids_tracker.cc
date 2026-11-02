@@ -2859,16 +2859,10 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     throw NonExhaustiveSwitch{};
 }
 
-auto NamesAndIDsTracker::s_expr_render_of(IntegerVariableID id) const -> string
+auto NamesAndIDsTracker::s_expr_render_of(const Objective & objective) const -> string
 {
-    return overloaded{
-        [&](const ConstantIntegerVariableID & c) -> string { return "(minimize " + c.const_value.to_string() + ")"; }, //
-        [&](const SimpleIntegerVariableID & v) -> string { return "(minimize " + name_of(v) + ")"; },                  //
-        [&](const ViewOfIntegerVariableID & vv) -> string {
-            return "(" + string{vv.negate_first ? "maximize" : "minimize"} + " " + name_of(vv.actual_variable) + ")";
-        } //
-    }
-        .visit(id);
+    return "(" + string{objective.direction == ObjectiveDirection::Minimise ? "minimize" : "maximize"} + " " + s_expr_name_of(objective.variable) +
+        ")";
 }
 
 auto NamesAndIDsTracker::s_expr_term_of(IntegerVariableID id) const -> SExpr

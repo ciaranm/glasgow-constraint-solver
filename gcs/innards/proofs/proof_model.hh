@@ -8,6 +8,7 @@
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
+#include <gcs/objective.hh>
 #include <gcs/proof.hh>
 
 #include <memory>
@@ -41,6 +42,32 @@ namespace gcs::innards
         // bit-product cutting-planes resolve against cake's flags unchanged.
         bool use_indices_family = false;
     };
+
+    /**
+     * \brief An objective variable as `coefficient * variable + constant`,
+     * over a variable with bits of its own.
+     *
+     * The objective line is always written this way, whatever the objective
+     * variable is: a view `sX + c` contributes X's own bits, and its offset
+     * becomes the objective's constant, so no view ever gets a bit vector on
+     * the objective's account. Anything that has to restate the objective, such
+     * as the `e` line after a `soli` or the bound before a conclusion, spells
+     * it the same way --- over X's bits even if a constraint has registered the
+     * view since (issue #1206).
+     */
+    struct ObjectiveLinearForm final
+    {
+        SimpleIntegerVariableID variable;
+        Integer coefficient;
+        Integer constant;
+    };
+
+    /**
+     * \brief The linear form of an objective variable.
+     *
+     * \throws UnimplementedException for a constant objective.
+     */
+    [[nodiscard]] auto objective_linear_form(const IntegerVariableID &) -> ObjectiveLinearForm;
 
     class ProofModel
     {
@@ -377,9 +404,10 @@ namespace gcs::innards
             const std::optional<IntegerVariableProofRepresentation> &, const std::optional<CakeBitNaming> & = std::nullopt) -> void;
 
         /**
-         * State that we are solving an optimisation problem, minimising the specified variable.
+         * State that we are solving an optimisation problem, with the given
+         * objective.
          */
-        auto minimise(const IntegerVariableID &) -> void;
+        auto set_objective(const Objective &) -> void;
 
         /**
          * State that we might be enumerating, and specify the variables to preserve.
@@ -390,15 +418,16 @@ namespace gcs::innards
 
         /**
          * Open the OPB file and write everything that must precede the
-         * constraints: the objective (min:) line and the preserved:
+         * constraints: the objective (min: or max:) line and the preserved:
          * projection line. Everything emitted afterwards goes straight to the
          * file rather than accumulating in memory, so call this as soon as
          * the objective and preserve list are known and every variable they
          * mention has been set up -- in a solve, after
          * Problem::create_state_for_new_search and before
-         * Problem::create_propagators. Calling minimise or preserve after
-         * this throws. A view objective's proof-only bit vector is registered
-         * here, so `min:` is always rendered over BinEnc(V).
+         * Problem::create_propagators. Calling set_objective or preserve after
+         * this throws. The objective line is always written over a variable's
+         * own bits, deviewed, with the view's constant as the objective's
+         * constant (see objective_linear_form).
          *
          * Optional: finalise() does it on your behalf (with everything still
          * buffered, and the objective and preserve list set at any point) if
@@ -411,15 +440,6 @@ namespace gcs::innards
          * proof writing starts.
          */
         auto finalise() -> void;
-
-        /**
-         * Whether write_preamble wrote a view objective's `min:` line over the
-         * underlying variable's bits rather than the view's own. A line that has
-         * to restate the objective, such as the `e` line after each `soli`, must
-         * then spell it the same way, even if a constraint has registered the
-         * view since (issue #1206).
-         */
-        [[nodiscard]] auto objective_written_over_underlying() const -> bool;
 
         /**
          * How many constraints do we have? Used to generate the proof header

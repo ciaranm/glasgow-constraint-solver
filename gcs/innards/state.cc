@@ -118,9 +118,6 @@ struct State::Imp
     list<vector<function<auto()->void>>> on_backtracks{};
     vector<Literal> guesses{};
     vector<Literal> extra_proof_conditions{};
-
-    optional<IntegerVariableID> optional_minimise_variable{};
-    optional<Integer> optional_objective_incumbent{};
 };
 
 State::State() : _imp(make_unique<Imp>())
@@ -142,8 +139,6 @@ auto State::clone() const -> State
     result._imp->integer_variable_states = _imp->integer_variable_states;
     result._imp->constraint_states = _imp->constraint_states;
     result._imp->on_backtracks = _imp->on_backtracks;
-    result._imp->optional_minimise_variable = _imp->optional_minimise_variable;
-    result._imp->optional_objective_incumbent = _imp->optional_objective_incumbent;
     result._imp->maybe_proof_logger = _imp->maybe_proof_logger;
     return result;
 }
