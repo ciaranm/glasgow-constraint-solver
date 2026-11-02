@@ -91,6 +91,10 @@ ScpUnsupportedConstraintError::ScpUnsupportedConstraintError(const string & op) 
 {
 }
 
+ScpUnrebuildableShapeError::ScpUnrebuildableShapeError(const string & w) : ScpReadError(w)
+{
+}
+
 namespace
 {
     // The atom's value if it is an integer, nullopt if it is some other atom.
@@ -537,7 +541,8 @@ namespace
                     throw ScpReadError{"a regular edge must be (symbol target)"};
                 auto target = static_cast<long>(as_integer(pair[1]).raw_value);
                 if (! transitions[q].emplace(as_integer(pair[0]), target).second)
-                    throw ScpReadError{"the .scp reader rebuilds deterministic automata only: a state has two edges on the same symbol"};
+                    throw ScpUnrebuildableShapeError{
+                        "the .scp reader rebuilds deterministic automata only: a state has two edges on the same symbol"};
             }
         vector<long> finals;
         for (const auto & f : children_of(terms[5], "the regular final-state list"))

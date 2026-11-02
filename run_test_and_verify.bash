@@ -78,18 +78,22 @@ if [[ -z $scp_solver ]] ; then
     [[ -r $scp_solver_path_file ]] && scp_solver=$(<"$scp_solver_path_file")
 fi
 
-# Only exit status 2 -- a keyword read_scp has no case for -- fails the test.
-# Status 1 is a keyword it knows in a shape it cannot rebuild: a view operand
-# renders as the list `(-X + 17)`, which the grammar does not parse, and that is
-# a documented limitation rather than a coverage gap. (It does mean a model
-# whose first unreadable thing is a view can hide a bad keyword later in the
-# same file; the in-process check in the constraint tests has the same
-# property, and between them the constraints are covered either way.)
+# Exit status 2 is a keyword read_scp has no case for, and 1 is a keyword it
+# knows under something it cannot read: both fail the test. Status 3 is a shape
+# the public constructors cannot rebuild (a non-deterministic automaton), which
+# is a documented limitation rather than a coverage gap, and passes. (It does
+# mean a model whose first unreadable thing is such a shape can hide a bad
+# keyword later in the same file; the in-process check in the constraint tests
+# has the same property, and between them the constraints are covered either
+# way.)
 if [[ -n $scp_solver && -x $scp_solver && -e ${proofname}.scp ]] ; then
     "$scp_solver" --parse-only "${proofname}.scp"
     scp_read_status=$?
     if [[ $scp_read_status -eq 2 ]] ; then
         echo "$0: ${proofname}.scp names a constraint gcs::read_scp cannot read -- see dev_docs/workflow2_testing.md" 1>&2
+        exit 1
+    elif [[ $scp_read_status -ne 0 && $scp_read_status -ne 3 ]] ; then
+        echo "$0: gcs::read_scp could not read back ${proofname}.scp -- see dev_docs/workflow2_testing.md" 1>&2
         exit 1
     fi
 fi
