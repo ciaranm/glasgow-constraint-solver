@@ -2543,14 +2543,17 @@ where 80\% of small random instances turn out to be one of them.
   of a bit-vector-less variable would have to mirror onto a variable that cannot
   hold the mirror.
 
-\item \textbf{Initial-domain gaps.}  Holes in an initial domain are currently
+\item \textbf{Initial-domain gaps.}  Holes in an initial domain are
   derived at the root of the proof, by root propagation of the constraint that
   posts the domain.  They could instead be stated in the model, as
   $\natin{x}{a}{b}\geq 1$ rows forming part of the domain definition.
-  That formulation is equally definitional and slightly more direct, but it
-  requires interval literals to exist during model writing, and it changes the
-  OPB surface that a verified encoder conforms against.  The decision is open
-  and should be taken alongside that work.
+  That was decided against (2026-11, issue \#310): the domain stays a bound
+  range plus the constraint, and the gaps stay derived.  What the model does
+  now state is that constraint's own disjunction, with one interval literal per
+  run of permitted values, so interval literals exist during model writing.
+  The model defines such a literal by its reification alone; its partition,
+  coverings, containment edges and view links are emitted at the start of the
+  proof, as for a literal the proof's first step introduced.
 
 \item \textbf{Assertion levels.}  The solver can be asked to \emph{assert} parts
   of the proof rather than derive them, on a scale running

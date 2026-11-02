@@ -15,8 +15,8 @@
 > rejected) and #1394 (the engine's refined-watch undo, 59% of the profile
 > samples of `tsp --restarts=100`). Already open and touching this family: #131
 > (a generic watched-clause propagator, the natural home for this one,
-> `NegativeTable`'s and the logical family's), #310 (range literals cannot be
-> written into the model, so a range literal in a posted nogood throws with
+> `NegativeTable`'s and the logical family's), #1225 (range literals cannot be
+> written into the `.scp`, so a range literal in a posted nogood throws with
 > proofs on), #1210 (the generic `Links`-level solution-line rejection for
 > range-declared variables, which restart proofs meet too), #1085 (deep search
 > overflows the stack in `solve_with_state`, the recursion the restart loop
@@ -62,7 +62,7 @@ and never appears in the proof on either path, so the scan path's proof is
 rejected (#1393); under the default `dom_then_deg` brancher a
 posted store can change the tree depending on the path, because the refined
 one adds nothing to any variable's degree (#1392); a posted nogood
-with a range literal throws with proofs on (#310); the store is not thread-safe
+with a range literal throws with proofs on (#1225); the store is not thread-safe
 and `clone()` shares it.
 
 Five things to know before touching it.
@@ -116,7 +116,7 @@ least one literal of `n` is false; that is, it posts the clause `∨_{ℓ ∈ n}
 for each. The header (`nogoods.hh:53`) lists four scalar operators, writing the
 fourth as `≤` where the operator is `<`; the two range operators are accepted
 and propagate correctly (below). In a posted nogood they throw with proofs on
-(#310); in a learned one they reach the proof (below).
+(#1225); in a learned one they reach the proof (below).
 
 - **No nogoods** (`Nogoods{vector<Nogood>{}}`): nothing to forbid.
 - **An empty nogood** forbids the empty conjunction, which is true, so the
@@ -249,8 +249,9 @@ For each nogood `n` present when the constraint is installed:
 over the literals' order and equality atoms, which the shared literal layer
 defines (`nogoods.cc:80-91`). **Definitional**: the row is the clause the
 nogood means. One row per nogood, `|n|` terms, independent of any domain. An
-empty nogood writes a row with no terms, `>= 1`. A range literal cannot be
-written at all (#310). The learned store contributes **no rows**: it is empty
+empty nogood writes a row with no terms, `>= 1`. A range literal is written
+like any other literal since #310, and defined in the OPB, but the `.scp`
+cannot spell one (#1225). The learned store contributes **no rows**: it is empty
 when installed, and its nogoods are derived in the proof.
 
 ### Labels
@@ -519,7 +520,7 @@ Facts that hold for rules 1 and 2:
   nogood it reaches the proof today: `reject_random_interval` makes `x ∉ I` a
   kept decision, and `solve_test`'s reject-interval case writes and verifies
   `rup 1 i[_1][in1_2] 1 i[_1][eq3] 1 i[_2][eq2] >= 1;`. In a posted nogood it
-  cannot be written into the model, and throws with proofs on (#310).
+  cannot be written into the `.scp`, and throws with proofs on (#1225).
 - **The reason** is `generic_reason` over the clause's distinct variables, as
   under [Interval efficiency](#interval-efficiency), and not minimal.
 - **No hint.** `JustifyUsingRUP{}` with no annotation, so at
@@ -903,7 +904,7 @@ sibling on each abandoned path.
 `None.` Every inference is a RUP at `Off`, every learned clause is a RUP at
 every level, and the propagator is the same with proofs on or off. Assertions
 carry no hint, which is a reconstructibility matter, not a gap. A range literal
-in a posted nogood throws rather than going unlogged (#310); in a learned one it
+in a posted nogood throws rather than going unlogged (#1225); in a learned one it
 is logged.
 
 ### Known limitations
@@ -945,9 +946,9 @@ Anything else, which would need work first:
 - **A posted store under the default brancher** can give a different tree on
   the refined path than on the scan path, since the refined one adds nothing to
   degree (#1392).
-- **A range literal in a posted nogood throws** with proofs on (#310, and
-  `s_expr()`), and **a view** makes the written `.scp` unreadable by our own
-  reader (generic).
+- **A range literal in a posted nogood throws** with proofs on, from `s_expr()`
+  (#1225), and **a view** makes the written `.scp` unreadable by our own reader
+  (generic).
 - **No thread safety**: `clone()` shares the store, which has no
   synchronisation.
 

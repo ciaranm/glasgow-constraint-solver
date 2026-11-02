@@ -235,6 +235,7 @@ operational record: which test, gated how, validated how.*
 | W4 | `range_branch_test.cc`, plus the suite-wide `reject_random_interval` branching | always on |
 | W5 | `range_witness_w5_test.cc` | gate-on, veripb-verified |
 | W6–W9 | `range_witness_w{6,7,8,9}_test.cc` | gate-on, veripb-verified |
+| W10 | `range_witness_w10_test.cc` | veripb-verified, seeded random branching (libstdc++) |
 
 They are all tiny — 2–3 variables, 2–3 bits, one scripted decision pair — and
 each was found the expensive way. Registration is in `gcs/CMakeLists.txt`, which
@@ -272,6 +273,16 @@ were removed:
   piecewise and no bound anchor). Constructing one needs a contrived
   propagation order; the W4 net covers the shape randomly. To be added if a
   natural trigger is found.
+
+**W10 (2026-11, #310)** is the one witness that is not scripted. It checks
+that a range literal the OPB defines is linked at proof start, rather than when
+something first names it: an `In`'s at-least-one row mentions it from the
+start, and leaving the proof-start request out made one backtrack clause
+unverifiable. No scripted decision order has been found that reaches that, so
+it uses seeded random branching. In a sweep over 100 seeds, 3 bite without
+the request and all verify with it. The order comes from
+`std::uniform_int_distribution`, which is implementation-defined, so it bites
+only under libstdc++.
 
 Testing doctrine learned at cost, for the suite around these: a capped or
 gate-off green run certifies nothing about P2; two-variable instances
@@ -314,15 +325,18 @@ and which branching were active.
    `infer_not_in_range` like everyone else's (this was the hidden per-value
    eq-atom factory the first time round).
 
-   *Open decision (revisit alongside the CakePB OPB-conformance work):*
-   whether initial-domain gaps may instead be stated as interval literals in
-   the OPB itself (e.g. `~[b in 1..3] >= 1` as part of the domain
-   definition). That formulation is equally definitional and slightly more
-   direct, but requires model-phase `need_invar` support (currently throws)
-   and changes the OPB encoding surface that the CakePB verified-encoding
-   pipeline conforms against. Until that decision is made, gaps are
-   root-derived in the proof as specified here, and the OPB encoding is
-   unchanged.
+   *Decided (2026-11, #310):* a holey domain stays a bound range plus an
+   `In`, and its gaps are still root-derived in the proof, as specified here.
+   What changed is `In`'s own row: its at-least-one names one interval literal
+   per run of permitted constants rather than one eq atom per constant, so
+   `need_invar` now works while the model is being written. Such a literal is
+   *defined* in the OPB, by the same pair of rows an eq atom gets there, under
+   `@<base>[in<lo>_<hi>][r]` / `[f]`; everything that *links* it (§3, and the
+   view mirroring of `view-range-literals.md`) stays in the proof, because
+   `emit_delayed_proof_steps` requests each such literal once the proof starts,
+   after every other line the model queued. That request is load-bearing:
+   W10 below fails without it. This changes the OPB that `cake_pb_cp` has to
+   reproduce, which is part of the large cake ask.
 4. **Proof-level discipline**: justification scaffolding (bridge lemmas) is
    `Temporary` and deleted immediately after the conclusion; conclusions are
    `Current` and live until their level is forgotten at backtrack; §3's

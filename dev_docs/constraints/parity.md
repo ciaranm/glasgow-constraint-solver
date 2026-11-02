@@ -7,9 +7,9 @@
 > **Open issues** filed by this audit: none; its measurement of the gathered
 > system on `parity-learning` is posted on #983. Already open and touching
 > this family: #983 (the system and its presolver are reachable from no
-> front end), #310 (range literals cannot be written into the model, so a
-> range literal in either class throws with proofs on; #1225 is the same throw,
-> filed for reification conditions), #649 (implied equivalences have nowhere
+> front end), #1225 (range literals cannot be written into the `.scp`, so a
+> range literal in either class throws with proofs on; filed for reification
+> conditions, but the same throw), #649 (implied equivalences have nowhere
 > to live), #868 (cross-solver). Filed since, in the presolver: #1381, it
 > takes a Boolean donor's polarity from `enforces_equality()`, so a
 > `ReifiedEquals` whose `neq` flag disagrees with its condition, such as every
@@ -128,13 +128,17 @@ donors kept and retired, which must match because both arms carry the system.
 ### Variable kinds and views
 
 Any literal over any `IntegerVariableID`, with one exception when proofs are
-on. **A range literal throws with proofs on**, in both classes: the model
-cannot yet write one (#310; the same throw for a reification condition is
-#1225), and nothing here avoids it.
+on. **A range literal throws with proofs on**, in both classes: the `.scp`
+cannot yet write one (#1225), and nothing here avoids it.
 `ParityOdd{{in_range(x, 1, 3)}}` and `ParitySystem` over the same one-literal
-row, with `x ∈ 0..4`, each enumerate `x = 1, 2, 3` with proofs off, and with proofs on each throws
-`range literals during model writing are not yet supported` from
-`NamesAndIDsTracker::need_invar` (checked at `61112ed0`). No front end posts
+row, with `x ∈ 0..4`, each enumerate `x = 1, 2, 3` with proofs off. With
+proofs on, the OPB and the proof now take it (#310), but writing the `.scp` throws
+`a range condition cannot be written to a .scp yet` from
+`NamesAndIDsTracker::s_expr_name_of`, because `cake_pb_cp` has no spelling
+for one (#1225). With no `.scp` asked for
+(`ProofFileNames::s_expr_file` left empty),
+`ParityOdd{{in_range(z, 1, 3)}}` beside two free variables verifies its 48
+solutions. No front end posts
 one; the C++ API can, as `logical.md` records for its own classes. Otherwise,
 the proof names each literal's atom, and a view's literals are its own.
 `parity_constraint_view_mixed` and `parity_system_constraint_view_mixed` wrap
@@ -718,7 +722,7 @@ derives 38 slack rows; and in the presolver test, 50 slack rows, 121 units and
 - **XCSP3's `xor` inside an expression**, and the `gcspy` path (`test_xor` in
   `python_test.py` is commented out of `python/CMakeLists.txt`).
 - **Range literals**, in either class. No row draws one, so nothing shows that
-  they throw with proofs on (#310; #1225 is the reification-condition case).
+  they throw with proofs on (#1225).
 - **A system unit whose inference fails** because an earlier unit in the same
   call decided a shared variable (rule 5's conflict case). This review's probe
   reached it; no fixture does.
@@ -804,10 +808,10 @@ scale.
 
 ### Proof-logging gaps
 
-**One, already filed: #310** (the same throw, filed for reification conditions,
-is #1225). A range literal (`x ∈ [l, u]` or its negation) in `ParityOdd` or
-`ParitySystem` throws `UnimplementedException` from model writing when proofs
-are on, because the names-and-IDs tracker cannot yet state one in the OPB. With
+**One, already filed: #1225.** A range literal (`x ∈ [l, u]` or its
+negation) in `ParityOdd` or `ParitySystem` throws `UnimplementedException`
+when proofs are on, because the `.scp` cannot yet spell one. The OPB and the
+proof take it since #310. With
 proofs off the answers are right. No front end posts a range literal here; the
 C++ API can. Otherwise every inference over correctly gathered rows is
 justified, and nothing is asserted at `AssertionLevel::Off`. A Boolean donor
@@ -838,8 +842,8 @@ elimination, per assertion.
   one call has a justification quadratic in the chain's length. Its supports,
   and the elimination in every order measured except with the first column
   fixed, are cubic, with proofs off too (rule 5).
-- **A range literal throws with proofs on** (#310; #1225 is the
-  reification-condition case).
+- **A range literal throws with proofs on** (#1225), unless no `.scp` is
+  asked for.
 
 ### Next steps
 

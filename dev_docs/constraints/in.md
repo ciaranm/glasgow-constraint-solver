@@ -237,19 +237,45 @@ for i in 0 .. k-1:
     x[id][i][ge]  ⇔  V_i − var ≥ 0          (fully reified)
     x[id][i][le]  ⇔  V_i − var ≤ 0          (fully reified)
     x[id][i][eq]  ⇔  ge + le ≥ 2            (fully reified)
-@c[id][al1]:   Σ_{c ∈ vals} [var = c]  +  Σ_i x[id][i][eq]  ≥ 1
+@c[id][al1]:   Σ_{[a, b] a run of vals} [var ∈ a..b]  +  Σ_i x[id][i][eq]  ≥ 1
 ```
 
-`define_proof_model()` at `in.cc:114–144`. A constant whose `[var = c]` is
-literally false is dropped from the sum, and one that is literally true is
-folded into the degree. Both happen only when `var` is itself a constant. A
-constant outside `var`'s bounds is kept, as `cake_pb_cp` keeps it.
+`define_proof_model()` in `in.cc`. A run is a maximal set of consecutive
+constants, and `[var ∈ a..a]` is the eq atom `[var = a]`. A wider run is a
+range literal, which the literal layer defines in the OPB against `var`'s two
+order cuts exactly as it defines an eq atom, with the second cut further
+along (#310):
+
+```
+@i[var][in<a>_<b>][r]:   [var ≥ a] + ¬[var ≥ b+1] ≥ 2   ⇐ [var ∈ a..b]
+@i[var][in<a>_<b>][f]:   ¬[var ≥ a] + [var ≥ b+1] ≥ 1   ⇐ ¬[var ∈ a..b]
+```
+
+The literal is `i[var][in<a>_<b>]` (`p[<k>_<view name>][in<a>_<b>]` on a
+view's own variable), with a negative endpoint written `-N`. So `(in (1 2 3 7 8)
+X)` has two terms, `[X ∈ 1..3]` and `[X ∈ 7..8]`, and four order cuts, where
+the eq-atom spelling had five terms and seven cuts. A variable with no bits
+encoding has no range literals, so there a run is written as its eq atoms.
+
+A literal that is literally false is dropped from the sum, and one that is
+literally true is folded into the degree. Both happen only when `var` is
+itself a constant. Runs are not clipped to `var`'s bounds: a constant outside
+them is kept, as `cake_pb_cp` keeps it, and a run that sticks out is defined
+over its own cuts, as an eq atom outside the bounds is. The runs depend only
+on the set of constants, so a repeated constant changes nothing.
+
+Only the definition is in the OPB. The partition, coverings and containment
+edges that keep unit propagation strong over a range literal, and its links to
+a view's matching literal, are the proof's: `emit_delayed_proof_steps` requests
+every OPB-defined range literal once the proof starts, which links it as if
+the proof's first step had asked for it. `range_witness_w10_test` fails without
+that request (see [`range_literals_spec.md`](../range_literals_spec.md) §8).
 
 **It is definitional.** The flags are extension variables and the one row says
 what the constraint means. The constraint writes `6k + 1` rows of its own: six
 reification rows per flag triple and the sum (`in_two_vars_sat` has 13). The
-sum has `|vals| + k` terms. Each constant also needs the literal layer's shared
-rows defining `[var = c]`, up to six, whatever the width. Nothing is
+sum has one term per run plus `k`. Each run also needs the literal layer's
+shared rows defining its literal, up to six, whatever the width. Nothing is
 proportional to a domain's width.
 
 ### Labels
@@ -267,7 +293,14 @@ posted.
 (`cencode_count_aux`, which is also what `Count` was conformed to in #354),
 then the `al1` row. (The comment at `in.cc:123–124` calls it literally the
 count helper, which overstates it: the count helper is only the middle part.)
-Our flags were conformed to it in c347b153. The seven chain cases:
+Our flags were conformed to it in c347b153.
+
+**The constants no longer match** (#310): cake writes one `[var = c]` per
+constant, and we write one literal per run, so a run of two or more is a range
+literal cake does not make. Until cake follows, `in_const_sat` (`(in (1 2) Y)`)
+fails the chain at the veripb step, whose proof names `i[Y][in1_2]`; every other
+case has no run wider than one, and is unaffected. The figures below predate
+the change. The seven chain cases:
 - `in_const_sat`, `in_two_vars_sat`, `in_two_vars_unsat`, `in_mixed_sat` and
   `in_fixed_var_sat` are `strict`.
 - `in_var_sat` and `in_unsat` are `none`, for the #358 boundary-literal
@@ -314,7 +347,9 @@ Checked beyond the suite, on 120 random models (`tmp/fd-small/in/chain/rnd/`,
   the model, not introduced in the proof. (With a view candidate, the view
   layer's own preamble cites the flag rows by label.) They are fully reified
   over bit sums, so a complete assignment of the bits determines each of them
-  by unit propagation, as `solx` needs.
+  by unit propagation, as `solx` needs. The same holds for the runs' range
+  literals, whose linking the literal layer writes at the top of the proof,
+  after everything else the model queued for proof start.
 - **Lazily:** each rule's bound lemmas and scaffolding lines are written at
   `ProofLevel::Temporary` and deleted straight after the conclusion. A step-1
   range removal over two candidates ends with `del range -7 -1`. Nothing a
@@ -1247,7 +1282,8 @@ Membership in a set of constants is just a unary domain restriction.
   layer every range rule here rests on. §6 and item 3 of §9 record that
   `In`'s per-value root pruning was once the hidden per-value literal factory,
   and that initial-domain gaps are root-derived in the proof, not stated in
-  the OPB, pending the CakePB decision recorded there.
+  the OPB. Since #310 the OPB states the permitted runs instead, and the gaps
+  are still derived.
 - [`optional-interior-pruning.md`](../optional-interior-pruning.md): what the
   *Holes affect* column feeds, and why an overstated sensitivity costs other
   families rather than this one.

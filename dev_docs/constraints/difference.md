@@ -16,7 +16,7 @@
 > this family: #1072 (a push cites a predecessor bound the proof already has),
 > #594 (zero-weight-cycle unification, the deferred fourth sub-step of root
 > simplification), #582 (no propagator priorities), #1225 (a range-literal
-> condition throws with proofs on; #310 is the encoding fix), #1210 (the
+> condition throws with proofs on, at the `.scp`), #1210 (the
 > generic `Links`-level solution-line rejection for range-declared variables,
 > which this family's proofs meet too), #598 and #983 (the presolver's reach;
 > #983 is the parity system's issue, and its general half is about presolver
@@ -225,12 +225,14 @@ condition is never inferred during search, so nothing here is a reified
 dispatcher in [`reification.md`](../reification.md)'s sense.
 
 A **range-literal condition** (`in_range`, `not_in_range`) gives the right
-answers with proofs off (50 and 60 solutions for `cond → x − y ≤ −1` on
-`x, y ∈ 0..3`, `z ∈ 0..4`, with `cond` `z ∈ 1..3` and `z ∉ 1..3`, checked
-against a hand count) and throws `range literals during model writing are not
-yet supported` with proofs on, from `NamesAndIDsTracker::need_invar`. That is
-#1225, whose fix is #310; `comparison` has the same throw. No front end can
-post one.
+answers with proofs off (50 and 60 solutions for `cond → x − y ≤ −1` on `x, y ∈
+0..3`, `z ∈ 0..4`, with `cond` `z ∈ 1..3` and `z ∉ 1..3`, checked against a hand
+count). With proofs on, the OPB and the proof now take it (#310), but writing
+the `.scp` throws `a range condition cannot be written to a .scp yet` from
+`NamesAndIDsTracker::s_expr_name_of`, because `cake_pb_cp` has no spelling for
+one (#1225). With no `.scp` asked for (`ProofFileNames::s_expr_file` left
+empty), the proof for `z ∈ 1..3` verifies its 50 solutions. `comparison` has the
+same throw. No front end can post one.
 
 Full reification would add nothing the posted rows cannot say and is not
 wanted. Inferring `¬cond` during search is the missing direction, in both of
@@ -1528,9 +1530,9 @@ more.
 
 Two things that are gaps for the external justifier rather than for VeriPB:
 **no assertion carries a hint**, so rules 1, 2, 3 and 8 are `search`; and a
-range-literal condition cannot be written into the model at all with proofs
-on (#1225, with #310 as the encoding fix), which is a model-writing gap shared
-with `comparison`.
+range-literal condition cannot be written into the `.scp` with proofs on
+(#1225), a gap shared with `comparison`. The OPB and the proof take it since
+#310.
 
 ### Known limitations
 
