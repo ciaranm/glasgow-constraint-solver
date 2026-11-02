@@ -39,9 +39,9 @@ Every `Integer` a caller hands the solver:
 
 `S` is symmetric, one value short of an eighth of two's complement at the
 bottom, so that negating an input never leaves it. That matters because the
-solver negates things the caller never sees: `maximise(x + c)` is stored as
-`−x − c`, and with `min_bounded_value()` at −2⁶⁰ it would have thrown for `c`
-at the bottom of the range.
+solver negates things the caller never sees: `LinearGreaterThanEqual{s, v}` is
+stored as `−s <= −v`, and with `min_bounded_value()` at −2⁶⁰ it would have
+thrown for `v` at the bottom of the range.
 
 ## Auxiliary variables
 

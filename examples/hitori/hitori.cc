@@ -129,8 +129,11 @@ using fmt::println;
 // says how much of the proof the connectivity decomposition is responsible
 // for, which is what sized #637.
 //
-// gcs minimises, so `maximise` negates: a VeriPB verdict of
-// `s VERIFIED BOUNDS -17 <= obj <= -17` means an optimum of 17.
+// The objective is maximised, and the OPB says so with a `max:`, but VeriPB
+// checks a `max:` as a minimisation of its negation, and VeriPB 3.0.2 reports
+// the bounds of the negation: `s VERIFIED BOUNDS -17 <= obj <= -17` means an
+// optimum of 17. (A change to report them on the objective as written has
+// been proposed upstream.)
 //
 // Instances come either from `--dzn` (a MiniZinc Challenge `h*.dzn` file, so
 // the exact Challenge instances stay reproducible) or, by default, from the
