@@ -154,7 +154,7 @@ verified):
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `SmartTable` | `n/a`[^mznst] | `?`[^xst] | `?`[^cst] | ✓ `smart_table` | chain-verifies only on narrow shapes; see [Cake conformity](#cake-conformity) |
+| `SmartTable` | `n/a`[^mznst] | `?`[^xst] | `?`[^cst] | ✓ `smart_table` | every table chain-verifies; see [Cake conformity](#cake-conformity) |
 
 [^mznst]: MiniZinc has no smart-table global, and nothing under `minizinc/`
     names `SmartTable`.
@@ -396,7 +396,9 @@ rows of binary entries, order entries only, binary plus unary entries, the
   consolidated encoding wrote per entry before #1412. Both kinds are
   load-bearing: without the gap lines `scp_chain_smart_table_in_set_gap_unsat`
   fails VeriPB against the solver's own OPB, and without the end lines
-  `scp_chain_smart_table_in_set_ends_unsat` and `mixed_same_var` do.
+  `scp_chain_smart_table_in_set_ends_unsat` fails it against cake's.
+  `mixed_same_var` still verifies without the end lines, and fails only when
+  every end and gap line is removed.
   Either end line can stand in for the other in a two-set conflict, so
   neither is load-bearing alone. A value entry needs nothing: its literal
   reaches the excluded values through the order literals directly.

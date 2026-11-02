@@ -173,8 +173,10 @@ namespace
     }
 
     // Maximising x (or minimising -x) while another constraint uses -x (issue
-    // #1206). `min:` is written over x's own bits, deliberately, so that it
-    // matches what cake_pb_cp derives from `(maximize x)`; the `e` line after
+    // #1206). The objective is written over x's own bits, never the view's,
+    // deliberately, so that cake_pb_cp, which knows nothing of the view, has the
+    // same variables in its objective: `max:` over them for maximise(x), and a
+    // `min:` with negated coefficients for minimise(-x). The `e` line after
     // each `soli` restates it, and used to spell -x over the view's bits once a
     // constraint had registered the view. Some of these constraints name the
     // view as an integer term and some only name its literals, which now
