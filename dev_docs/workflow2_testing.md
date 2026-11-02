@@ -33,13 +33,16 @@ posting it, so that enumerating an optimisation document stays possible —
 view.
 
 For the chain to check an optimisation at all, the two ends have to agree on
-how the objective is *encoded*, not just what it is. cake re-derives
-`(maximize V)` as `min: -1 i[V][b0] -2 i[V][b1] ...` over V's own bits, and the
-solver writes every objective that way (`ProofModel::write_preamble`): over the
-underlying variable's bits, negated for a maximisation, with a view's offset as
-the objective's constant. An objective never gets a proof-only bit vector of its
-own. One would be invisible to cake, and the solver's proof would cite
-view-linking labels that cake's OPB has no counterpart for.
+how the objective is *encoded*, not just what it is. The solver writes every
+objective (`ProofModel::write_preamble`) as `min:` or `max:`, as posted, over
+the underlying variable's bits, with a view's offset as the objective's
+constant: `(maximize (X + -2))` is `max: 1 i[X][b0] 2 i[X][b1] ... -2 ;`. An
+objective never gets a proof-only bit vector of its own. One would be
+invisible to cake, and the solver's proof would cite view-linking labels that
+cake's OPB has no counterpart for. cake_pb_cp currently re-derives
+`(maximize V)` as the `min:` of its negation, and does not yet take a view as
+an objective, so until it does the chain checks only minimisations of a plain
+variable.
 
 The reader rejects any version other than 1
 outright rather than guessing at an unknown grammar, which is what makes a

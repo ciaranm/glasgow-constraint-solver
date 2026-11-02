@@ -184,10 +184,6 @@ struct ProofLogger::Imp
     // strictly better solution can delete both: see ProofLogger::solution.
     optional<pair<ProofLine, ProofLine>> previous_soli_lines;
 
-    // Whether the `min:` line spelled a view objective over the underlying
-    // variable's bits; copied from the ProofModel in start_proof. See the `e`
-    // line in solution().
-
     string proof_file;
     // A proof is many short lines; the default stream buffer makes for a
     // write syscall every few KB, which shows up at this volume. Installed
@@ -363,8 +359,9 @@ auto ProofLogger::solution(
         }
         else {
             // Normal soli: an `e` line for the trimmer, restating the
-            // constraint VeriPB has just derived from `min:`, so spelled the
-            // way `min:` was, over the objective's linear form (issue #1206).
+            // constraint VeriPB has just derived from the objective line, so
+            // spelled the way that line was, over the objective's linear form
+            // (issue #1206).
             auto [variable, coefficient, constant] = objective_linear_form(objective.variable);
             _imp->proof << "e ";
             if (objective.direction == ObjectiveDirection::Minimise)
@@ -492,9 +489,10 @@ auto ProofLogger::conclude_optimality(const Objective & objective, Integer value
 
 auto ProofLogger::conclude_bounds(const Objective & objective, Integer root_bound, Integer incumbent) -> void
 {
-    // Over the objective's linear form, as `min:` was written. VeriPB's bounds
-    // are on what `min:` says, which for a maximisation is the negation of the
-    // posted objective.
+    // Over the objective's linear form, as the objective line was written.
+    // VeriPB treats a `max:` as the minimisation of its negation, and states
+    // its bounds that way, so for a maximisation the conclusion's bounds are
+    // the negated posted ones.
     auto [variable, coefficient, constant] = objective_linear_form(objective.variable);
     if (objective.direction == ObjectiveDirection::Minimise) {
         emit_rup_proof_line(WPBSum{} + coefficient * variable >= root_bound - constant, ProofLevel::Top);

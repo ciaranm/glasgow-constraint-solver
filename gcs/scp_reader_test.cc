@@ -1651,27 +1651,27 @@ TEST_CASE("write_scp: an objective keeps its direction and its offset")
     // became the minimisation of a negated view, and the writer then dropped
     // the view's offset: minimise(X + 3) was written as (minimize X), and
     // minimise(-X + 3) as (maximize X). Now both files say what was posted.
-    // The OPB's min: line is over X's own bits with the offset as its
-    // constant, negated for a maximisation, so that VeriPB's conclusion is the
+    // The OPB's objective line is min: or max:, as posted, over X's own bits
+    // with the offset as its constant, so that VeriPB's conclusion is the
     // posted objective's value.
     struct Case
     {
         IntegerVariableID (*objective)(SimpleIntegerVariableID);
         bool maximise;
         string prob_type;
-        string min_line;
+        string objective_line;
     };
 
     vector<Case> cases{{[](SimpleIntegerVariableID x) -> IntegerVariableID { return x + 3_i; }, false, "(prob_type (minimize (X + 3)))",
                            "min: 1 i[X][b0] 2 i[X][b1] 4 i[X][b2] 3 ;"},
         {[](SimpleIntegerVariableID x) -> IntegerVariableID { return x - 2_i; }, true, "(prob_type (maximize (X + -2)))",
-            "min: -1 i[X][b0] -2 i[X][b1] -4 i[X][b2] 2 ;"},
+            "max: 1 i[X][b0] 2 i[X][b1] 4 i[X][b2] -2 ;"},
         {[](SimpleIntegerVariableID x) -> IntegerVariableID { return -x + 3_i; }, false, "(prob_type (minimize (-X + 3)))",
             "min: -1 i[X][b0] -2 i[X][b1] -4 i[X][b2] 3 ;"},
         {[](SimpleIntegerVariableID x) -> IntegerVariableID { return -x; }, true, "(prob_type (maximize (-X + 0)))",
-            "min: 1 i[X][b0] 2 i[X][b1] 4 i[X][b2] ;"},
+            "max: -1 i[X][b0] -2 i[X][b1] -4 i[X][b2] ;"},
         {[](SimpleIntegerVariableID x) -> IntegerVariableID { return x; }, true, "(prob_type (maximize X))",
-            "min: -1 i[X][b0] -2 i[X][b1] -4 i[X][b2] ;"}};
+            "max: 1 i[X][b0] 2 i[X][b1] 4 i[X][b2] ;"}};
 
     for (const auto & c : cases) {
         Problem problem;
@@ -1686,13 +1686,13 @@ TEST_CASE("write_scp: an objective keeps its direction and its offset")
         solve_with(problem, SolveCallbacks{}, std::make_optional<ProofOptions>(ProofFileNames{"scp_writer_objective"}));
         std::ifstream scp_in{"scp_writer_objective.scp"}, opb_in{"scp_writer_objective.opb"};
         string scp{std::istreambuf_iterator<char>{scp_in}, std::istreambuf_iterator<char>{}};
-        string min_line;
-        std::getline(opb_in, min_line);
+        string objective_line;
+        std::getline(opb_in, objective_line);
         for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
             std::remove((string{"scp_writer_objective"} + ext).c_str());
 
         CHECK(scp.contains(c.prob_type));
-        CHECK(min_line == c.min_line);
+        CHECK(objective_line == c.objective_line);
     }
 }
 

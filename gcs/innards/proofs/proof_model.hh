@@ -55,7 +55,7 @@ namespace gcs::innards
      * \brief An objective variable as `coefficient * variable + constant`,
      * over a variable with bits of its own.
      *
-     * The `min:` line is always written this way, whatever the objective
+     * The objective line is always written this way, whatever the objective
      * variable is: a view `sX + c` contributes X's own bits, and its offset
      * becomes the objective's constant, so no view ever gets a bit vector on
      * the objective's account. Anything that has to restate the objective, such
@@ -426,16 +426,16 @@ namespace gcs::innards
 
         /**
          * Open the OPB file and write everything that must precede the
-         * constraints: the objective (min:) line and the preserved:
+         * constraints: the objective (min: or max:) line and the preserved:
          * projection line. Everything emitted afterwards goes straight to the
          * file rather than accumulating in memory, so call this as soon as
          * the objective and preserve list are known and every variable they
          * mention has been set up -- in a solve, after
          * Problem::create_state_for_new_search and before
          * Problem::create_propagators. Calling set_objective or preserve after
-         * this throws. The `min:` line is always written over a variable's own
-         * bits, deviewed, with the view's constant as the objective's constant
-         * (see objective_linear_form).
+         * this throws. The objective line is always written over a variable's
+         * own bits, deviewed, with the view's constant as the objective's
+         * constant (see objective_linear_form).
          *
          * Optional: finalise() does it on your behalf (with everything still
          * buffered, and the objective and preserve list set at any point) if

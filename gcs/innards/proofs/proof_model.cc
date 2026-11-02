@@ -737,18 +737,12 @@ auto ProofModel::write_preamble() -> void
         // known.
 
         if (_imp->optional_objective) {
-            // A maximisation is written as the minimisation of its negation,
-            // which is how cake_pb_cp writes `(maximize X)`. The constant is
-            // written whenever it
+            // `min:` or `max:`, as posted. The constant is written whenever it
             // is not zero: it does not change which solutions are optimal, but
             // it does change the objective values the proof concludes with, and
             // those should be the posted objective's.
             auto [variable, coefficient, constant] = objective_linear_form(_imp->optional_objective->variable);
-            if (_imp->optional_objective->direction == ObjectiveDirection::Maximise) {
-                coefficient = -coefficient;
-                constant = -constant;
-            }
-            _imp->opb_stream << "min: ";
+            _imp->opb_stream << (_imp->optional_objective->direction == ObjectiveDirection::Minimise ? "min: " : "max: ");
             for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(variable))
                 _imp->opb_stream << coefficient * bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
             if (constant != 0_i)

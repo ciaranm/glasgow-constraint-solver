@@ -145,8 +145,7 @@ also call.
   objective's constant (`objective_linear_form`). An objective is a linear
   expression rather than an argument of a row, so it never registers a
   view, and the value VeriPB concludes with is the posted objective's. A
-  maximisation is written as the minimisation of its negation, which is
-  what cake_pb_cp derives from `(maximize x)`. Every line that restates
+  maximisation is written as `max:`. Every line that restates
   the objective --- the `e` line after each `soli`, and the bound before a
   conclusion --- spells it the same way, whatever has been registered
   since (issue #1206).
