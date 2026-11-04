@@ -24,6 +24,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -45,6 +46,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::any_of;
+using std::exchange;
 using std::fstream;
 using std::function;
 using std::generator;
@@ -64,6 +66,7 @@ using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::to_string;
+using std::tuple;
 using std::unordered_map;
 using std::variant;
 using std::vector;
@@ -416,6 +419,15 @@ struct NamesAndIDsTracker::Imp
     unordered_map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofLine, ProofLine>>, HashSimpleOrProofOnlyVariable>
         invars_that_exist;
 
+    // The range literals defined in the OPB (define_invar_in_model) that the proof
+    // has not yet linked to the rest of their variable's literals. Each is in
+    // invars_that_exist too, with its OPB rows as its lines; define_plain_invar
+    // takes it out of here when it does the linking a proof-defined literal gets.
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, std::set<pair<Integer, Integer>>, HashSimpleOrProofOnlyVariable> invars_awaiting_proof;
+    // The same literals, in the order they were defined, for emit_delayed_proof_steps
+    // to request once the rest of the model's proof-start lines are out.
+    vector<tuple<SimpleOrProofOnlyIntegerVariableID, Integer, Integer>> invars_to_request_at_proof_start;
+
     // Every range and eq literal on each variable, as intervals, for finding a new
     // literal's immediate neighbours in the containment order.
     map<SimpleOrProofOnlyIntegerVariableID, IntervalTree> containment_trees;
@@ -536,6 +548,14 @@ auto NamesAndIDsTracker::emit_delayed_proof_steps() -> void
     for (const auto & step : _imp->delayed_proof_steps)
         step(_imp->logger);
     _imp->delayed_proof_steps.clear();
+
+    // The range literals the OPB defines go last. Linking one can create atoms -- a
+    // partition needs cuts at the definition bounds, and mirroring reaches every view
+    // -- and a new cut's boundary pin is a RUP line, so it needs whatever it propagates
+    // from already in place, a view's bound lines among them. Those were queued above,
+    // possibly after the literal was defined, so this cannot simply queue with them.
+    for (const auto & [id, lo, hi] : exchange(_imp->invars_to_request_at_proof_start, {}))
+        static_cast<void>(need_invar(id, lo, hi));
 }
 
 auto NamesAndIDsTracker::start_writing_model(ProofModel * const model) -> void
@@ -1581,37 +1601,45 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     // second reification pair and give it a duplicate containment-tree entry. The
     // partition machinery can now be re-entered part way through (see the single-cell
     // case in define_invar_with_covering), so this is reachable rather than defensive.
-    if (_imp->invars_that_exist[id].contains(pair{lo, hi}))
-        return;
+    //
+    // The one literal that exists and still wants the rest of this function is one
+    // the OPB defines (define_invar_in_model): its reification is already there, so
+    // all it is owed is the containment part below.
+    if (_imp->invars_that_exist[id].contains(pair{lo, hi})) {
+        if (! _imp->invars_awaiting_proof[id].erase(pair{lo, hi}))
+            return;
+    }
+    else {
+        // Both order-encoding cuts; need_gevar threads them into the order chain, and
+        // emits the bound-axiom units for any cut outside the definition bounds.
+        need_gevar(id, lo);
+        need_gevar(id, hi + 1_i);
 
-    // Both order-encoding cuts; need_gevar threads them into the order chain, and
-    // emits the bound-axiom units for any cut outside the definition bounds.
-    need_gevar(id, lo);
-    need_gevar(id, hi + 1_i);
+        auto x = allocate_xliteral_meaning(id, lo, hi);
+        _imp->store_condition(in_range(id, lo, hi), x);
 
-    auto x = allocate_xliteral_meaning(id, lo, hi);
-    _imp->store_condition(in_range(id, lo, hi), x);
+        // Between here and the invars_that_exist entry below, the literal is *findable
+        // but not defined*. Nothing may render it into a proof line in that window:
+        // doing so would reach xliteral_for_ensuring's range branch, re-enter
+        // need_invar, take the single-cell path, and define the literal a second time
+        // -- the idempotence guard above tests invars_that_exist, which is not yet
+        // populated. Nothing does, because the only emission in between is the
+        // reification, which goes through the ostream overload of emit_inequality_to
+        // with EnsureNames::No. Keep it that way.
 
-    // Between here and the invars_that_exist entry below, the literal is *findable but
-    // not defined*. Nothing may render it into a proof line in that window: doing so
-    // would reach xliteral_for_ensuring's range branch, re-enter need_invar, take the
-    // single-cell path, and define the literal a second time -- the idempotence guard
-    // above tests invars_that_exist, which is not yet populated. Nothing does, because
-    // the only emission in between is the reification, which goes through the ostream
-    // overload of emit_inequality_to with EnsureNames::No. Keep it that way.
+        auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Links;
+        // Struggling to get clang-format to behave here...
+        auto lines = will_define //
+            ? visit(
+                  [&](const auto & id) {
+                      return _imp->logger->emit_red_proof_lines_reifying(
+                          WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::TopAndCore);
+                  },
+                  id)
+            : make_pair(ProofLine{}, ProofLine{});
 
-    auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Links;
-    // Struggling to get clang-format to behave here...
-    auto lines = will_define //
-        ? visit(
-              [&](const auto & id) {
-                  return _imp->logger->emit_red_proof_lines_reifying(
-                      WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::TopAndCore);
-              },
-              id)
-        : make_pair(ProofLine{}, ProofLine{});
-
-    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+        _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+    }
 
     // No containment tree apparatus needed at higher assertion levels.
     if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
@@ -1832,8 +1860,10 @@ auto NamesAndIDsTracker::mirror_invar_across_view_link(SimpleOrProofOnlyIntegerV
     // both of those cross.
     //
     // The two phases do not interleave: need_view can only register a view while the
-    // model is being written, and need_invar only works once the logger has taken
-    // over, so every view of a variable exists before any of its range literals do.
+    // model is being written, and mirroring only happens once the logger has taken
+    // over (a literal the OPB defines is mirrored when emit_delayed_proof_steps
+    // requests it), so every view of a variable exists before any of its range
+    // literals is mirrored.
     if (auto pid_ptr = std::get_if<ProofOnlySimpleIntegerVariableID>(&id)) {
         auto view_it = _imp->view_proof_only_to_view.find(*pid_ptr);
         if (view_it != _imp->view_proof_only_to_view.end()) {
@@ -1854,6 +1884,47 @@ auto NamesAndIDsTracker::mirror_invar_across_view_link(SimpleOrProofOnlyIntegerV
     }
 }
 
+auto NamesAndIDsTracker::define_invar_in_model(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
+{
+    // The OPB half of what define_plain_invar does in the proof: both cuts, the
+    // literal, and its reification, in the shape and under the labels an eq atom's
+    // takes here -- a width-1 interval *is* its eq atom, and this is the same
+    // definition with the second cut further along. need_gevar writes the cuts to
+    // the OPB too, out-of-bounds ones included, exactly as an eq atom outside the
+    // bounds gets them.
+    need_gevar(id, lo);
+    need_gevar(id, hi + 1_i);
+
+    // Stored before the rows below are written, which name it: rendering it goes
+    // back through need_invar, whose model-phase branch stops on find_condition, the
+    // same guard need_direct_encoding_for has.
+    auto x = allocate_xliteral_meaning(id, lo, hi);
+    _imp->store_condition(in_range(id, lo, hi), x);
+
+    auto label = definitional_label_base(id) + "[in" + to_string(lo.raw_value) + "_" + to_string(hi.raw_value) + "]";
+    auto lines = visit(
+        [&](const auto & id) -> pair<ProofLine, ProofLine> {
+            return pair{
+                _imp->model->add_labelled_constraint(label + "[r]", WPBSum{} + 1_i * (id >= lo) + 1_i * ! (id > hi) >= 2_i, {{in_range(id, lo, hi)}}),
+                _imp->model->add_labelled_constraint(
+                    label + "[f]", WPBSum{} + 1_i * ! (id >= lo) + 1_i * (id > hi) >= 1_i, {{not_in_range(id, lo, hi)}})};
+        },
+        id);
+    ++_imp->model_variables;
+
+    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+    _imp->invars_awaiting_proof[id].insert(pair{lo, hi});
+
+    // The rest is linking, and that is the proof's: emit_delayed_proof_steps asks for
+    // the literal again once there is a logger, which finds it awaiting and so takes
+    // need_invar's ordinary path, partition and coverings and containment and view
+    // mirroring included. Requested eagerly rather than left for whatever names it
+    // first, because the OPB already does name it, and a literal an OPB row
+    // constrains has to be reachable from its variable's others by unit propagation
+    // however the proof goes on to talk about that variable.
+    _imp->invars_to_request_at_proof_start.emplace_back(id, lo, hi);
+}
+
 auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral
 {
     if (lo > hi)
@@ -1866,9 +1937,17 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
     auto as_literal = [&]() { return visit([&](const auto & id) -> ProofLiteral { return in_range(id, lo, hi); }, id); };
 
-    if (! _imp->invars_that_exist[id].contains(pair{lo, hi})) {
-        if (! _imp->logger)
-            throw UnimplementedException{"range literals during model writing are not yet supported"};
+    if (! _imp->logger) {
+        if (! has_bit_representation(id))
+            throw ProofError{"range literal requested for a variable without a bits encoding"};
+        if (! _imp->find_condition(in_range(id, lo, hi)))
+            define_invar_in_model(id, lo, hi);
+        return as_literal();
+    }
+
+    // A literal the OPB defines exists, but is not yet linked to anything, so it takes
+    // the same path as one that does not exist.
+    if (! _imp->invars_that_exist[id].contains(pair{lo, hi}) || _imp->invars_awaiting_proof[id].contains(pair{lo, hi})) {
         if (! has_bit_representation(id))
             throw ProofError{"range literal requested for a variable without a bits encoding"};
 
@@ -2851,9 +2930,10 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     case Less: return "<";
     case InRange:
     case NotInRange:
-        // cake_pb_cp has no range-condition spelling yet, and range conditions
-        // cannot appear in reified constraints (model-phase need_invar throws)
-        throw UnimplementedException{};
+        // cake_pb_cp has no range-condition spelling yet, so a condition that is
+        // a range cannot be written to a .scp. The OPB and the proof are fine:
+        // the literal is defined in the OPB like any other (need_invar).
+        throw UnimplementedException{"a range condition cannot be written to a .scp yet: cake_pb_cp has no spelling for one"};
     }
 
     throw NonExhaustiveSwitch{};

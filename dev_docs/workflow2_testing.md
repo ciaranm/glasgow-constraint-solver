@@ -232,6 +232,13 @@ case cannot byte-match. `binary_less_equal_sat` and `binary_equals_unsat` are
 registered at `none` and cover exactly this; the reified forms, whose `(C = 1)`
 condition variable is `{0,1}`, chain for the same reason.
 
+**An `in` over a run of two or more constants fails the chain until cake_pb_cp
+follows.** The solver's at-least-one row names one range literal per run,
+defined in the OPB by labelled rows `@i[v][in<a>_<b>][r]` and `[f]` (see
+[`constraints/in.md`](constraints/in.md)), where cake still writes one eq atom
+per value, so the proof names a variable cake's OPB does not have and
+elaboration fails. `in_const_sat` is the only case with such a run.
+
 Adding a constraint to the harness is: drop a `.scp` in `scp_cases/` and add one
 `add_scp_chain_test(<case> <mode>)` line.
 

@@ -9,7 +9,8 @@
 > audit-wide cross-solver prerequisite; #598 would close a deliberate presolver
 > gap that is half about this family; #1225, from outside, means a
 > range-literal reification condition throws with proofs on, because it cannot
-> be written into the model (#310 is the encoding fix). Tracked under #871.
+> be written into the `.scp` (since #310 the OPB and the proof take it). Tracked
+> under #871.
 
 Twelve posted classes over one implementation and one propagator: an inequality
 between two operands, optionally reified, in either direction, with or without
@@ -65,7 +66,7 @@ was re-measured.
 | Landed | What it changed here |
 |---|---|
 | #1047 → #1088 | `LessThan(x, x)` and `GreaterThan(x, x)` on a non-constant `x` are **accepted** rather than rejected at construction, and an enforce pass on aliased operands whose comparison cannot hold contradicts at once. That is a new rule, [rule 8](#rule-contradiction-from-aliased-operands), and an eleventh cake chain case, `less_than_aliased_unsat`. XCSP3's `lt(x,x)` reaches it; MiniZinc simplifies the shape away. The Known-limitations entry on the throw-versus-reified asymmetry is now history, since the asymmetry is gone |
-| #1225 (#310 is the encoding fix), not a fix | a reified form whose condition is a range literal is right with proofs off and throws with proofs on, when the model is written. Measured at `61112ed0`; see [Reification](#reification) |
+| #1225, not a fix | a reified form whose condition is a range literal is right with proofs off and throws with proofs on, when the `.scp` is written. Re-measured since #310; see [Reification](#reification) |
 
 **What the second pass changed.** A narrow pass, against `6b220c79`. Both of
 the audit's own findings are fixed, and the two new template sections are
@@ -287,13 +288,16 @@ are specific to this family:
   one enforce pass directly, with no per-call `test_reification_condition`.
   That is the path all four unconditional classes always take.
 
-**A range-literal condition works only with proofs off** (#1225; #310 is the
-encoding fix). The condition is an `IntegerVariableCondition`, which includes
-`in_range` and `not_in_range`. With `x, y ∈ 0..3`, `z ∈ 0..4` and the
-condition `z ∈ 1..3`, `LessThanIff` and `LessThanEqualIf` find the right 38 and
-62 solutions. With proofs on, both throw `range literals during model writing
-are not yet supported` from `NamesAndIDsTracker::need_invar` when the model is
-written. Measured at `61112ed0`, and the same again at `86caad24`. No front
+**A range-literal condition works only with proofs off** (#1225). The
+condition is an `IntegerVariableCondition`, which includes `in_range` and
+`not_in_range`. With `x, y ∈ 0..3`, `z ∈ 0..4` and the condition `z ∈ 1..3`,
+`LessThanIff` and `LessThanEqualIf` find the right 38 and 62 solutions. With
+proofs on, the OPB and the proof now take it (#310), but writing the `.scp` throws
+`a range condition cannot be written to a .scp yet` from
+`NamesAndIDsTracker::s_expr_name_of`, because `cake_pb_cp` has no spelling
+for one (#1225). With no `.scp` asked for
+(`ProofFileNames::s_expr_file` left empty), `LessThanIff`'s
+proof verifies its 38 solutions. No front
 end posts one: MiniZinc and XCSP3 pass `b = 1`, `gcspy` passes `b ≠ 0`, and the
 `.scp` reader's conditions are `=`, `!=`, `>=` and `<` against one value.
 
@@ -1076,7 +1080,7 @@ What the tests do **not** cover:
   disables the `.scp` deliberately. See [Known
   limitations](#known-limitations).
 - **A range-literal reification condition.** No lane posts one, which is how
-  its throw with proofs on (#1225; #310 is the encoding fix) went unrecorded
+  its throw with proofs on (#1225) went unrecorded
   here.
 - **`difference_chain`, the family's own benchmark, exercises one of the eight
   rules.** See [Proof performance](#proof-performance).
@@ -1291,9 +1295,8 @@ inference and no lemmas, and there is no interval degradation anywhere
 ([Variable kinds and views](#variable-kinds-and-views)).
 
 **One model-writing gap, not this family's own**: a range-literal reification
-condition cannot be written into the OPB model at all, so a proving run throws
-before search (#1225, with #310 the encoding fix; see
-[Reification](#reification)).
+condition cannot be written into the `.scp`, so a proving run that asks for one
+throws before search (#1225; see [Reification](#reification)).
 
 The cost gap used to run the other way — the propagator paid a *proof-shaped*
 cost when proofs were off, by assembling reasons nothing would read. That was a
@@ -1365,8 +1368,8 @@ for closing them together rather than one at a time is the right one. Note the
 strictness flip is the risk there: an off-by-one inverting an edge is
 *unsound*, not merely incomplete.
 
-**A range-literal condition throws with proofs on** (#1225; #310 is the
-encoding fix). It gives the right answers without proofs. No front end posts
+**A range-literal condition throws with proofs on** (#1225), unless no
+`.scp` is asked for. It gives the right answers without proofs. No front end posts
 one.
 
 *Aliased operands under a strict comparison used to throw at construction*,

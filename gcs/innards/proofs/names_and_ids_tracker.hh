@@ -113,6 +113,14 @@ namespace gcs::innards
         // through need_invar.
         auto define_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
 
+        // need_invar while the model is being written: define the range literal [lo, hi]
+        // (lo < hi) by two labelled OPB rows, exactly as an eq atom is defined there, and
+        // queue a request for it at proof start. Everything that links a range literal to
+        // the variable's others -- partition, coverings, containment, view mirroring --
+        // happens in the proof, through that request, as it would for a literal the
+        // proof's first step asked for; define_plain_invar then skips the reification.
+        auto define_invar_in_model(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
+
         // Append the positive literal for the partition cell [lo, hi] to a covering
         // being built: the eq atom for a width-1 cell, the range literal otherwise.
         auto append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
@@ -303,8 +311,9 @@ namespace gcs::innards
          * sets up the partition. All linking is state-independent, at
          * ProofLevel::Top.
          *
-         * Requires a bits-encoded variable, and currently the proof-logging phase
-         * (throws UnimplementedException during model writing).
+         * Requires a bits-encoded variable. During model writing the literal's
+         * reification goes in the OPB, under the labels `@<base>[in<lo>_<hi>][r]` and
+         * `[f]`, and everything else waits for the proof: see define_invar_in_model.
          */
         [[nodiscard]] auto need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral;
 

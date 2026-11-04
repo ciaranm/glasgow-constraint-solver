@@ -1347,6 +1347,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(invar_view_test PRIVATE glasgow_constraint_solver)
     add_test(NAME invar_view_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_view_test>)
 
+    add_executable(invar_model_test innards/proofs/invar_model_test.cc)
+    target_link_libraries(invar_model_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME invar_model_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_model_test>)
+
     add_executable(range_branch_test innards/proofs/range_branch_test.cc)
     target_link_libraries(range_branch_test PRIVATE glasgow_constraint_solver)
     add_test(NAME range_branch_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)
@@ -1361,8 +1365,9 @@ if(GCS_BUILD_TESTS)
     # W6 and W7 are the two directions of the view crossing; W8 and W9 are the trigger
     # for it, a literal that a partition cell already brought into existence. All four
     # are the reason the view-wrap sweep is not by itself evidence: see
-    # dev_docs/view-range-literals.md.
-    foreach(witness w1 w2 w3 w5 w6 w7 w8 w9)
+    # dev_docs/view-range-literals.md. W10 is the proof-start linking of a range
+    # literal the OPB defines (#310), on seeded random branching.
+    foreach(witness w1 w2 w3 w5 w6 w7 w8 w9 w10)
         add_executable(range_witness_${witness}_test innards/proofs/range_witness_${witness}_test.cc)
         target_link_libraries(range_witness_${witness}_test PRIVATE glasgow_constraint_solver)
         add_test(NAME range_witness_${witness}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_witness_${witness}_test>)

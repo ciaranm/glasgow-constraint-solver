@@ -16,7 +16,7 @@
 > three-argument `bool_xor` donors are skipped), #1309 (installing many
 > propagators under one constraint id is quadratic), #1386 (a chain of unit
 > inferences made in one system call has a quadratic proof; retiring the
-> donors exposes it, but it is the system propagator's), #310 (a range literal
+> donors exposes it, but it is the system propagator's), #1225 (a range literal
 > throws with proofs on), #649 (implied equivalences have nowhere to live),
 > #1210 and #1330 (assertion levels above `Off`), and #868 (cross-solver).
 > Tracked under #871.
@@ -223,8 +223,9 @@ model where parity dominates, it prunes nothing and costs four times as much.
   of one fact, such as `x ≥ 1` and `x ≠ 0` over `{0, 1}`, or a view and its
   variable, therefore get separate columns ([Can it weaken the
   model?](#can-it-weaken-the-model)). A range literal works with proofs off
-  and throws with proofs on, from model writing, before the presolver runs
-  (#310; checked here with `ParityOdd{in_range(x, 1, 3), y}`).
+  and throws with proofs on, from writing the `.scp`, before the presolver runs
+  (#1225; checked with `ParityOdd{in_range(x, 1, 3), y}` since #310, and with
+  no `.scp` asked for the proof verifies).
 - **Boolean donors**: both operands may be variables, views or constants, as
   long as their bounds **in the state the presolver sees** lie within `[0, 1]`
   (`within_a_bit`, `parity_system_gathering.cc:159–168`). The header says

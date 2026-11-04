@@ -1,21 +1,19 @@
 # Linear: `Σ cᵢ·xᵢ` against a constant
 
-> **Maturity** production ·
-> **Audited** 2026-09-23 at `00797a97`; re-audited 2026-09-25 at `61112ed0`,
-> for #1108 on 2026-09-26 at `c9ceea25`, and on 2026-10-08 at `0a5b4ec6` for
-> #1035 (#1055) and the integer-range PRs (#1214, #1215, #1220) ·
-> **Open issues** filed by this audit: #1034 (the incremental propagator's
-> state is a heap allocation per slot per node), #1042 (the reified equality
-> ignores its bounds), #1043 (tidying, items 4 and 5 left). Filed from review:
-> #1091 (an equality's fixpoint can take a number of sweeps linear in the
-> domain width). Already open and touching this family: #868 (cross-solver),
-> #310 (a range-literal reification condition cannot be written into the
-> model), and #1225, filed since by the integer-range audit (the same condition
-> throws with proofs on). **Fixed since the audit**: #1032, #1033, #1035,
-> #1036, #1043's first three items, #1103 (filed from review: under
-> `Tabulated`, a released form built a table), and #1298 (filed from the
-> 2026-10-08 re-audit: every reified inequality threw on a partial sum or a
-> maximum that only its undecided check computes); see
+> **Maturity** production · **Audited** 2026-09-23 at `00797a97`; re-audited
+> 2026-09-25 at `61112ed0`, for #1108 on 2026-09-26 at `c9ceea25`, and on
+> 2026-10-08 at `0a5b4ec6` for #1035 (#1055) and the integer-range PRs (#1214,
+> #1215, #1220) · **Open issues** filed by this audit: #1034 (the incremental
+> propagator's state is a heap allocation per slot per node), #1042 (the reified
+> equality ignores its bounds), #1043 (tidying, items 4 and 5 left). Filed from
+> review: #1091 (an equality's fixpoint can take a number of sweeps linear in
+> the domain width). Already open and touching this family: #868 (cross-solver),
+> and #1225, filed by the integer-range audit (a range-literal reification
+> condition throws with proofs on, since the `.scp` cannot spell one). **Fixed
+> since the audit**: #1032, #1033, #1035, #1036, #1043's first three items,
+> #1103 (filed from review: under `Tabulated`, a released form built a table),
+> and #1298 (filed from the 2026-10-08 re-audit: every reified inequality threw
+> on a partial sum or a maximum that only its undecided check computes); see
 > [Re-audit, 2026-09-25](#re-audit-2026-09-25), [Re-audit,
 > 2026-09-26](#re-audit-2026-09-26) and [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
@@ -42,7 +40,7 @@ first pass got wrong.
   cost is in terms" holds per sweep, not per call;
 - rule 3's assertion keeps the attempted bound;
 - the inequality's unattributed assertions are `search`, not `solver-side`;
-- a range-literal reification condition throws with proofs on (#310).
+- a range-literal reification condition throws with proofs on (#1225).
 
 **What was measured again.** At `61112ed0`, only the new facts: the strength
 probe and #1091's proof sizes (both in [Interval
@@ -326,12 +324,14 @@ corpus (#1042).
 **A range-literal condition works without proofs and throws with them.** Both
 classes accept an `in_range(b, lo, hi)` condition: an `IntegerVariableCondition`
 for the inequality, and inside an `innards::Literal` for the equality. With
-proofs off, `LinearEqualityIff(x + y, 2, in_range(b, 1, 3))` over
-`x, y ∈ 0..2`, `b ∈ 0..4` enumerates the right 21 solutions, and
-`LinearLessThanEqualIff` the right 24. With proofs on, both throw `range
-literals during model writing are not yet supported` from
-`NamesAndIDsTracker::need_invar` when the model is written (#310). Measured at
-`61112ed0`. No front end posts one.
+proofs off, `LinearEqualityIff(x + y, 2, in_range(b, 1, 3))` over `x, y ∈ 0..2`,
+`b ∈ 0..4` enumerates the right 21 solutions, and `LinearLessThanEqualIff` the
+right 24. With proofs on, the OPB and the proof now take it (#310), but writing
+the `.scp` throws `a range condition cannot be written to a .scp yet` from
+`NamesAndIDsTracker::s_expr_name_of`, because `cake_pb_cp` has no spelling for
+one (#1225). With no `.scp` asked for (`ProofFileNames::s_expr_file` left
+empty), `LinearLessThanEqualIff(x + y, 2, in_range(z, 1, 3))` over `x, y ∈
+0..3`, `z ∈ 0..4` verifies its 38 solutions. No front end posts one.
 
 ### Relation to other families
 
@@ -662,7 +662,7 @@ undecided reified equality or a `Tabulated` equality does not.
   since #1077 ([Semantics](#semantics)); before that, `If` and `NotIf` gave
   wrong answers (#1033).
 - **A range-literal condition**: right without proofs, throws with them
-  (#310; [Reification](#reification)).
+  (#1225; [Reification](#reification)).
 
 ### Interval efficiency
 
@@ -1189,7 +1189,7 @@ slack-watched wake were not counted; the slack lanes force that path on.
   `v`**, on wide domains, where the sweep count grows with width (#1091),
   including one that reaches that state only after a branch fixes a term.
 - **A range-literal reification condition**, which throws with proofs on
-  (#310). No lane posts one.
+  (#1225). No lane posts one.
 - **The `gcspy` linear `_iff` bindings in CI.** `python/python_test.py` tests
   all three since #1073, but no workflow runs it, and its `add_test` in
   `python/CMakeLists.txt` is commented out.
@@ -1379,7 +1379,7 @@ that licenses them. That costs a reconstructor a search over the model's
 inequalities (verdict `search`), not information it cannot get. Every
 inference is justified, nothing is asserted, and no propagator changes
 strength when proofs are on. **One model-writing gap**: a range-literal
-reification condition cannot be written at all (#310).
+reification condition cannot be written into the `.scp` (#1225).
 
 ### Known limitations
 
@@ -1390,8 +1390,8 @@ reification condition cannot be written at all (#310).
   than ±1: an endpoint can survive with no integer support. That is the
   standard behaviour of interval reasoning on a linear equality, not a bug;
   `Tabulated` is the way to get more.
-- **A range-literal reification condition throws with proofs on** (#310,
-  #1225). It propagates correctly without them.
+- **A range-literal reification condition throws with proofs on** (#1225),
+  unless no `.scp` is asked for. It propagates correctly without them.
 - **Proofs on long sums are large.** Since #1055 a bound push no longer names
   the bounds that hold trivially, but its reason still names every other term
   whose bound has moved, and proof logging multiplies `shortest_path`'s solve time
@@ -1462,7 +1462,8 @@ Ranked by what they buy for what they cost. The audit's first three (#1032,
      it waits for a non-docs change.
 7. **#1042 — a bounds check in the undecided reified equality.** Cheap, and it
    would remove the one-failure probe case, but the corpus shows no benefit.
-8. **#310**, for the range-literal condition. It is the solver-wide gap, not
+8. **#1225**, for the range-literal condition: a `.scp` spelling, which
+   needs `cake_pb_cp`'s grammar to have one. It is the solver-wide gap, not
    this family's.
 9. **#868** — cross-solver, against Gecode's `linear` on the linear-only corpus
    models, which is the family's natural benchmark.

@@ -115,9 +115,33 @@ auto In::define_proof_model(ProofModel & model, const State &) -> void
 {
     WPBSum sum;
 
-    for (const auto & v : _val_vals)
-        if (! is_literally_false(_var == v))
-            sum += 1_i * (_var == v);
+    // The constants as maximal runs of consecutive values, one literal a run: the
+    // eq atom for a run of one, the range literal [var in lo..hi] otherwise, which
+    // the literal layer defines in the OPB against var's two order cuts the way it
+    // defines an eq atom. prepare() has sorted and de-duplicated _val_vals, so the
+    // runs depend only on the set of constants. They are not clipped to var's
+    // bounds: a constant outside them is kept as cake_pb_cp keeps it, and a run that
+    // sticks out is defined over its own cuts, as an eq atom outside the bounds is.
+    //
+    // A variable with no bits encoding has no range literals, so there a run is
+    // spelled as its values.
+    auto represent_runs = model.names_and_ids_tracker().can_represent_range_literal_for(_var);
+    auto add_literal = [&](const IntegerVariableCondition & lit) {
+        if (! is_literally_false(lit))
+            sum += 1_i * lit;
+    };
+    for (size_t run_start = 0; run_start < _val_vals.size();) {
+        auto run_end = run_start + 1;
+        while (run_end < _val_vals.size() && _val_vals[run_end] == _val_vals[run_end - 1] + 1_i)
+            ++run_end;
+        auto lo = _val_vals[run_start], hi = _val_vals[run_end - 1];
+        if (represent_runs)
+            add_literal(in_range(_var, lo, hi));
+        else
+            for (auto i = run_start; i < run_end; ++i)
+                add_literal(_var == _val_vals[i]);
+        run_start = run_end;
+    }
 
     // For each non-constant V_i, fully reify three flags, named and oriented as
     // cake_pb_cp's cencode_in does it -- which is literally cake's count helper
