@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -99,28 +100,23 @@ namespace
     }
 
     // Show that `conclusion` holds whichever entry the indices pick, under the
-    // reason: by cases on one index at a time, innermost first. Under each value
-    // of the last index the entry it picks cannot support the conclusion, by
-    // unit propagation; under each value of an outer index, the conclusion is
-    // the line just derived for that value. Every line is Temporary, and the
-    // outermost one is `conclusion` itself.
+    // reason: one cases line over every index's equality atoms. VeriPB's cases
+    // check branches on the atoms in the order they are listed, and unit
+    // propagation falsifies an index's other atoms once one is assumed, so this
+    // is about one branch per tuple of index values, each closed by unit
+    // propagation from the entry that tuple picks. (This needs the tree search in
+    // VeriPB-dev MR !240: the brute-force check gives up on more than twelve
+    // atoms that it cannot settle one at a time, and no single index atom
+    // settles a branch here when there is more than one index.) The line is
+    // Temporary, and is `conclusion` itself.
     template <typename IndexVars_, typename Term_>
     auto justify_for_every_index_choice(ProofLogger & logger, const State & state, const ReasonLiterals & reason, const IndexVars_ & index_vars,
         const Weighted<Term_> & conclusion) -> void
     {
-        WPBSum prefix;
-        auto rule_out = [&](auto && self, size_t d) -> void {
-            if (d + 1 < index_vars.size())
-                state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
-                    auto saved = prefix;
-                    prefix += 1_i * (index_vars.at(d) != v);
-                    self(self, d + 1);
-                    prefix = std::move(saved);
-                });
-            logger.emit_cases_proof_line_under_reason(reason, prefix + conclusion >= 1_i,
-                case_variables_over_values(index_vars.at(d), state.each_value_immutable(index_vars.at(d))), ProofLevel::Temporary);
-        };
-        rule_out(rule_out, 0);
+        std::vector<ProofLiteralOrFlag> case_variables;
+        for (const auto & index_var : index_vars)
+            std::ranges::copy(case_variables_over_values(index_var, state.each_value_immutable(index_var)), std::back_inserter(case_variables));
+        logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + conclusion >= 1_i, case_variables, ProofLevel::Temporary);
     }
 }
 
