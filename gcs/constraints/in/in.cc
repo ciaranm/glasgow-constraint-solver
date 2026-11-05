@@ -5,6 +5,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -258,15 +259,15 @@ auto In::install_propagators(Propagators & propagators) -> void
                                         // var >= hi + 1 -- so the two ge-layer lemmas are
                                         // all that is owed here.
                                         justify_not_in_range_across_equality(*logger, reason, var, lo, hi, V, lo, hi, selectors[j]);
-                                        // Which makes this RUP, and this is what makes the
-                                        // conclusion RUP: under the reason it unit
-                                        // propagates ~sel_j, and with every selector out
-                                        // and every permitted constant outside [lo, hi],
-                                        // the at-least-one row has nothing left.
-                                        logger->emit_rup_proof_line_under_reason(reason,
-                                            WPBSum{} + 1_i * ! selectors[j] + 1_i * not_in_range(var, lo, hi) + 1_i * in_range(V, lo, hi) >= 1_i,
-                                            ProofLevel::Temporary);
                                     }
+                                    // With the lemmas in, the conclusion follows by
+                                    // case analysis over the selectors: under sel_j
+                                    // the lemmas carry var's range onto V_j, which the
+                                    // reason excludes, and with every selector out and
+                                    // every permitted constant outside [lo, hi], the
+                                    // at-least-one row has nothing left.
+                                    logger->emit_cases_proof_line_under_reason(
+                                        reason, WPBSum{} + 1_i * not_in_range(var, lo, hi) >= 1_i, selectors, ProofLevel::Temporary);
                                 },
                                 ThenRUP::Yes, hints::InNotInRange{{owner}}},
                             reason);
@@ -288,15 +289,11 @@ auto In::install_propagators(Propagators & propagators) -> void
                             reason = ExplicitReason{std::move(lits)};
                         }
 
-                        inference.infer_not_equal(logger, var, run_lo,
-                            JustifyExplicitly{//
-                                [logger, var, v = run_lo, &selectors](const ReasonLiterals & reason) {
-                                    for (const auto & sel : selectors)
-                                        logger->emit_rup_proof_line_under_reason(
-                                            reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
-                                },
-                                ThenRUP::Yes, hints::In{owner}},
-                            reason);
+                        // var != run_lo by case analysis over the source
+                        // selectors: each selector makes var take its source's
+                        // value (none of which is run_lo here), and the model's
+                        // at-least-one rules out the all-false case.
+                        inference.infer_not_equal(logger, var, run_lo, JustifyUsingCases{selectors, hints::In{owner}}, reason);
                     }
                 }
             }
@@ -374,29 +371,27 @@ auto In::install_propagators(Propagators & propagators) -> void
                     // `var = w` literal) to the same constraint as the outer `! sel_j`, so
                     // skip the inner loop entirely.
                     bool var_fixed = state.has_single_value(var);
+                    // `! sel_j` follows by cases on which interval of dom(var)
+                    // var lies in: under each, sel_j would carry the interval
+                    // onto V_j, which the reason excludes, and the reason's
+                    // bounds and holes leave var nowhere else. Carrying an
+                    // interval across the selector's equality needs the same
+                    // two lemmas as step 1, for the same reason, and only where
+                    // the interval is wider than one value. With var fixed
+                    // there is nothing to split on, and `! sel_j` is RUP.
+                    auto var_intervals = var_fixed ? vector<ProofLiteralOrFlag>{} : case_variables_over_intervals(var, var_values);
                     for (const auto & [j, V_j] : enumerate(var_vals)) {
                         if (j == i)
                             continue;
-                        if (! var_fixed) {
-                            // `! sel_j` follows from dom(var) being emptied of
-                            // anything V_j could be, one interval at a time: the
-                            // reason's lower bound plus the first interval's
-                            // exclusion gives var past it, the hole after it is a
-                            // reason literal that steps over the gap, and so on
-                            // until the walk passes the reason's upper bound.
-                            // Which is the same walk as step 1's, and needs the
-                            // same two lemmas to cross the selector's equality
-                            // -- for the same reason, and only where the run is
-                            // wider than one value.
-                            for (auto [a, b] : var_values.each_interval()) {
-                                if (a < b)
-                                    justify_not_in_range_across_equality(*logger, reason, var, a, b, V_j, a, b, selectors[j]);
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * ! selectors[j] + 1_i * not_in_range(var, a, b) + 1_i * in_range(V_j, a, b) >= 1_i,
-                                    ProofLevel::Temporary);
-                            }
-                        }
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ! selectors[j] >= 1_i, ProofLevel::Temporary);
+                        // Not a structured binding: MSVC rejects using one here
+                        // (C3493, "cannot be implicitly captured").
+                        if (! var_fixed)
+                            for (auto interval : var_values.each_interval())
+                                if (interval.first < interval.second)
+                                    justify_not_in_range_across_equality(
+                                        *logger, reason, var, interval.first, interval.second, V_j, interval.first, interval.second, selectors[j]);
+                        logger->emit_cases_proof_line_under_reason(
+                            reason, WPBSum{} + 1_i * ! selectors[j] >= 1_i, var_intervals, ProofLevel::Temporary);
                     }
                 };
 

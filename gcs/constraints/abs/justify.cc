@@ -51,21 +51,6 @@ namespace
     }
 }
 
-auto gcs::innards::justify_abs_hole(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v1, IntegerVariableID v2, Integer val)
-    -> void
-{
-    // (v2 == val /\ v1 >= 0) -> v1 == val, which the reason's v1 != val turns
-    // into (v2 == val) -> v1 < 0.
-    logger.emit_rup_proof_line_under_reason_then_deview(
-        reason, WPBSum{} + 1_i * (v1 < 0_i) + 1_i * (v1 == val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-
-    // Only the one lemma. RUP cannot split on v1's sign, but it needs to walk
-    // just one branch: from v2 == val the lemma gives v1 < 0, which makes the
-    // negative half active, and that pins v1 to -val against the reason's
-    // v1 != -val. The mirror lemma, (v2 == val /\ v1 < 0) -> v1 == -val, is
-    // what that final RUP derives on the way.
-}
-
 auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & v1,
     const IntegerVariableID & v2, Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le,
     ProofLine abs_neg_ge) -> void
@@ -87,16 +72,12 @@ auto gcs::innards::justify_abs_hole_range(ProofLogger & logger, const ReasonLite
     emit_resolution(logger, abs_neg_le, ids.need_pol_item_defining_literal(v2 >= lo), ids.need_pol_item_defining_literal(v1 >= -lo + 1_i));
     emit_resolution(logger, abs_neg_ge, ids.need_pol_item_defining_literal(v2 < hi + 1_i), ids.need_pol_item_defining_literal(v1 < -hi));
 
-    // With each branch's pair in the database, v2 inside [lo, hi] falsifies
-    // every literal of that branch's reason literal, leaving the sign. Spelled
-    // with the two order atoms rather than the range literal, so no range flag
-    // has to be defined for this line.
-    logger.emit_rup_proof_line_under_reason(
-        reason, WPBSum{} + 1_i * (v1 < 0_i) + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, ProofLevel::Temporary);
-    logger.emit_rup_proof_line_under_reason(
-        reason, WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, ProofLevel::Temporary);
-
-    // The two signs being a literal and its negation, the rest follows by RUP.
+    // Then by cases on v1's sign: with that branch's pair in the database, v2
+    // inside [lo, hi] falsifies every literal of the branch's reason literal.
+    // Spelled with the two order atoms rather than the range literal, so no
+    // range flag has to be defined for this line.
+    const ProofLiteralOrFlag v1_sign[] = {ProofLiteral{Literal{v1 >= 0_i}}};
+    logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + 1_i * (v2 < lo) + 1_i * (v2 >= hi + 1_i) >= 1_i, v1_sign, ProofLevel::Temporary);
 }
 
 auto gcs::innards::justify_abs_preimage_range(ProofLogger & logger, const IntegerVariableID & v1, const IntegerVariableID & v2, Integer lo,
@@ -125,68 +106,6 @@ auto gcs::innards::justify_abs_preimage_range(ProofLogger & logger, const Intege
     }
 
     // rest follows by RUP
-}
-
-auto gcs::innards::justify_abs_v2_ge_zero(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, ProofLine abs_nonneg_ge) -> void
-{
-    if (holds_alternative<ConstantIntegerVariableID>(v1))
-        return;
-
-    auto & ids = logger.names_and_ids_tracker();
-    auto v1_ge0 = ids.need_pol_item_defining_literal(v1 >= 0_i);
-    auto v2_lt0 = ids.need_pol_item_defining_literal(v2 < 0_i);
-    emit_resolution(logger, v1_ge0, abs_nonneg_ge, v2_lt0);
-}
-
-auto gcs::innards::justify_abs_v2_lb(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, AbsLbSide side, Integer v2_lb,
-    ProofLine abs_ge, const ReasonLiterals & reason) -> void
-{
-    if (holds_alternative<ConstantIntegerVariableID>(v1))
-        return;
-
-    auto & ids = logger.names_and_ids_tracker();
-    auto v2_lt_lb = ids.need_pol_item_defining_literal(v2 < v2_lb);
-
-    // Materialise the relevant v1 bound under the reason, then resolve
-    // with the matching half-reified piece. abs_ge under v1 >= 0 gives
-    // v2 - v1 >= 0; under v1 < 0 gives v2 + v1 >= 0. Resolving with the
-    // v1 bound and v2 < v2_lb leaves a single side; the v1 sign branch
-    // not taken is closed by RUP from the reason.
-    auto v1_bound_line = (side == AbsLbSide::Nonneg)
-        ? logger.emit_rup_proof_line_under_reason_then_deview(reason, WPBSum{} + -1_i * v1 <= -v2_lb, ProofLevel::Temporary)
-        : logger.emit_rup_proof_line_under_reason_then_deview(reason, WPBSum{} + 1_i * v1 <= -v2_lb, ProofLevel::Temporary);
-
-    emit_resolution(logger, abs_ge, v1_bound_line, v2_lt_lb);
-}
-
-auto gcs::innards::justify_abs_v1_le_v2_ub(
-    ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, Integer v2_ub, ProofLine abs_nonneg_ge, const ReasonLiterals & reason) -> void
-{
-    if (holds_alternative<ConstantIntegerVariableID>(v1))
-        return;
-
-    auto & ids = logger.names_and_ids_tracker();
-    auto v1_ge_bound_plus_1 = ids.need_pol_item_defining_literal(v1 > v2_ub);
-    auto v2_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason, WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
-    emit_resolution(logger, abs_nonneg_ge, v2_upper, v1_ge_bound_plus_1);
-
-    auto v1_lt0 = ids.need_pol_item_defining_literal(v1 < 0_i);
-    emit_resolution(logger, v1_ge_bound_plus_1, v1_lt0);
-}
-
-auto gcs::innards::justify_abs_v1_ge_neg_v2_ub(
-    ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, Integer v2_ub, ProofLine abs_neg_ge, const ReasonLiterals & reason) -> void
-{
-    if (holds_alternative<ConstantIntegerVariableID>(v1))
-        return;
-
-    auto & ids = logger.names_and_ids_tracker();
-    auto v1_lt_neg_bound = ids.need_pol_item_defining_literal(v1 < -v2_ub);
-    auto v2_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason, WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
-    emit_resolution(logger, abs_neg_ge, v2_upper, v1_lt_neg_bound);
-
-    auto v1_ge0 = ids.need_pol_item_defining_literal(v1 >= 0_i);
-    emit_resolution(logger, v1_ge0, v1_lt_neg_bound);
 }
 
 auto gcs::innards::justify_abs_v2_le_big_m(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, Integer v1_lb, Integer v1_ub,

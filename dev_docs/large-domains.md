@@ -291,6 +291,15 @@ pairing"; that was too optimistic — the mirrored pairing *is* the
 non-propagating configuration above — and the header comment was corrected to
 say so.
 
+**One half of the sum row does qualify.** In two's complement, flipping every
+bit of `v1` gives `-v1 - 1`. So the half `v2 + v1 >= 0` is the difference
+`v2 - ~v1 >= 1`, which is Theorem 2.9 with `B = 1`. Carrying an upper bound on
+one operand into a lower bound on the other across that half is therefore plain
+RUP. `Abs`' rules for `v1 >= -ub(v2)` and `v2 >= -ub(v1)` rely on this once
+their sign is fixed. The other half, `v2 + v1 <= 0`, reads as `~v1 - v2 >= -1`.
+That is `B = -1`, which is the non-propagating configuration above, and it is
+why `justify_abs_v2_le_big_m` and the range rules keep their `pol` steps.
+
 `pol` is what does not care, which is why `abs/justify.cc` uses it for both
 branches: the model half, plus the defining item of each atom whose arithmetic
 the step uses, summed and saturated. The operands cancel, the constant comes out

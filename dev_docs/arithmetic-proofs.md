@@ -87,25 +87,27 @@ sign-case-conditional bound as its raw pol line plus its case literals.
   sign when the non-negative operand may be zero; the claim's own
   negation pins the sign atom instead, or unit propagation closes
   through the sign clauses and the eq0 rows;
-- `conclude_by_sign_cases`: the fixed-shape replacement for case
-  resolution. One red-with-empty-witness derivation of
-  `reason => conclusion`; the subproof takes each case pattern's premise
-  pol-added onto the negated goal (premises that are already refutation
-  clauses — factor-bound clashes — are used directly: adding the negation
-  would inject its terms as free slack), closes dead cases with a RUP
-  clause of the opposite atoms, emits any zero-refutation units
-  (`[v=0]` empties the grid against the reason's result bounds), and runs
-  the nested saturating cut one dimension at a time. Because `[v>=0]` and
-  `[v<0]` are complementary atoms — unlike the thesis's two's-complement
-  sign bits — no separate zero cases are needed, and a square's mixed
-  patterns die as tautology clauses. The subproof's RUP steps (dead
-  patterns and the closing contradiction) are hinted when the caller
-  passes `SubproofRUPHints::Assemble`, which is sound exactly when the
-  premises' sum terms cancel against the negated goal — product bounds
-  arrange this, so multiply/squares/Power engage it; divide/modulus
-  premises drag view bits and aux-atom rows into the cut result, where
-  only a database-wide RUP reaches the closing conflict, so they stay
-  on the default hint-free path.
+- `conclude_by_sign_cases`: case resolution, as one VeriPB `cases` line
+  deriving `reason => conclusion` over the dimensions' sign atoms (two
+  for a product: `cases ... : [x>=0] [y>=0]`, a four-way split). Each
+  assignment to the atoms is one sign pattern. A live pattern closes from
+  its premise line: by unit propagation when the premise's sum terms
+  cancel against the negated conclusion
+  (`PremiseShape::CancelsAgainstConclusion`, which product bounds
+  arrange, so multiply/squares/Power need nothing more), and otherwise
+  through a lemma `reason /\ pattern => conclusion`, derived by
+  contradiction from the premise pol-added onto the negated lemma
+  (divide/modulus premises drag view bits and aux-atom rows in). A
+  premise that is already a refutation clause (a factor-bound clash), and
+  a dead pattern, both close by propagation. Because `[v>=0]` and `[v<0]`
+  are complementary atoms, unlike the thesis's two's-complement sign
+  bits, no separate sign zero cases are needed, and a square's mixed
+  patterns die by propagation. A strengthened co-factor's zero case is the
+  exception: its premise is strict about zero, so `[v=0]` is one more case
+  variable, whose true branch closes by propagation against the reason's
+  result bounds and the negated conclusion. It is not a unit derivable
+  from the reason alone: an aliased product such as `x * x = x` can be
+  zero.
 
 Inference drivers: product bounds are thesis Procedure 7.6 (per live sign
 case: channel, 7.1/7.2, channel to the result, conclude); factor and

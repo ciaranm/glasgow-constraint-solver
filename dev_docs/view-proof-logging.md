@@ -93,7 +93,8 @@ You only need to think about views when your justification emits **explicit
   resolves the operand out of *both* half-reified sign branches to get an
   unconditional bound, so both resolutions must cancel cleanly. The others
   verified either way (a single resolution plus RUP-from-reason closes via
-  the atom-level link). The safe default is still: keep any operand you
+  the atom-level link), and have since been replaced by plain RUP or a
+  `cases` line on v1's sign. The safe default is still: keep any operand you
   intend to cancel in `V`-form.
 - **Cross to `X` only when you actually need it.** If a downstream consumer
   genuinely needs the `X`-form of a line, opt in with

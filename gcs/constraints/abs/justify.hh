@@ -5,17 +5,13 @@
 
 namespace gcs::innards
 {
-    // Hole removal: justifies v2 != val, with one lemma settling v1's sign.
-    // Used in the v1 -> v2 direction when both val and -val are absent
-    // from dom(v1).
-    auto justify_abs_hole(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v1, IntegerVariableID v2, Integer val) -> void;
-
-    // The range form of the same removal: justifies `~[v2 in lo..hi]` from a
-    // reason saying v1 holds nothing in [lo, hi] and nothing in [-hi, -lo].
+    // Range hole removal: justifies `~[v2 in lo..hi]` from a reason saying v1
+    // holds nothing in [lo, hi] and nothing in [-hi, -lo].
     //
-    // The per-value form gets away with one RUP lemma because `v2 == val` pins
-    // every bit of v2, which pins v1's through whichever half-reified row is
-    // active. A range pins no bit, so it needs the bound lemmas min_max.cc and
+    // The per-value form (in abs.cc) is a single `cases` line on v1's sign with
+    // no lemmas, because `v2 == val` pins every bit of v2, which pins v1's
+    // through whichever half-reified row the branch makes active. A range pins
+    // no bit, so it needs the bound lemmas min_max.cc and
     // element.cc use -- and those are Theorem 2.9, which wants a lower bound on
     // one operand against an upper bound on the other across their *difference*.
     // This constraint's negative branch links v2 to -v1, so its row is a sum and
@@ -26,18 +22,17 @@ namespace gcs::innards
     // dev_docs/large-domains.md.
     //
     // So each branch's two bounds are derived by `pol` instead, in the same
-    // resolution shape as the consequence-bound helpers below: the model half,
-    // plus the defining item of each atom whose arithmetic is used. That leaves
-    // one clause per branch whose only free literal is the sign, and the two
-    // signs being a literal and its negation, the conclusion follows by RUP.
+    // resolution shape as justify_abs_v2_le_big_m below: the model half, plus
+    // the defining item of each atom whose arithmetic is used. With those in
+    // the database the removal is one `cases` line on v1's sign.
     //
-    // Four resolutions and two RUP lines per removed range, independent of its
-    // width, which is the property that matters. Neither variable may be a
+    // Four resolutions and one `cases` line per removed range, independent of
+    // its width, which is the property that matters. Neither variable may be a
     // constant, which pins every bit and so has no order-encoding atom for
     // these resolutions to name; a view is fine, because each atom is taken
     // over whichever encoded variable its operand resolves to, and since #904
     // a registered view has one of its own (#931). Width-1 ranges are left to
-    // justify_abs_hole, which is what they canonicalise to anyway.
+    // the per-value form, which is what they canonicalise to anyway.
     auto justify_abs_hole_range(ProofLogger & logger, const ReasonLiterals & reason, const IntegerVariableID & v1, const IntegerVariableID & v2,
         Integer lo, Integer hi, ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void;
 
@@ -58,46 +53,17 @@ namespace gcs::innards
     auto justify_abs_preimage_range(ProofLogger & logger, const IntegerVariableID & v1, const IntegerVariableID & v2, Integer lo, Integer hi,
         ProofLine abs_nonneg_le, ProofLine abs_nonneg_ge, ProofLine abs_neg_le, ProofLine abs_neg_ge) -> void;
 
-    // The bound proofs below share their resolution shape between the
-    // prepare-time initialiser and the run-time propagator. The initialiser
-    // calls them with empty ReasonLiterals (the operand bound RUPs from
-    // the encoding's initial domain); the propagator passes its reason in
-    // so the operand bound RUPs under that literal instead. In both cases
-    // the helper short-circuits when v1 is constant -- the encoding's
-    // relevant half is then unreified and plain RUP closes the inference
-    // without an explicit pol step.
-
-    // v2 >= 0. Initialiser-only: at run time v1 spanning zero already keeps
-    // v2's lower bound at 0, and the entirely-positive/negative cases use
-    // justify_abs_v2_lb below.
-    auto justify_abs_v2_ge_zero(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, ProofLine abs_nonneg_ge) -> void;
-
-    // Side picks which half-reified piece drives the proof:
-    //   Nonneg: dom(v1) sits at or above v1_bound >= 1; abs_ge is the
-    //           encoding's "Abs non-negative" >= half.
-    //   Nonpos: dom(v1) sits at or below v1_bound <= -1; abs_ge is the
-    //           encoding's "Abs negative" >= half.
-    enum struct AbsLbSide
-    {
-        Nonneg,
-        Nonpos
-    };
-
-    // v2 >= v2_lb. Propagator-only -- the initialiser cannot move this
-    // bound above 0 since at search start v1 spans zero whenever v2's
-    // image-min is positive.
-    auto justify_abs_v2_lb(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, AbsLbSide side, Integer v2_lb, ProofLine abs_ge,
-        const ReasonLiterals & reason) -> void;
-
-    // v1 <= v2_ub.
-    auto justify_abs_v1_le_v2_ub(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, Integer v2_ub, ProofLine abs_nonneg_ge,
-        const ReasonLiterals & reason) -> void;
-
-    // v1 >= -v2_ub.
-    auto justify_abs_v1_ge_neg_v2_ub(
-        ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, Integer v2_ub, ProofLine abs_neg_ge, const ReasonLiterals & reason) -> void;
-
-    // v2 <= big_m, where big_m = max(-v1_lb, v1_ub).
+    // v2 <= big_m, where big_m = max(-v1_lb, v1_ub). The one bound rule left
+    // with a helper. The other bounds are plain RUP or a sign split, because
+    // their crossing over the active half is Theorem 2.9. This one needs both
+    // branches, and the negative branch carries v1's lower bound into an upper
+    // bound on v2 across v2 + v1 <= 0, which is outside the theorem, with
+    // non-propagating instances from v1 in [-33, 32] up. So it is one
+    // resolution per sign, and the final RUP combines them. Shared by the
+    // initialiser, which passes empty ReasonLiterals so the operand bounds RUP
+    // from the initial domains, and the propagator, which passes its reason.
+    // It short-circuits when v1 is constant: the relevant half is then
+    // unreified and plain RUP closes the inference.
     auto justify_abs_v2_le_big_m(ProofLogger & logger, IntegerVariableID v1, IntegerVariableID v2, Integer v1_lb, Integer v1_ub, Integer big_m,
         ProofLine abs_nonneg_le, ProofLine abs_neg_le, const ReasonLiterals & reason) -> void;
 }

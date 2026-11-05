@@ -782,20 +782,20 @@ namespace
             }
 
             if (emitting && opb_lines.first.has_value() && opb_lines.second.has_value()) {
+                // By cases on the terminal load reached, each bounding the
+                // bin's load from its side.
+                vector<ProofFlag> up_flags, down_flags;
                 for (const auto & [w, _] : completed_layers.back()) {
                     const auto & cf = flags.coord[n].at(w);
                     PolBuilder{}.add(*opb_lines.first).add(cf.g_up_fwd).emit(*logger, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(
-                        eager_reason(reason, state), WPBSum{} + 1_i * ! cf.g_up + 1_i * (loads[b] >= Integer{lo}) >= 1_i, ProofLevel::Temporary);
-
                     PolBuilder{}.add(*opb_lines.second).add(cf.g_dn_fwd).emit(*logger, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(
-                        eager_reason(reason, state), WPBSum{} + 1_i * ! cf.g_dn + 1_i * (loads[b] <= Integer{hi}) >= 1_i, ProofLevel::Temporary);
+                    up_flags.push_back(cf.g_up);
+                    down_flags.push_back(cf.g_dn);
                 }
-                logger->emit_rup_proof_line_under_reason(
-                    eager_reason(reason, state), WPBSum{} + 1_i * (loads[b] >= Integer{lo}) >= 1_i, ProofLevel::Temporary);
-                logger->emit_rup_proof_line_under_reason(
-                    eager_reason(reason, state), WPBSum{} + 1_i * (loads[b] <= Integer{hi}) >= 1_i, ProofLevel::Temporary);
+                logger->emit_cases_proof_line_under_reason(
+                    eager_reason(reason, state), WPBSum{} + 1_i * (loads[b] >= Integer{lo}) >= 1_i, up_flags, ProofLevel::Temporary);
+                logger->emit_cases_proof_line_under_reason(
+                    eager_reason(reason, state), WPBSum{} + 1_i * (loads[b] <= Integer{hi}) >= 1_i, down_flags, ProofLevel::Temporary);
             }
 
             inference.infer_all(logger, inferences, JustifyUsingRUP{hints::BinPacking{owner}}, reason);

@@ -20,9 +20,9 @@ namespace gcs
     private:
         IntegerVariableID _v1, _v2;
 
-        // Captured in define_proof_model() for use by the consequence-bound
-        // initialisers' PB-resolution proof steps. Each pair is (≤ half line,
-        // ≥ half line) of the half-reified equality.
+        // Captured in define_proof_model() for use by the PB-resolution proof
+        // steps in abs/justify.hh. Each pair is (≤ half line, ≥ half line) of
+        // the half-reified equality.
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _abs_nonneg_lines;
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _abs_neg_lines;
 

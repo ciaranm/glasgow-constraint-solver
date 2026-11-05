@@ -27,6 +27,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -40,6 +41,7 @@ using std::map;
 using std::nullopt;
 using std::optional;
 using std::shared_ptr;
+using std::span;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -171,13 +173,13 @@ namespace
             .text = "An Inverse constraint was posted with the same variable more than once, so the model is unsatisfiable before search starts"});
 
         propagators.install_initialiser([var = *var, lowest, count, owner](const State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.contradiction(logger,
-                JustifyExplicitly{[&](const ReasonLiterals &) {
-                                      for (auto v = lowest; v < lowest + Integer(count); ++v)
-                                          logger->emit_rup_proof_line(WPBSum{} + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
-                                  },
-                    ThenRUP::Yes, hints::Inverse{owner}},
-                NoReason{});
+            // By cases on var's value: whichever index it names, two entries
+            // claim it.
+            vector<ProofLiteralOrFlag> values;
+            if (logger)
+                for (auto v = lowest; v < lowest + Integer(count); ++v)
+                    values.emplace_back(var == v);
+            inference.contradiction(logger, JustifyUsingCases{span<const ProofLiteralOrFlag>{values}, hints::Inverse{owner}}, NoReason{});
         });
     }
 

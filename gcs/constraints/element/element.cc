@@ -5,6 +5,7 @@
 #include <gcs/constraints/innards/no_overlap_walk.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/case_variables.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -29,6 +30,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -95,6 +97,26 @@ namespace
         for (const auto & vv : v) {
             check_array_dimensions(vv, v.at(0).size());
         }
+    }
+
+    // Show that `conclusion` holds whichever entry the indices pick, under the
+    // reason: one cases line over every index's equality atoms. VeriPB's cases
+    // check branches on the atoms in the order they are listed, and unit
+    // propagation falsifies an index's other atoms once one is assumed, so this
+    // is about one branch per tuple of index values, each closed by unit
+    // propagation from the entry that tuple picks. (This needs the tree search in
+    // VeriPB-dev MR !240: the brute-force check gives up on more than twelve
+    // atoms that it cannot settle one at a time, and no single index atom
+    // settles a branch here when there is more than one index.) The line is
+    // Temporary, and is `conclusion` itself.
+    template <typename IndexVars_, typename Term_>
+    auto justify_for_every_index_choice(ProofLogger & logger, const State & state, const ReasonLiterals & reason, const IndexVars_ & index_vars,
+        const Weighted<Term_> & conclusion) -> void
+    {
+        std::vector<ProofLiteralOrFlag> case_variables;
+        for (const auto & index_var : index_vars)
+            std::ranges::copy(case_variables_over_values(index_var, state.each_value_immutable(index_var)), std::back_inserter(case_variables));
+        logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + conclusion >= 1_i, case_variables, ProofLevel::Temporary);
     }
 }
 
@@ -658,25 +680,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         JustifyExplicitly{//
                             [&](const ReasonLiterals & reason) {
                                 // show that it doesn't work for any feasible choice of indices
-                                WPBSum sum_so_far;
-                                auto rule_out = [&](auto && self, unsigned d) -> void {
-                                    state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
-                                        if (d + 1 == dimensions_)
-                                            logger->emit_rup_proof_line_under_reason(reason,
-                                                sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i, ProofLevel::Temporary);
-                                        else {
-                                            auto save_sum_so_far = sum_so_far;
-                                            sum_so_far += 1_i * (index_vars.at(d) != v);
-                                            self(self, d + 1);
-                                            sum_so_far = save_sum_so_far;
-                                        }
-                                    });
-                                    if (! sum_so_far.terms.empty()) {
-                                        logger->emit_rup_proof_line_under_reason(
-                                            reason, sum_so_far + 1_i * lit_to_infer >= 1_i, ProofLevel::Temporary);
-                                    }
-                                };
-                                rule_out(rule_out, 0);
+                                justify_for_every_index_choice(*logger, state, reason, index_vars, 1_i * lit_to_infer);
                             },
                             ThenRUP::Yes, hints::Element{owner}},
                         reason);
@@ -794,8 +798,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         inference.infer_not_in_range(logger, result_var, range_lo, range_hi,
                             JustifyExplicitly{//
                                 [&, range_lo = range_lo, range_hi = range_hi](const ReasonLiterals & reason) {
-                                    // Same walk over the feasible index choices as the
-                                    // per-value form below, but each tuple needs its
+                                    // The same split over the feasible index choices as
+                                    // the per-value form below, but each tuple needs its
                                     // conclusion carried across the model's equality
                                     // first. A range asserts only order atoms, where a
                                     // single value pins every bit, so the two ge-layer
@@ -805,53 +809,43 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                     // supplies opposing bounds across the equality. With
                                     // both in the database, the entry's own range literal
                                     // from the reason is a clause whose every literal is
-                                    // now falsified, and the tuple line is propagation.
+                                    // now falsified, and the tuple's case is propagation.
                                     //
                                     // Two lemmas per tuple, independent of how wide the
-                                    // range is, which is the property that matters.
-                                    WPBSum sum_so_far;
-                                    auto rule_out = [&](auto && self, unsigned d) -> void {
-                                        gch::small_vector<size_t, dimensions_> guard_elem;
-                                        state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
-                                            if (d + 1 == dimensions_) {
-                                                auto guard = sum_so_far + 1_i * (index_vars.at(d) != v);
-                                                if constexpr (! std::is_same_v<EntryType_, Integer>) {
-                                                    elem.push_back((v - index_starts.at(d)).as_index());
-                                                    auto array_var = get_array_var<dimensions_>(elem, *array);
-                                                    elem.pop_back();
-                                                    // A constant entry needs no lemmas:
-                                                    // result = c pins every bit of
-                                                    // result under the guard, which
-                                                    // decides both halves of the range
-                                                    // disjunction outright. Anything
-                                                    // else -- bare variable or view --
-                                                    // needs the pair.
-                                                    if (! holds_alternative<ConstantIntegerVariableID>(array_var)) {
-                                                        logger->emit_rup_proof_line_under_reason(reason,
-                                                            guard + 1_i * (result_var < range_lo) + 1_i * (array_var >= range_lo) >= 1_i,
-                                                            ProofLevel::Temporary);
-                                                        logger->emit_rup_proof_line_under_reason(reason,
-                                                            guard + 1_i * (result_var >= range_hi + 1_i) + 1_i * (array_var < range_hi + 1_i) >= 1_i,
-                                                            ProofLevel::Temporary);
-                                                    }
-                                                }
-                                                logger->emit_rup_proof_line_under_reason(
-                                                    reason, guard + 1_i * not_in_range(result_var, range_lo, range_hi) >= 1_i, ProofLevel::Temporary);
-                                            }
-                                            else {
+                                    // range is, which is the property that matters. A
+                                    // constant entry needs none: result = c pins every bit
+                                    // of result under the guard, which decides both halves
+                                    // of the range disjunction outright. Anything else --
+                                    // bare variable or view -- needs the pair.
+                                    if constexpr (! std::is_same_v<EntryType_, Integer>) {
+                                        WPBSum sum_so_far;
+                                        auto lemmas = [&](auto && self, unsigned d) -> void {
+                                            state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
                                                 auto save_sum_so_far = sum_so_far;
                                                 sum_so_far += 1_i * (index_vars.at(d) != v);
                                                 elem.push_back((v - index_starts.at(d)).as_index());
-                                                self(self, d + 1);
+                                                if (d + 1 == dimensions_) {
+                                                    auto array_var = get_array_var<dimensions_>(elem, *array);
+                                                    if (! holds_alternative<ConstantIntegerVariableID>(array_var)) {
+                                                        logger->emit_rup_proof_line_under_reason(reason,
+                                                            sum_so_far + 1_i * (result_var < range_lo) + 1_i * (array_var >= range_lo) >= 1_i,
+                                                            ProofLevel::Temporary);
+                                                        logger->emit_rup_proof_line_under_reason(reason,
+                                                            sum_so_far + 1_i * (result_var >= range_hi + 1_i) + 1_i * (array_var < range_hi + 1_i) >=
+                                                                1_i,
+                                                            ProofLevel::Temporary);
+                                                    }
+                                                }
+                                                else
+                                                    self(self, d + 1);
                                                 elem.pop_back();
                                                 sum_so_far = save_sum_so_far;
-                                            }
-                                        });
-                                        if (! sum_so_far.terms.empty())
-                                            logger->emit_rup_proof_line_under_reason(reason,
-                                                sum_so_far + 1_i * not_in_range(result_var, range_lo, range_hi) >= 1_i, ProofLevel::Temporary);
-                                    };
-                                    rule_out(rule_out, 0);
+                                            });
+                                        };
+                                        lemmas(lemmas, 0);
+                                    }
+                                    justify_for_every_index_choice(
+                                        *logger, state, reason, index_vars, 1_i * not_in_range(result_var, range_lo, range_hi));
                                 },
                                 ThenRUP::Yes, hints::Element{owner}},
                             reason);
@@ -879,26 +873,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         JustifyExplicitly{//
                             [&](const ReasonLiterals & reason) {
                                 // show that it doesn't work for any feasible choice of indices
-                                WPBSum sum_so_far;
-                                auto rule_out = [&](auto && self, unsigned d) -> void {
-                                    state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
-                                        if (d + 1 == dimensions_)
-                                            logger->emit_rup_proof_line_under_reason(reason,
-                                                sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,
-                                                ProofLevel::Temporary);
-                                        else {
-                                            auto save_sum_so_far = sum_so_far;
-                                            sum_so_far += 1_i * (index_vars.at(d) != v);
-                                            self(self, d + 1);
-                                            sum_so_far = save_sum_so_far;
-                                        }
-                                    });
-                                    if (! sum_so_far.terms.empty()) {
-                                        logger->emit_rup_proof_line_under_reason(
-                                            reason, sum_so_far + 1_i * (result_var != value) >= 1_i, ProofLevel::Temporary);
-                                    }
-                                };
-                                rule_out(rule_out, 0);
+                                justify_for_every_index_choice(*logger, state, reason, index_vars, 1_i * (result_var != value));
                             },
                             ThenRUP::Yes, hints::Element{owner}},
                         reason);

@@ -259,20 +259,19 @@ auto gcs::innards::emit_regular_canonical_run(ProofLogger & logger, const vector
         }
     }
 
-    // The state flags' run follows b: st[i][q] -> b[i][q], per value and then
-    // over the values, backwards from the last layer.
+    // The state flags' run follows b: st[i][q] -> b[i][q], by cases on the
+    // value x_i takes, backwards from the last layer.
     logger.emit_proof_comment("Regular: canonical run, the chosen run is co-reachable");
-    for (auto i = n; i-- > 0;)
+    for (auto i = n; i-- > 0;) {
+        vector<ProofLiteralOrFlag> x_values;
+        for (auto val : layers.values[i])
+            x_values.push_back(x_is(i, val));
         for (auto q : live[i]) {
-            for (auto val : layers.values[i]) {
-                WPBSum lemma = WPBSum{} + 1_i * ! st[i][q] + 1_i * (vars[i] != val);
-                add_term_to(lemma, 1_i, *b[i][q]);
-                rup(move(lemma), ProofLevel::Temporary);
-            }
             WPBSum lemma = WPBSum{} + 1_i * ! st[i][q];
             add_term_to(lemma, 1_i, *b[i][q]);
-            rup(move(lemma), ProofLevel::Temporary);
+            logger.emit_cases_proof_line_under_reason({}, move(lemma) >= 1_i, x_values, ProofLevel::Temporary);
         }
+    }
 
     // The OPB's rows hold for c, reading every dead state flag as false.
     logger.emit_proof_comment("Regular: canonical run, the rows hold for it");
@@ -297,15 +296,16 @@ auto gcs::innards::emit_regular_canonical_run(ProofLogger & logger, const vector
             }
 
     for (size_t i = 1; i <= n; ++i) {
+        // At least one, by cases on the previous layer's state: each live state
+        // there steps into this layer (the row above), and the previous layer's
+        // at-least-one rules out none of them (at layer one, the root pin).
         WPBSum at_least_one;
         for (auto next_q : live[i])
             add_term_to(at_least_one, 1_i, *c[i][next_q]);
-        for (auto q : live[i - 1]) {
-            WPBSum step = at_least_one;
-            add_term_to(step, 1_i, ! *c[i - 1][q]);
-            rup(move(step), ProofLevel::Temporary);
-        }
-        rup(move(at_least_one), ProofLevel::Temporary);
+        vector<ProofLiteralOrFlag> previous_states;
+        for (auto q : live[i - 1])
+            previous_states.push_back(*c[i - 1][q]);
+        logger.emit_cases_proof_line_under_reason({}, move(at_least_one) >= 1_i, previous_states, ProofLevel::Temporary);
 
         // At most one, pairwise and then as a cardinality constraint. Two edges
         // into different states cannot both be chosen: they leave from different
@@ -320,16 +320,14 @@ auto gcs::innards::emit_regular_canonical_run(ProofLogger & logger, const vector
         vector<vector<ProofLine>> at_most_ones(members.size());
         for (size_t hi = 0; hi < members.size(); ++hi)
             for (size_t lo = 0; lo < hi; ++lo) {
-                for (const auto & edge : edges_into[i][members[lo]]) {
-                    WPBSum exclusion;
-                    add_term_to(exclusion, 1_i, ! edge);
-                    add_term_to(exclusion, 1_i, ! *c[i][members[hi]]);
-                    rup(move(exclusion), ProofLevel::Temporary);
-                }
+                // By cases on the edges into the lower state: each one excludes
+                // the higher state, and the lower state's own definition needs
+                // one of them.
                 WPBSum pair_line;
                 add_term_to(pair_line, 1_i, ! *c[i][members[lo]]);
                 add_term_to(pair_line, 1_i, ! *c[i][members[hi]]);
-                at_most_ones[hi].push_back(rup(move(pair_line), ProofLevel::Temporary));
+                at_most_ones[hi].push_back(
+                    logger.emit_cases_proof_line_under_reason({}, move(pair_line) >= 1_i, edges_into[i][members[lo]], ProofLevel::Temporary));
             }
         vector<ProofLiteralOrFlag> member_flags;
         for (auto q : members)

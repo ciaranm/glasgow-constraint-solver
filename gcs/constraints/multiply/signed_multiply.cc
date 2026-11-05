@@ -165,11 +165,11 @@ namespace
 
         optional<ProofLine> lower_red, upper_red;
         if (need_lower)
-            lower_red =
-                pj::conclude_by_sign_cases(logger, reason, WPBSum{} + 1_i * d.z >= prod_lo, dims, lower_premises, {}, pj::SubproofRUPHints::Assemble);
+            lower_red = pj::conclude_by_sign_cases(
+                logger, reason, WPBSum{} + 1_i * d.z >= prod_lo, dims, lower_premises, {}, pj::PremiseShape::CancelsAgainstConclusion);
         if (need_upper)
             upper_red = pj::conclude_by_sign_cases(
-                logger, reason, WPBSum{} + -1_i * d.z >= -prod_hi, dims, upper_premises, {}, pj::SubproofRUPHints::Assemble);
+                logger, reason, WPBSum{} + -1_i * d.z >= -prod_hi, dims, upper_premises, {}, pj::PremiseShape::CancelsAgainstConclusion);
         auto closer_hints = [&](ProofLine red, const IntegerVariableCondition & lit) {
             vector<ProofLine> h{red};
             if (auto def = pj::def_line_for(logger, lit))
@@ -271,7 +271,7 @@ namespace
         }
 
         auto conclusion = upper ? WPBSum{} + -1_i * target >= -t : WPBSum{} + 1_i * target >= t;
-        auto red = pj::conclude_by_sign_cases(logger, reason, conclusion, dims, premises, zero_refs, pj::SubproofRUPHints::Assemble);
+        auto red = pj::conclude_by_sign_cases(logger, reason, conclusion, dims, premises, zero_refs, pj::PremiseShape::CancelsAgainstConclusion);
         auto lit = upper ? target <= t : target >= t;
         vector<ProofLine> closer{red};
         if (auto def = pj::def_line_for(logger, lit))

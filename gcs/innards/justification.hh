@@ -5,8 +5,10 @@
 #include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/reason.hh>
 
+#include <span>
 #include <utility>
 #include <variant>
 
@@ -54,6 +56,55 @@ namespace gcs::innards
 
     template <typename Hint_>
     JustifyUsingRUP(Hint_) -> JustifyUsingRUP<Hint_>;
+
+    /**
+     * \brief Specify that an inference is justified by case analysis, using
+     * VeriPB's `cases` rule.
+     *
+     * The mirror of JustifyUsingRUP for selector-style reasoning: the inferred
+     * literal follows because, under each assignment to the \c case_variables,
+     * it is automatically provable (trivial, in the database, RUP, or implied by
+     * a database constraint) -- typically because under any single selector it
+     * is RUP, and with every selector false the model's at-least-one over them
+     * fails. The inference is concluded by one `cases` line at the current
+     * level, exactly where JustifyUsingRUP would put its RUP line: there are no
+     * temporary steps, so unlike JustifyExplicitly it never forgets the caller's
+     * temporary lines. It carries an optional typed assertion hint exactly as
+     * JustifyUsingRUP does, and in Off proof mode nothing is emitted.
+     *
+     * The case variables are either proof flags, the common case, or
+     * ProofLiteralOrFlag, whose literals name the atoms to split on (say a
+     * variable's equality atoms; see case_variables.hh). Only the variable a
+     * literal names matters, not its polarity. They are borrowed, not copied:
+     * the justification is consumed during the infer call it is passed to, so
+     * the span only has to outlive that call. Selector vectors are usually
+     * proof-model-only, so a call site that has no logger may pass an empty
+     * span.
+     *
+     * This suits "exactly one of these holds" reasoning, not cross-variable
+     * cutting-planes case splits (use JustifyExplicitly there). A split that
+     * needs lemmas first is a JustifyExplicitly whose steps end with
+     * ProofLogger::emit_cases_proof_line_under_reason.
+     *
+     * \ingroup Innards
+     * \sa JustifyUsingRUP, ProofLogger::emit_cases_proof_line_under_reason
+     */
+    template <typename Hint_ = NoHint, typename CaseVariable_ = ProofFlag>
+    struct JustifyUsingCases
+    {
+        std::span<const CaseVariable_> case_variables;
+        [[no_unique_address]] Hint_ hint{};
+    };
+
+    JustifyUsingCases(std::span<const ProofFlag>) -> JustifyUsingCases<NoHint, ProofFlag>;
+
+    template <typename Hint_>
+    JustifyUsingCases(std::span<const ProofFlag>, Hint_) -> JustifyUsingCases<Hint_, ProofFlag>;
+
+    JustifyUsingCases(std::span<const ProofLiteralOrFlag>) -> JustifyUsingCases<NoHint, ProofLiteralOrFlag>;
+
+    template <typename Hint_>
+    JustifyUsingCases(std::span<const ProofLiteralOrFlag>, Hint_) -> JustifyUsingCases<Hint_, ProofLiteralOrFlag>;
 
     /**
      * \brief Specify that an inference will be asserted rather than justified.
