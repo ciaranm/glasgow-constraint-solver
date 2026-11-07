@@ -2,8 +2,11 @@
 
 > **Maturity** production ·
 > **Audited** 2026-09-29 at `c9ceea25` ·
-> **Open issues** filed by this audit: #1145 (the forcing half of Law and
-> Lee is missing). **Fixed since the audit**: #1188, filed from review
+> **Open issues** filed by this audit: none left. **Fixed since the audit**:
+> #1145 (the forcing half of Law and Lee was missing), by #PRNUM, which also
+> gave every inference its minimal reason and empties a repeated chain value
+> in one call; see [Rule: s-forced-before-fixed-t](#rule-s-forced-before-fixed-t).
+> #1188, filed from review
 > (extreme chain values overflowed through views and in the proof model), by
 > #1215, with #1214 for view offsets; see [Overflow](#robustness-and-limits).
 > Already open and touching this family: #833 (the large-domain policy), #868
@@ -16,21 +19,22 @@ before it. With a two-value chain it is `value_precede`; with a longer one it is
 `value_precede_chain`. It is the standard symmetry-breaking constraint for
 interchangeable values, and [`seq_precede_chain`](seq_precede_chain.md)
 installs nothing but this. One propagator per consecutive pair, a proof-only
-first-occurrence index per chain value in the encoding, and one RUP per
-removal.
+first-occurrence index per chain value in the encoding, and per inference a
+stated helper line and a RUP.
 
 Three things to know before touching it.
 
-- **It is not generalised arc consistent, or even `bounds(Z)`.** The
-  propagator removes `t` from every position with no possible `s` before it,
-  which is half of Law and Lee's algorithm. The other half is missing: when a
-  position is fixed to `t` and only one earlier position can still hold `s`,
-  that position must be `s`. Branching last position first on the largest
-  value, enumerating the restricted-growth strings of length 10 takes 247,823
-  failures here, and none in Gecode.
-- **Its reason is the whole scope.** Every removal names every variable's
-  bounds and holes, 8 to 13 literals on a six-variable probe, where the
-  earlier positions' `≠ s` literals would do.
+- **Each pair is generalised arc consistent over distinct variables, and a
+  chain is not.** The propagator is Law and Lee's algorithm: it removes `t`
+  from every position with no possible `s` before it, and when a position is
+  fixed to `t` and only one earlier position can still hold `s`, it fixes that
+  position to `s` (#1145). A chain is propagated pair by pair, which is weaker
+  than GAC on the chain, and a repeated variable can defeat GAC on a pair.
+- **Each inference states a helper before its RUP.** The reasons are minimal,
+  the earlier positions' `≠ s` literals, and with a reason that small, unit
+  propagation cannot always see that `x_i = t` switches the precede row on.
+  So every inference first states `x_i = t ⇒ ¬[pos[t] ≥ n]`; see
+  [Rule: t-without-earlier-s](#rule-t-without-earlier-s).
 - **Its encoding is linear in the array per chain value.** Each chain value
   gets a proof-only index, `n` reified flags, up to `n` upper-bound rows and
   `n` existence rows of at most three terms each. That matches `cake_pb_cp`
@@ -114,7 +118,7 @@ decomposition. None appears in the corpus.
   `1..m`, carrying its own constraint ID so that two chains in one problem do
   not share flags (#449).
 - **Child constraints:** none.
-- **Shares code:** none. The reason is the generic one from `reason.hh`.
+- **Shares code:** none.
 - **Presolvers:** none reads it.
 
 ## The proof model
@@ -171,7 +175,8 @@ of domain width**, and mentions only the `x_i = v` literals of chain values.
 ### Labels
 
 The labels are `cake_pb_cp`'s, value-keyed since #604 so that no two rows share
-one. No rule cites a row by label: every inference is a plain RUP.
+one. No rule cites a row by label: every inference is a RUP, after at most one
+RUP helper line.
 
 ### Cake conformity
 
@@ -193,7 +198,7 @@ that section `none`. The `pos[v] ≤ n` row exists because cake added it upstrea
 - **At the root:** nothing emitted by the family.
 - **Lazily:** the `pos[v] ≥ k` atoms beyond the reified flags are introduced in
   the proof on first use, as for any proof-only integer variable.
-- **Deleted:** nothing.
+- **Deleted:** each inference's helper line, which is temporary.
 - **Naming:** `pos[v]`'s bits are `v[id][<v>_<b>][pos]` and its flags
   `v[id][<v>_<k>][pge]`, cake's value-keyed names, so an external tool finds
   them by the constraint ID and the value.
@@ -207,8 +212,9 @@ that section `none`. The `pos[v] ≤ n` row exists because cake added it upstrea
 ### Initialisation and global data
 
 `prepare()` returns whether the chain has two values. `define_proof_model()`
-builds the encoding above. There is no initialiser; nothing is computed once at
-the root.
+builds the encoding above, and keeps each chain value's `[pos[v] ≥ n]` flag for
+the propagators' helper lines. There is no initialiser; nothing is computed
+once at the root.
 
 ### Propagator inventory
 
@@ -216,8 +222,8 @@ One propagator per consecutive pair of the chain.
 
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
-| pair `(s, t)`, `s ≠ t` | `on_change`, every variable | derived: **every variable** | 1 | a chain of two or more | never claims; is, over distinct underlying variables | yes: when `s` is absent everywhere, or the first position that could hold `s` is fixed to it |
-| pair `(s, s)` | as above | as above | 2 | a repeated adjacent chain value | never claims; is not | only when `s` is absent everywhere: the fixed-to-`s` exit cannot fire, since the call has just removed `s` at `α` |
+| pair `(s, t)`, `s ≠ t` | `on_change`, every variable | derived: **every variable** | 1, 2 | a chain of two or more | never claims; is, over distinct underlying variables | yes: when `s` is absent everywhere, when rule 2 fires, or when the first position that could hold `s` is fixed to it |
+| pair `(s, s)` | as above | as above | 3 | a repeated adjacent chain value | never claims; is | always, after its first call |
 
 **Holes affect: every variable, and truthfully.** The pass reads
 `in_domain(x_i, s)` and `in_domain(x_i, t)`, so removing `s` from strictly
@@ -228,27 +234,29 @@ domain matter; that is over-reporting only for the values other than `s` and
 
 **Idempotence.** Never claimed. For `s ≠ t`, over distinct underlying
 variables, a second call would do nothing: removing `t` cannot move the first
-possible `s`. Two views of one variable break that, as `propagators.cc`'s own
-note on aliasing says: with positions `[x + 1, x, y]`, chain `(1, 2)`,
+possible `s`, and forcing `s` discharges the pair. Two views of one variable
+break that, as `propagators.cc`'s own note on aliasing says: with positions `[x + 1, x, y]`, chain `(1, 2)`,
 `x ∈ 1..3` and `y ∈ 0..2`, the first call removes 2 from the first two
 positions, which fixes `x = 3` and so moves the first possible 1 to `y`, whose
-2 only a second call removes. For `s = t` a second call always has work: each
-call removes `s` from the first position that has it, which moves that
-position on, so emptying the array of `s` takes one call per position.
+2 only a second call removes. For `s = t` one call removes `s` from every
+position and disables the propagator. (Until #1145 it removed `s` only from the
+first position that had it, so emptying the array took one call per position.)
 
 ### Mutable state and incrementality
 
-`None.` Each call scans from the front for the first possible `s` and then
-prunes `t` up to it. A chain of `k` values is `k − 1` independent propagators,
-each making `O(n)` membership tests per call, and each test linear in its
-domain's runs (see [Interval efficiency](#interval-efficiency)). Keeping the
-first possible `s` as backtrackable state would make a call `O(1)` when nothing
+`None.` Each call scans from the front for the first possible `s`, prunes `t`
+up to it, and then scans on from it for whichever comes first: a second
+possible `s`, or a position fixed to `t`. That second scan is Law and Lee's
+`β` and `γ` in one pass. A chain of `k` values is `k − 1` independent
+propagators, each making `O(n)` membership tests per call, and each test linear
+in its domain's runs (see [Interval efficiency](#interval-efficiency)). Keeping
+the first possible `s` as backtrackable state would make a call `O(1)` when nothing
 before it changed; on the corpus the family's calls cost 0.18 µs each (below),
 so there is nothing to buy.
 
 ### Interior values and optional pruning
 
-**Offers.** `None.` There is one arm, and it is weaker than GAC already.
+**Offers.** `None.` There is one arm, and it is already GAC on a pair.
 
 **Observes.** Holes in every variable, per the inventory: a removal of `s` from
 the middle of a domain can change what this family infers. So a
@@ -323,7 +331,8 @@ refuses a view offset outside it. Probes:
 **Fine at any width.** There is no loop over values in `value_precede.cc`.
 
 1. **The propagation side.** Up to about `2n` `in_domain` tests per pair per
-   call (the scan for `α`, then the pruning loop up to it). Each test is
+   call (the scan for `α`, the pruning loop up to it, and the forcing scan on
+   from it), plus up to `n − α` singleton tests in the forcing scan. Each test is
    `IntervalSet::contains`, which scans the domain's interval list from the
    front and stops at the first interval reaching the value, so it is linear
    in the number of runs below the value, not logarithmic. Each removal is an
@@ -332,44 +341,56 @@ refuses a view offset outside it. Probes:
    runs in any domain: `O(n)` on interval domains. No value walk.
    Making the shared membership test logarithmic would help every caller, but
    should wait for a measurement that it matters here.
-2. **The reason side.** The reason is `generic_reason(vars)`, built once at
-   install and materialised only when a proof asks for it. It names each
-   variable's two bounds and **one literal per hole run**, not per value (since
-   #935). It is not minimal: see rule 1.
-3. **The proof side.** One RUP line per removal. No second form, so no gate.
+2. **The reason side.** Each reason is a list of `x_{i'} ≠ s` literals, at
+   most one per position, plus `x_γ = t` for rule 2: no domain walk, so no
+   width or hole dependence. They are built only when `want_reasons()` says a
+   proof will read them, so with proofs off they cost nothing. With proofs on,
+   a call that removes `t` from `α + 1` positions builds `O(α²)` literals,
+   which is what the proof lines it writes contain.
+3. **The proof side.** Per inference, one helper line and one RUP. No second
+   form, so no gate.
 4. **The audit lane.** One row, `ValuePrecede`, pinned `Clean`:
    `ValuePrecede{1, 2, wide(p, 4)}`, four plain variables over `0..10⁹`. It
-   does not vary holes (which the reason would name run by run), chain length,
+   does not vary holes, chain length,
    a repeated chain value, or views. None of those has a width-proportional
    site to find, so the gap is not one that could be hiding anything.
 
 ## Inference catalogue
 
-Two rules: the removal of `t` behind the first possible `s`, and its special
-case for a repeated chain value. A conflict is not a third rule: it arises when
-the value to remove is the only one left, and the tracker asserts the attempted
-literal with its reason.
+Three rules. For a pair `(s, t)` with `s ≠ t`, Law and Lee's two halves: the
+removal of `t` behind the first possible `s`, and the forcing of `s` at the
+only place left for it. For a repeated chain value, the removal of `s`
+everywhere. A conflict is not a fourth rule: it arises when the value to remove
+is the only one left, or the value to force is already gone, and the tracker
+asserts the attempted literal with its reason.
 
-Four facts hold for both.
+Four facts hold for all three.
 
-**Each is a single RUP, and the procedure is ours.** No published justification
+**Each is a RUP, and the procedure is ours.** No published justification
 procedure covers value precedence. The argument, spelled out under rule 1, is a
 chain of the facts in
-[`justification-techniques.md`](../justification-techniques.md): the removal
+[`justification-techniques.md`](../justification-techniques.md): the inference
 stated under its reason (Theorem 2.6), opposing bounds on one bit sum
 (Theorem 2.7), and a bound crossing a difference row with `B = 1`
-(Theorem 2.9). Unit propagation walks it unaided, so the family writes one
-line per removal and no lemma.
+(Theorem 2.9). Rules 1 and 2 state one helper line first, by Theorem 2.7, which
+unit propagation cannot find for itself; rule 3 needs none.
 
-**The reason is the whole scope.** Every rule passes `generic_reason(vars)`:
-each variable's bounds and holes. It is sound, since it contains everything the
-RUP needs, but it names every position after the one being pruned as well.
+**Each reason is minimal.** It names only the literals the RUP uses: the
+earlier positions' `x_{i'} ≠ s`, and for rule 2 the fixed `x_γ = t`. Until
+#1145 every rule passed `generic_reason(vars)`, every variable's bounds and
+holes, which named every later position too. That bigger reason is also what
+let unit propagation find the helper line by itself: it stated every earlier
+position's domain, so `pos[t]` was pinned by its own existence rows (see
+rule 1).
 
 **There is one wire form.** `hints::ValuePrecede`, `(constraint_id <id>)`, no
 subhint. Measured on the probe enumerations: 63 annotations for a two-value
 chain over six variables in `0..3`, 64 for a three-value chain, all that form.
 
-**No justification reads `state`,** and there is no `JustifyExplicitly`.
+**No justification reads `state`.** Rules 1 and 2 are `JustifyExplicitly` with
+`ThenRUP::Yes`, whose `emit` writes the helper line from the position and the
+value it was given; the reasons are built before the inference, from the
+decision's own scan.
 
 ### Rule: t-without-earlier-s
 
@@ -377,92 +398,148 @@ chain over six variables in `0..3`, 64 for a three-value chain, all that form.
   `i ≤ α`, where `α` is the first position whose domain holds `s`; at every
   position when no domain holds `s`.
 - **Fires when** — any variable's domain changes, in that pair's propagator.
-- **Strength** — `partial`: on its own pair, every value of `t` without an
-  earlier possible `s` is removed, and nothing else. Law and Lee's algorithm
-  adds the other half: if some position `β` is fixed to `t` and `α` is the only
-  position before `β` that can hold `s`, then `x_α = s`. Without it the pair
-  is neither GAC nor `bounds(Z)`. The smallest witness: two positions, chain
-  `(0, 1)`, `x₀ ∈ {0, 2}`, `x₁ = 1`; `x₁ = 1` needs a 0 before it, so `x₀ = 0`,
-  but the root keeps `x₀ ∈ {0, 2}`, so its upper bound is unsupported
-  (`probes/vpwit.cc`). Checked by brute force at the root over random domains
-  with holes (`tmp/fd-ordering/ordcheck.cc`, modes `vp` and `vpc`, seed 1, as
-  `ordcheck vp 2000 1`): of 2,000 two-value instances, 13 fail GAC, 13
-  `bounds(D)` and 12 `bounds(Z)`; of 2,000 chains of two to four values, 25
-  fail each. No solution was lost in any of them. Chains are weaker again,
-  since the pairs are propagated separately.
+- **Strength** — with rule 2, `GAC` on the pair over distinct underlying
+  variables: Law and Lee's algorithm. On its own it is half of it, and neither
+  GAC nor `bounds(Z)`: the smallest witness was two positions, chain `(0, 1)`,
+  `x₀ ∈ {0, 2}`, `x₁ = 1`, where this rule keeps `x₀ ∈ {0, 2}`
+  (`tmp/fd-ordering/probes/vpwit.cc`). The suite now checks GAC at every node
+  for every chain of at most two values; see [Tests](#tests). A repeated
+  variable can defeat it (the audit's brute force found 182 such pairs in
+  23,174, `factcheck/value_precede/forcing_gac.py`), and a longer chain is
+  weaker again, since its pairs are propagated separately.
 - **Algorithm** — scan for `α`, then remove `t` from positions `0..α`. `O(n)`
   membership tests.
 - **Why it is true** — an occurrence of `t` at `i` needs an `s` at some
   `i' < i`, and no position before `α` can hold `s`. At `α` itself, "before"
   excludes `α`, so `t` there has no `s` before it either.
-- **Proof technique** — `RUP`, our own procedure, with these preconditions:
-  the reason fixes `x_{i'} ≠ s` for every `i' < i`, and the encoding has the
-  upper-bound, existence and precede rows above. The removal is stated under
-  the reason, so by Theorem 2.6 it is enough to refute `x_i = t` with the
-  reason assumed. The upper-bound row for `t`, half-reified on `x_i = t`, then
-  gives `pos[t] ≤ i` by unit propagation; since `i < n`, that bound and the
-  flag's reification `pos[t] ≥ n` are opposing bounds on one bit sum
-  (Theorem 2.7), so `[pos[t] ≥ n]` is false, which switches on the precede row
-  `pos[t] − pos[s] ≥ 1`. Meanwhile the existence rows for `s` at `0, …, i − 1`
-  climb under the reason, each `x_{i'} = s` disjunct being false, to
-  `[pos[s] ≥ i]`, and its reification gives `pos[s] ≥ i`. Then the lower bound `pos[s] ≥ i`, the difference row
-  `pos[t] − pos[s] ≥ 1` and the upper bound `pos[t] ≤ i` are Theorem 2.9's
-  contradictory triple, with `B = 1`. When no position holds `s` the same
-  chain runs with the existence rows forcing `pos[s] ≥ n` instead, against the
-  same difference row and `pos[t] ≤ i < n`.
-- **Reason** — `generic_reason(vars)`: every variable's bounds and hole runs.
-  **Not minimal.** The derivation uses only `x_{i'} ≠ s` for `i' < i`, and the
-  reason also names position `i` itself and every later one. On the six-variable
-  probe the asserted clauses carry 8 to 13 literals. Built lazily, so it costs
-  nothing with proofs off.
+- **Proof technique** — a helper line, then `RUP`, our own procedure, with these
+  preconditions: the reason fixes `x_{i'} ≠ s` for every `i' < i`, and the
+  encoding has the upper-bound, existence and precede rows above.
+  1. **Helper:** `x_i ≠ t ∨ ¬[pos[t] ≥ n]`, temporary. Under its negation the
+     upper-bound row for `t` at `i` gives `pos[t] ≤ i`, and the flag's
+     reification gives `pos[t] ≥ n`. Since `i < n`, these are opposing bounds
+     on one bit sum, so unit propagation refutes them (Theorem 2.7), and the
+     helper is RUP.
+  2. **The removal.** By Theorem 2.6 it is enough to refute `x_i = t` with the
+     reason assumed. The helper makes `[pos[t] ≥ n]` false, which switches on
+     the precede row `pos[t] − pos[s] ≥ 1`. The upper-bound row for `t` gives
+     `pos[t] ≤ i`. The existence rows for `s` at `0, …, i − 1` climb under the
+     reason, each `x_{i'} = s` disjunct being false, to `[pos[s] ≥ i]`, and its
+     reification gives `pos[s] ≥ i`. Then the lower bound `pos[s] ≥ i`, the
+     difference row and the upper bound `pos[t] ≤ i` are Theorem 2.9's
+     contradictory triple, with `B = 1`.
+
+  **Why the helper is needed.** Without it, nothing makes `[pos[t] ≥ n]`
+  false, and the precede row stays off. `pos[t] ≤ i` alone fixes no bit
+  unless `i` sits just below a power of two, and Theorem 2.7 only bites once
+  the flag is assumed true, which unit propagation never does. Until #1145
+  the whole-scope reason hid this: it stated every earlier position's domain,
+  so each earlier position's `x_{i'} ≠ t` climbed `pos[t]`'s own existence
+  rows to `pos[t] ≥ i`. That bound and `pos[t] ≤ i` fix every bit
+  (Theorem 2.8), which settles the flag. The minimal reason does not state
+  `x_{i'} ≠ t`. When search had removed `t` from an earlier position by a
+  decision rather than by this rule, the bare RUP failed: it removed `t` from
+  the last of five positions over `1..3`, where `pos[t] ≤ 4` fixes no bit of
+  a three-bit sum. The mutation runs below found this.
+- **Reason** — `{x_{i'} ≠ s : i' < i}`, explicit, built only when a proof
+  will read it. **Minimal:** dropping any one literal stops that position's
+  existence row from climbing, and VeriPB rejects the step (mutation runs
+  below).
 - **Assertion** — `x_i ≠ t ∨ ¬reason`. Measured at `Inferences`, removing
-  `t = 2` from `x₂` with `s = 1` absent from the first two positions:
+  `t = 2` from `c` and then from `d`, with `s = 1` absent from `a` and `b`:
   ```
-  a 1 ~i[x[2]][eq2] 1 ~i[x[0]][eq0] 1 ~i[x[1]][eq0] 1 ~i[x[2]][ge0] 1 i[x[2]][ge4] 1 ~i[x[3]][ge0] …
-    >= 1::value_precede:((constraint_id _1));
+  a 1 ~i[c][eq2] 1 i[a][eq1] 1 i[b][eq1] >= 1::value_precede:((constraint_id _1));
+  a 1 ~i[d][eq2] 1 i[a][eq1] 1 i[b][eq1] 1 i[c][eq1] >= 1::value_precede:((constraint_id _1));
   ```
-  (In that run the two earlier positions had been fixed to 0, which is how
-  their `≠ 1` shows up in the reason, as `= 0`.)
+  (`tmp/vp1145/fam/rules.cc`, mode `remove`.) Until #1145 the same removal
+  named every variable's bounds as well, 8 to 13 literals on the audit's
+  six-variable probe.
 - **Hint** — `hints::ValuePrecede`: `originator`, the `ConstraintID`.
 - **Offline reconstructibility** — `offline`. The clause names the removed
-  literal, and a plain RUP against the database finds the rest; nothing needs
-  choosing. A hinted RUP would need the rows for `s` and `t`, which the value-
-  keyed labels name directly.
-- **Proof size** — one line per removal, of `O(n + hole runs)` literals, for
-  the reason. Width-independent.
+  literal, and the rest follows from the database once the helper is
+  restated. The helper is fixed by the removed literal and the pair: it is
+  `¬[x_i = t]` together with `t`'s absent flag, which the value-keyed name
+  `v[id][<t>_<n>][pge]` finds.
+- **Proof size** — three lines per removal (the helper, the RUP, the helper's
+  deletion). The RUP has `i + 1` literals and the helper two. Width-independent.
 - **Gaps** — `None.`
-- **Tightness** — `Not shown.` No mutation lane. The corruption to try: drop
-  one earlier position's `≠ s` from the reason; the RUP should then fail,
-  since that position's existence row no longer climbs.
+- **Tightness** — `Shown`, by hand: no lane. Each corruption below was run with
+  `value_precede_test` over seeds 1, 2 and 3 (`tmp/vp1145`). Dropping the last
+  literal of the reason is rejected on all three. Dropping the helper is
+  accepted on all three, and is rejected on 4 of seeds 10 to 49, all at a
+  removal from the last of five positions, as above. So a fixture that does not
+  vary the search will not show the helper is needed.
+
+### Rule: s-forced-before-fixed-t
+
+- **Infers** — `x_α = s`, for a pair `(s, t)` with `s ≠ t`, when some position
+  `γ > α` is fixed to `t` and no position strictly between `α` and `γ` can
+  hold `s`.
+- **Fires when** — as rule 1, in the same call, after it.
+- **Strength** — the second half of Law and Lee's algorithm; with rule 1,
+  `GAC` on the pair over distinct underlying variables (rule 1 has the
+  details). Added by #1145.
+- **Algorithm** — one scan forward from `α + 1`, stopping at whichever comes
+  first: a position that can hold `s` (Law and Lee's `β`; nothing to force), or
+  a position fixed to `t` (their `γ`; force). `O(n)` membership tests. The scan
+  reads the state after rule 1's removals, which is only narrower than what the
+  scan for `α` saw, so no position before `α` can hold `s`. Forcing `s`
+  discharges the pair, so the propagator then disables itself.
+- **Why it is true** — `x_γ = t` needs an `s` at some position before `γ`,
+  and of those only `α` can still hold it.
+- **Proof technique** — the same two steps as rule 1, about `γ`: the helper
+  `x_γ ≠ t ∨ ¬[pos[t] ≥ n]`, then a RUP of `x_α = s` under the reason. Under
+  `x_α ≠ s` and the reason, the existence rows for `s` climb past every
+  position before `γ` to `[pos[s] ≥ γ]`, and `x_γ = t` gives `pos[t] ≤ γ`
+  against the switched-on precede row, as before. (The reason does not say
+  that `x_γ ≠ s`, but `x_γ = t` does, so the climb can go one step further;
+  that changes nothing, since a larger lower bound on `pos[s]` makes the
+  triple more contradictory, not less.)
+- **Reason** — `{x_{i'} ≠ s : i' < γ, i' ≠ α} ∪ {x_γ = t}`, explicit, built
+  only when a proof will read it. **Minimal:** dropping `x_γ = t`, or one of
+  the `≠ s` literals, is rejected by VeriPB (mutation runs below).
+- **Assertion** — `x_α = s ∨ ¬reason`. Measured at `Inferences`, forcing `a = 1`
+  with `b ∈ {2, 3}` and `c = 2`:
+  ```
+  a 1 i[a][eq1] 1 i[b][eq1] 1 ~i[c][eq2] >= 1::value_precede:((constraint_id _1));
+  ```
+  (`tmp/vp1145/fam/rules.cc`, mode `force`.)
+- **Hint** — `hints::ValuePrecede`: `originator`.
+- **Offline reconstructibility** — `offline`, as rule 1: the helper is fixed
+  by the clause's one negative `= t` literal.
+- **Proof size** — three lines, as rule 1, of `γ + 1` literals.
+- **Gaps** — `None.`
+- **Tightness** — `Shown`, by hand, as rule 1: dropping the helper, dropping
+  `x_γ = t` from the reason, and dropping an earlier position's `≠ s` are each
+  rejected on seeds 1, 2 and 3.
 
 ### Rule: repeated-value-absent
 
-- **Infers** — `x_α ≠ s` for a pair `(s, s)`, at the first position `α` whose
-  domain holds `s`, once per call.
-- **Fires when** — any variable's domain changes, in that pair's propagator.
-  It is the same code as rule 1, with `t = s`: pruning up to `α` meets `s` only
-  at `α`.
-- **Strength** — `GAC` on its own pair, eventually: the pair means `s` never
-  appears, and the propagator runs until it has removed `s` everywhere. It
-  takes one call per position to get there, since each call removes only the
-  first.
-- **Algorithm** — as rule 1. `O(n)` membership tests per call (see [Interval
-  efficiency](#interval-efficiency)), `n` calls to finish.
+- **Infers** — `x_i ≠ s` for a pair `(s, s)`, at every position `i` whose
+  domain holds `s`, in one call.
+- **Fires when** — the propagator's first call, which then disables it for
+  good.
+- **Strength** — `GAC` on its own pair: the pair means `s` never appears.
+  Until #1145 it was the same code as rule 1 with `t = s`, which removed `s`
+  only at the first position holding it, so emptying the array took `n` calls.
+- **Algorithm** — one pass over the positions. `O(n)` membership tests.
 - **Why it is true** — the first occurrence of `s` would need an earlier `s`.
-- **Proof technique** — `RUP`, ours. Under `x_α = s`, the upper-bound row
-  gives `pos[s] ≤ α < n`, against the `nos` row `pos[s] ≥ n` (Theorem 2.7).
-- **Reason** — `generic_reason(vars)`, as rule 1, and further from minimal:
-  the derivation needs no reason at all.
-- **Assertion** — `x_α ≠ s ∨ ¬reason`. Measured at `Inferences`:
+- **Proof technique** — `RUP`, ours. Under `x_i = s`, the upper-bound row
+  gives `pos[s] ≤ i < n`, against the `nos` row `pos[s] ≥ n` (Theorem 2.7). No
+  helper is needed: the `nos` row is unconditional.
+- **Reason** — empty. The derivation needs only the encoding.
+- **Assertion** — `x_i ≠ s`. Measured at `Inferences`, chain `(2, 2)` over
+  two variables in `0..3`:
   ```
-  a 1 ~i[x[1]][eq2] 1 ~i[x[0]][ge0] 1 i[x[0]][ge4] 1 i[x[0]][eq2] 1 ~i[x[1]][ge0] …
-    >= 1::value_precede:((constraint_id _1));
+  a 1 ~i[a][eq2] >= 1::value_precede:((constraint_id _1));
+  a 1 ~i[b][eq2] >= 1::value_precede:((constraint_id _1));
   ```
+  (`tmp/vp1145/fam/rules.cc`, mode `same`.)
 - **Hint** — `hints::ValuePrecede`: `originator`.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line per removal.
 - **Gaps** — `None.`
-- **Tightness** — `Not shown.`
+- **Tightness** — `Not shown.` With an empty reason there is nothing to drop.
 
 ## Evidence
 
@@ -470,17 +547,20 @@ chain over six variables in `0..3`, 64 for a three-value chain, all that form.
 
 - **`value_precede_test`** (`value_precede_constraint`, plus
   `value_precede_constraint_view_mixed` and, since #1208, its `_view_mixed_late`
-  twin, which posts a vacuous row over each view after the constraint): 25 fixed
+  twin, which posts a vacuous row over each view after the constraint): 28 fixed
   shapes (two-, three- and
   four-value chains, values in no domain, the first position forced to `t`,
-  chain values out of domain order, repeated chains `{1, 2, 1}` and `{1, 1}`,
-  empty and one-value chains, negative values, constants mid-array, #254's
-  degenerate arrays) and eight random ones of two to five variables. Each runs
-  with and without proofs under plain `solve_for_tests`: full enumeration and
-  the proof, but **no consistency check**, which is right for a propagator
-  that makes no GAC claim. VeriPB runs when on the path. Seeded.
+  three that need rule 2 at the root or in search, chain values out of domain
+  order, repeated chains `{1, 2, 1}` and `{1, 1}`, empty and one-value chains,
+  negative values, constants mid-array, #254's degenerate arrays) and eight
+  random ones of two to five variables. Each runs with and without proofs: full
+  enumeration and the proof. Since #1145 a chain of at most two values runs
+  under `solve_for_tests_checking_gac`, which **checks GAC at every node**;
+  longer chains, which are not GAC, run under plain `solve_for_tests`. VeriPB
+  runs when on the path. Seeded.
 - **Duplicate-variable runs**, bare lanes only: repeated positions, by
-  enumeration.
+  enumeration, with no consistency check, since a repeated variable can defeat
+  GAC.
 - **`scp_chain_value_precede_{sat,nonexact_sat,unsat}`:** see [Cake
   conformity](#cake-conformity).
 - **MiniZinc:** `valueprecede.mzn`, `valueprecedechain.mzn`.
@@ -492,12 +572,13 @@ chain over six variables in `0..3`, 64 for a three-value chain, all that form.
 GCS_TEST_MAX_RECURSIONS=1500 value_precede_test --seed=1`, and with
 `--view-position=mixed`, at `c9ceea25`).
 
-**Tightness:** no mutation lane.
+**Tightness:** no mutation lane. The by-hand runs are under each rule's
+Tightness.
 
 **What the tests do not cover.**
 
-- **Strength**, deliberately: no level is claimed, so none is checked. The
-  missing forcing rule is invisible to the suite.
+- **Strength of a chain**, deliberately: pairwise propagation is weaker than
+  GAC on the chain, so only chains of at most two values are checked.
 - **Holey initial domains.** Every tested domain starts as an interval. Holes
   do arise during the tests: the propagator's own removals of `t` can be
   interior (removing 2 from `0..3` at the root leaves one), a longer chain's
@@ -510,9 +591,9 @@ GCS_TEST_MAX_RECURSIONS=1500 value_precede_test --seed=1`, and with
   29 to 40 of 36 to 40 (`tmp/fd-codex-1005/ordering/probes/holes.cc` and,
   for the seed range, `holes_seed.cc`: standalone probes, not counts from
   inside `value_precede_test`). So
-  enumeration and proofs run over holey domains, though no consistency is
-  checked at any node. No test posts a second constraint, so holes made by
-  another constraint are not exercised.
+  enumeration, proofs and (since #1145) the GAC check run over holey domains.
+  No test posts a second constraint, so holes made by another constraint are
+  not exercised.
 - **Real instances:** none ported.
 
 ### Benchmarks and examples
@@ -529,8 +610,8 @@ GCS_TEST_MAX_RECURSIONS=1500 value_precede_test --seed=1`, and with
   `kidney-exchange` 2019: 933,559 calls taking 0.17 s of a 10 s run, 0.18 µs a
   call (`GCS_PROPAGATOR_STATS=time`).
 - **For CPU:** enumerating restricted-growth strings (below), where the number
-  of solutions is a Bell number and the search order decides whether the
-  missing rule matters.
+  of solutions is a Bell number and the search order decided whether the
+  forcing rule mattered, before #1145 added it.
 - **For proof verification:** the same enumeration at `n = 5` to `7`, in
   [`seq_precede_chain.md`](seq_precede_chain.md), which posts exactly this.
 
@@ -556,7 +637,7 @@ GAC, which is stronger again.
 | 10 | last position first, largest value | 115,975 | 1.09 s | 562,595 | 1,225,306 | 247,823 | 0.136 s | 231,949 | 1,048,360 | 0 |
 
 (The last row is `SeqPrecedeChain`, which installs exactly this. The chain
-`1..n` has no repeated value, so rule 2 is not exercised.)
+`1..n` has no repeated value, so rule 3 is not exercised.)
 
 - **In input order neither solver ever fails,** so both explore the same
   assignments (GCS branches over every value of a variable, Gecode in two, so
@@ -570,13 +651,41 @@ GAC, which is stronger again.
   sits between the two depends on its search, which is why this is a
   strength-and-cost item rather than only a strength one.
 
+**After #1145.** *Release builds of `ebc98856` and of #PRNUM on it, the same
+benchmark (`tmp/vp1145/bench`), fataepyc-09, `taskset -c 4`, fixed malloc
+thresholds, three runs each, 2026-11-07; Gecode as above, on the same box.*
+
+| n | Search | Before: time | recursions | failures | After: time | recursions | propagations | failures | Gecode time |
+|---|---|---|---|---|---|---|---|---|---|
+| 10 | first position first, smallest value | 0.109–0.112 s | 142,417 | 0 | 0.109–0.111 s | 142,417 | 202,084 | 0 | 0.086 s |
+| 11 | first position first, smallest value | 0.644–0.668 s | 820,987 | 0 | 0.636–0.641 s | 820,987 | 1,139,035 | 0 | |
+| 10 | last position first, largest value | 1.05 s | 562,595 | 247,823 | 0.158–0.161 s | 171,326 | 535,121 | 0 | 0.136 s |
+
+The forward searches do identical work either side. Backwards, GCS now never
+fails either, and is 1.2 times Gecode's time rather than 8; the `ValuePrecede`
+chain over `1..10` (mode `vp`) gives the same counts as `SeqPrecedeChain`.
+
 ### Proof performance
 
 See [`seq_precede_chain.md`](seq_precede_chain.md), whose probe is this
-constraint over the chain `1..n`. The short version, at `n = 7`: the
-fully-justified proof is 7,995 lines and verifies in 0.20 s, of which **293
+constraint over the chain `1..n`. The short version, at `n = 7`, at the audit:
+the fully-justified proof is 7,995 lines and verifies in 0.20 s, of which **293
 lines (3.7%) are this family's**. The rest is the enumeration's own. The OPB is
-433 rows at `n = 7`, and grows as `Θ(k·n)` rows and `Θ(k·n²)` terms.
+433 rows at `n = 7`, and grows as `Θ(k·n)` rows and `Θ(k·n)` terms since #1413.
+
+**Since #1145** each inference is three lines, not one (the helper, the RUP,
+and the helper's deletion), but each is shorter. Measured with the chain
+`1..7` over seven variables (`tmp/vp1145/bench`, `spc_gcs.cc` mode `vp`, both
+verified `s VERIFIED`):
+
+| Search | Before: lines | bytes | VeriPB | After: lines | bytes | VeriPB |
+|---|---|---|---|---|---|---|
+| first position first, smallest value | 7,995 | 325,907 | 0.20 s | 8,553 | 319,367 | 0.17 s |
+| last position first, largest value | 17,107 | 713,372 | 0.35 s | 10,810 | 379,795 | 0.20 s |
+
+Forwards there are still 293 inferences, now 879 lines (10.3%), and the proof
+is smaller in bytes. Backwards, the failures the forcing rule removes take
+their nogoods with them.
 
 **Assertion levels.** At `Off` every probe proof verifies (`probes/runfam.sh`:
 two- and three-value chains, and `(2, 2)`). At `Definitions` and `Inferences`
@@ -587,49 +696,45 @@ assertions, and `(2, 2)` is not. That failure is at a `solx` step, on a
 constraint of the shared literal layer for `x[2]`, not a `value_precede` row:
 it is generic, and other families' probes fail at `Links` the same way. Of
 the `Inferences` assertions on the two-value probe, 63 of 4,937 carry this
-family's hint; the rest are the search's.
+family's hint; the rest are the search's. All of this is unchanged by #1145,
+re-run on its build (`tmp/vp1145/fam/fam_new.txt`): the same verdicts, `a`
+counts and hint counts at every level, and the same `(2, 2)` failure at a
+`solx` step at `Links` (line 78 rather than 98, since rule 3 now empties the
+array in one call).
 
 ## Status, gaps, and next steps
 
 ### Proof-logging gaps
 
 `None.` Every inference is justified at `Off`, and the propagator is the same
-with proofs on or off. (One probe proof fails at `Links`, in the shared literal
+with proofs on or off. The helper lines are proof-only, and the reasons are
+built only when a proof reads them. (One probe proof fails at `Links`, in the shared literal
 layer, not in this family: see [Proof performance](#proof-performance).)
 
 ### Known limitations
 
-- **It does not force a value it could.** When a position is fixed to the later
-  value of a pair and only one earlier position can still hold the earlier
-  value, a generalised arc consistent propagator would fix that position. This
-  one waits for search to find out, which on a backwards search can cost
-  hundreds of thousands of failures.
-- **A chain is propagated pair by pair,** so it is weaker again than a
-  chain algorithm would be.
-- **Its proofs name the whole array in every step,** which makes each line
-  `O(n + hole runs)` literals long.
+- **A chain is propagated pair by pair,** so it is weaker than a chain
+  algorithm would be: pairwise GAC misses `x₀ = 1` in chain `(1, 2, 3)` over
+  `{0, 1}, {0, 2, 3}, {2, 3}`.
+- **A repeated variable can defeat GAC on a pair,** since the two halves of
+  Law and Lee reason about positions, not variables.
+- **Each inference costs three proof lines,** since the helper is stated and
+  deleted every time.
 
 ### Next steps
 
-1. **Add Law and Lee's forcing rule.** When a position `β` is fixed to `t`, and
-   the only position before `β` that can hold `s` is `α`, infer `x_α = s`.
-   Tracking the second possible position of `s`, as their algorithm does, makes
-   it `O(n)` tests per call like the rest. The proof is a RUP of the same shape
-   as rule 1: under `x_α ≠ s`, the existence rows for `s` climb to
-   `[pos[s] ≥ β]`, and `x_β = t` gives the contradiction. Filed as #1145. It would
-   make each pair GAC over distinct variables (the rule-1-plus-forcing closure
-   matches brute force on 30,000 distinct-variable pairs, and differs on 182 of
-   the 23,174 trials that repeat a variable:
-   `factcheck/value_precede/forcing_gac.py`). A chain needs a chain algorithm
-   to go further: pairwise GAC misses `x₀ = 1` in chain `(1, 2, 3)` over
-   `{0, 1}, {0, 2, 3}, {2, 3}`.
-2. **Give each removal its minimal reason,** `{x_{i'} ≠ s : i' < i}`, as a lazy
-   reason over the prefix. It shortens every proof line from `O(n)` to `O(i)`
-   literals and removes the later positions from what a reconstructor sees.
-   Small; worth doing with step 1, which needs its own reason anyway.
-3. **Remove a repeated chain value everywhere in one call.** Rule 2 takes `n`
-   calls to empty the array; one loop over all positions does it in one. Too
-   small for an issue on its own.
+1. **Chain GAC.** Pairwise GAC is what Gecode does too; a chain algorithm
+   would be strictly stronger, and this audit did not confirm who first
+   published one. No issue filed.
+2. **State each helper once.** `x_i = t ⇒ ¬[pos[t] ≥ n]` holds outright, so
+   it could be derived once per position and pair, at the top level, rather
+   than stated and deleted per inference. That would take a proof from three
+   lines per inference to about one. Small, and only worth it if this family's
+   share of a proof grows.
+
+(Until #1145 the first steps here were Law and Lee's forcing rule, minimal
+reasons, and emptying a repeated chain value in one call. #PRNUM did all
+three.)
 
 ## Prior art
 
@@ -639,11 +744,12 @@ implements, applying it pair by pair to a chain. Chain GAC is strictly
 stronger than pairwise GAC; this audit did not confirm who first published an
 algorithm for it. The encoding here is `cake_pb_cp`'s, and this family's
 proof is, as far as this audit knows, the first certified value-precedence
-propagator; what is certified is the weaker half of Law and Lee.
+propagator. Since #1145 it certifies the whole of Law and Lee's pair
+algorithm.
 
 ## Further reading
 
 - [`seq_precede_chain.md`](seq_precede_chain.md): the one caller, its clamp, and
   the measurements this document borrows.
-- [`justification-techniques.md`](../justification-techniques.md): the three
-  theorems rule 1 chains.
+- [`justification-techniques.md`](../justification-techniques.md): the
+  theorems rules 1 and 2 chain.

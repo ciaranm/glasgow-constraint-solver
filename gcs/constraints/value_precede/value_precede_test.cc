@@ -93,7 +93,13 @@ auto run_value_precede_test(
     p.post(ValuePrecede{chain_i, vars});
 
     auto proof_name = proofs ? make_optional("value_precede_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests(p, proof_name, actual, tuple{vars});
+    // A single pair over distinct variables is GAC (Law and Lee's algorithm,
+    // #1145), so check that at every node. A longer chain is propagated pair
+    // by pair, which is weaker than GAC on the chain.
+    if (chain.size() <= 2)
+        solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
+    else
+        solve_for_tests(p, proof_name, actual, tuple{vars});
     check_results(proof_name, expected, actual);
 }
 
@@ -110,6 +116,18 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 
     // Length-2 with t reachable only after positions that can be s.
     run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{2, 3}, pair{1, 2}, pair{1, 2}});
+
+    // Law and Lee's forcing rule (#1145): position 1 is fixed to t = 1, and
+    // only position 0 can hold s = 0 before it, so x[0] = 0. Then the same
+    // with the t fixed further along and a gap that cannot hold s.
+    run_value_precede_test(proofs, view_cfg, {0, 1}, {pair{0, 2}, 1});
+    run_value_precede_test(proofs, view_cfg, {0, 1}, {pair{0, 2}, pair{1, 2}, pair{2, 3}, 1});
+
+    // Five positions: removing t from the last one, where pos[t] <= 4 fixes
+    // no bit of a three-bit sum, is where a removal's proof needs its stated
+    // helper line, on searches that ruled t out of an earlier position by a
+    // decision (#1145; see dev_docs/constraints/value_precede.md, rule 1).
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{1, 3}, pair{1, 3}, pair{1, 3}, pair{1, 3}, pair{1, 3}});
 
     // Length-2 with the first position forced to t (unsat).
     run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{2, 2}, pair{1, 2}});

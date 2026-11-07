@@ -4,6 +4,8 @@
 > **Audited** 2026-09-29 at `c9ceea25` ·
 > **Open issues** none filed by this audit; it inherits
 > [`value_precede`](value_precede.md)'s, and see [Next steps](#next-steps).
+> **Fixed since the audit**, in the class it installs: #1145 (the forcing half
+> of Law and Lee), by #PRNUM.
 > Already open and touching this family: #833 (the large-domain policy).
 > Tracked under #871.
 
@@ -18,13 +20,14 @@ the chain is in that document; this one covers the clamp and the delegation.
 
 Three things to know before touching it.
 
-- **It is weaker than GAC, twice over.** Its pairs are not pairwise GAC,
-  since it inherits the missing half of Law and Lee's pair algorithm:
-  `x₀ ∈ −1..4`, `x₁ ∈ {2, 4}` forces `x₀ = 1`, and the root leaves
-  `x₀ ∈ {−1, 0, 1}`. And pairwise GAC is weaker than chain GAC, since the
+- **It is weaker than GAC on the chain.** Since #1145 each pair is GAC over
+  distinct variables (Law and Lee's algorithm): `x₀ ∈ −1..4`, `x₁ ∈ {2, 4}`
+  forces `x₀ = 1`, which the root now finds, where at the audit it left
+  `x₀ ∈ {−1, 0, 1}`. But pairwise GAC is weaker than chain GAC, since the
   chain is propagated pair by pair: with `x₀ ∈ {−1, 1}`, `x₁ ∈ {−1, 2}`,
   `x₂ ∈ {0, 3}` and `x₃ ∈ {3, 4}`, all three solutions have `x₀ = 1` and
-  `x₁ = 2`, each pair is GAC on its own, and the root prunes nothing.
+  `x₁ = 2`, each pair is GAC on its own, and the root prunes nothing (both
+  checked at #PRNUM: `tmp/vp1145/fam/spcroot.cc`).
 - **Its clamp row is part of the definition.** Any variable whose declared
   upper bound exceeds the array length `n` gets an OPB row `x ≤ n`. The chain
   stops at `n`, so without that row a value above `n` would satisfy the OPB,
@@ -376,8 +379,10 @@ propagator per consecutive pair.
 On the forward search neither solver fails, so both explore the same
 assignments (their node counts differ because GCS branches over every value,
 Gecode in two), and GCS takes 1.3 times Gecode's time. On the backward one the
-missing forcing rule costs 247,823 failures and a factor of 8.0; see
-[`value_precede.md`](value_precede.md). No row reaches the clamp.
+missing forcing rule cost 247,823 failures and a factor of 8.0. Since #1145 GCS
+does not fail there either, and takes 0.158–0.161 s against Gecode's 0.136 s,
+with 171,326 recursions; see [`value_precede.md`](value_precede.md) (CPU
+performance) for the measurement. No row reaches the clamp.
 
 ### Proof performance
 
@@ -400,6 +405,12 @@ carries the search's `solx`, backtracking and deletions, the root's RUPs, the
 literal definitions (`pol` and `red` lines), and the range-literal RUPs this
 family's reasons cause.
 
+The table is the audit's. Since #1145 each of this family's inferences is
+three `Off` lines rather than one (a helper, the RUP, the helper's deletion),
+with a shorter reason: at `n = 7` the `Off` proof is 8,553 lines and 319 KB
+and verifies in 0.17 s, over the chain through `ValuePrecede` directly (see
+[`value_precede.md`](value_precede.md), Proof performance).
+
 **Assertion levels.** On `x ∈ 0..4`, `n = 6`, `Off` verifies and `Definitions`,
 `Links` and `Inferences` are accepted under assertions. On `x ∈ −1..9`,
 `n = 4`, `Off` verifies, `Definitions` and `Inferences` are accepted under
@@ -421,9 +432,8 @@ performance](#proof-performance).)
 
 ### Known limitations
 
-`value_precede`'s: it does not force a value it could, and each proof line
-names the whole array. Separately, the chain is propagated pair by pair, which
-is weaker than chain GAC even when each pair is GAC. The fact-check ran three
+`value_precede`'s. Chiefly, the chain is propagated pair by pair, which is
+weaker than chain GAC even though, since #1145, each pair is GAC. The fact-check ran three
 plain sweeps of 20,000 instances: 47, 42 and 44 had a pairwise-GAC fixpoint
 that is not GAC, and 1,046, 1,004 and 1,017 a root weaker than the
 pairwise-GAC fixpoint. Three sweeps with views and repeated variables gave
@@ -433,11 +443,10 @@ array length, in terms.
 
 ### Next steps
 
-1. **Everything in [`value_precede.md`](value_precede.md)'s next steps,**
-   especially the forcing rule, which this constraint needs most: symmetry
-   breaking on a set partition is where a backwards search meets it. It makes
-   each pair GAC over distinct variables, not the chain: chain GAC needs an
-   algorithm of its own.
+1. **Chain GAC,** in [`value_precede.md`](value_precede.md)'s next steps.
+   The forcing rule, which this constraint needed most, since symmetry
+   breaking on a set partition is where a backwards search meets it, landed
+   in #1145; it makes each pair GAC over distinct variables, not the chain.
 2. **Correct the class comment** (done by #1396, open): `v = 1` needs
    nothing, and `v` needs `v − 1` earlier positions, not `v` (header and
    `seq_precede_chain.cc`). Trivial; not worth an issue.
