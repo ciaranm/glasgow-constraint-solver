@@ -3,7 +3,7 @@
 > **Maturity** production ·
 > **Audited** 2026-09-29 at `c9ceea25` ·
 > **Open issues** filed by this audit: none left. **Fixed since the audit**:
-> #1145 (the forcing half of Law and Lee was missing), by #PRNUM, which also
+> #1145 (the forcing half of Law and Lee was missing), by #1426, which also
 > gave every inference its minimal reason and empties a repeated chain value
 > in one call; see [Rule: s-forced-before-fixed-t](#rule-s-forced-before-fixed-t).
 > #1188, filed from review
@@ -651,7 +651,7 @@ GAC, which is stronger again.
   sits between the two depends on its search, which is why this is a
   strength-and-cost item rather than only a strength one.
 
-**After #1145.** *Release builds of `ebc98856` and of #PRNUM on it, the same
+**After #1145.** *Release builds of `ebc98856` and of #1426 on it, the same
 benchmark (`tmp/vp1145/bench`), fataepyc-09, `taskset -c 4`, fixed malloc
 thresholds, three runs each, 2026-11-07; Gecode as above, on the same box.*
 
@@ -733,7 +733,7 @@ layer, not in this family: see [Proof performance](#proof-performance).)
    share of a proof grows.
 
 (Until #1145 the first steps here were Law and Lee's forcing rule, minimal
-reasons, and emptying a repeated chain value in one call. #PRNUM did all
+reasons, and emptying a repeated chain value in one call. #1426 did all
 three.)
 
 ## Prior art

@@ -5,7 +5,7 @@
 > **Open issues** none filed by this audit; it inherits
 > [`value_precede`](value_precede.md)'s, and see [Next steps](#next-steps).
 > **Fixed since the audit**, in the class it installs: #1145 (the forcing half
-> of Law and Lee), by #PRNUM.
+> of Law and Lee), by #1426.
 > Already open and touching this family: #833 (the large-domain policy).
 > Tracked under #871.
 
@@ -27,7 +27,7 @@ Three things to know before touching it.
   chain is propagated pair by pair: with `x₀ ∈ {−1, 1}`, `x₁ ∈ {−1, 2}`,
   `x₂ ∈ {0, 3}` and `x₃ ∈ {3, 4}`, all three solutions have `x₀ = 1` and
   `x₁ = 2`, each pair is GAC on its own, and the root prunes nothing (both
-  checked at #PRNUM: `tmp/vp1145/fam/spcroot.cc`).
+  checked at #1426: `tmp/vp1145/fam/spcroot.cc`).
 - **Its clamp row is part of the definition.** Any variable whose declared
   upper bound exceeds the array length `n` gets an OPB row `x ≤ n`. The chain
   stops at `n`, so without that row a value above `n` would satisfy the OPB,
