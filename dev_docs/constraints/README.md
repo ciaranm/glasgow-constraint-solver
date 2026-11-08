@@ -359,8 +359,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   `bounds(Z)` on both arrays over distinct variables (GAC is NP-hard) and 2.9
   to 3.2 times Gecode's `sorted`; `ArgSort` is not `bounds(Z)` on `x` or `p`.
   No corpus model posts either. Findings:
-  - with proofs off `Sort` still runs its proof's `O(n³)` Hall search, which
-    makes a Hall-heavy benchmark 32 times slower at `n = 100`;
+  - with proofs off `Sort` ran its proof's `O(n³)` Hall search, which made a
+    Hall-heavy benchmark 32 times slower at `n = 100`, until #1140 ran it only
+    with proofs on, and in `O(n²)`;
   - `ArgSort`'s rank propagator is up to cubic per call, and walks an
     element's domain value by value to find a proof-only threshold when ties
     leave a hole, 5.5 s at width 10⁹, where no current guard can see it;

@@ -188,7 +188,9 @@ namespace
     // assumption for the bounds. find_band is an invariant: whenever the
     // propagator makes an inference there must be a violator, so a missing one
     // throws UnexpectedException (never triggered over the full test suite +
-    // a 200-seed random sweep) rather than silently weakening the proof.
+    // a 200-seed random sweep) rather than silently weakening the proof. Only
+    // a proof reads the band, so it is looked for, and the invariant checked,
+    // only when there is a logger (#1140).
     template <typename Inference_>
     auto propagate_sortedness(const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y, const vector<vector<ProofFlag>> & before,
         const vector<ProofOnlySimpleIntegerVariableID> & pos, const vector<ProofLine> & rank_lines, const vector<ProofLine> & rank_le_lines,
@@ -270,23 +272,44 @@ namespace
         // cap [a,b] at b-a+1 occupants -- contradiction.
         // Scan for a Hall violator on the rank line given effective feasible-rank
         // intervals [lo[i], hi[i]): a tightest interval [a,b] with > b-a+1 x's
-        // wholly contained. Returns (S, a, b); S empty if none.
+        // wholly contained. Returns (S, a, b); S empty if none. The band is the
+        // first in (a, b) order, with S in index order. For each a, the number
+        // of i with lo[i] >= a and hi[i] <= b+1 is a running sum over a count
+        // by hi, so the scan is O(n^2), not O(n^3).
+        //
+        // Only the justifications read the band, so each caller looks for one
+        // only when there is a logger: with proofs off the failed matching or
+        // the Glover/SCC bound is all the evidence needed (#1140). That also
+        // means the "no band" invariant checks run only with proofs on.
         auto find_band = [n](const vector<size_t> & lo, const vector<size_t> & hi) -> std::tuple<vector<size_t>, long long, long long> {
-            for (long long a = 0; cmp_less_equal(a, n); ++a)
+            vector<long long> by_hi(n + 1);
+            for (long long a = 0; cmp_less_equal(a, n); ++a) {
+                std::fill(by_hi.begin(), by_hi.end(), 0);
+                for (size_t i = 0; i < n; ++i)
+                    if (cmp_greater_equal(lo[i], a))
+                        ++by_hi[hi[i]];
+                // count = #{i : lo[i] >= a, hi[i] <= b+1}, starting at b = a-1.
+                long long count = 0;
+                for (long long k = 0; k <= a; ++k)
+                    count += by_hi[static_cast<size_t>(k)];
                 for (long long b = a - 1; cmp_less(b, n); ++b) {
-                    vector<size_t> cand;
-                    for (size_t i = 0; i < n; ++i)
-                        if (cmp_greater_equal(lo[i], a) && cmp_less_equal(hi[i], b + 1))
-                            cand.push_back(i);
-                    if (cmp_greater(cand.size(), b - a + 1))
+                    if (b >= a)
+                        count += by_hi[static_cast<size_t>(b + 1)];
+                    if (count > b - a + 1) {
+                        vector<size_t> cand;
+                        for (size_t i = 0; i < n; ++i)
+                            if (cmp_greater_equal(lo[i], a) && cmp_less_equal(hi[i], b + 1))
+                                cand.push_back(i);
                         return {move(cand), a, b};
+                    }
                 }
+            }
             return {{}, 0, -1};
         };
 
         auto fail_hall = [&]() -> void {
-            auto [S, fa, fb] = find_band(lo_i, hi_i);
-            if (S.empty())
+            auto [S, fa, fb] = logger ? find_band(lo_i, hi_i) : std::tuple<vector<size_t>, long long, long long>{};
+            if (logger && S.empty())
                 throw UnexpectedException{"Sort: no Hall violator for an infeasible matching"};
 
             inference.contradiction(logger,
@@ -590,8 +613,8 @@ namespace
                     vector<size_t> lop(n);
                     for (size_t i = 0; i < n; ++i)
                         lop[i] = (lx[i] >= L) ? std::max(lo_i[i], static_cast<size_t>(j) + 1) : lo_i[i];
-                    auto [S, fa, fb] = find_band(lop, hi_i);
-                    if (S.empty())
+                    auto [S, fa, fb] = logger ? find_band(lop, hi_i) : std::tuple<vector<size_t>, long long, long long>{};
+                    if (logger && S.empty())
                         throw UnexpectedException{"Sort: no Hall band for a valid lb(y) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
@@ -773,8 +796,8 @@ namespace
                     vector<size_t> hip(n);
                     for (size_t i = 0; i < n; ++i)
                         hip[i] = (ux[i] <= U) ? std::min(hi_i[i], static_cast<size_t>(j)) : hi_i[i];
-                    auto [S, fa, fb] = find_band(lo_i, hip);
-                    if (S.empty())
+                    auto [S, fa, fb] = logger ? find_band(lo_i, hip) : std::tuple<vector<size_t>, long long, long long>{};
+                    if (logger && S.empty())
                         throw UnexpectedException{"Sort: no Hall band for a valid ub(y) tightening"};
                     else
                         inference.infer_less_than(logger, y[j], Integer{U + 1},
@@ -864,8 +887,8 @@ namespace
                     auto jl = jl_in[i];
                     vector<size_t> hip = hi_i;
                     hip[i] = jl;
-                    auto [S, fa, fb] = find_band(lo_i, hip);
-                    if (S.empty() || std::find(S.begin(), S.end(), i) == S.end())
+                    auto [S, fa, fb] = logger ? find_band(lo_i, hip) : std::tuple<vector<size_t>, long long, long long>{};
+                    if (logger && (S.empty() || std::find(S.begin(), S.end(), i) == S.end()))
                         throw UnexpectedException{"Sort: no Hall band for a valid lb(x) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
@@ -933,8 +956,8 @@ namespace
                     auto jh = jh_in[i];
                     vector<size_t> lop = lo_i;
                     lop[i] = jh + 1;
-                    auto [S, fa, fb] = find_band(lop, hi_i);
-                    if (S.empty() || std::find(S.begin(), S.end(), i) == S.end())
+                    auto [S, fa, fb] = logger ? find_band(lop, hi_i) : std::tuple<vector<size_t>, long long, long long>{};
+                    if (logger && (S.empty() || std::find(S.begin(), S.end(), i) == S.end()))
                         throw UnexpectedException{"Sort: no Hall band for a valid ub(x) tightening"};
                     else
                         inference.infer_less_than(logger, x[i], Integer{U + 1},
