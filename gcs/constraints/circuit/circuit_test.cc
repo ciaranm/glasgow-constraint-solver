@@ -153,6 +153,42 @@ auto run_empty_test(bool proofs, CircuitPropagator propagator) -> void
     check_results(proof_name, expected, actual);
 }
 
+// A long ring at the root, proofs off (issue #1327). The SCC walk used to recurse once per
+// level of its depth-first tree, and on an 8 MiB stack it segfaulted from about 7,700 nodes;
+// 20,000 is well past that. Two shapes: every successor fixed (one solution), and each node
+// able to step one or two places on (stopped at the first node, after root propagation),
+// since a shortcut for fixed input alone would leave the second exposed.
+auto run_long_ring_test(bool fixed) -> bool
+{
+    constexpr int n = 20'000;
+    println(cerr, "circuit/scc long ring n={} {}:", n, fixed ? "fixed" : "one or two on");
+
+    Problem p;
+    vector<IntegerVariableID> succ;
+    for (int i = 0; i < n; ++i) {
+        if (fixed)
+            succ.push_back(constant_variable(Integer{(i + 1) % n}));
+        else
+            succ.push_back(p.create_integer_variable(vector<Integer>{Integer{(i + 1) % n}, Integer{(i + 2) % n}}));
+    }
+    p.post(Circuit{succ}.with_algorithm(circuit::SCC{}));
+
+    long long solutions = 0;
+    auto stats = solve_with(p,
+        SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                           ++solutions;
+                           return true;
+                       },
+            .trace = [&](const CurrentState &) -> bool { return fixed; },
+            .stats_report = silent_stats_report()});
+    auto want_solutions = fixed ? 1 : 0;
+    if (solutions != want_solutions || stats.recursions != 1) {
+        println(cerr, "  expected {} solutions in one recursion, got {} in {}", want_solutions, solutions, stats.recursions);
+        return false;
+    }
+    return true;
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -187,6 +223,11 @@ auto main(int argc, char * argv[]) -> int
             }
         }
     }
+
+    if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+        for (bool fixed : {true, false})
+            if (! run_long_ring_test(fixed))
+                return EXIT_FAILURE;
 
     return EXIT_SUCCESS;
 }
