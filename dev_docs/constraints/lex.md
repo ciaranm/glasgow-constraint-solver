@@ -9,7 +9,7 @@
 > variable shared at one position treated as if it could differ). A follow-up
 > #1179 left open: #1185 (the dispatcher should hand the undecided pass the
 > literals it will infer). **Fixed since the audit**: #1141 (the whole-scope
-> reason built on every call), by #PRNUM; #1137 (a proof VeriPB
+> reason built on every call), by #1428; #1137 (a proof VeriPB
 > rejected under `NotIf`), by #1179; #1138 (`LexSmartTable` lost solutions
 > when `vars_1` is the longer), by #1183; #1121 (`LexSmartTable`'s hints said
 > `unnamed`), by #1182; and #1189 (filed from review: an offset view ending at
@@ -885,7 +885,7 @@ arrays, and with proofs on it shrinks (13% more nodes on `zephyrus`, in one
 1.5 s run each), since a proof materialises the reason at each inference
 anyway.
 
-**After #1141.** *Release builds of `ebc98856` and of #PRNUM on it,
+**After #1141.** *Release builds of `ebc98856` and of #1428 on it,
 fataepyc-09, `taskset`, 2026-11-08, one run each unless stated
 (`tmp/round1108/1141`).* The reason is deferred, built over a scope made once
 at install, and not built at all with proofs off. `mqueens` 2014 to
@@ -1004,7 +1004,7 @@ rejected.** Kept as history; the present tense below describes `c9ceea25`.
    reified runs gained `NotIf` and `MustNotHold`. It works the literal out
    from the reification kind inside the constraint; #1185 is the follow-up
    that would have the dispatcher hand it over. Filed as #1137.
-1. **Build the reason only when it is needed.** **Done by #PRNUM** (#1141), as
+1. **Build the reason only when it is needed.** **Done by #1428** (#1141), as
    proposed, with the proof diff and the dom/wdeg check above.
 2. **Treat an identical pair as equal.** Advance `α` over it and never count it
    as a witness or a block; decide the rule-2 case at such a pair as rule 4.
