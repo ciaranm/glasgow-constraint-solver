@@ -3,9 +3,9 @@
 > **Maturity** production (the propagator); nothing in a front end posts it ·
 > **Audited** 2026-09-27 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1119 and #1121 ·
-> **Open issues** filed from this audit: a short-reason flag defined on every
-> call and never deleted, 20 times the checking time on an enumeration
-> (#1120). **Fixed since the audit**: #1119 (an entry over a variable outside
+> **Fixed since the audit**: #1120 (a short-reason flag defined on every call
+> and never deleted, 20 times the checking time on an enumeration), by #1446;
+> #1119 (an entry over a variable outside
 > the scope aborted the solve), by #1213, and #1121 (`LexSmartTable` and
 > `AtMostOneSmartTable` hints named no constraint), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Since #1412 the encoding is
@@ -187,10 +187,11 @@ What it buys depends on how many calls infer something. The thesis, on random
 single-table instances, found it a large saving in proof size, about two orders
 of magnitude on the larger ones (Section 4.3, which also discusses checking
 time).
-On an enumeration where most calls
-infer nothing it doubles the proof and multiplies checking time by 20, because
-the flag is made whether or not a justification reads it
-([Proof performance](#proof-performance), #1120).
+Until #1120 (fixed by #1446), on an enumeration where most calls infer
+nothing it doubled the proof and multiplied checking time by 20, because the
+flag was made whether or not a justification read it. Now it is made only
+when a call has a contradiction or a removal to justify at `Off`, the only
+place it is read ([Proof performance](#proof-performance)).
 
 No `with_consistency()`: the propagator is `GAC` and there is no other arm.
 
@@ -924,13 +925,15 @@ something to justify (`tmp/fd-smarttable/mut/st_lazysr.cc`):
 |---|---|---|---|---|
 | on (the default) | 7,773, one per call | 75,529 | 4,217,044 | 15.86 s |
 | off | 0 | 59,358 | 2,184,691 | 0.79 s |
-| on, made only when needed | 156 | 59,670 | 2,113,681 | 1.11 s |
+| on, made only when needed (as shipped since #1446) | 156 | 59,670 | 2,113,681 | 1.11 s |
 
 On `smart_table_random` to a first solution (`n = 8, 12, 16`, seeds 1–3),
 short reasons cut the proof's bytes by up to 5.8 times, though one proof
 (`n = 8`, seed 3) grew by 10%. At `n = 16` they go from 0.64–0.90 MB to
 0.12–0.15 MB, with checking time 0.07–0.13 s either way. So
-the option is right and the per-call flag is not (#1120).
+the option is right and the per-call flag was not (#1120). #1446 reproduces
+the table's first and third rows exactly against main's library (VeriPB
+15.56 s against 1.08 s), and leaves the short-reasons-off proof byte-identical.
 
 **Own versus shared.** Not separated by measurement. What can be said: with
 short reasons off, the at-most-one proof at `n = 5` has 59,358 lines against
@@ -969,9 +972,9 @@ time at this level measures nothing useful.
    finding for its `prune_skip` and `fix_req` rules (10 to 12). Add a
    lane running `smart_table_test` at `GCS_ASSERTION_LEVEL=Inferences`, with
    a check that no asserted clause is falsified by a later `solx`.
-2. **Make the short-reason flag lazily** (#1120). Small, and
-   worth 14 times the checking time on the enumeration measured. While there,
-   decide whether to delete it after use, as the commented-out code meant to.
+2. **Done** (#1120, by #1446): the short-reason flag is made only when a call
+   has something to justify at `Off`. Still open: whether to delete it after
+   use, as the commented-out code meant to.
 3. **Reject or absorb out-of-scope entries** (#1119). **Done by #1213**, by
    absorbing them, as cake does: the propagator works over every variable an
    entry names.

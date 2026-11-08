@@ -536,24 +536,27 @@ namespace
 
         auto unsupported_sum = WPBSum{};
 
-        Reason reason_to_use;
+        // The reason the Off-level justifications below cite. With short reasons on,
+        // that is a flag sr defined as equivalent to the whole reason, and it is
+        // defined here only when a call has a contradiction or a removal to justify
+        // at Off, which is the only place it is read (#1120): defined on every call,
+        // it was most of an enumeration's proof and most of its checking time.
         ProofLine reason_definition_1, reason_definition_2;
-        if (logger && short_reasons) {
+        auto make_reason_to_use = [&]() -> Reason {
+            if (! short_reasons)
+                return reason;
             auto reason_sum = WPBSum{};
             for (const auto & lit : reason) {
                 reason_sum += 1_i * get<ProofLiteral>(lit);
             }
-            // We will manually delete this later.
+            // At ProofLevel::Top, and never deleted: see the commented-out deletions below.
             auto [_reason_short, _line1, _line2] =
                 logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Top);
             ProofFlag reason_short = _reason_short;
             reason_definition_1 = _line1;
             reason_definition_2 = _line2;
-            reason_to_use = singleton_reason(reason_short);
-        }
-        else {
-            reason_to_use = reason;
-        }
+            return singleton_reason(reason_short);
+        };
 
         if (! some_tuple_still_feasible) {
             if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
@@ -562,7 +565,7 @@ namespace
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (! pb_selectors[tuple_idx]) >= 1_i, ProofLevel::Temporary);
                     }
                 };
-                inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
+                inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, make_reason_to_use());
                 // if (short_reasons) {
                 //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
                 // }
@@ -581,7 +584,8 @@ namespace
                 for (const auto & value : unsupported.at(deview(var)))
                     removals.emplace_back(var, to_view_value(var, value));
 
-        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off && ! removals.empty()) {
+            auto reason_to_use = make_reason_to_use();
             for (const auto & [var, value] : removals) {
                 auto justf = [&](const ReasonLiterals & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
