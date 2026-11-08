@@ -76,10 +76,14 @@ propagator registers only with `on_bounds` or `on_instantiated` is worth a
 second look.
 
 **Sensitivity the triggers overstate** costs nothing but a pruning kept on that
-could have been switched off, so those are left alone, with one exception: the
-slack-watched linear inequality registers `scope_only` but only ever watches
-bound literals, and declares an empty list, since long linear sums are exactly
-what an element result tends to feed.
+could have been switched off, so those are left alone, with two exceptions.
+The slack-watched linear inequality registers `scope_only` but only ever
+watches bound literals, and declares an empty list, since long linear sums are
+exactly what an element result tends to feed. And `In` over constants alone,
+which `create_integer_variable(vector)` posts for every value-list variable,
+declares an empty list (#1161): what it infers is the domain minus the
+permitted set, which a hole can only shrink, and without the declaration every
+value-list variable would count as observed.
 
 Getting the list wrong in the direction of too few variables never makes the
 solver unsound. It can only switch a pruning off that the propagator could in

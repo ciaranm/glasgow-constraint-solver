@@ -155,6 +155,13 @@ auto In::install_propagators(Propagators & propagators) -> void
     triggers.on_change.emplace_back(_var);
     for (const auto & V : _var_vals)
         triggers.on_change.emplace_back(V);
+    // Over constants alone, what the propagator infers is dom(var) minus the
+    // permitted set, which a hole in var can only shrink, so no hole affects it
+    // (#1161). Left to be derived from on_change, var's holes would count as
+    // observed, and every value-list variable from create_integer_variable(vector)
+    // would keep other constraints' optional interior pruning switched on.
+    if (_var_vals.empty())
+        triggers.holes_affect_propagation = vector<IntegerVariableID>{};
 
     // The permitted values as intervals, built once: the set is fixed for the
     // life of the constraint, and step 1 below takes the domain's difference
@@ -208,6 +215,12 @@ auto In::install_propagators(Propagators & propagators) -> void
                 auto var_values = state.copy_of_values(var);
                 for (auto [lo, hi] : var_values.each_interval_minus(val_vals_set))
                     inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{hints::In{owner}}, NoReason{});
+
+                // Every value left is permitted, and none can come back, so nothing
+                // more can be inferred until a backtrack (#1161). The constraint
+                // stayed live and ran at every change to var before, which on a
+                // value-list variable is most of what it is ever woken for.
+                return PropagatorState::DisableUntilBacktrack;
             }
             else {
                 // The same difference, against a wider set. A value of var

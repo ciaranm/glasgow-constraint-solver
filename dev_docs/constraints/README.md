@@ -412,11 +412,12 @@ variant](TEMPLATE.md#the-presolver-variant).
   Every listed domain from C++ and XCSP3 is an `In`, and so
   is Python's `post_in`, which is where the findings are: carving `K` values
   costs Θ(K²) in the state layer's interval scans (12.1 s at 10⁵; 0.021 s with
-  a binary search); the posted `In` stays live after its only useful call,
-  idle on real instances (262,179 calls on XCSP3's `Dubois-015`, 1.6 million
-  on the `all_equal` benchmark, whose time falls 27% with the fix); and its
-  trigger marks the variable's holes as observed, which keeps other
-  constraints' optional interior pruning on. Also: repeated or aliased
+  a binary search); and, until #1161 (fixed by #1443), the posted `In`
+  stayed live after its only useful call, idle on real instances (262,179
+  calls on XCSP3's `Dubois-015`, 1.6 million on the `all_equal` benchmark,
+  whose time falls 27% with the fix), and its trigger marked the variable's
+  holes as observed, which kept other constraints' optional interior pruning
+  on. Also: repeated or aliased
   candidates lose `bounds(Z)` and can take W/2 calls to fail; step 1 is
   quadratic in interval counts; and XCSP3's index-free `element` was
   unsupported until #1164 mapped it onto `In`. Since #1215 a constant outside the solver's integer range is
