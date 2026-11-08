@@ -68,6 +68,19 @@ namespace gcs::innards
     using ReificationVerdictFor = std::variant<reification_verdict::StillUndecided, reification_verdict::MustHold<Justification_>,
         reification_verdict::MustNotHold<Justification_>>;
 
+    /**
+     * \brief What the dispatcher will infer for each verdict of an undecided
+     * pass: the literal for a must-hold verdict and the literal for a
+     * must-not-hold verdict, or nullopt where the reification kind infers
+     * nothing for that verdict. A justification that writes its own scaffold
+     * states it under the negation of the literal its verdict will infer.
+     * Fixed by the reification kind, so the dispatcher works them out once.
+     */
+    struct CondLiteralsToInfer
+    {
+        std::optional<Literal> if_must_hold, if_must_not_hold;
+    };
+
     // The default verdict, whose justification is the plain Justification variant.
     // Constraints that put typed witnesses in a verdict name their own justification
     // type and use ReificationVerdictFor<That> instead.
@@ -93,15 +106,17 @@ namespace gcs::innards
      * each return a PropagatorState; they receive the cond literal (a
      * Literal) for use in their reasons.
      *
-     * `infer_cond_when_undecided(state, inference, logger, cond_lit)`
-     * returns a ReificationVerdict variant. The cond_lit is the
-     * reification's condition (so the constraint can use it when building
-     * its scaffolding's reason); the constraint must not consult the
-     * reification's policy flags. If the verdict is StillUndecided, the
-     * dispatcher returns Enable; if it is MustHold or MustNotHold, the
-     * dispatcher consults the reification kind to decide whether to infer
-     * cond=TRUE or cond=FALSE (or do nothing), uses the justification and
-     * reason carried by the verdict, and returns DisableUntilBacktrack.
+     * `infer_cond_when_undecided(state, inference, logger, to_infer)`
+     * returns a ReificationVerdict variant. `to_infer` is a
+     * CondLiteralsToInfer: the literal the dispatcher will infer for each
+     * verdict, so that a justification with explicit scaffolding can state
+     * it under the right literal's negation without the constraint
+     * consulting the reification's policy flags, which it must not do. If
+     * the verdict is StillUndecided, the dispatcher returns Enable; if it is
+     * MustHold or MustNotHold, the dispatcher infers that verdict's literal
+     * from `to_infer` (or does nothing, where it is nullopt), uses the
+     * justification and reason carried by the verdict, and returns
+     * DisableUntilBacktrack.
      *
      * The caller supplies the constraint-side triggers. When `initial_evaluated`
      * is Undecided, this helper appends `cond.var` to `triggers.on_change` so
@@ -167,9 +182,16 @@ namespace gcs::innards
             return;
         }
 
+        // An Undecided's condition and flags depend only on the reification
+        // kind, never on the state, so the literals to infer are the same on
+        // every call: work them out once.
+        const auto & initially_undecided = std::get<evaluated_reif::Undecided>(initial_evaluated);
+        CondLiteralsToInfer to_infer{
+            initially_undecided.cond_to_infer_if_constraint_must_hold(), initially_undecided.cond_to_infer_if_constraint_must_not_hold()};
+
         propagators.install(
             constraint_id,
-            [reif_cond, enforce_constraint_must_hold = std::move(enforce_constraint_must_hold),
+            [reif_cond, to_infer = std::move(to_infer), enforce_constraint_must_hold = std::move(enforce_constraint_must_hold),
                 enforce_constraint_must_not_hold = std::move(enforce_constraint_must_not_hold),
                 infer_cond_when_undecided = std::move(infer_cond_when_undecided)](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -189,7 +211,7 @@ namespace gcs::innards
                     [&](const evaluated_reif::MustNotHold & reif) {
                         return without_any_idempotency_claim(enforce_constraint_must_not_hold(state, inference, logger, reif.cond));
                     }, //
-                    [&](const evaluated_reif::Undecided & reif) {
+                    [&](const evaluated_reif::Undecided &) {
                         // The verdict's justification type varies per constraint
                         // (plain Justification, a single typed JustifyExplicitly, or a
                         // variant of justification shapes), so dispatch generically:
@@ -204,14 +226,13 @@ namespace gcs::innards
                                 if constexpr (std::is_same_v<V, reification_verdict::StillUndecided>)
                                     return PropagatorState::Enable;
                                 else {
-                                    auto lit = V::affirmative ? reif.cond_to_infer_if_constraint_must_hold()
-                                                              : reif.cond_to_infer_if_constraint_must_not_hold();
+                                    const auto & lit = V::affirmative ? to_infer.if_must_hold : to_infer.if_must_not_hold;
                                     if (lit)
                                         inference.infer(logger, *lit, v.justification, v.reason, v.assertion_hint);
                                     return PropagatorState::DisableUntilBacktrack;
                                 }
                             },
-                            infer_cond_when_undecided(state, inference, logger, reif.cond));
+                            infer_cond_when_undecided(state, inference, logger, to_infer));
                     },                                                                                          //
                     [&](const evaluated_reif::Deactivated &) { return PropagatorState::DisableUntilBacktrack; } //
                 }

@@ -250,7 +250,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
 
         auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](const State & state, auto & inference,
                                              ProofLogger * const,
-                                             const IntegerVariableCondition &) -> ReificationVerdictFor<JustifyUsingRUP<hints::Comparison>> {
+                                             const CondLiteralsToInfer &) -> ReificationVerdictFor<JustifyUsingRUP<hints::Comparison>> {
             // Aliased non-constant operands: v1<v2 never (when strict),
             // v1≤v2 always. Returning the resolved verdict here lets the
             // dispatcher pin cond at root instead of relying on bounds

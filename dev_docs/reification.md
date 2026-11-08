@@ -145,7 +145,7 @@ auto install_reified_dispatcher(
     Triggers,
     auto enforce_constraint_must_hold,       // (state, inference, logger, cond_lit) -> PropagatorState
     auto enforce_constraint_must_not_hold,   // ditto
-    auto infer_cond_when_undecided)          // (state, inference, logger, cond_lit) -> ReificationVerdictFor<…>
+    auto infer_cond_when_undecided)          // (state, inference, logger, to_infer) -> ReificationVerdictFor<…>
     -> void;
 ```
 
@@ -164,8 +164,14 @@ You provide three callables, one for each non-trivial branch of
 3. **`infer_cond_when_undecided`** — cond is still undecided. Inspect
    variable state and return a `ReificationVerdict` declaring what you've
    learned: `StillUndecided`, `MustHold`, or `MustNotHold`. The dispatcher
-   will use the `Undecided` struct's `cond_to_infer_*` methods to decide
-   whether (and which) cond literal to actually infer.
+   decides whether, and which, cond literal to infer for each verdict, from
+   the reification kind (the `Undecided` struct's `cond_to_infer_*`
+   methods). It works the two literals out once, at install, and passes
+   them to this callable as a `CondLiteralsToInfer` (`to_infer.if_must_hold`
+   and `to_infer.if_must_not_hold`, each `nullopt` where the kind infers
+   nothing), so that a justification with explicit scaffolding can state it
+   under the right literal: see "Justifications can depend on the cond
+   polarity". Most constraints ignore it.
 
 The `ReificationVerdict` variant lives in the same header. `MustHold` /
 `MustNotHold` are templated on the justification type (defaulting to the
@@ -251,7 +257,7 @@ auto enforce_must_not_hold = [...](state, inference, logger, cond) -> Propagator
     // tighten the negation
 };
 
-auto infer_cond_when_undecided = [...](state, _, _, cond) -> ReificationVerdict {
+auto infer_cond_when_undecided = [...](state, _, _, to_infer) -> ReificationVerdict {
     auto v1b = state.bounds(v1), v2b = state.bounds(v2);
     if (v1b.second < v2b.first)              return reification_verdict::MustHold{...};
     if (v1b.first  >= v2b.second)            return reification_verdict::MustNotHold{...};
@@ -304,15 +310,17 @@ respectively: this is the one case where the right polarity depends on
 the reification kind. Getting it wrong for `NotIf` made VeriPB reject
 Lex's proofs (issue #1137).
 
-The callable receives only the bare condition, not the literal that will
-be inferred, so Lex works out the two literals from `_reif_cond` itself
-in `install_propagators` and captures them into its
-`infer_cond_when_undecided`. That duplicates the dispatcher's policy
-(`cond_to_infer_if_constraint_must_hold` and friends), which
-`install_reified_dispatcher`'s documentation asks constraints not to
-consult, and it is the exception to "One callable per direction" below.
-It is there because nothing else currently tells the callable which
-literal it is justifying.
+So the dispatcher tells the callable: its `CondLiteralsToInfer` argument
+holds the literal it will infer for each verdict, and a scaffold goes
+under that literal's negation. Lex negates both; Equals' no-overlap
+justification, a must-not-hold verdict, negates `if_must_not_hold`. Where
+the kind infers nothing for the verdict the constraint returns, the
+justification is discarded, but the verdict may still matter (it is what
+disables the propagator), so Equals gives it a placeholder literal under
+`NotIf`. Until #1185 the callable received only the bare condition, and
+Lex worked the literals out from `_reif_cond` itself, duplicating the
+dispatcher's policy; nothing in a constraint consults the reification
+kind now.
 
 ### Capture-by-reference inside install_propagators
 
@@ -335,9 +343,10 @@ You don't need to handle `If` vs `NotIf` vs `Iff` differently in your
 callables. The dispatcher (and the `cond_to_infer_*` methods) does that
 for you. Your `enforce_constraint_must_hold` is the same code regardless
 of whether we got there via an `Iff` whose cond is now true, an `If`
-whose cond is now true, or an unconditional `MustHold`. The exception is
-an `infer_cond_when_undecided` whose explicit scaffolding names the
-condition: see "Justifications can depend on the cond polarity" above.
+whose cond is now true, or an unconditional `MustHold`. An
+`infer_cond_when_undecided` whose explicit scaffolding names the condition
+takes the literal from its `CondLiteralsToInfer` argument rather than from
+the kind: see "Justifications can depend on the cond polarity" above.
 
 ### The `ReificationVerdict` variant carries the inference materials,
 ### but doesn't carry `PropagatorState`

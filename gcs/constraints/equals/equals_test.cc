@@ -307,6 +307,43 @@ auto run_holey_no_overlap_equals_test(bool proofs, bool swapped) -> void
     check_results(proof_name, expected, actual);
 }
 
+// The interleaved, disjoint shape under the two one-way kinds, which the
+// mutation lanes (EqualsIff only) do not reach. Under If the no-overlap verdict
+// infers ~cond, with its scaffold under cond. Under NotIf (NotEqualsIf) it
+// infers nothing, but still disables the propagator, so its justification is
+// built under a placeholder and discarded (#1185).
+auto run_one_way_no_overlap_equals_test(bool proofs, bool not_if) -> void
+{
+    print(cerr, "holey no overlap {}{}", not_if ? "not equals if" : "equals if", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    vector<Integer> lower_first, upper_first;
+    for (Integer v = 0_i; v <= 15_i; ++v)
+        ((v / 4_i) % 2_i == 0_i ? lower_first : upper_first).push_back(v);
+
+    set<tuple<int, int, int>> expected, actual;
+    for (const auto & xv : lower_first)
+        for (const auto & yv : upper_first)
+            for (int bv : {0, 1})
+                if (not_if || bv == 0)
+                    expected.emplace(static_cast<int>(xv.raw_value), static_cast<int>(yv.raw_value), bv);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(lower_first);
+    auto y = p.create_integer_variable(upper_first);
+    auto b = p.create_integer_variable(0_i, 1_i);
+    if (not_if)
+        p.post(NotEqualsIf{x, y, b == 1_i});
+    else
+        p.post(EqualsIf{x, y, b == 1_i});
+
+    auto proof_name = proofs ? make_optional("equals_test_one_way_" + string{not_if ? "not_if" : "if"}) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x, y, b});
+
+    check_results(proof_name, expected, actual);
+}
+
 // The same interleaved shape with a *view* as the second operand. It was written
 // when this was the one instance here whose witness was not spelled entirely in
 // intervals: a view had no range literal, so a run of values it could not take
@@ -904,6 +941,8 @@ auto main(int argc, char * argv[]) -> int
             run_holey_no_overlap_equals_test(proofs, false);
             run_holey_no_overlap_equals_test(proofs, true);
             run_holey_no_overlap_view_equals_test(proofs);
+            run_one_way_no_overlap_equals_test(proofs, false);
+            run_one_way_no_overlap_equals_test(proofs, true);
             if (proofs)
                 run_wide_proved_no_overlap_equals_test();
             else

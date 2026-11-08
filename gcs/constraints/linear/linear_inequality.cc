@@ -303,9 +303,8 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
             // Whole-scope reason built once (capture-init) and reused, not
             // rebuilt per verdict (see dev_docs/propagator-performance.md).
             auto infer_cond_when_undecided = [sanitised_cv, sanitised_neg_cv, value = _value, modifier = modifier, proof_lines, proof_lines_swapped,
-                                                 reason = generic_reason(vars),
-                                                 owner = constraint_id()](const State & state, auto &, ProofLogger * const,
-                                                 const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
+                                                 reason = generic_reason(vars), owner = constraint_id()](const State & state, auto &,
+                                                 ProofLogger * const, const CondLiteralsToInfer &) -> ReificationVerdictFor<LinearCondJustification> {
                 // Summed exactly and never narrowed: only the comparisons below
                 // read the totals, and a partial sum, or a total nothing else
                 // needs, can pass the end of Integer (dev_docs/integer-ranges.md).

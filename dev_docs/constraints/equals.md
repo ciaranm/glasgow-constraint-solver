@@ -1161,6 +1161,16 @@ alias" bug the dup tests were added for.
   equality row, licensed by **Theorem 2.9** with `B = 0`, and the extra `! cond`
   each carries is **Theorem 2.6**.
 
+  The walk is stated under `cond`, the negation of the `¬cond` a
+  must-not-hold verdict infers. Since #1185 the undecided pass takes that
+  literal from the dispatcher's `CondLiteralsToInfer` (it negates
+  `if_must_not_hold`) rather than from the bare condition. Under `NotIf`
+  (`NotEqualsIf`) the kind infers nothing for this verdict, so the
+  justification is built under a placeholder and discarded; the verdict
+  still disables the propagator. The test now runs the rule under `If` and
+  `NotIf` too (`run_one_way_no_overlap_equals_test`), where the mutation
+  lanes use `EqualsIff` only.
+
   This is the one rule in either audited family that an external justifier
   cannot rebuild by replaying a procedure it already knows, which is why the
   reconstructibility verdict below is the interesting one.
