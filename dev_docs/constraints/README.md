@@ -675,10 +675,11 @@ variant](TEMPLATE.md#the-presolver-variant).
   `circuit` is satisfiable where MiniZinc's own
   decomposition says not (#1319); and with prune skip switched off VeriPB can
   reject the `SCC` proof, because two of its published certificates assume the
-  skip edges are already pruned (#1306). The default `SCC` propagator builds a
-  whole-scope reason on every call with proofs off (up to 14% of the
-  instructions, at equal recursion and propagation counts), and with proofs a
-  short-reason flag on every call (half a 14-node proof; #1317). Its *fix
+  skip edges are already pruned (#1306). Until #1317 (fixed by #1438), the
+  default `SCC` propagator built a whole-scope reason on every call with
+  proofs off (up to 14% of the instructions, at equal recursion and
+  propagation counts), and with proofs a short-reason flag on every call
+  (half a 14-node proof). Its *fix
   required* and *prune skip* rules assert bare units at the assertion levels,
   left unfiled by decision, as in `smart_table`. Three of `Circuit`'s setters
   do nothing (#1318). A successor declared wide makes `SubCircuit`'s `SCC`

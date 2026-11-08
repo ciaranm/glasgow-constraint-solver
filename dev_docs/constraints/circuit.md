@@ -8,8 +8,6 @@
 > array crashes), #1306 (with `with_prune_skip(false)`, VeriPB can reject the
 > `SCC` proof, because two rules' certificates need prune skip to have run;
 > fix open as #1367),
-> #1317 (the `SCC` propagator builds its whole-scope reason on every call,
-> proofs off too, and with proofs defines a short-reason flag on every call),
 > #1318 (three of `Circuit`'s setters do nothing, and several `SubCircuit`
 > comments are stale), #1319 (a question: a one-node `circuit` answers
 > differently from MiniZinc's own decomposition). Already open and touching
@@ -21,6 +19,10 @@
 > [Known limitations](#known-limitations)) and #1327 (`Circuit`'s `SCC` walk
 > recurses once per level and overflows the native stack on large instances;
 > see [Robustness](#robustness-and-limits)).
+> **Fixed since the audit**: #1317 (the `SCC` propagator built its
+> whole-scope reason on every call, proofs off too, and with proofs defined a
+> short-reason flag on every call), by #1438; #1388 (the precedence flags
+> were named after the walk root, not the node they compare), by #1437.
 > **Not filed, by decision**: `Circuit`'s `SCC` propagator asserts three of its
 > rules as bare unit clauses at the `Definitions`, `Links` and `Inferences`
 > assertion levels, the defect `smart_table` has from the same commit
@@ -62,16 +64,18 @@ Four things to know before touching it.
   VeriPB rejects them when a skip edge is what makes the argument fail (13 of
   900 `circuit_random --no-prune-skip` proofs; #1306). At the
   defaults, no proof was rejected in this audit or its fact-checks.
-- **The `SCC` propagator's per-call overhead is mostly not the algorithm.** It
-  materialises a reason over every successor on every call, with proofs off
-  too: building it only when a proof will read it takes 12.8% of the
-  instructions off a MiniZinc Challenge `p1f-pjs` solve to optimality, and
-  11.4% off the `tsp` benchmark run with `--propagator scc` (its default is
-  `Prevent`, which does not build it), with the same recursion and
-  propagation counts and the same output. With proofs on it also
-  defines a short-reason flag on every call, which is 39% of the proof's bytes
-  on a 12-node enumeration and 52% on a 14-node one; defining it on first use
-  halves the 14-node proof (#1317).
+- **Until #1317, most of the `SCC` propagator's per-call overhead was not the
+  algorithm.** It materialised a reason over every successor on every call,
+  with proofs off too, and with proofs on it defined a short-reason flag on
+  every call, used or not. Now the reason is built only when a proof will
+  read it, and the flag only when a rule first cites it. Measured at #1438 on
+  the 16-node Hamiltonian enumeration with proofs off, that takes 14.8% of the
+  instructions off the same tree (0.77 s to 0.60 s); the audit measured 12.8%
+  off a MiniZinc Challenge `p1f-pjs` solve to optimality and 11.4% off the
+  `tsp` benchmark run with `--propagator scc`. With proofs on, the flag
+  definitions were 39% of the proof's bytes on a 12-node enumeration and 52%
+  on a 14-node one: the 14-node proof goes from 54.5 MB to 28.2 MB, and
+  VeriPB from 43.3 s to 39.8 s.
 - **`Circuit`'s `SCC` hints-only proof is wrong in three rules.** At the
   assertion levels, *fix required* and the two *prune skip* rules assert their
   conclusion as a bare unit clause, which is not a consequence of the model:
@@ -485,8 +489,9 @@ against the solver's own OPB.
   `SubCircuit`'s per-value at-most-ones and at-least-ones, and its
   "no variable takes `c`" rows for pinned values (`SCCProofCache`).
 - **Per call, at `ProofLevel::Current`**, so deleted on backtrack: `Circuit`
-  `SCC`'s short-reason flag `sr` (one per propagator call while proofs are on,
-  used or not; #1317), its ordering flags `ord1` and `ord2` for
+  `SCC`'s short-reason flag `sr` (defined the first time a call's rule cites
+  the reason, so at most one per call; until #1317, one per call, used or
+  not), its ordering flags `ord1` and `ord2` for
   *prune skip*, and each layer's lemmas, which have to survive the layer that
   follows. Temporaries inside a derivation are at `ProofLevel::Temporary`.
 - **Naming:** the flags above by their prefixes, the position variables by
@@ -584,10 +589,10 @@ its `SCC` arm rebuilds both reachability walks every call. A comment on
 `with_prune_root()` (`subcircuit.hh:197–201`) records that the plain walk,
 without shaving, was already 87–98% of all propagation time on the Challenge
 `subcircuit` families, a figure from #788's development and not re-measured
-here. And `Circuit` `SCC` materialises a
-whole-scope reason on every call, proofs off too, which is the largest of
-these that is not the algorithm: see [CPU performance](#cpu-performance)
-(#1317).
+here. Until #1317, `Circuit` `SCC` also materialised a whole-scope reason on
+every call, proofs off too, the largest of these that was not the algorithm;
+it now snapshots the reason only when a proof will read it: see [CPU
+performance](#cpu-performance).
 
 ### Interior values and optional pruning
 
@@ -808,10 +813,12 @@ found none in 600.
 size for rules 20 to 23, everywhere except the root contradiction (no reason)
 and the bare units of rules 10 to 12 at the assertion levels. Under
 `Circuit` `SCC` with short reasons on (the default), rules 7 to 13 state it
-through one flag `sr`, defined per call as equivalent to it. Two literals per
-unfixed successor and one per hole run, found one step per run; never
-minimal; built at the inference site, except under `Circuit` `SCC`, which
-builds it on every call (#1317).
+through one flag `sr`, defined as equivalent to it the first time a call
+cites it. Two literals per unfixed successor and one per hole run, found one
+step per run; never minimal; built at the inference site, except under
+`Circuit` `SCC`, which snapshots it at the top of each call when a proof will
+read it, before anything is inferred (until #1317, on every call, proofs off
+too).
 
 **Hints.** `hints::Circuit` (`circuit`) and `hints::SubCircuit`
 (`subcircuit`), each carrying only `originator`, the `ConstraintID`. The value
@@ -1640,7 +1647,8 @@ equivalent. With the GAC child the two GCS algorithms explore the same tree up
 to 16 nodes, so `SCC`'s rules add nothing to a domain consistent all-different
 there, at 2.1 to 2.4 times the time from 12 to 16 nodes.
 
-**The reason built on every call** (#1317). A/B against a
+**The reason built on every call** (#1317, fixed by #1438; the
+figures below are the audit's, at `86caad24`). A/B against a
 control: `circuit_scc.cc` copied unchanged, and the same copy with the reason
 materialised only when a logger exists (`circuit_scc.cc:1110`, one line;
 `tmp/fd-graph/circuit/ab/`), each linked ahead of the library into the same
@@ -1707,7 +1715,9 @@ and solutions 19%, the literal layer 0.2%. The shared layers are negligible
 here because every successor's domain is a handful of values whose literals
 the `.opb` already defines.
 
-**The short-reason flag defined on every call** (#1317). Rules
+**The short-reason flag defined on every call** (#1317, fixed by #1438;
+the audit's figures, at `86caad24`; #1438 re-measured 19.08 MB to 12.22 MB
+at 12 nodes and 54.47 MB to 28.19 MB at 14, with the same recursions). Rules
 7 to 13 need it on about one call in twelve (at 12 nodes, 10,585 calls define
 it, and defining it lazily leaves 842 that do), but it is defined on every
 call with a logger. Defining it on first use instead
@@ -1812,13 +1822,8 @@ different harness. They are not re-measured here.
    off. The first is a one-line guard and weakens propagation under that
    option; the second keeps it. Add a lane with prune skip off on an instance
    where a skip edge is the only way out of a subtree, such as #1306's.
-4. **Build the `SCC` reason only when a proof will read it, and define the
-   short-reason flag on first use** (#1317). Both are a few
-   lines in `circuit_scc.cc`; the A/B above is the evidence: up to 13.7% fewer
-   instructions with proofs off at equal recursion and propagation counts, and
-   half the proof at 14
-   nodes. Per #907's lesson, it wants a proof diff, which the A/B already
-   shows is limited to the flag lines.
+4. **Done** (#1317, by #1438): the `SCC` reason is snapshotted only when a
+   proof will read it, and the short-reason flag is defined on first use.
 5. **Pass the reason in rules 10 to 12's assertion path** (*assertion
    reasons*), when the hints-only mode is taken up; two lines, and the same
    finding as `smart_table`'s. Add a lane running this family at

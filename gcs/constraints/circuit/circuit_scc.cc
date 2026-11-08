@@ -49,6 +49,48 @@ using namespace gcs::innards::circuit;
 
 namespace
 {
+    // The reason every SCC rule cites: the whole-scope reason, snapshotted at the top of
+    // the call. With short reasons on, the rules cite a flag sr defined as equivalent to
+    // that reason instead, and sr is defined here the first time a rule asks for it, so a
+    // call that justifies nothing writes no definition (#1317). The snapshot is taken
+    // before anything is inferred, so a late definition reifies the same literals an
+    // early one would have.
+    class SCCReason
+    {
+    private:
+        const State & _state;
+        ProofLogger * const _logger;
+        const ReasonLiterals & _full;
+        const bool _short;
+        optional<ReasonLiterals> _short_form;
+
+    public:
+        SCCReason(const State & state, ProofLogger * const logger, const ReasonLiterals & full, bool short_reasons) :
+            _state(state), _logger(logger), _full(full), _short(logger && short_reasons)
+        {
+        }
+
+        SCCReason(const SCCReason &) = delete;
+        auto operator=(const SCCReason &) -> SCCReason & = delete;
+
+        [[nodiscard]] auto get() -> const ReasonLiterals &
+        {
+            if (! _short)
+                return _full;
+
+            if (! _short_form) {
+                auto reason_sum = WPBSum{};
+                for (const auto & lit : _full)
+                    reason_sum += 1_i * std::get<ProofLiteral>(lit);
+                // At ProofLevel::Current, so deleted on backtrack.
+                auto [reason_short, _line1, _line2] =
+                    _logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Current);
+                _short_form = eager_reason(singleton_reason(reason_short), _state);
+            }
+            return *_short_form;
+        }
+    };
+
     struct OrderingAssumption
     {
         ProofFlag assumption_flag;
@@ -948,8 +990,8 @@ namespace
         ctx.logger.emit_rup_proof_line_under_reason(ctx.reason, WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 
-    auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner,
-        const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data, const SCCOptions & options)
+    auto explore(const State & state, auto & inference, ProofLogger * const logger, SCCReason & reason, const ConstraintID & owner, const long & node,
+        const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data, const SCCOptions & options)
         -> vector<pair<long, long>>
     {
         data.visit_number[node] = data.count;
@@ -976,12 +1018,12 @@ namespace
                         if (next_node == data.root) {
                             logger->emit_proof_comment(
                                 format("Pruning edge to the root from a subtree other than the first ({}, {})", node, next_node));
-                            auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.prev_subroot, options);
+                            auto ctx = SCCProofContext(state, *logger, reason.get(), succ, proof_data, data.prev_subroot, options);
                             prove_reachable_set_too_small(ctx, succ[node] == w);
                         }
                         else {
                             logger->emit_proof_comment(format("Pruning edge that would skip subtree ({}, {})", node, next_node));
-                            auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
+                            auto ctx = SCCProofContext(state, *logger, reason.get(), succ, proof_data, data.root, options);
                             prove_skipped_subtree(ctx, node, next_node, data.prev_subroot);
                         }
                     };
@@ -1011,16 +1053,16 @@ namespace
         if (data.lowlink[node] == data.visit_number[node]) {
             if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 logger->emit_proof_comment("More than one SCC");
-                auto ctx = SCCProofContext{state, *logger, reason, succ, proof_data, node, options};
+                auto ctx = SCCProofContext{state, *logger, reason.get(), succ, proof_data, node, options};
                 prove_reachable_set_too_small(ctx);
             }
-            inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason.get());
         }
         else
             return back_edges;
     }
 
-    auto check_sccs(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner,
+    auto check_sccs(const State & state, auto & inference, ProofLogger * const logger, SCCReason & reason, const ConstraintID & owner,
         const vector<IntegerVariableID> & succ, const SCCOptions & options, SCCProofData & proof_data) -> void
     {
         auto data = SCCPropagatorData(succ.size());
@@ -1033,10 +1075,10 @@ namespace
                 if (back_edges.empty()) {
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         logger->emit_proof_comment("No back edges");
-                        auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, next_node, options);
+                        auto ctx = SCCProofContext(state, *logger, reason.get(), succ, proof_data, next_node, options);
                         prove_reachable_set_too_small(ctx);
                     }
-                    inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason);
+                    inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason.get());
                 }
                 else if (options.fix_req && back_edges.size() == 1) {
                     auto from_node = back_edges[0].first;
@@ -1045,7 +1087,7 @@ namespace
                         if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                             logger->emit_proof_comment(format("Fix required back edge ({}, {}):", from_node, to_node));
 
-                            auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, from_node, options);
+                            auto ctx = SCCProofContext(state, *logger, reason.get(), succ, proof_data, from_node, options);
                             prove_reachable_set_too_small(ctx, succ[from_node] != Integer{to_node});
                             inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, NoReason{});
                         }
@@ -1064,10 +1106,10 @@ namespace
         if (cmp_not_equal(data.count, succ.size())) {
             if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 logger->emit_proof_comment("Disconnected graph");
-                auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
+                auto ctx = SCCProofContext(state, *logger, reason.get(), succ, proof_data, data.root, options);
                 prove_reachable_set_too_small(ctx);
             }
-            inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason.get());
         }
 
         if (options.prune_root && data.start_prev_subtree > 1) {
@@ -1075,10 +1117,10 @@ namespace
                 if (data.visit_number[v.as_index()] < data.start_prev_subtree) {
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         logger->emit_proof_comment("Prune impossible edges from root node");
-                        auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
+                        auto ctx = SCCProofContext(state, *logger, reason.get(), succ, proof_data, data.root, options);
                         prove_reachable_set_too_small(ctx, succ[data.root] == v);
                     }
-                    inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{hints::Circuit{owner}}, reason);
+                    inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{hints::Circuit{owner}}, reason.get());
                 }
             }
         }
@@ -1095,7 +1137,8 @@ auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, aut
         return; // contradiction: the SCC check below would read junk state; the loop sees contradicted()
     set<pair<long, long>> proved_absent_edges;
     auto proof_data = SCCProofData{pos_var_data, persistent.proof_flag_data, persistent.pos_alldiff_data, proved_absent_edges};
-    check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
+    SCCReason scc_reason{state, logger, reason, scc_options.short_reasons};
+    check_sccs(state, inference, logger, scc_reason, owner, succ, scc_options, proof_data);
     auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
     // Remove any newly assigned vals from unassigned (swap-and-pop; order is irrelevant).
     for (std::size_t k = 0; k < unassigned.size();) {
@@ -1133,19 +1176,10 @@ auto gcs::innards::circuit::install_circuit_scc(Propagators & propagators, const
         owner,
         [succ, owner, persistent = persistent, unassigned_handle = unassigned_handle, options = scc_options](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            ReasonLiterals reason = eager_reason(generic_reason(succ), state);
-
-            if (logger && options.short_reasons) {
-                auto reason_sum = WPBSum{};
-                for (const auto & lit : reason) {
-                    reason_sum += 1_i * get<ProofLiteral>(lit);
-                }
-                // We will manually delete this later.
-                auto [_reason_short, _line1, _line2] =
-                    logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Current);
-                ProofFlag reason_short = _reason_short;
-                reason = eager_reason(singleton_reason(reason_short), state);
-            }
+            // Snapshotted before anything is inferred, and only when something will read it
+            // (#1317): with proofs off, every rule's inference goes to a tracker that
+            // ignores reasons.
+            ReasonLiterals reason = inference.want_reasons() ? eager_reason(generic_reason(succ), state) : ReasonLiterals{};
 
             propagate_circuit_using_scc(state, inference, logger, reason, owner, succ, options, *persistent, unassigned_handle);
             return PropagatorState::Enable;
