@@ -81,9 +81,13 @@ auto AtMostOne::define_proof_model(ProofModel & model, const State &) -> void
 
 auto AtMostOne::install_propagators(Propagators & propagators) -> void
 {
+    // Both rules read only which variables are fixed, and to what, so only an
+    // instantiation can give the propagator a new inference. on_instantiated
+    // also derives, truthfully, that no variable's holes affect it, which
+    // on_change would have overstated for every variable (#1156).
     Triggers triggers;
-    triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
-    triggers.on_change.emplace_back(_val);
+    triggers.on_instantiated.insert(triggers.on_instantiated.end(), _vars.begin(), _vars.end());
+    triggers.on_instantiated.emplace_back(_val);
 
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_val);
