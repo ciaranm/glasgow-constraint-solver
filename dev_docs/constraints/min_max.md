@@ -10,7 +10,7 @@
 > result sharing a variable with an entry through a view threw "missing
 > support", or wrote proofs VeriPB rejected), by #1181; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Already open and touching this family:
-> #1160 (the state layer's interval scans start from the front), #833 (the
+> #833 (the
 > large-domain policy; this family's audit row is `KnownTrip`), #868
 > (cross-solver comparisons; this document gives a whole-solve comparison by
 > hand, not the identical-tree one #868 asks for). Tracked under #871.
