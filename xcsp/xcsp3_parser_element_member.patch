@@ -1,0 +1,55 @@
+--- a/src/XCSP3Manager.cc
++++ b/src/XCSP3Manager.cc
+@@ -920,7 +920,14 @@
+         return;
+     int v;
+     vector<int> listOfIntegers;
+-    if(isInteger(constraint->list[0], v)) {
++    // A list of integers only if every entry is one. Deciding from the first
++    // entry alone read a mixed list such as "7 x[0]" as integers, repeating
++    // the previous value for each variable entry.
++    bool allIntegers = true;
++    for(XEntity *xe: constraint->list)
++        if(!isInteger(xe, v))
++            allIntegers = false;
++    if(allIntegers) {
+         for(XEntity *xe: constraint->list) {
+             isInteger(xe, v);
+             listOfIntegers.push_back(v);
+@@ -938,9 +945,15 @@
+ 
+     if(isInteger(constraint->value, v)) {
+         if(constraint->index == NULL) {
+-            if(listOfIntegers.size() > 0)
+-                throw runtime_error("Not yet supported");
+-            else
++            if(listOfIntegers.size() > 0) {
++                // The value is in a list of integers: pass it on as the
++                // equivalent condition (eq, v) rather than refusing it.
++                XCondition xc;
++                xc.op = EQ;
++                xc.operandType = INTEGER;
++                xc.val = v;
++                callback->buildConstraintElement(constraint->id, listOfIntegers, constraint->index, constraint->startIndex, xc);
++            } else
+                 callback->buildConstraintElement(constraint->id, constraint->list, v);
+         } else {
+             if(listOfIntegers.size() > 0)
+@@ -954,9 +967,14 @@
+     // Is variable
+     XVariable *xv = (XVariable *) constraint->value;
+     if(constraint->index == NULL) {
+-        if(listOfIntegers.size() > 0)
+-            throw runtime_error("Not yet supported");
+-        else
++        if(listOfIntegers.size() > 0) {
++            // As above, with a variable value: the condition (eq, x).
++            XCondition xc;
++            xc.op = EQ;
++            xc.operandType = VARIABLE;
++            xc.var = xv->id;
++            callback->buildConstraintElement(constraint->id, listOfIntegers, constraint->index, constraint->startIndex, xc);
++        } else
+             callback->buildConstraintElement(constraint->id, constraint->list, xv);
+     } else {
+         if(listOfIntegers.size() > 0)

@@ -7,8 +7,9 @@
 > costs Θ(K²) in the state layer's interval scans), #1161 (the constants-only
 > `In` stays live after its only useful call, and declares holes it does not
 > read), #1162 (step 1's union is quadratic in interval counts), #1163
-> (repeated or aliased candidates lose `bounds(Z)`), #1164 (XCSP3's
-> index-free `element` is unsupported). Already open and touching this
+> (repeated or aliased candidates lose `bounds(Z)`). **Fixed since the
+> audit**: #1164 (XCSP3's index-free `element` was unsupported), by #PRNUM.
+> Already open and touching this
 > family: #833 (the large-domain policy), #868 (cross-solver comparisons;
 > this document gives a whole-solve comparison by hand, not the
 > identical-tree one #868 asks for).
@@ -79,8 +80,8 @@ Four things to know before touching it.
   - `In{x, {x + 1}}` is unsatisfiable but takes W/2 calls to fail.
   - `In{x, {−x}}` is not even `bounds(Z)`.
 - **Variable candidates arrive from MiniZinc's `member`, the `.scp` reader and
-  `gcspy`'s `post_in_vars`.** XCSP3's index-free `element`, which is exactly
-  this constraint, is rejected as unsupported. MiniZinc's `set_in` and its holey
+  `gcspy`'s `post_in_vars`, and since #1164 from XCSP3's index-free `element`,
+  which is exactly this constraint. MiniZinc's `set_in` and its holey
   domains are decomposed into other constraints, and so is XCSP3's intension
   `in`.
 
@@ -114,7 +115,7 @@ constructors, `In(var, vars)` and `In(var, vals)`, leave one list empty.
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
 | `In`, constants only | `set_in`: `decompose`[^setin]; the empty set: ✓ | a listed domain: ✓[^xdom]; intension `in`: `decompose`[^xin] | ?[^gcspy] | ✓ `in` | also every `create_integer_variable(vector)` |
-| `In`, with variable candidates | ✓ `glasgow_member_int`, `glasgow_member_bool`[^member] | `frontend gap`[^xelem] | ?[^gcspy] | ✓ `in` | |
+| `In`, with variable candidates | ✓ `glasgow_member_int`, `glasgow_member_bool`[^member] | ✓ `element` with no `<index>`[^xelem] | ?[^gcspy] | ✓ `in` | |
 | a reified form | `decompose`: the standard library's `int_eq_reif` and `bool_clause_reif`[^reif] | n/a | — | — | no class exists |
 
 [^setin]: `fzn_glasgow.cc:800–817`. A non-empty `set_in` posts two linear
@@ -147,13 +148,19 @@ constructors, `In(var, vars)` and `In(var, vals)`, leave one list empty.
     versions.
 
 [^xelem]: XCSP3's `<element>` with a `<list>` and a `<value>` but no `<index>`
-    means "the value is in the list". The frontend overrides neither of the
-    parser's callbacks for it, `buildConstraintElement(id, list, int)` and
-    `buildConstraintElement(id, list, XVariable *)`. So the parser's defaults
-    throw, and the solver prints `s UNSUPPORTED` with `Element value constraint
-    is not yet supported` or `Element variable constraint is not yet supported`
-    (`tmp/fd-small/in/xcsp/`). Both map directly onto `In`. See [Next
-    steps](#next-steps).
+    means "the value is in the list". Since #1164 it is posted as `In`: over
+    a list of variables, integers or both, with a variable or integer value,
+    and in the `<condition>` form when the condition is `(eq, value)`; any
+    other condition, or a condition with an index, is still refused. Two of
+    the shapes needed a parser patch (`xcsp3_parser_element_member.patch`):
+    upstream threw for an integer list with no index, and now passes the value
+    on as the condition `(eq, value)`; and it read a list as all integers if
+    its first entry was one, so `7 x[0]` became `7 7`, which also gave wrong
+    answers for an indexed element with a variable value. Before, the parser's
+    default callbacks threw, and the solver printed `s UNSUPPORTED`. The
+    `xcsp_element_member_*` and `xcsp_element_index_mixed*` lanes test it;
+    ACE 2.6 does not read an index-free element as membership, so their
+    caches came from ACE on `<intension>` twins.
 
 [^gcspy]: `gcspy` binds `post_in` (constants) and `post_in_vars` (variables)
     (`python/gcspy.cc:526–545`), which post `In` directly. It binds only the
@@ -959,8 +966,9 @@ under rule 2.
   W/2 failure are invisible to the suite.
 - **Many intervals.** Every domain in the suite has a handful of values, so
   the Θ(K²) carve, step 1's quadratic union and the per-wake cost never show.
-- **A constant `var`**, which XCSP3's index-free `element` would post: no row
-  and no chain case.
+- **A constant `var`**, which XCSP3's index-free `element` posts for an
+  integer value: covered by `xcsp_element_member_int` and
+  `xcsp_element_member_int_list`, but no row and no chain case.
 - **Duplicate constants in the chain**, the one `al1` divergence from cake.
 - **Constants at the ends of `S` with proofs.** Out-of-range constants are
   refused and tested, but no lane solves an `In` whose constants sit at the
@@ -1125,8 +1133,6 @@ reached: since #1215 such a constant is refused at construction
   loses propagation.** `In{x, {y, y}}` never prunes `y`; `In{x, {−x}}` keeps
   the whole of `x`; and `In{x, {x + 1}}` takes time proportional to `x`'s
   width to fail.
-- **XCSP3's index-free `element`**, which means exactly this constraint, is
-  rejected as unsupported.
 - **A constant outside `S`**, beyond about `±1.15·10¹⁸`, is refused with
   `IntegerOverflow` when the `In` is constructed (#1215), with proofs on or
   off.
@@ -1188,7 +1194,10 @@ reached: since #1215 such a constant is refused at construction
      the root, though 10 has no support (`tmp/fd-small/factcheck/in/myalias2.cc`). It
      needs a wide-domain audit row, the same as #1144.
    - *Status.* Not tried. Filed as #1163.
-5. **Map XCSP3's index-free `element` onto `In`.**
+5. *Done by #PRNUM (#1164), including the three further shapes below, with a
+   parser patch for the first and for a mixed list read as integers; the
+   chain case for a constant `var` is still to do.* **Map XCSP3's index-free
+   `element` onto `In`.**
    - Override the two `buildConstraintElement(id, list, value)` callbacks:
      `In{value, list}` and `In{constant, list}`.
    - That is not the whole job, the fact-check found:

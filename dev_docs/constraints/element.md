@@ -96,7 +96,7 @@ Degenerate cases:
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `Element` | ✓ `array_var_int_element`, `array_var_bool_element` (1-based) | ✓ `element` over a variable list, and the value-form with a constant result | ? | ✓ `element` | |
+| `Element` | ✓ `array_var_int_element`, `array_var_bool_element` (1-based) | ✓ `element` over a variable list, which may mix in integers, with a variable or a constant result (the variable result since #1164) | ? | ✓ `element` | an `element` with no `<index>` is membership, and goes to [`In`](in.md) |
 | `ElementConstantArray` | ✓ `array_int_element`, `array_bool_element` (1-based) | ✓ `element` over an int list | ? | ✓ `element`[^same] | the arm MiniZinc reaches most |
 | `Element2D` | frontend gap — no FlatZinc builtin for a 2-D element | ✓ `element` matrix form, both variable-result and constant-result | ? | ✓ `element_2d` | |
 | `Element2DConstantArray` | frontend gap — as `Element2D` | ✓ `element` matrix form over an int matrix | ? | ✓ `element_2d`[^same] | |

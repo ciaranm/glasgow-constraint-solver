@@ -1,0 +1,8 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[3]"> 1..4 </array>
+  </variables>
+  <constraints>
+    <element> <list> 7 x[0] x[1] </list> <index> x[2] </index> <value> 4 </value> </element>
+  </constraints>
+</instance>
