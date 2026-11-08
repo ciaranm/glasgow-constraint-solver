@@ -11,7 +11,7 @@
 > over the value variable), and #1128 (`SmartTable`'s per-call copies, which
 > `AtMostOneSmartTable` pays).
 > **Fixed since the audit**: #1155 (every call walked the value variable's
-> domain while it was unfixed), by #PRNUM; #1121 (`AtMostOneSmartTable`'s child named no
+> domain while it was unfixed), by #1430; #1121 (`AtMostOneSmartTable`'s child named no
 > constraint in its hints), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
@@ -408,7 +408,7 @@ the rest of this section describes as audited.
    **After #1155**, rule 1 collects the positions' fixed values, sorts them,
    and tests each value that occurs twice against `val`'s domain: `O(n log n)`
    per call, the same inferences in the same order (every `at_most_one_test`
-   proof at `--seed=1` is byte-identical). The same benchmark on #PRNUM,
+   proof at `--seed=1` is byte-identical). The same benchmark on #1430,
    fataepyc-09, `taskset -c 4`, 2026-11-08: `W = 10⁷` takes 85 µs to the
    first solution with three positions (2.04 s before) and 126 µs with ten
    (13.2 s before), with the same recursions and propagations.
@@ -752,7 +752,7 @@ five pinned runs of the `n = d = 6` benchmark, as in [CPU
 performance](#cpu-performance), against an unpatched build of the same tree
 (0.767 s with `y` first, 0.886 s with `y` last).
 
-1. *Done by #PRNUM (#1155), as below, and the audit row is pinned `Clean`.*
+1. *Done by #1430 (#1155), as below, and the audit row is pinned `Clean`.*
    **Collect the fixed values instead of walking `val`'s domain** (patch A).
    Rule 1 can only remove a value two positions are fixed to, so gather the
    positions' fixed values, sort them, and test each repeated one against
