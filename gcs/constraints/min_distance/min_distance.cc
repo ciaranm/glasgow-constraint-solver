@@ -674,7 +674,7 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
             // C = sum of guard coefficients across the per-edge and per-unmatched
             // at-most-ones: |L_ab| - 1 per edge (2p - 1 when every position can take
             // both sites), |P_c| - 1 per unmatched site. Dividing the final sum by C
-            // leaves the guard g = [z <= t-1] with coefficient exactly one.
+            // leaves the guard g = [z <= t_star] with coefficient exactly one.
             auto lit_count = [&](Integer site) { return positions_at[static_cast<std::size_t>(site.raw_value)].size(); };
             Integer sum_c = 0_i;
             for (const auto & [ia, ib] : edges)
@@ -689,8 +689,17 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
             if (sum_c < 1_i)
                 throw UnexpectedException{"min_distance: no guard-bearing constraint on a refutation"};
 
-            const auto t_minus_1 = t - 1_i;
-            const auto guard = (z <= t_minus_1); // g = ~[z >= t]
+            // The conflict graph G_t' (a ~ b iff D[a,b] < t') is the same for
+            // every t' in (t_star, t], where t_star is the largest off-diagonal
+            // distance below t, or 0 (the diagonal) if there is none: levels
+            // holds every distinct off-diagonal distance, so it is the previous
+            // level. So the same matching refutes t_star + 1, and the guard is
+            // [z <= t_star] rather than [z <= t - 1] (#1170). Each guarded
+            // clause still holds: a cross-site pair gives [z <= D[a,b]] with
+            // D[a,b] < t, so D[a,b] <= t_star; a same-site pair gives
+            // [z <= 0], and t_star >= 0 since distances are non-negative.
+            const auto t_star = (*refuted_idx > 0) ? levels[*refuted_idx - 1] : 0_i;
+            const auto guard = (z <= t_star); // g = ~[z >= t_star + 1]
 
             // Emit the guarded counting derivation (verified prototype shape). Runs
             // synchronously inside the infer below, so the [&] captures of the local
@@ -774,14 +783,14 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                 final_pol.emit(*logger, ProofLevel::Temporary);
             };
 
-            if (t <= z_min)
-                // The refuted level is at (or below) z's lower bound: z < t is
-                // incompatible with z >= z_min, so the node fails. The pol still
-                // derives g = [z <= t-1]; with z >= z_min in the reason it closes by
-                // RUP (g is domain-false there).
+            if (t_star < z_min)
+                // z <= t_star is incompatible with z >= z_min, so the node
+                // fails. The pol still
+                // derives g = [z <= t_star]; with z >= z_min in the reason it closes
+                // by RUP (g is domain-false there).
                 inference.contradiction(logger, JustifyExplicitly{emit, ThenRUP::Yes}, with_extra(generic_reason(x), ReasonLiterals{z >= z_min}));
             else
-                inference.infer_less_than(logger, z, t, JustifyExplicitly{emit, ThenRUP::Yes}, generic_reason(x));
+                inference.infer_less_than(logger, z, t_star + 1_i, JustifyExplicitly{emit, ThenRUP::Yes}, generic_reason(x));
 
             return PropagatorState::Enable;
         },

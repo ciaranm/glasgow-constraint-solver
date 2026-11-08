@@ -4,9 +4,10 @@
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1168 ·
 > **Open issues** filed by this audit: #1169 (the ladder's build is
-> `Θ(L · n²)` with proofs), #1170 (the matching bound concludes less than its
-> certificate proves), #1171 (`z`'s lower bound is never raised before every
-> position is fixed). **Fixed since the audit**: #1168 (the overflows), by
+> `Θ(L · n²)` with proofs), #1171 (`z`'s lower bound is never raised before
+> every position is fixed). **Fixed since the audit**: #1170 (the matching
+> bound concluded less than its certificate proves), by #PRNUM; #1168 (the
+> overflows), by
 > #1215, with #1214 for view offsets: out-of-range inputs are refused at
 > construction; see [Re-audit, 2026-10-08](#re-audit-2026-10-08). Already open
 > and touching this family: #833 (the large-domain policy), #944 (interval
@@ -69,14 +70,14 @@ Four things to know before touching it.
   26.4 s at `n = 600`, against 4 ms and 9 ms with proofs off. Most of it is one
   linear scan of every site pair, repeated per distance level, in
   `define_proof_model`. With 140 distinct distances `n = 600` takes 1.35 s.
-- **The matching bound proves less than its own certificate does.** A
-  refutation at level `t` concludes `z ≤ t − 1`, but the conflict graph is the
-  same for every level down to the next smaller distance `t*`, so the same
-  matching and the same derivation, guarded at `z ≤ t*`, conclude `z ≤ t*`.
-  An experiment build with that guard cuts `PairSupportMatch`'s tree on
-  20-site random Euclidean instances by 26 to 52% with six positions and 5 to
-  58% with eight (seeds 1–7), and by under 8% with four; every proof it wrote
-  verified. Grids, whose rounded distances are consecutive integers, do not
+- **The matching bound concludes everything its certificate proves** since
+  #1170. A refutation at level `t` used to conclude `z ≤ t − 1`, but the
+  conflict graph is the same for every level down to the next smaller distance
+  `t*`, so the same matching and the same derivation, guarded at `z ≤ t*`, now
+  conclude `z ≤ t*`. That cut `PairSupportMatch`'s tree on 20-site random
+  Euclidean instances by 26 to 52% with six positions and 5 to 58% with eight
+  (seeds 1–7, measured on the audit's experiment build), and by under 8% with
+  four. Grids, whose rounded distances are consecutive integers, do not
   change. See [Rule: matching-bound](#rule-matching-bound).
 - **Assertions carry no hint.** The family has no `hints.hh`, so its `a` lines
   at the assertion levels name neither the constraint nor the rule. `Links`
@@ -408,9 +409,8 @@ is tested (`d3_zero`). Negative distances and requirements are rejected.
   root: over three sites 4 apart with `p = 4` and `z ∈ 1..9`, `ForwardBound`,
   `PairSupport` and both matching modes fail after 10 recursions, `CheckOnly`
   after 49, and the
-  proofs verify (`mdfam pigeon`). The matching modes reach `z ∈ 1..3` at the
-  root; with the stronger guard under [Rule:
-  matching-bound](#rule-matching-bound), the experiment build fails the root.
+  proofs verify (`mdfam pigeon`). Since #1170 the matching modes fail the root
+  (1 recursion, verified); before, they reached `z ∈ 1..3` there.
 - **A repeated variable** is sound in every mode and its proofs verify, the
   matching's included, where the same literal appears twice in a clique: 750
   random enumerations with one aliased pair (`sweep.sh alias`, all matching the
@@ -725,8 +725,9 @@ Facts that hold for every rule:
 
 ### Rule: matching-bound
 
-- **Infers** — `z ≤ t − 1`, where `t` is the refuted distance level in
-  `max(lb z, 1)..ub z` that the binary search settles on.
+- **Infers** — `z ≤ t*`, where `t` is the refuted distance level in
+  `max(lb z, 1)..ub z` that the binary search settles on and `t*` is the next
+  smaller off-diagonal distance, or 0 (since #1170; until then `z ≤ t − 1`).
 - **Fires when** — the matching propagator (`…Match` modes), on any change to
   `x` or `z`'s bounds, finds a level `t` whose conflict graph over the active
   sites `A` (the union of the `x` domains; `a ~ b` when `D[a,b] < t`) has a
@@ -736,10 +737,10 @@ Facts that hold for every rule:
   satisfiable instances under `PairSupportMatch`, against 615 under
   `PairSupport` (seed 1).
 
-  **It infers less than its certificate proves.** The conflict graph for any
+  **Until #1170 it inferred less than its certificate proves.** The conflict graph for any
   `t′` in `(t*, t]`, where `t*` is the largest off-diagonal distance below `t`
   (or 0), is the same graph, so the matching that refutes `t` refutes `t* + 1`,
-  and the conclusion could be `z ≤ t*`. The derivation is unchanged but for the
+  and the conclusion can be `z ≤ t*`, as it now is. The derivation is unchanged but for the
   guard literal: each cross-site clause's pair has `D[a,b] < t`, hence `D[a,b]
   ≤ t*`, and the same-site clauses give `z ≤ 0 ≤ t*`.
   [`min-distance-proofs.md`](../min-distance-proofs.md) argues that `z ≤ t*`
@@ -769,6 +770,23 @@ Facts that hold for every rule:
   below `t − 1` (the stronger guard changed the proof on 50 of 100 of those
   checked), all matching a brute force
   (`tmp/fd-small/min_distance/sweep_exp.sh`).
+
+  Re-measured on #PRNUM against `ebc98856` (fataepyc-09, 2026-11-08,
+  `p_dispersion --random-euclidean N --points P --seed 1 --span 1000`, proofs
+  off), recursions before → after, same optimum each time:
+
+  | N | P | `PairSupportMatch` | `ForwardBoundMatch` |
+  |---|---|---|---|
+  | 20 | 4 | 216 → 212 | 222 → 218 |
+  | 20 | 6 | 2,816 → 1,380 | 3,148 → 1,823 |
+  | 20 | 8 | 21,353 → 19,362 | 23,595 → 21,462 |
+  | 30 | 6 | 15,251 → 11,817 | 17,639 → 14,760 |
+  | 40 | 6 | 29,088 → 24,216 | 36,714 → 34,156 |
+
+  With proofs at `N = 20`, `P = 6`: `PairSupportMatch` 7.62 → 6.83 MB of
+  proof and 4.74 → 3.61 s to check, `ForwardBoundMatch` 7.61 → 6.92 MB and
+  5.08 → 4.00 s, all four `s VERIFIED BOUNDS -407 <= obj <= -407`; and
+  `--grid 5x5 --points 6` writes a byte-identical proof.
 - **Algorithm** — the active set, `O(p · n)`; a binary search over the levels,
   each probe a greedy matching in `O(|A|²)`; the greedy matching is only weakly
   monotone in `t`, so the search finds a refuted level, not necessarily the
@@ -778,7 +796,7 @@ Facts that hold for every rule:
   conflict graph; any independent set misses an endpoint of every matched edge,
   so has at most `|A| − |M| < p` members.
 - **Proof technique** — `counting argument`, by a `RUP sequence` and a `pol`,
-  ours, JP 3.16's pigeonhole under the guard `g = [z ≤ t − 1]`: per matched
+  ours, JP 3.16's pigeonhole under the guard `g = [z ≤ t*]`: per matched
   edge and per unmatched site, a guarded at-most-one over the positions' `= site`
   literals, from pairwise clauses `¬l ∨ ¬l′ ∨ g` (each RUP: cross-site by the
   pair clause, same-site by the count row, same-position by the variable's own
@@ -793,14 +811,15 @@ Facts that hold for every rule:
   site, which the encoding's rows name.
 - **Reason** — every position's domain, `generic_reason(x)`, by runs; no `z`
   literal.
-- **Assertion** — `z ≤ t − 1 ∨ ¬reason`. Measured at `Definitions`, the
-  prototype under `PairSupportMatch`, at the root:
+- **Assertion** — `z ≤ t* ∨ ¬reason`. Measured at `Definitions`, the
+  prototype under `PairSupportMatch`, at the root (on #PRNUM; it was
+  `~i[z][ge5]` before #1170, the guard at `t − 1`):
   ```
-  a 1 ~i[z][ge5] 1 ~i[x[0]][ge0] 1 i[x[0]][ge5] 1 ~i[x[1]][ge0] 1 i[x[1]][ge5] … 1 i[x[3]][ge5] >= 1;
+  a 1 ~i[z][ge4] 1 ~i[x[0]][ge0] 1 i[x[0]][ge5] 1 ~i[x[1]][ge0] 1 i[x[1]][ge5] … 1 i[x[3]][ge5] >= 1;
   ```
 - **Hint** — none; not even the matching, the level or the active set.
-- **Offline reconstructibility** — `search`, and cheap: `t` is in the clause,
-  `A` in the reason, and `D` in the `.scp`, so a reconstructor rebuilds a
+- **Offline reconstructibility** — `search`, and cheap: `t* + 1` is in the
+  clause, and its conflict graph is the one refuted, `A` is in the reason, and `D` in the `.scp`, so a reconstructor rebuilds a
   maximal matching of the conflict graph in `O(|A|²)` (the solver's greedy one
   is deterministic, and any matching with `|A| − |M| < p` will do), then writes
   the counting derivation. Nothing solver-side is needed.
@@ -1069,7 +1088,7 @@ the same with proofs on or off.
    Small, contained in `define_proof_model`, and the encoding is unchanged (the
    same rows in the same order). Would take `n = 600` from 26.4 s towards the
    1.35 s of the few-levels control. Filed as #1169.
-2. **Guard the matching at `z ≤ t*`, not `z ≤ t − 1`.** A three-line change
+2. *Done by #PRNUM (#1170).* **Guard the matching at `z ≤ t*`, not `z ≤ t − 1`.** A three-line change
    to the guard, the contradiction test and the inferred bound in
    `install_matching_propagator`, with the derivation unchanged; the argument
    and the experiment are under rule 8 (26 to 52% off the tree on 20-site

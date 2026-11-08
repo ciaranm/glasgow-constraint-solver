@@ -4,7 +4,7 @@
 // p = 4 selected points -- for which the matching {(0,1),(2,3)} is the ONLY
 // reason z can be pruned below 5: the pairwise forward/support bounds never
 // tighten past 5 here (every site still has a distance-5 partner). So observing
-// z's root upper bound drop to 4 (or the node fail when z is pinned to 5) proves
+// z's root upper bound drop to 3 (or the node fail when z is pinned to 5) proves
 // the matching bound fired, and the accompanying proof exercises the counting
 // derivation end to end.
 
@@ -151,12 +151,14 @@ auto main() -> int
         println(cerr, "veripb not available: running without proof verification");
 
     // 1. Tightening: z in [0,5]. The matching refutes level 5 (matching size 2,
-    //    |A| - |M| = 3 < p = 4), so z's root upper bound must drop to 4. Without
-    //    the matching (plain ForwardBound / PairSupport) it stays at 5.
+    //    |A| - |M| = 3 < p = 4). Its conflict graph is the same for every level
+    //    above the next smaller distance, 3, so z's root upper bound must drop to
+    //    3 (#1170; it was 4 when the guard was [z <= t - 1]). Without the
+    //    matching (plain ForwardBound / PairSupport) it stays at 5.
     for (auto mode : {MinDistancePropagation::ForwardBoundMatch, MinDistancePropagation::PairSupportMatch}) {
         const bool ps = mode == MinDistancePropagation::PairSupportMatch;
         auto p = solve_probe(mode, 0, 5, proofs, string{ps ? "psm" : "fbm"} + "_tighten");
-        expect(p.root_z_upper == 4, string{ps ? "psm" : "fbm"} + ": matching lowers root z upper bound to 4 (was 5)");
+        expect(p.root_z_upper == 3, string{ps ? "psm" : "fbm"} + ": matching lowers root z upper bound to 3 (was 5)");
         expect(p.best_z.has_value() && *p.best_z == 3, "optimal z = 3 found");
         expect_or_skip(p.verified, string{ps ? "psm" : "fbm"} + ": proof verifies (tightening)");
     }
@@ -171,7 +173,7 @@ auto main() -> int
     // 2. Contradiction: z pinned to [5,5]. z >= 5 is unachievable (max independent
     //    set in the conflict graph is 3 < 4), so the matching must fail the node
     //    -- at the root, before any branching. The counting derivation then closes
-    //    by RUP because the guard [z <= 4] is domain-false.
+    //    by RUP because the guard [z <= 3] is domain-false.
     for (auto mode : {MinDistancePropagation::ForwardBoundMatch, MinDistancePropagation::PairSupportMatch}) {
         const bool ps = mode == MinDistancePropagation::PairSupportMatch;
         auto p = solve_probe(mode, 5, 5, proofs, string{ps ? "psm" : "fbm"} + "_contradiction");

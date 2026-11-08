@@ -450,10 +450,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   the sites, upper bounds only on `z`, whose lower bound nothing raises before
   every position is fixed. Findings: with proofs, building the ladder scans
   every site pair once per distinct distance, 26 s at 600 sites against 9 ms
-  without; the matching bound concludes `z ≤ t − 1` where its own certificate,
-  guarded one distance lower, proves `z ≤ t*`, which cuts the tree by 26 to
-  52% on 20-site random instances with six positions and by up to 58% with
-  eight; and its assertions carry no hint. Distances near `2⁶³` crashed the
+  without; the matching bound concluded `z ≤ t − 1` where its own certificate,
+  guarded one distance lower, proves `z ≤ t*`, until #1170, which cuts the
+  tree by 26 to 52% on 20-site random instances with six positions and by up
+  to 58% with eight; and its assertions carry no hint. Distances near `2⁶³` crashed the
   proof model when `z` could be negative, and through an offset view on `z`
   the propagators too; since #1215 and #1214 such distances and offsets are
   refused at construction.
