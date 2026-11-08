@@ -202,7 +202,7 @@ auto run_in_var_list_mixed_test(
 // express contiguous ranges, and a contiguous domain has no interior hole, so
 // these rows spell their domains out value by value (#874).
 auto run_in_holes_test(bool proofs, const ViewWrapConfig & view_cfg, const string & label, const vector<int> & var_values,
-    const vector<vector<int>> & source_values) -> void
+    const vector<vector<int>> & source_values, const vector<int> & int_vals = {}) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 1 + static_cast<int>(source_values.size()));
     print(cerr, "in holes [{}] [{}] var={} sources={} {}", view_wrap_config_label(view_cfg), label, var_values, source_values,
@@ -228,7 +228,7 @@ auto run_in_holes_test(bool proofs, const ViewWrapConfig & view_cfg, const strin
             for (const auto & [i, x] : enumerate(w))
                 if (! holds(source_values.at(i), x))
                     return false;
-            return find(w, v) != w.end();
+            return find(w, v) != w.end() || holds(int_vals, v);
         },
         span(var_values), source_spans);
     println(cerr, " expecting {} solutions", expected.size());
@@ -238,7 +238,10 @@ auto run_in_holes_test(bool proofs, const ViewWrapConfig & view_cfg, const strin
     vector<IntegerVariableID> vars;
     for (const auto & [i, values] : enumerate(source_values))
         vars.push_back(create_integer_variable_or_constant_with_view(p, values, wraps.at(i + 1)));
-    p.post(In{var, vars});
+    vector<Integer> vals;
+    for (int v : int_vals)
+        vals.push_back(Integer(v));
+    p.post(In{var, vars, vals});
 
     auto proof_name = proofs ? make_optional("in_test_holes_" + label + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{var, CheckConsistency::GAC}, pair{vars, CheckConsistency::GAC}});
@@ -283,6 +286,26 @@ auto run_all_holes_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // [3, 5], the second source misses dom(var) entirely so it is not a
     // supporter, and the first has to lose exactly the hole.
     run_in_holes_test(proofs, view_cfg, "step3_var_hole", {0, 1, 2, 6, 7, 8}, {contiguous(0, 8), {10, 11}});
+
+    // Step 1's union over more pieces than it erases one at a time (16), so the
+    // rest are gathered, sorted, coalesced and taken out by one merge (#1162).
+    // The sources' singletons are out of order across them and overlap, and the
+    // constants' pieces come first, so a merge that dropped, misordered or failed
+    // to coalesce a piece would keep or remove the wrong values.
+    auto every = [](int lo, int hi, int step) {
+        vector<int> result;
+        for (int v = lo; v <= hi; v += step)
+            result.push_back(v);
+        return result;
+    };
+    run_in_holes_test(proofs, view_cfg, "many_pieces", contiguous(0, 30), {every(18, 30, 2), every(0, 16, 2), every(9, 15, 3)});
+    run_in_holes_test(proofs, view_cfg, "many_pieces_with_constants", contiguous(0, 30), {every(20, 30, 2), every(1, 9, 4)}, every(0, 21, 3));
+    // The first source's sixteen pieces are all erased one at a time, so every
+    // piece after them is gathered, and there a wide piece covers later ones,
+    // which the coalescing has to absorb.
+    auto wide_then_points = contiguous(3, 9);
+    wide_then_points.insert(wide_then_points.end(), {25, 27});
+    run_in_holes_test(proofs, view_cfg, "many_pieces_nested", contiguous(0, 31), {every(0, 30, 2), wide_then_points, {5, 7, 11, 29}});
 }
 
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void

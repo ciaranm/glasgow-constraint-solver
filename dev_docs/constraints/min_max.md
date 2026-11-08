@@ -503,7 +503,8 @@ rest of the propagation is interval-level.
        (`tmp/fd-codex-1005/small/factcheck/maxdrop.cc`).
 
      Both are worst cases, separate from the entry pass's per-value cost
-     (#1166); filed from Codex's review as #1190, beside `In`'s #1162.
+     (#1166); filed from Codex's review as #1190, beside `In`'s #1162 (fixed by
+     #1444, the same way).
 
      **Since #1190** only the first 16 entry intervals are erased one at a
      time, which keeps the usual handful as cheap as before and still stops
