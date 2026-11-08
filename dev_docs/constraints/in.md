@@ -8,7 +8,7 @@
 > `In` stays live after its only useful call, and declares holes it does not
 > read), #1162 (step 1's union is quadratic in interval counts), #1163
 > (repeated or aliased candidates lose `bounds(Z)`). **Fixed since the
-> audit**: #1164 (XCSP3's index-free `element` was unsupported), by #PRNUM.
+> audit**: #1164 (XCSP3's index-free `element` was unsupported), by #1434.
 > Already open and touching this
 > family: #833 (the large-domain policy), #868 (cross-solver comparisons;
 > this document gives a whole-solve comparison by hand, not the
@@ -1194,7 +1194,7 @@ reached: since #1215 such a constant is refused at construction
      the root, though 10 has no support (`tmp/fd-small/factcheck/in/myalias2.cc`). It
      needs a wide-domain audit row, the same as #1144.
    - *Status.* Not tried. Filed as #1163.
-5. *Done by #PRNUM (#1164), including the three further shapes below, with a
+5. *Done by #1434 (#1164), including the three further shapes below, with a
    parser patch for the first and for a mixed list read as integers; the
    chain case for a constant `var` is still to do.* **Map XCSP3's index-free
    `element` onto `In`.**
