@@ -318,6 +318,23 @@ auto main(int argc, char * argv[]) -> int
                     {{0, -1, -1}, {1, -1, -4}}, {0, -1, -3});
             }
 
+            // Issue #1190: entries with many separated values, 29 intervals in
+            // all, so the union rule erases the first 16 and merges the rest.
+            // No aliasing; the runner is reused for its listed domains.
+            {
+                vector<int> evens, odds, results;
+                for (int v = 0; v <= 40; v += 2)
+                    evens.push_back(v);
+                for (int v = 1; v <= 15; v += 2)
+                    odds.push_back(v);
+                for (int v = -1; v <= 42; ++v)
+                    results.push_back(v);
+                for (bool m : {true, false})
+                    for (bool default_branching : {true, false})
+                        run_aliased_view_min_max_test(
+                            proofs, m, default_branching, "many_intervals", {evens, odds, results}, {{0, 1, 0}, {1, 1, 0}}, {2, 1, 0});
+            }
+
             // Random aliased-view instances: holey domains, every position a
             // view +-v + b with b in -3..3, and the result sharing its
             // variable with at least one entry.

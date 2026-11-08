@@ -12,6 +12,8 @@
 
 #include <util/enumerate.hh>
 
+#include <gch/small_vector.hpp>
+
 #include <sstream>
 
 #include <algorithm>
@@ -24,6 +26,7 @@ using namespace gcs::innards;
 
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -128,8 +131,23 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             // also removes one from that entry, so the union this computed can
             // be stale by the time it finishes. That is why it is a lambda: see
             // the support scan below.
+            //
+            // The first few var intervals are erased from a copy of result's
+            // domain one at a time, which is cheapest for the usual handful,
+            // and stops copying vars as soon as nothing is left unsupported. But
+            // those erases rescan the copy and split it as they go, so a var
+            // with K separated values made K erases over a copy growing to K
+            // intervals, Θ(K²) (#1190). So past the first merge_from_pieces
+            // intervals the rest are only gathered, and taken out by a merge:
+            // sorted and coalesced into their union, which result's remaining
+            // domain is then reduced by in one pass, O(E log E + I) for E var
+            // intervals and I in result. Either way it is the same set of
+            // values, so the same ranges are removed, in the same order.
+            static constexpr std::size_t merge_from_pieces = 16;
             auto remove_values_no_var_holds = [&]() {
                 auto unsupported = state.copy_of_values(result);
+                gch::small_vector<pair<Integer, Integer>, merge_from_pieces> gathered;
+                std::size_t pieces = 0;
                 for (const auto & var : vars) {
                     if (unsupported.empty())
                         break;
@@ -141,8 +159,27 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                     // are supported, and so removes supported values from the
                     // result -- lost solutions, not merely lost pruning.
                     auto var_values = state.copy_of_values(var);
-                    for (auto [lo, hi] : var_values.each_interval())
-                        unsupported.erase_range(lo, hi);
+                    for (auto [lo, hi] : var_values.each_interval()) {
+                        if (pieces++ < merge_from_pieces)
+                            unsupported.erase_range(lo, hi);
+                        else
+                            gathered.emplace_back(lo, hi);
+                    }
+                }
+
+                if (! gathered.empty()) {
+                    std::sort(gathered.begin(), gathered.end());
+                    IntervalSet<Integer> held;
+                    for (std::size_t i = 0; i < gathered.size();) {
+                        auto [lo, hi] = gathered[i];
+                        for (++i; i < gathered.size() && gathered[i].first <= hi + 1_i; ++i)
+                            hi = std::max(hi, gathered[i].second);
+                        held.insert_at_end(lo, hi);
+                    }
+                    auto remaining = std::move(unsupported);
+                    unsupported = IntervalSet<Integer>{};
+                    for (auto [lo, hi] : remaining.each_interval_minus(held))
+                        unsupported.insert_at_end(lo, hi);
                 }
 
                 for (auto [lo, hi] : unsupported.each_interval()) {

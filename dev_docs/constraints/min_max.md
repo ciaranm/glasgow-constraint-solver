@@ -5,8 +5,9 @@
 > for #1165 ·
 > **Open issues** filed by this audit: #1166 (the per-value entry pass costs
 > the width on every call), #1167 (the single-support rule's reason and proof
-> are per value). Filed from review: #1190 (the result-in-union rule's erases
-> can be quadratic in interval counts). **Fixed since the audit**: #1165 (a
+> are per value). **Fixed since the audit**: #1190, filed from review (the
+> result-in-union rule's erases could be quadratic in interval counts), by
+> #PRNUM; #1165 (a
 > result sharing a variable with an entry through a view threw "missing
 > support", or wrote proofs VeriPB rejected), by #1181; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Already open and touching this family:
@@ -503,6 +504,27 @@ rest of the propagation is interval-level.
 
      Both are worst cases, separate from the entry pass's per-value cost
      (#1166); filed from Codex's review as #1190, beside `In`'s #1162.
+
+     **Since #1190** only the first 16 entry intervals are erased one at a
+     time, which keeps the usual handful as cheap as before and still stops
+     copying entries once nothing is left unsupported. Any further intervals
+     are gathered, sorted and coalesced into their union, and the copy is
+     reduced by that union in one `each_interval_minus` pass: `O(E log E +
+     I₀)` in all, with the same result, so the same runs are removed in the
+     same order (every `min_max_test` proof at `--seed=1` is byte-identical).
+     The scratch step alone, on the construction above with `result ∈ 0..3K`
+     and an entry over `{0, 3, …, 3K}` (`tmp/round1108/1190/unionbench.cc`,
+     fataepyc-09, 2026-11-08): at `K` = 10⁵ the erase loop takes 4.41 s in
+     ascending order and 3.96 s shuffled, the merge 19 ms. With #1160's
+     binary search in `IntervalSet` the ascending erase loop falls to 4.9 ms,
+     faster than the merge, but the shuffled one still takes 1.79 s in vector
+     shifts. A whole root solve of that `ArrayMax` stays quadratic for other
+     reasons: 97% of it is the entry pass's `in_domain` scans (#1166). The
+     enumeration under [CPU performance](#cpu-performance), where this pass is
+     most of the propagator, moves by under 1% of instructions and nothing
+     measurable in time. `min_max_test`'s `many_intervals` instances (entries
+     over 21 and 8 separated values, 29 intervals) reach the merge, with and
+     without proofs; dropping the merged union loses solutions there.
    - **Single support:** `domains_intersect` to find the supports, and
      `each_interval_minus` for the runs to remove. Per interval.
    - **The entry pass (`min_max.cc:307–370`; 278–325 at `c9ceea25`) is per
@@ -649,12 +671,12 @@ The shapes below are for `max`; `min` mirrors them.
   result sharing a variable with an entry through a view reaches; that pass
   empties the result, and the node fails (`min_max.cc:209–220`).
 - **Strength** — as rule 1.
-- **Algorithm** — copy the result's domain, erase each entry's intervals, and
-  remove what is left run by run (#815). Each erase scans the copy from the
-  front, the copy can gain an interval per erase, and every interval dropped or
-  split off can shift up to `I₀ + E` entries, so this is `O((I₀ + E)²)` for
-  `E = Σ_i intervals(x_i)` and `I₀ = intervals(result)`, not linear; see
-  [Interval efficiency](#interval-efficiency) and #1190.
+- **Algorithm** — copy the result's domain, erase the first 16 entry
+  intervals from it one at a time, take out any further ones by merging them
+  into their union and subtracting that in one pass, and remove what is left
+  run by run (#815). `O(E log E + I₀)` for `E = Σ_i intervals(x_i)` and
+  `I₀ = intervals(result)`. Until #1190 every interval was erased one at a
+  time, `O((I₀ + E)²)`; see [Interval efficiency](#interval-efficiency).
 - **Why it is true** — the result equals some entry, and none can take a value
   in the run.
 - **Proof technique** — `RUP sequence`, ours: the guarded form of
