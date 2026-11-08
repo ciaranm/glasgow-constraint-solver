@@ -244,7 +244,9 @@ namespace
     {
         auto & graph = any_cast<MDDGraph &>(state.get_constraint_state(graph_handle));
         auto & cache = any_cast<DeadCache &>(state.get_constraint_state(cache_handle));
-        auto reason = eager_reason(generic_reason(vars), state);
+        // Read by the dead-state lines (only with a logger) and by the inferences
+        // below (only when the tracker wants reasons), so built only then (#1353).
+        auto reason = (logger || inference.want_reasons()) ? eager_reason(generic_reason(vars), state) : ReasonLiterals{};
 
         if (! graph.initialised)
             initialise_graph(graph, cache, vars, nodes_per_layer, layer_transitions, accepting_terminals, state_at_pos_flags, state, reason, logger);
@@ -276,10 +278,15 @@ namespace
             }
         }
 
+        // One Reason for every pruning: infer_not_equal takes a const Reason &, and
+        // passing the ReasonLiterals itself converted it, copying the whole literal
+        // vector once per removed value, Theta(n^2) over a call, proofs off too
+        // (#1353). Nothing reads the literals after this, so they are moved in.
+        const Reason inference_reason{std::move(reason)};
         for (size_t i = 0; i < graph.nodes_supporting.size(); ++i) {
             for (auto val : state.each_value_mutable(vars[i])) {
                 if (graph.nodes_supporting[i][val].empty())
-                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{hints::MDD{owner}}, reason);
+                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{hints::MDD{owner}}, inference_reason);
             }
         }
     }

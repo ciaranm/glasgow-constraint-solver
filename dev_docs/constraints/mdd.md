@@ -10,8 +10,9 @@
 > deep-copied at every search node; with `Regular`'s), #1339 (a wide declared
 > domain leaves one empty map entry per value for the rest of the search; with
 > `Regular`'s). Filed in review: #1351 (the degree cascade recurses once per
-> layer and can exhaust the native stack on a long sequence; with `Regular`'s),
-> #1353 (each removal copies the call's whole reason, proofs off too).
+> layer and can exhaust the native stack on a long sequence; with `Regular`'s).
+> Fixed since: #1353 (each removal copied the call's whole reason, proofs off
+> too), by #1445.
 > Commented on: #1070 (the always-true declared-bound literals in
 > the whole-scope reason). Already open and touching
 > this family: #842 (the OPB alphabet includes every domain value), #846 (its
@@ -466,8 +467,9 @@ Two slots, both backtrackable through `add_constraint_state`, and so both
 The content is incremental; the restoration is a full copy of every node-based
 container, which is where the time goes on a search with many nodes (#1338,
 and [CPU performance](#cpu-performance)); on a long sequence with few nodes and
-long cascades the reason copy below dominates instead (#1353). Recomputed per call: the
-whole-scope reason (`mdd.cc:245`), then copied once per removed value (#1353; see
+long cascades the reason copy below dominated instead, until #1353 (#1445). Recomputed per call: the
+whole-scope reason (`mdd.cc:245`), only when something will read it since
+#1353, and until then copied once per removed value (see
 [Interval efficiency](#interval-efficiency)), and a walk over every value of
 every variable's domain (`mdd.cc:277–282`), touched or not. #1339 is a third:
 two lookups that insert
@@ -576,9 +578,12 @@ offset is refused outside the same range (#1214).
    at most `|keys| + 1` ranges.
 2. **The reason side.** The reason is `generic_reason` over the whole scope,
    one literal per bound and one per run of missing values, found one step per
-   run since #937. It is **materialised on every call, unguarded by
-   `want_reasons()`** (`mdd.cc:245`), with proofs off as well, where nothing
-   reads it. And it is **copied once per removal** (#1353): it is a
+   run since #937. Since #1353 (#1445) it is materialised only when a logger
+   or the tracker will read it, and converted to a `Reason` once per call,
+   moved in rather than copied. What follows is the audit's account. It was
+   **materialised on every call, unguarded by `want_reasons()`**
+   (`mdd.cc:245`), with proofs off as well, where nothing reads it. And it was
+   **copied once per removal**: it is a
    `ReasonLiterals`, `infer_not_equal` takes a `const Reason &`, so each call
    at `mdd.cc:280` builds a temporary `Reason` through the by-value
    `ReasonLiterals` constructor (`reason.hh:185`), copying every literal. With
@@ -678,13 +683,13 @@ support (#1352); `MDD`'s finds the one target by `find_transition`
     only). It is recursive, one native stack frame per layer crossed
     (#1351). On top of that, every call walks every key of every layer's
     `nodes_supporting` and every value of every domain, whatever changed, and
-    every removed value copies the call's materialised reason, proofs off too
-    (#1353).
+    until #1353 (#1445) every removed value copied the call's materialised
+    reason, proofs off too.
 
   On a search with many nodes both are dwarfed by the per-node copy of the
   graph (#1338); on a long sequence with few nodes and long cascades, where
-  a call removes values in proportion to `n`, the reason copy dominates
-  (#1353; 80% of the instructions on the narrow diagram at `n = 20,000`).
+  a call removes values in proportion to `n`, the reason copy dominated until
+  #1353 (80% of the instructions on the narrow diagram at `n = 20,000`).
 - **Why it is true** — `vars[i] = v` extends to an accepted sequence within the
   domains only if some edge on `v` from layer `i` lies on a path from the root
   to an accepting node through edges whose values are all in the domains. The
@@ -743,9 +748,10 @@ support (#1352); `MDD`'s finds the one target by `find_transition`
   each domain, not per value; the work of finding the runs is one step per run.
   Each lemma carries the whole reason too (`emit_rup_proof_line_under_reason`).
   The snapshot is taken once, at the start of the call, and that is what the
-  lemmas and the Offline reconstructibility argument below rely on; but each
-  removal then converts it to a `Reason`, a full copy, with proofs off too
-  (#1353; see [Interval efficiency](#interval-efficiency)).
+  lemmas and the Offline reconstructibility argument below rely on; since
+  #1353 (#1445) it is converted to one `Reason` per call, where each removal
+  used to convert it again, a full copy, with proofs off too (see [Interval
+  efficiency](#interval-efficiency)).
 - **Assertion** — `vars[i] ≠ v ∨ ¬reason`, at `Definitions`, `Links` and
   `Inferences`; at `Backtracking` nothing is written for a removal
   (`proof_logger.cc:537`). There is no explicit contradiction:
@@ -832,8 +838,8 @@ solutions.
   suite does not.
 - **Anything larger than four variables or three nodes a layer**, and anything
   with a search: every test diagram is solved nearly without branching.
-- **A long sequence**, which would catch #1351's stack exhaustion and #1353's
-  quadratic copy: the width-two `0ⁿ`/`1ⁿ` diagram under
+- **A long sequence**, which would catch #1351's stack exhaustion (and would
+  have caught #1353's quadratic copy): the width-two `0ⁿ`/`1ⁿ` diagram under
   [Robustness](#robustness-and-limits) is the shape.
 - **A wide declared domain past the root**, #1339's shape.
 - **The MiniZinc shapes of #1336**, and non-1-based `x`.
@@ -913,7 +919,10 @@ wide-domain costs nor holes; one shape of diagram (a run-length automaton
 unfolded); no views or repeats; no long sequence. It exercises both phases of
 the rule, the sweep only at the root.
 
-**A long narrow diagram: the reason copy** (#1353). The width-two `0ⁿ`/`1ⁿ`
+**A long narrow diagram: the reason copy** (#1353, fixed by #1445; the table is
+the audit's, and #1445 measures 4.28·10⁹ to 1.26·10⁹ instructions at 10,000 and
+15.06·10⁹ to 3.03·10⁹ at 20,000 against main's library, with byte-identical
+proofs). The width-two `0ⁿ`/`1ⁿ`
 diagram of [Robustness](#robustness-and-limits), branching on `x[0]` first,
 proofs off, two solutions and three recursions every time; the shipped
 library against a scratch copy of `mdd.cc` that converts the reason to a
@@ -1027,9 +1036,6 @@ VeriPB rejects it (#1329).
 - **A long sequence can exhaust the native stack** (#1351): the degree
   cascade recurses once per layer, and under an 8 MiB stack a width-two
   diagram fails between 50,000 and 60,000 variables after one decision.
-- **Each removal copies the call's whole reason**, proofs off too, so a
-  cascade that removes a value at every layer is quadratic in the length
-  (#1353).
 - **A repeated variable propagates less than it could.**
 - **Non-deterministic diagrams are unsupported:** `mdd_nondet` decomposes in
   MiniZinc, and XCSP3 reports them unsupported.
@@ -1073,20 +1079,13 @@ VeriPB rejects it (#1329).
    counters, then a trail of removed edges, shared with `Regular` if #200 lands
    first. Moderate to large; buys most of the two orders of magnitude. Check
    solutions and node counts unchanged.
-5. **Convert the reason once per call, and build it only when something
-   reads it** (#1353; the second half is the pattern #1338 mentions and
-   #1070's comment counts). Make the `Reason` from the start-of-call snapshot
-   once, at the top of the call, and pass it to every `infer_not_equal`,
-   keeping that snapshot, which the lemmas and the Offline reconstructibility
-   argument rely on; then guard both the materialisation and the conversion
-   with `want_reasons()`. The first half alone takes the 20,000-variable
-   narrow diagram from 15.06·10⁹ to 3.04·10⁹ instructions
-   ([CPU performance](#cpu-performance)). The guard does not help at
-   `Backtracking`, where `want_reasons()` is true and the tracker still
-   materialises a copy per removal that nothing writes; that one is the
-   engine's, not this family's. A few lines. Check the proof unchanged, and,
-   for the guard, that a wipeout still hands dom/wdeg the reason it reads
-   with proofs off.
+5. **Done** (#1353, by #1445): the reason is materialised only when a logger
+   or the tracker will read it, and converted to one `Reason` per call from
+   the start-of-call snapshot, which the lemmas and the Offline
+   reconstructibility argument rely on. Proofs are byte-identical, and no
+   conflict observer reads a contradiction's reason (`variable_weighting.cc`),
+   so dom/wdeg is unaffected with proofs off. The engine's per-removal
+   materialisation at `Backtracking` is untouched.
 6. **Replace the recursive cascade with an explicit worklist** (#1351),
    keeping the order the lemmas need: a backward-dead node's lemma before its
    parents', a forward-dead node's before its children's (the rule's **Proof
