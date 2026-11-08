@@ -5,7 +5,7 @@
 > **Open issues** filed by this audit: #1139 (`ArgSort`'s rank propagator
 > is up to cubic per call, and walks a domain for a proof-only threshold).
 > **Fixed since the audit**: #1140 (`Sort` searched for its proof's Hall band
-> with proofs off), by #PRNUM, which also made the search `O(n²)`. Already
+> with proofs off), by #1427, which also made the search `O(n²)`. Already
 > open and touching this family: #262 (a
 > dominance prelude for permutation auxiliaries, which would change how `pos`
 > is pinned), #833 (the large-domain policy), #868 (cross-solver comparisons;
@@ -757,7 +757,7 @@ per call, 7.2 µs against 1.35 ms, 187 times, roughly as `O(n³)` predicts
 cases fire; the Gecode enumeration fires none. The invariant it checks is a
 proof invariant; with no proof there is nothing for it to protect.
 
-**After #1140.** *Release builds of `ebc98856` and of #PRNUM on it, the same
+**After #1140.** *Release builds of `ebc98856` and of #1427 on it, the same
 benchmark (`tmp/round1108/1140`), fataepyc-09, `taskset -c 4`, fixed malloc
 thresholds, three runs each, 2026-11-08.* The search now runs only with a
 logger, so these rows are the A/B above made real:
@@ -867,7 +867,7 @@ Hall counts were asserted; they are all certified now.)
 
 ### Next steps
 
-1. *Done by #PRNUM (#1140):* `find_band` runs only with proofs on, and is
+1. *Done by #1427 (#1140):* `find_band` runs only with proofs on, and is
    `O(n²)`.
 2. **Make `ArgSort`'s rank propagator `O(n² log n)` or better, and remove its
    walk.** Read the bounds once per call; compute each element's reachable set
