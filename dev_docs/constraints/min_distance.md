@@ -6,7 +6,7 @@
 > **Open issues** filed by this audit: #1169 (the ladder's build is
 > `Θ(L · n²)` with proofs), #1171 (`z`'s lower bound is never raised before
 > every position is fixed). **Fixed since the audit**: #1170 (the matching
-> bound concluded less than its certificate proves), by #PRNUM; #1168 (the
+> bound concluded less than its certificate proves), by #1433; #1168 (the
 > overflows), by
 > #1215, with #1214 for view offsets: out-of-range inputs are refused at
 > construction; see [Re-audit, 2026-10-08](#re-audit-2026-10-08). Already open
@@ -771,7 +771,7 @@ Facts that hold for every rule:
   checked), all matching a brute force
   (`tmp/fd-small/min_distance/sweep_exp.sh`).
 
-  Re-measured on #PRNUM against `ebc98856` (fataepyc-09, 2026-11-08,
+  Re-measured on #1433 against `ebc98856` (fataepyc-09, 2026-11-08,
   `p_dispersion --random-euclidean N --points P --seed 1 --span 1000`, proofs
   off), recursions before → after, same optimum each time:
 
@@ -812,7 +812,7 @@ Facts that hold for every rule:
 - **Reason** — every position's domain, `generic_reason(x)`, by runs; no `z`
   literal.
 - **Assertion** — `z ≤ t* ∨ ¬reason`. Measured at `Definitions`, the
-  prototype under `PairSupportMatch`, at the root (on #PRNUM; it was
+  prototype under `PairSupportMatch`, at the root (on #1433; it was
   `~i[z][ge5]` before #1170, the guard at `t − 1`):
   ```
   a 1 ~i[z][ge4] 1 ~i[x[0]][ge0] 1 i[x[0]][ge5] 1 ~i[x[1]][ge0] 1 i[x[1]][ge5] … 1 i[x[3]][ge5] >= 1;
@@ -1088,7 +1088,7 @@ the same with proofs on or off.
    Small, contained in `define_proof_model`, and the encoding is unchanged (the
    same rows in the same order). Would take `n = 600` from 26.4 s towards the
    1.35 s of the few-levels control. Filed as #1169.
-2. *Done by #PRNUM (#1170).* **Guard the matching at `z ≤ t*`, not `z ≤ t − 1`.** A three-line change
+2. *Done by #1433 (#1170).* **Guard the matching at `z ≤ t*`, not `z ≤ t − 1`.** A three-line change
    to the guard, the contradiction test and the inferred bound in
    `install_matching_propagator`, with the derivation unchanged; the argument
    and the experiment are under rule 8 (26 to 52% off the tree on 20-site
