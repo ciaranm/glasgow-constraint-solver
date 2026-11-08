@@ -7,7 +7,7 @@
 > the width on every call), #1167 (the single-support rule's reason and proof
 > are per value). **Fixed since the audit**: #1190, filed from review (the
 > result-in-union rule's erases could be quadratic in interval counts), by
-> #PRNUM; #1165 (a
+> #1436; #1165 (a
 > result sharing a variable with an entry through a view threw "missing
 > support", or wrote proofs VeriPB rejected), by #1181; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Already open and touching this family:
