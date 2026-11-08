@@ -54,7 +54,7 @@ written.
 | [`in.md`](in.md) | `in/` | One class over constants and variable candidates; also the machinery behind every `create_integer_variable(vector)`. `range_literals_spec.md` stays the range-literal reference |
 | [`increasing.md`](increasing.md) | `increasing/` | `Increasing`, `StrictlyIncreasing`, `Decreasing` and `StrictlyDecreasing` over one `IncreasingChain`. Not merged with `comparison`: the same row and theorem, no shared code |
 | [`inverse.md`](inverse.md) | `inverse/` | One class; its propagator runs `all_different`'s generalised arc consistent algorithm on one array, and is documented there as well |
-| [`knapsack.md`](knapsack.md) | `knapsack/` | One class, `Knapsack`, with two proof strategies over one OPB: `PerCall` (default; Demirović et al.'s per-call diagram) and `Upfront` (`knapsack_upfront.{hh,cc}`, the static diagram at `Top`). Shares no code: `BinPacking`'s upfront diagram is a `k = 1` copy, and `subset_sum_strengthening` is not this family's (its callers are `cumulative` and the `cumulative_strengthening` presolver). `knapsack.md` and `decision-diagram-proof-strategies.md` stay as long notes; filed #1337 (negative values from the front ends), #1340 (the quadratic interior pass), #1334 (unchecked row lengths) and #1341 (the `multi-knapsack` root); commented on #1229 (at `AssertionLevel::Off`, reachable from MiniZinc) and #1070 |
+| [`knapsack.md`](knapsack.md) | `knapsack/` | One class, `Knapsack`, with two proof strategies over one OPB: `PerCall` (default; Demirović et al.'s per-call diagram) and `Upfront` (`knapsack_upfront.{hh,cc}`, the static diagram at `Top`). Shares no code: `BinPacking`'s upfront diagram is a `k = 1` copy, and `subset_sum_strengthening` is not this family's (its callers are `cumulative` and the `cumulative_strengthening` presolver). `knapsack.md` and `decision-diagram-proof-strategies.md` stay as long notes; filed #1337 (negative values from the front ends), #1340 (the quadratic interior pass), #1334 (unchecked row lengths; fixed by #1447) and #1341 (the `multi-knapsack` root); commented on #1229 (at `AssertionLevel::Off`, reachable from MiniZinc) and #1070 |
 | [`lex.md`](lex.md) | `lex/`, `lex_smart_table.hh` | The twelve named `Lex*` forms over `LexCompareGreaterThanOrMaybeEqual`, and `LexSmartTable`, whose engine is `smart_table`'s |
 | [`linear.md`](linear.md) | `linear/` | Note `linear-slack-waking.md` is cross-referenced and due to be folded in; `subset-sum-strengthening.md` is not this family's (an `innards/proofs` helper for `cumulative` and the `cumulative_strengthening` presolver; `knapsack` does not use it) |
 | [`logical.md`](logical.md) | `logical/` | `And`, `Or`, `AndIf`, `OrIf` over one template and two propagators, the scan and, for a long clause, the watched clause |
@@ -763,7 +763,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   interior-value pass is quadratic in a wide item (#1340); a negative item
   value or total errors from MiniZinc (whose own definition constrains them
   non-negative), and a negative item value, weight or profit aborts XCSP3
-  (#1337); `PerCall` silently drops excess coefficients (#1334); and #1229's
+  (#1337); until #1334 (fixed by #1447) `PerCall` silently dropped excess
+  coefficients; and #1229's
   constant-total crash with proofs at `AssertionLevel::Off` is reachable from
   a MiniZinc fixed capacity under `--prove` (commented on #1229). `Upfront`'s
   proofs are 3.0 to 5.9 times smaller in bytes but take 1.10 to 5.9 times

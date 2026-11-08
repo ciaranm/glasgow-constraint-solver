@@ -7,8 +7,9 @@
 > totals, which MiniZinc allows, give an error from MiniZinc, and negative
 > items, weights or profits, which XCSP3 allows, an abort from XCSP3), #1340
 > (the interior-value pass walks every value of each total and scans every
-> terminal state for it: quadratic in a wide item), #1334 (`PerCall` drops
-> coefficients past the end of the item list without a word), #1341 (the
+> terminal state for it: quadratic in a wide item), #1334 (`PerCall` dropped
+> coefficients past the end of the item list without a word; fixed by
+> #1447), #1341 (the
 > MiniZinc Challenge's `multi-knapsack` models spend 43 to 125 s and up to 25 GB
 > in the root call with proofs off, and write more than 40 GB of proof with them
 > on). Already open and touching this family, commented on by this audit:
@@ -107,18 +108,24 @@ coefficient lies in `±(2⁶⁰ − 1)` (`innards::require_bounded`,
 two-total constructor is `Knapsack({weights, profits}, vars, {weight,
 profit})`.
 
-- **Row length against `n`.** `Upfront` requires each row to have exactly `n`
-  entries (`knapsack_upfront.cc:870–871`). `PerCall` does not check: a longer
-  row's extra coefficients are silently ignored, and a shorter row throws
+- **Row length against `n`.** Since #1334 (#1447) the constructor checks the
+  arguments' shape for both strategies: one total per row, at least one row,
+  every row exactly `n` long, every coefficient non-negative, each refused
+  with `InvalidProblemDefinitionException` when the constraint is built, so a
+  malformed `.scp` is refused as the reader posts it, as `cake_pb_cp` refuses
+  it. The checks on the initial domains stay in `prepare()`. Until then
+  `Upfront` required each row to have exactly `n` entries
+  (`knapsack_upfront.cc:870–871`), and `PerCall` did not check: a longer
+  row's extra coefficients were silently ignored, and a shorter row threw
   `std::out_of_range` from an `.at()` read that nothing catches
   (`knapsack.cc:638`, in `define_proof_model`, with proofs on; `:140`, in the
   propagator, with proofs off)
   (`robust/rowlen.cc`: `{{1, 2, 4}}` over two items enumerates the four
   assignments of `x₀ + 2x₁`). The `.scp` reader passes rows through unchecked,
   so a malformed `.scp` reaches this; `cake_pb_cp` refuses the same file with
-  `@BAD_INPUT` (#1334). `Upfront`'s check is skipped in one corner: with
-  proofs off and partial sums that do not fit, `prepare()` falls back to the
-  `PerCall` path (`knapsack.cc:595–599`) before it runs.
+  `@BAD_INPUT`. `Upfront`'s check was skipped in one corner: with proofs
+  off and partial sums that do not fit, `prepare()` fell back to the
+  `PerCall` path (`knapsack.cc:595–599`) before it ran.
 - **No items** (`n = 0`, rows of length 0): every total must be `0`. Tested
   (#254).
 - **One item, all items fixed, all items at 0:** tested.
@@ -611,9 +618,10 @@ front ends' problem is that they pass such shapes through (#1337).
 - *Constant or view items:* fine, with and without proofs. *Constant or view
   totals:* fine without proofs and above `AssertionLevel::Off`,
   `UnimplementedException` at `Off` (#1229).
-- *A row of the wrong length:* `PerCall` ignores the extra coefficients or
-  throws `std::out_of_range`; `Upfront` throws
-  `InvalidProblemDefinitionException` (#1334).
+- *A row of the wrong length:* refused by the constructor under either
+  strategy (#1334, #1447; `knapsack_test`'s malformed cases). Until then
+  `PerCall` ignored the extra coefficients or threw `std::out_of_range`, and
+  `Upfront` threw `InvalidProblemDefinitionException`.
 
 **Overflow.** The coefficients are checked against `±(2⁶⁰ − 1)` at
 construction. Every DP sum and product goes through `Integer`'s checked
@@ -1362,9 +1370,8 @@ derivation:
    design question not filed separately (#200 is about one generic diagram
    propagator, not that). Per the standing rule, not a budget. Large; needs a
    design.
-6. **Validate row lengths in the constructor, for both strategies** (#1334).
-   Trivial: move `Upfront`'s checks into `Knapsack`'s constructor (the lower
-   bounds still need `prepare()`).
+6. **Done** (#1334, by #1447): the constructor validates the arguments' shape
+   for both strategies; the lower bounds still need `prepare()`.
 7. **Close the temporary level on a failure.** Wrap the call in the same
    `try`/`catch` the inference tracker uses, or a scope guard. Small; cuts the
    live database after every failing call. Not filed.
