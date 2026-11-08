@@ -26,6 +26,7 @@ using std::cmp_less;
 using std::get;
 using std::make_optional;
 using std::move;
+using std::pair;
 using std::string;
 using std::stringstream;
 using std::tuple;
@@ -89,37 +90,34 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
     triggers.on_instantiated.insert(triggers.on_instantiated.end(), _vars.begin(), _vars.end());
     triggers.on_instantiated.emplace_back(_val);
 
-    vector<IntegerVariableID> all_vars = _vars;
-    all_vars.push_back(_val);
-
-    // Build the whole-scope reason once and reuse it at every inference site,
-    // rather than rebuilding it (copying the scope into a fresh shared_ptr) on
-    // each inference. See dev_docs/propagator-performance.md.
-    auto all_vars_reason = generic_reason(all_vars);
-
     propagators.install(
         constraint_id(),
-        [vars = _vars, val = _val, reason = std::move(all_vars_reason), owner = constraint_id()](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [vars = _vars, val = _val, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // For each value v that two or more vars are fixed to, infer
-            // val ≠ v. (RUP from the encoding's sum ≤ 1 plus the fixedness
-            // reasons.) Only such a value can be removed, so collect the
-            // fixed values and sort them rather than walking val's domain,
-            // which is Θ(|dom(val)| · n) per call while val is unfixed
-            // (#1155). Sorted, the inferences come in the same order as the
-            // walk made them.
-            vector<Integer> fixed_values;
-            for (auto & var : vars)
-                if (auto v = state.optional_single_value(var))
-                    fixed_values.push_back(*v);
+            // val ≠ v. (RUP from the encoding's sum ≤ 1 plus the two
+            // fixedness literals, which are the whole reason (#1157).) Only
+            // such a value can be removed, so collect the fixed values and
+            // sort them rather than walking val's domain, which is
+            // Θ(|dom(val)| · n) per call while val is unfixed (#1155).
+            // Sorted by value and then position, the inferences come in the
+            // same order as the walk made them, and the reason names the
+            // first two positions fixed to the value.
+            vector<pair<Integer, size_t>> fixed_values;
+            for (size_t i = 0; cmp_less(i, vars.size()); ++i)
+                if (auto v = state.optional_single_value(vars[i]))
+                    fixed_values.emplace_back(*v, i);
             std::sort(fixed_values.begin(), fixed_values.end());
-            for (size_t i = 1; i < fixed_values.size(); ++i)
-                if (fixed_values[i] == fixed_values[i - 1] && (i == 1 || fixed_values[i - 2] != fixed_values[i]) &&
-                    state.in_domain(val, fixed_values[i]))
-                    inference.infer(logger, val != fixed_values[i], JustifyUsingRUP{hints::AtMostOne{owner}}, reason);
+            for (size_t i = 1; i < fixed_values.size(); ++i) {
+                auto [v, second] = fixed_values[i];
+                auto first = fixed_values[i - 1].second;
+                if (v == fixed_values[i - 1].first && (i == 1 || fixed_values[i - 2].first != v) && state.in_domain(val, v))
+                    inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}},
+                        inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{{vars[first] == v, vars[second] == v}}}} : Reason{});
+            }
 
             // If val is now fixed to v and exactly one var is fixed to v,
-            // infer var_j ≠ v for every other var. (Same RUP argument.)
+            // infer var_j ≠ v for every other var. (Same RUP argument, and
+            // val = v with the one fixed var is the whole reason.)
             auto val_fixed = state.optional_single_value(val);
             if (val_fixed) {
                 int fixed_count = 0;
@@ -135,7 +133,9 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                 if (fixed_count == 1) {
                     for (size_t i = 0; cmp_less(i, vars.size()); ++i) {
                         if (i != fixed_idx)
-                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}}, reason);
+                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}},
+                                inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{{val == *val_fixed, vars[fixed_idx] == *val_fixed}}}}
+                                                         : Reason{});
                     }
                 }
             }
