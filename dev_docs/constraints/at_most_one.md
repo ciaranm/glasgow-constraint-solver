@@ -11,7 +11,7 @@
 > **Fixed since the audit**: #1155 (every call walked the value variable's
 > domain while it was unfixed), by #1430; #1156 (the `on_change` triggers
 > declared every variable's holes relevant), by #1431; #1157 (every reason
-> was the whole scope), by #PRNUM; #1121 (`AtMostOneSmartTable`'s child named no
+> was the whole scope), by #1432; #1121 (`AtMostOneSmartTable`'s child named no
 > constraint in its hints), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
@@ -794,7 +794,7 @@ performance](#cpu-performance), against an unpatched build of the same tree
    3,516 family assertions shrink from 584,580 bytes to 305,892 at
    `Inferences`, and its `Off` proof from 10.86 MB to 10.58 MB,
    verifying in about the same time. Small. Filed as #1157. *Done by
-   #PRNUM*: on the same tree with proofs off the benchmark is unchanged
+   #1432*: on the same tree with proofs off the benchmark is unchanged
    (0.730–0.737 s in both orders, against 0.730–0.755 s), the `n = d = 5`
    enumeration's family assertions at `Inferences` halve (204,264 bytes to
    101,268 over 1,164), and its `Off` proof goes from 10.36 MB to 10.26 MB,
