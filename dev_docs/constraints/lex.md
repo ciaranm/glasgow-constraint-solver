@@ -9,7 +9,7 @@
 > variable shared at one position treated as if it could differ).
 > **Fixed since the audit**: #1141 (the whole-scope reason built on every
 > call), by #1428; #1185 (a follow-up to #1179: the dispatcher now hands the
-> undecided pass the literals it will infer), by #PRNUM; #1137 (a proof VeriPB
+> undecided pass the literals it will infer), by #1429; #1137 (a proof VeriPB
 > rejected under `NotIf`), by #1179; #1138 (`LexSmartTable` lost solutions
 > when `vars_1` is the longer), by #1183; #1121 (`LexSmartTable`'s hints said
 > `unnamed`), by #1182; and #1189 (filed from review: an offset view ending at
@@ -1003,7 +1003,7 @@ rejected.** Kept as history; the present tense below describes `c9ceea25`.
    must-hold verdict's scaffold is stated under the negation of the inferred
    literal, `¬cond` for `Iff` and `cond` for `NotIf`, and `lex_test`'s
    reified runs gained `NotIf` and `MustNotHold`. It worked the literal out
-   from the reification kind inside the constraint until #1185 (#PRNUM) had
+   from the reification kind inside the constraint until #1185 (#1429) had
    the dispatcher hand it over. Filed as #1137.
 1. **Build the reason only when it is needed.** **Done by #1428** (#1141), as
    proposed, with the proof diff and the dom/wdeg check above.
