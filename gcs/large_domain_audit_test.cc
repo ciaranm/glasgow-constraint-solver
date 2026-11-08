@@ -571,9 +571,10 @@ namespace
             auto v = wide(p, 3);
             p.post(NValue{p.create_integer_variable(1_i, 3_i), v});
         });
-        add("AtMostOne", Expect::KnownTrip, [](Problem & p) {
+        add("AtMostOne", Expect::Clean, [](Problem & p) {
             // The value variable is distinct from the scope, so the row is about
-            // width alone. (An aliased one is not rejected at post time: AtMostOne
+            // width alone. Clean since #1155: the propagator no longer walks the
+            // value variable's domain, only the positions' fixed values. (An aliased one is not rejected at post time: AtMostOne
             // accepts it, and AtMostOneSmartTable refuses it from solve_with.)
             auto v = wide(p, 3);
             p.post(AtMostOne{v, wide_var(p)});

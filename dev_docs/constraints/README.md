@@ -392,8 +392,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   which on the same search tree (same recursions, no failures) takes 1.5 to
   1.8 times its time and writes 1.8 times its proof lines. Findings, each with
   a tested patch: while the value
-  variable is unfixed every call walks its whole domain, about 0.4 s a call at
-  10⁷ values, where collecting the fixed values does the same in `O(n log n)`;
+  variable was unfixed every call walked its whole domain, about 0.4 s a call at
+  10⁷ values, until #1155 collected the fixed values instead, `O(n log n)`;
   its `on_change` triggers declare every variable's holes relevant, though
   none is; every reason is the whole scope where two literals suffice; and its
   encoding is `Count`'s from before `Count` was conformed to `cake_pb_cp`. Not

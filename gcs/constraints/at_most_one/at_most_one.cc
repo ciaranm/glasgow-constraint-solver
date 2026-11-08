@@ -97,20 +97,22 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
         constraint_id(),
         [vars = _vars, val = _val, reason = std::move(all_vars_reason), owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // For each candidate value v of `val`: if two or more vars
-            // are fixed to v, infer val ≠ v. (RUP from the encoding's
-            // sum ≤ 1 plus the fixedness reasons.)
-            for (auto v : state.each_value_immutable(val)) {
-                int fixed_to_v = 0;
-                for (auto & var : vars) {
-                    if (state.optional_single_value(var) == make_optional(v)) {
-                        if (++fixed_to_v == 2)
-                            break;
-                    }
-                }
-                if (fixed_to_v >= 2)
-                    inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}}, reason);
-            }
+            // For each value v that two or more vars are fixed to, infer
+            // val ≠ v. (RUP from the encoding's sum ≤ 1 plus the fixedness
+            // reasons.) Only such a value can be removed, so collect the
+            // fixed values and sort them rather than walking val's domain,
+            // which is Θ(|dom(val)| · n) per call while val is unfixed
+            // (#1155). Sorted, the inferences come in the same order as the
+            // walk made them.
+            vector<Integer> fixed_values;
+            for (auto & var : vars)
+                if (auto v = state.optional_single_value(var))
+                    fixed_values.push_back(*v);
+            std::sort(fixed_values.begin(), fixed_values.end());
+            for (size_t i = 1; i < fixed_values.size(); ++i)
+                if (fixed_values[i] == fixed_values[i - 1] && (i == 1 || fixed_values[i - 2] != fixed_values[i]) &&
+                    state.in_domain(val, fixed_values[i]))
+                    inference.infer(logger, val != fixed_values[i], JustifyUsingRUP{hints::AtMostOne{owner}}, reason);
 
             // If val is now fixed to v and exactly one var is fixed to v,
             // infer var_j ≠ v for every other var. (Same RUP argument.)
