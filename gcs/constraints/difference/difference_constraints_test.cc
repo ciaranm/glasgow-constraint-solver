@@ -673,6 +673,84 @@ namespace
         }
     }
 
+    // A cycle, and a root witness path, with more distinct conditions than the
+    // reason's deduplication searches linearly (16), each on two edges, so that
+    // both the search and the set it switches to drop repeats (#1384). Forty
+    // edges round a ring of 0/1 variables, the i-th conditional on b[i % 20],
+    // every b fixed true; the closing edge has weight -1 and its own free
+    // condition c. With root simplification, the witness path of the other 39
+    // edges fixes c false; without, search refutes c = 1 by the negative cycle.
+    // Either way a reason listing a condition twice would write a proof line
+    // with a repeated literal, and a dropped one an unjustified line.
+    auto run_many_conditions_test(bool proofs) -> void
+    {
+        long long first_count = -1;
+        for (bool simplify : {true, false}) {
+            print(cerr, "difference many conditions, simplification {}{}:", simplify ? "on" : "off", proofs ? " with proofs" : "");
+            cerr << flush;
+            constexpr int n = 40, distinct = 20;
+            Problem p;
+            auto x = p.create_integer_variable_vector(n, 0_i, 1_i, "x");
+            auto b = p.create_integer_variable_vector(distinct, 1_i, 1_i, "b");
+            auto c = p.create_integer_variable(0_i, 1_i, "c");
+            vector<DifferenceEdge> edges;
+            for (int i = 0; i < n; ++i)
+                edges.push_back(DifferenceEdge{x[i], x[(i + 1) % n], i == n - 1 ? -1_i : 0_i, i == n - 1 ? c == 1_i : b[i % distinct] == 1_i});
+            p.post(DifferenceConstraints{edges}.simplifying_at_root(simplify));
+
+            auto proof_name = string{"difference_many_conditions_"} + (simplify ? "on" : "off");
+            long long solutions = 0;
+            solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                if (s(c) != 0_i)
+                    throw UnexpectedException{"difference many conditions: a solution with the closing edge active"};
+                ++solutions;
+                return true;
+            }},
+                proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+            if (proofs)
+                verify_proof_and_clean_up(proof_name);
+            if (solutions == 0 || (first_count != -1 && solutions != first_count))
+                throw UnexpectedException{"difference many conditions: " + to_string(solutions) + " solutions"};
+            first_count = solutions;
+            println(cerr, " {} solutions, ok", solutions);
+        }
+
+        // The same ring with every b free, set true by search before c, so the
+        // first refutation is the negative cycle under twenty decided conditions
+        // plus c, and its reason has to name every one of them: unit propagation
+        // cannot recover a missing one, as it can for a b fixed at the root.
+        print(cerr, "difference many conditions, decided by search{}:", proofs ? " with proofs" : "");
+        cerr << flush;
+        constexpr int n = 40, distinct = 20;
+        Problem p;
+        auto x = p.create_integer_variable_vector(n, 0_i, 1_i, "x");
+        auto b = p.create_integer_variable_vector(distinct, 0_i, 1_i, "b");
+        auto c = p.create_integer_variable(0_i, 1_i, "c");
+        vector<DifferenceEdge> edges;
+        for (int i = 0; i < n; ++i)
+            edges.push_back(DifferenceEdge{x[i], x[(i + 1) % n], i == n - 1 ? -1_i : 0_i, i == n - 1 ? c == 1_i : b[i % distinct] == 1_i});
+        p.post(DifferenceConstraints{edges}.simplifying_at_root(false));
+        auto decided = b;
+        decided.push_back(c);
+        decided.insert(decided.end(), x.begin(), x.end());
+        auto proof_name = string{"difference_many_conditions_search"};
+        auto stats = solve_with(p,
+            SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                               for (const auto & bi : b)
+                                   if (s(bi) != 1_i || s(c) != 0_i)
+                                       throw UnexpectedException{"difference many conditions: unexpected first solution"};
+                               return false;
+                           },
+                .branch = branch_with(variable_order::in_order(decided), value_order::largest_first())},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up(proof_name);
+        if (stats.solutions != 1 || stats.failures == 0)
+            throw UnexpectedException{"difference many conditions: expected a refutation then a solution, got " + to_string(stats.solutions) +
+                " solutions and " + to_string(stats.failures) + " failures"};
+        println(cerr, " ok");
+    }
+
     auto run_heavy_edge_test(bool proofs) -> void
     {
         const auto A = Integer::min_bounded_value(), B = Integer::max_bounded_value();
@@ -1546,8 +1624,10 @@ auto main(int argc, char * argv[]) -> int
                 run_hole_snap_test(incremental);
             }
             for (bool proofs : {false, true})
-                if (! proofs || can_run_veripb())
+                if (! proofs || can_run_veripb()) {
                     run_heavy_edge_test(proofs);
+                    run_many_conditions_test(proofs);
+                }
         }
         if (mode == "reified")
             for (bool incremental : {true, false}) {

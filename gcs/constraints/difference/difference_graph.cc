@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -31,6 +32,7 @@ using std::any_cast;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::set;
 using std::size_t;
 using std::string;
 using std::vector;
@@ -42,6 +44,37 @@ using std::ranges::find_if;
 
 namespace
 {
+    // Collects the distinct conditions of a cycle or witness path, in order of
+    // first appearance, which is the order the reason lists them in. The usual
+    // handful is deduplicated by a linear search; past that a set is kept beside
+    // the list, so k conditional edges cost O(k log k) rather than O(k^2) (#1384).
+    class DistinctConditions
+    {
+    private:
+        static constexpr std::size_t search_up_to = 16;
+        vector<IntegerVariableCondition> _conditions;
+        set<IntegerVariableCondition> _seen;
+
+    public:
+        auto add(const IntegerVariableCondition & cond) -> void
+        {
+            if (_conditions.size() < search_up_to) {
+                if (_conditions.end() != find(_conditions, cond))
+                    return;
+                _conditions.push_back(cond);
+                if (_conditions.size() == search_up_to)
+                    _seen.insert(_conditions.begin(), _conditions.end());
+            }
+            else if (_seen.insert(cond).second)
+                _conditions.push_back(cond);
+        }
+
+        [[nodiscard]] auto list() const -> const vector<IntegerVariableCondition> &
+        {
+            return _conditions;
+        }
+    };
+
     // Wraps the initialiser or the propagator so that an IntegerOverflow from
     // it says what overflowed. Potentials, Dijkstra distances, reduced weights,
     // Bellman-Ford bounds and cycle weights are Integers, and a path or cycle
@@ -319,15 +352,14 @@ namespace
                     // anything: that the candidate edge and the path
                     // really do form a cycle, and that it really does
                     // weigh less than zero. The arithmetic is O(cycle),
-                    // though the condition deduplication sharing its
-                    // loop is a linear search per conditional edge,
-                    // O(k.c) for k such edges and c distinct conditions
-                    // (#1384). It turns a bug in the shortest-path pass
+                    // and the condition deduplication sharing its loop
+                    // O(k log k) for k conditional edges (#1384; it was a
+                    // linear search per edge). It turns a bug in the shortest-path pass
                     // into an exception here rather than a VeriPB failure
                     // a hundred lines later (survey section 2.9.4).
                     auto weight = arcs[candidate].d;
                     auto at = arcs[candidate].to;
-                    vector<IntegerVariableCondition> conditions;
+                    DistinctConditions conditions;
                     for (auto e : path) {
                         if (arcs[e].from != at)
                             throw UnexpectedException{"difference logic simplification built a disconnected witness cycle"};
@@ -343,8 +375,7 @@ namespace
                         // Deduplicated, since one Boolean may appear on
                         // several edges.
                         if (const auto & cond = condition_of(e))
-                            if (conditions.end() == find(conditions, *cond))
-                                conditions.push_back(*cond);
+                            conditions.add(*cond);
                     }
                     if (at != arcs[candidate].from)
                         throw UnexpectedException{"difference logic simplification built a witness path that does not close"};
@@ -396,9 +427,9 @@ namespace
                     //    the nogood machinery see, and there a missing
                     //    antecedent is not recoverable.
                     ReasonLiterals reason_literals;
-                    for (const auto & c : conditions)
+                    for (const auto & c : conditions.list())
                         reason_literals.push_back(c);
-                    auto reason = conditions.empty() ? Reason{NoReason{}} : Reason{ExplicitReason{move(reason_literals)}};
+                    auto reason = conditions.list().empty() ? Reason{NoReason{}} : Reason{ExplicitReason{move(reason_literals)}};
                     inference.infer(logger, ! *candidate_cond,
                         JustifyExplicitly{[&](const ReasonLiterals &) {
                                               auto pol = edge_line_pol();
@@ -603,9 +634,8 @@ namespace
         // Before saying anything, verify the extracted cycle
         // arithmetically: that each edge meets the next, that it closes,
         // and that the total weight really is negative. That is O(cycle),
-        // though the condition deduplication sharing its loop is a linear
-        // search per conditional edge, O(k.c) for k such edges and c
-        // distinct conditions (#1384). It turns a predecessor-walk bug into
+        // and the condition deduplication sharing its loop O(k log k) for k
+        // conditional edges (#1384; it was a linear search per edge). It turns a predecessor-walk bug into
         // an exception at the right place rather than a VeriPB failure
         // hundreds of lines later (survey section 2.9.4).
         auto contradict_on_cycle(const vector<size_t> & cycle, auto && tail_of, auto && head_of) const -> void
@@ -613,7 +643,7 @@ namespace
             if (cycle.empty())
                 throw UnexpectedException{"difference logic extracted an empty negative cycle"};
             Integer weight{0};
-            vector<IntegerVariableCondition> conditions;
+            DistinctConditions conditions;
             for (size_t k = 0; k < cycle.size(); ++k) {
                 const auto & here = arcs[cycle[k]];
                 const auto & next = arcs[cycle[(k + 1) % cycle.size()]];
@@ -625,15 +655,15 @@ namespace
                 // makes that the normal case) and a reason listing it twice
                 // would render a proof line with a repeated literal.
                 const auto & here_cond = condition_of(cycle[k]);
-                if (here_cond && conditions.end() == find(conditions, *here_cond))
-                    conditions.push_back(*here_cond);
+                if (here_cond)
+                    conditions.add(*here_cond);
             }
             if (weight >= 0_i)
                 throw UnexpectedException{"difference logic extracted a cycle of weight " + weight.to_string() + ", which is not negative"};
 
-            auto conditional = ! conditions.empty();
+            auto conditional = ! conditions.list().empty();
             ReasonLiterals reason_literals;
-            for (const auto & c : conditions)
+            for (const auto & c : conditions.list())
                 reason_literals.push_back(c);
 
             inference.contradiction(logger,
