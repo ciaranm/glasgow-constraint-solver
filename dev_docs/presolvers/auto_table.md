@@ -18,8 +18,8 @@
 > Already open and touching it: #983 (no front end can add it), #1210
 > (`AssertionLevel::Links`), #1309 (installs under one unnamed constraint
 > grow its scope), #868 (cross-solver). Filed in review of this document:
-> #1387 (a zero-tuple run on a reused stats block keeps the previous
-> `compact_table`). Machinery owned by
+> #1387 (a zero-tuple run on a reused stats block kept the previous
+> `compact_table`; fixed by #1449). Machinery owned by
 > [`table.md`](../constraints/table.md): #1116. Tracked under #871.
 
 `AutoTable{vars}` is told a scope by its caller and does no detection of its
@@ -520,19 +520,19 @@ The pass keeps nothing between solves except its stats block, which it
 fills by assignment. The search count is accumulated in a local, so a block
 shared across two solves that both reach `run` reports the later solve's own
 nodes beside its own tuples (`:128-130`). That holds for `ran`, `variables`,
-`tuples` and `search_nodes`, with two exceptions:
-
-- a run that finds no tuple returns (`:139-140`) before it assigns
-  `compact_table` (`:159`), so a reused block keeps the previous run's
-  value (#1387);
-- a solve that never reaches `run` leaves every field as the last run that
-  did left it (see [Evidence that it fired](#evidence-that-it-fired)).
+`tuples` and `search_nodes`, and since #1387 (#1449) for `compact_table` too,
+which `run` now sets to false on entry: until then a run that found no tuple
+returned (`:139-140`) before it assigned `compact_table` (`:159`), so a
+reused block kept the previous run's value. The one exception left is a
+solve that never reaches `run`, which leaves every field as the last run
+that did left it (see [Evidence that it fired](#evidence-that-it-fired)),
+as the header's comment on `ran` says.
 
 The header's comments on `ran` and `compact_table` (`auto_table.hh:33-37`,
 `:55-62`) mention neither exception (corrected by #1389, open).
 
 Two `AutoTable`s sharing one block in one solve report the later run only,
-apart from `compact_table` when the later run finds no tuple (#1387 again),
+(until #1387, apart from `compact_table` when the later run found no tuple),
 and the solve's `Stats` lists the block once (`stats.cc:47-50`). These
 cases are `e4-stats/stats.cc`'s A to E, one of this document's review-round
 probes (at `86caad24`, fataepyc-08, 2026-10-21): A the zero-tuple exception,
@@ -977,7 +977,7 @@ anything else happens (`auto_table.cc:114`), so it reaches
 | `variables` | the scope's length, counting constants and repeats |
 | `tuples` | `T` |
 | `search_nodes` | the subproblem's `N` |
-| `compact_table` | 1 when the run that installed a table had `T ≥ 64`, so the compact arm was offered. A run with no tuple leaves it as it was, so a reused block can say `tuples` 0 beside `compact_table` 1, in the solve's `Stats` too (#1387). Whether `table::Auto` then takes the arm is decided after 32 wakes and reported nowhere |
+| `compact_table` | 1 when the run that installed a table had `T ≥ 64`, so the compact arm was offered. A run with no tuple sets it to 0 (until #1387, #1449, it left a reused block's previous value, so the block could say `tuples` 0 beside `compact_table` 1). Whether `table::Auto` then takes the arm is decided after 32 wakes and reported nowhere |
 
 The summary line tells the cases apart:
 
@@ -1310,11 +1310,9 @@ carries a hint of this presolver's, because there is none.
 6. **Tests:** a brute-force lane with views, constants, repeats and
    partly-outside constraints (`gacbf.cc` is the shape); a no-tuple case
    not refuted at its root, with proofs; the order dependence; a
-   `large_domain_audit_test` row behind an `AutoTable`; and one stats block
-   reused across a compact-table run and a zero-tuple run, which a fix to
-   #1387 needs, whether it assigns every per-run field on entry or only
-   initialises `compact_table` before the early return (the issue offers
-   both).
+   `large_domain_audit_test` row behind an `AutoTable`. (One stats block
+   reused across a compact-table run and a zero-tuple run is in
+   `auto_table_presolver_test` since #1387, #1449.)
 7. **A front-end route** is #983's design question. It needs a way to name
    the scope as well as a switch.
 8. **Report what the table pruned.** A `max_tuples` entry, the product of the

@@ -26,6 +26,7 @@
 
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/linear.hh>
@@ -164,4 +165,34 @@ TEST_CASE("A proof of a tabulation past the threshold verifies")
     auto tabulated = enumerate(big, true, proof_name);
     REQUIRE(tabulated.block->compact_table);
     CHECK(verify_proof_and_dispose(proof_name));
+}
+
+TEST_CASE("A reused stats block describes the latest run, even one that finds no tuple")
+{
+    // #1387: a run that finds no tuple returned before deciding compact_table,
+    // so a block reused from a run that did get the compact arm still said so.
+    auto tabulated = enumerate(big, true, nullopt);
+    REQUIRE(tabulated.block->compact_table);
+
+    Problem p;
+    auto x = p.create_integer_variable(0_i, 1_i, "x");
+    auto y = p.create_integer_variable(0_i, 1_i, "y");
+    auto z = p.create_integer_variable(0_i, 1_i, "z");
+    p.post(NotEquals{x, y});
+    p.post(NotEquals{y, z});
+    p.post(NotEquals{x, z});
+    p.add_presolver(AutoTable{vector<IntegerVariableID>{x, y, z}, tabulated.block});
+    auto solutions = 0;
+    solve(
+        p,
+        [&](const CurrentState &) -> bool {
+            ++solutions;
+            return true;
+        },
+        nullopt);
+
+    CHECK(solutions == 0);
+    CHECK(tabulated.block->ran);
+    CHECK(tabulated.block->tuples == 0);
+    CHECK(! tabulated.block->compact_table);
 }
