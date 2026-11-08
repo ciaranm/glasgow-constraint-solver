@@ -1076,7 +1076,13 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
             const auto & e = _imp->refined_watch_edit_trail.back();
             auto & watches = _imp->refined_watches_by_var[e.var_index];
             if (e.op == WatchEditOp::Added) {
-                for (std::size_t i = 0; i < watches.size(); ++i)
+                // Search from the back (#1394). Edits are undone in reverse, and an
+                // Added watch was push_back()ed, so unless a later swap-remove moved
+                // it, it is still near the back; on a long list (the learned-nogood
+                // store's) a search from the front scanned thousands of watches per
+                // undo. Watch ids are unique, so either direction finds the same
+                // element and leaves the same vector.
+                for (std::size_t i = watches.size(); i-- > 0;)
                     if (watches[i].id == e.watch.id) {
                         watches[i] = watches.back();
                         watches.pop_back();
