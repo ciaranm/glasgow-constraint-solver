@@ -123,6 +123,13 @@ auto Circuit::with_short_reasons(optional<bool> enable) -> Circuit &
 
 auto Circuit::prepare(Propagators & propagators, State & initial_state, ProofModel * const model) -> bool
 {
+    // The empty circuit is vacuously true, as MiniZinc's own decomposition has it: there
+    // is no node to visit, so there is nothing to encode or propagate, here, in
+    // define_proof_model() or in install_propagators() (issue #1307). SubCircuit treats
+    // its empty array the same way.
+    if (_succ.empty())
+        return true;
+
     // Can't have negative values
     for (const auto & s : _succ)
         propagators.define_bound(initial_state, model, s, Bound::Lower, 0_i);
@@ -170,6 +177,10 @@ auto Circuit::define_proof_model(ProofModel & model, const State &) -> void
     // what the root contradiction cites.
     if (! _gac_all_different || _has_duplicate_vars)
         define_clique_not_equals_encoding(model, _constraint_id, _succ);
+
+    // No position encoding for the empty circuit: its positions would range over 0..-1.
+    if (_succ.empty())
+        return;
 
     // Define encoding to eliminate sub-cycles
     auto & pos_var_data = _pos_var_data;
@@ -227,6 +238,11 @@ auto Circuit::install_propagators(Propagators & propagators) -> void
             "A Circuit constraint was posted with the same variable more than once", JustifyUsingRUP{hints::Circuit{constraint_id()}});
         return;
     }
+
+    // Nothing to propagate for the empty circuit, and the SCC propagator's walk starts at
+    // node 0, which it does not have.
+    if (_succ.empty())
+        return;
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use circuit::Prevent or circuit::SCC
     if (_succ.size() > 1) {

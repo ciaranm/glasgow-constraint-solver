@@ -131,6 +131,28 @@ auto run_circuit_wide_domain_test(bool proofs, int n, CircuitPropagator propagat
     check_results(proof_name, expected, actual);
 }
 
+// The empty successor array (issue #1307). MiniZinc's own decomposition special-cases it
+// to `true`, so the free witness's two values are the solutions; until #1307 the SCC
+// propagator crashed on it, and with proofs both algorithms threw on the position
+// encoding's 0..-1 range.
+auto run_empty_test(bool proofs, CircuitPropagator propagator) -> void
+{
+    auto prop_label = propagator == CircuitPropagator::scc ? "scc" : "prevent";
+    println(cerr, "circuit/empty/{}{}", prop_label, proofs ? " with proofs:" : ":");
+
+    Problem p;
+    auto witness = p.create_integer_variable(0_i, 1_i);
+    if (propagator == CircuitPropagator::scc)
+        p.post(Circuit{vector<IntegerVariableID>{}}.with_algorithm(circuit::SCC{}));
+    else
+        p.post(Circuit{vector<IntegerVariableID>{}}.with_algorithm(circuit::Prevent{}));
+
+    auto proof_name = proofs ? make_optional("circuit_test_empty_" + std::string{prop_label}) : nullopt;
+    set<tuple<vector<int>>> expected{tuple{vector<int>{0}}, tuple{vector<int>{1}}}, actual;
+    solve_for_tests(p, proof_name, actual, tuple{vector<IntegerVariableID>{witness}});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -155,6 +177,7 @@ auto main(int argc, char * argv[]) -> int
             // the bare configuration; the view sweep targets the larger instances
             // and its positions can exceed these tiny n.
             if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+                run_empty_test(proofs, propagator);
                 run_circuit_test(proofs, view_cfg, 1, propagator);
                 run_circuit_test(proofs, view_cfg, 2, propagator);
                 // n = 1 as well: the self-loop is the one solution, and it is the

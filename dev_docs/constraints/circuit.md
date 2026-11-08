@@ -4,8 +4,7 @@
 > `Check` and `Prevent`); experimental (`SubCircuit` under `SCC`, with or
 > without its two shaving rules) ·
 > **Audited** 2026-10-09 at `86caad24` ·
-> **Open issues** filed by this audit: #1307 (a `Circuit` over an empty
-> array crashes), #1306 (with `with_prune_skip(false)`, VeriPB can reject the
+> **Open issues** filed by this audit: #1306 (with `with_prune_skip(false)`, VeriPB can reject the
 > `SCC` proof, because two rules' certificates need prune skip to have run;
 > fix open as #1367),
 > #1318 (three of `Circuit`'s setters do nothing, and several `SubCircuit`
@@ -19,7 +18,8 @@
 > [Known limitations](#known-limitations)) and #1327 (`Circuit`'s `SCC` walk
 > recurses once per level and overflows the native stack on large instances;
 > see [Robustness](#robustness-and-limits)).
-> **Fixed since the audit**: #1317 (the `SCC` propagator built its
+> **Fixed since the audit**: #1307 (a `Circuit` over an empty array
+> crashed), by #1439; #1317 (the `SCC` propagator built its
 > whole-scope reason on every call, proofs off too, and with proofs defined a
 > short-reason flag on every call), by #1438; #1388 (the precedence flags
 > were named after the walk root, not the node they compare), by #1437.
@@ -45,16 +45,17 @@ they were built and what they cost.
 
 Four things to know before touching it.
 
-- **It finds the right answers everywhere this audit looked, bar two crashes,
-  and one option makes its proof wrong.** Random holey instances up to six
+- **It finds the right answers everywhere this audit looked, bar two crashes
+  (one since fixed), and one option makes its proof wrong.** Random holey instances up to six
   nodes, with constants, offset views and values outside `0..n-1`, through
   every algorithm and option: no lost and no spurious solution in 2,000 trials
   per configuration. MiniZinc on both versions, XCSP3 against ACE and the
   `.scp` reader agree with their references at two nodes and more. The first
-  crash is the empty array: `Circuit{}` segfaults under its default algorithm
-  and fails on an integer overflow whenever a proof is written (#1307).
-  `SubCircuit{}` is fine, and MiniZinc guards the shape before it reaches
-  either. The second is size: `Circuit`'s default `SCC` walk recurses once
+  crash was the empty array: until #1307 (fixed by #1439), `Circuit{}`
+  segfaulted under its default algorithm and failed on an integer overflow
+  whenever a proof was written; now it is vacuously true, as `SubCircuit{}`
+  always was, and MiniZinc guards the shape before it reaches either. The
+  second is size: `Circuit`'s default `SCC` walk recurses once
   per level of its depth-first tree, and with an 8 MiB stack it segfaults
   during root propagation, proofs off, from about 7,700 nodes on a fixed ring
   and at 10,000 nodes on every domain shape tried (#1327). The wrong proof is
@@ -107,8 +108,9 @@ so a domain declared wider is accepted.
   one-node `circuit` is unsatisfiable there and in Chuffed, and satisfiable
   through Glasgow (#1319).
 - **`n = 2`**: `[1, 0]` only.
-- **`n = 0`**: the empty array. Meant to be vacuously true, as MiniZinc's
-  decomposition has it, but it crashes (#1307): see
+- **`n = 0`**: the empty array, vacuously true, as MiniZinc's decomposition
+  has it: no position encoding and no propagator (`circuit_test` and the
+  `circuit_empty_sat` chain case check it). Until #1307 it crashed: see
   [Robustness](#robustness-and-limits).
 - **A repeated variable** in two slots cannot be all different, and is
   answered with a contradiction at the root (#1047, `circuit.cc:55–61`). Two
@@ -626,20 +628,18 @@ correct (the differential above).
 
 **Degenerate shapes.**
 
-- ***An empty `Circuit` crashes.*** With the default `SCC`, proofs off,
-  `Circuit{}` is a segmentation fault: `SCCPropagatorData(0)` writes
-  `lowlink[0]` of an empty vector (`circuit_scc.cc:81`). With proofs on,
-  under either algorithm, `define_proof_model()` creates a position variable
-  over `0..-1` (`circuit.cc:181`), which throws `IntegerOverflow: power2 63`
-  before the read of `_succ[0]` at `:187` is reached; through the C++ API the
-  exception is uncaught and the process aborts. `Prevent` without proofs gives
-  the right answer. The `.scp` reader reaches it (`(_1 circuit ())` segfaults
-  `glasgow_scp_solver --all`, and with `--prove` exits 1 with "Error:
-  unexpected problem: Integer overflow: power2 63"),
-  so does `gcspy`'s `post_circuit([])`, and so does the C++ API; MiniZinc's
-  guard does not let it through. #254 audited empty arrays, and added the
-  one- and two-node `Circuit` cases, not this one. `SubCircuit{}` is handled
-  and tested. Probe: `tmp/fd-graph/circuit/empty/empty.cc` (#1307).
+- ***An empty `Circuit` crashed, until #1307*** (fixed by #1439). With the
+  default `SCC`, proofs off, `Circuit{}` was a segmentation fault:
+  `SCCPropagatorData(0)` wrote `lowlink[0]` of an empty vector. With proofs
+  on, under either algorithm, `define_proof_model()` created a position
+  variable over `0..-1`, which threw `IntegerOverflow: power2 63`. The `.scp`
+  reader, `gcspy`'s `post_circuit([])` and the C++ API all reached it;
+  MiniZinc's guard does not let it through. Now `prepare()`,
+  `define_proof_model()` and `install_propagators()` each do nothing for an
+  empty array, as `SubCircuit`'s do, and the answer is vacuously true under
+  both algorithms, with a proof that verifies and passes the cake chain.
+  `circuit_test` has the `n = 0` case under both algorithms, with and without
+  proofs, and `scp_chain_circuit_empty_sat` runs the issue's `.scp`.
 - *One node:* `Circuit` accepts the self loop, `SubCircuit` has the empty
   tour; see [Semantics](#semantics) for where the front ends disagree.
 - *A repeated variable:* a root contradiction in either class, under every
@@ -677,7 +677,8 @@ depth-first tree, up to `n` deep, and nothing bounds it. On the audit build
 
 The threshold is about 1.1 KB of stack per level on this build, and will
 differ with compiler, flags and platform. It is not #1085, which is search
-depth (these runs make at most one recursion), nor #1307, the empty array.
+depth (these runs make at most one recursion), nor #1307, the empty array
+(since fixed).
 MiniZinc (`fzn_glasgow.cc:947`), the `.scp` reader (`scp_reader.cc:1174`) and
 `gcspy` (`gcspy.cc:325`) all post the default `SCC`; XCSP3's `<circuit>` posts
 `SubCircuit`. With proofs on the encoding is `Θ(n²)` rows, so no proof was
@@ -1559,8 +1560,6 @@ seeded.
   constraints and from search. The audit's fuzz covered holey random domains,
   constants and views against a brute force (no failure), but nothing in tree
   does, nor checks the root fixpoint against GAC.
-- **The empty `Circuit`**, which crashes (#1307).
-  `subcircuit_test` has the empty case; `circuit_test` stops at one node.
 - **A deep `SCC` walk.** Nothing in tree runs a `Circuit` large enough to
   overflow `explore`'s recursion (#1327); a fixed ring of a few tens of
   thousands of nodes, checked at the root, would pin it.
@@ -1776,8 +1775,6 @@ different harness. They are not re-measured here.
 
 ### Known limitations
 
-- **A `Circuit` over an empty array crashes the solver,** under the default
-  algorithm, and under either algorithm with a proof (#1307).
 - **A large `Circuit` crashes the solver under the default `SCC`,** proofs
   off, at the root: the recursive walk overflows an 8 MiB stack from about
   7,700 nodes on the audit build (#1327). `Prevent` does not.
@@ -1805,10 +1802,7 @@ different harness. They are not re-measured here.
 
 ### Next steps
 
-1. **Fix the empty `Circuit`** (#1307). Install nothing but the
-   always-true case when `succ` is empty, in `prepare`, `define_proof_model`
-   and `install_propagators`, as `SubCircuit` does, and add `n = 0` to
-   `circuit_test`. Small.
+1. **Done** (#1307, by #1439): the empty `Circuit` is vacuously true.
 2. **Make `explore` iterative** (#1327). Replace the recursion at
    `circuit_scc.cc:954` with an explicit stack of frames (node, position in
    its successor walk, and the back edges found so far), so the depth is

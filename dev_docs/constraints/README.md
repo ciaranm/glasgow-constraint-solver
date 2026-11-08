@@ -669,8 +669,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   this solver's own, with `subcircuit-proof-logging.md` as the long note.
   Fuzzed against a brute force through every algorithm and option, and against
   Gecode, the MiniZinc decomposition, ACE and the `.scp` reader, it found no
-  wrong answer at two nodes or more. But `Circuit` over an empty array crashes
-  (#1307), and so does a large one under the default `SCC`, whose recursive
+  wrong answer at two nodes or more. But a large `Circuit` crashes under the
+  default `SCC` (an empty one did too, until #1307, fixed by #1439), whose recursive
   walk overflows an 8 MiB stack from about 7,700 nodes (#1327); a one-node
   `circuit` is satisfiable where MiniZinc's own
   decomposition says not (#1319); and with prune skip switched off VeriPB can
