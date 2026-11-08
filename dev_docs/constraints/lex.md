@@ -4,11 +4,12 @@
 > named forms); benchmarking only (`LexSmartTable`) ·
 > **Audited** 2026-09-29 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1137, #1138 and #1121 ·
-> **Open issues** filed by this audit: #1141 (the whole-scope reason built on
-> every call), #1142 (proofs quadratic in the array per inference), #1143 (a
+> **Open issues** filed by this audit: #1142 (proofs quadratic in the array per
+> inference), #1143 (a
 > variable shared at one position treated as if it could differ). A follow-up
 > #1179 left open: #1185 (the dispatcher should hand the undecided pass the
-> literals it will infer). **Fixed since the audit**: #1137 (a proof VeriPB
+> literals it will infer). **Fixed since the audit**: #1141 (the whole-scope
+> reason built on every call), by #PRNUM; #1137 (a proof VeriPB
 > rejected under `NotIf`), by #1179; #1138 (`LexSmartTable` lost solutions
 > when `vars_1` is the longer), by #1183; #1121 (`LexSmartTable`'s hints said
 > `unnamed`), by #1182; and #1189 (filed from review: an offset view ending at
@@ -73,12 +74,11 @@ benchmarking.
 Three things to know before touching it.
 
 - **It is generalised arc consistent on distinct variables, holes and unequal
-  lengths included**, and slow per call: every call copies both arrays into one
-  and materialises a bounds reason over all of them, whether or not anything
-  reads it. Building the reason only when it is needed gives **1.58 times** the
-  node throughput on `zephyrus` 2016 and **3.0 times** on `mqueens` 2014; the
-  reason's content does not change, and the two builds' proofs on `zephyrus`
-  and their first intermediate solutions on `mqueens` agree.
+  lengths included.** Until #1141 it was also slow per call: every call copied
+  both arrays into one and materialised a bounds reason over all of them,
+  whether or not anything read it. Now the reason is deferred and built only
+  when a proof will read it, which proves `mqueens` 2014 (`n11`) optimal on the
+  identical tree in 14.4 s rather than 54.8 s.
 - **Its proofs are quadratic in the array length per inference.** Each
   justification writes `O(n)` lemmas, and each lemma carries the whole-scope
   reason of `O(n)` literals. At `n = 200`, 211 inferences make a 654 MB proof.
@@ -319,9 +319,14 @@ it over any newly fixed-equal prefix before doing anything else, so the prefix
 already known equal is not re-read. It is shared by the two directions of an
 `Iff`, which is safe since "fixed equal" is symmetric.
 
-What is **not** incremental is the reason: every call builds `vars_1 ++ vars_2`
-as a fresh vector and materialises its bounds, `O(n)` allocation and reads per
-call, used only if something infers. See [CPU performance](#cpu-performance).
+The reason costs nothing per call since #1141. The two concatenations
+`vars_1 ++ vars_2` and `vars_2 ++ vars_1` (one per direction, since a reason
+lists the first operand first) are built once at install, and a call builds a
+deferred bounds reason over the right one only when `want_reasons()` says a
+proof will read it, which the tracker materialises at an inference. Until then
+every call copied both arrays and materialised their bounds, `O(n)` allocation
+and reads per call, used only if something inferred. See [CPU
+performance](#cpu-performance).
 
 ### Interior values and optional pruning
 
@@ -439,9 +444,9 @@ touch the alias convention for consistency claims. Probe:
    blocking position, and `O(1)` inferences. The exception, again, is a call
    count: the shared-variable failure above makes W/2 calls.
 2. **The reason side.** `O(n)`, two bound literals per operand, never per
-   value, but **materialised on every call, unguarded**, for inferences that
-   mostly do not happen. That is the per-call cost measured below, not a width
-   cost.
+   value, built only when a proof will read it and materialised only at an
+   inference (since #1141; until then it was materialised on every call,
+   unguarded, which is the per-call cost measured below, not a width cost).
 3. **The proof side.** Each inference writes `O(n)` lemmas of `O(n)` literals
    each: **quadratic in the array length**, and independent of width. See
    [Proof performance](#proof-performance).
@@ -880,6 +885,27 @@ arrays, and with proofs on it shrinks (13% more nodes on `zephyrus`, in one
 1.5 s run each), since a proof materialises the reason at each inference
 anyway.
 
+**After #1141.** *Release builds of `ebc98856` and of #PRNUM on it,
+fataepyc-09, `taskset`, 2026-11-08, one run each unless stated
+(`tmp/round1108/1141`).* The reason is deferred, built over a scope made once
+at install, and not built at all with proofs off. `mqueens` 2014 to
+completion, `fzn-glasgow -a`, with its own search and with the annotation
+changed to `dom_w_deg`:
+
+| Instance, search | Nodes | Failures | Propagations | Before | After |
+|---|---|---|---|---|---|
+| `n11`, `input_order` | 618,951 | 618,792 | 33,817,471 | 54.8 s | 14.4 s |
+| `n11`, `dom_w_deg` | 372,977 | 372,858 | 22,918,437 | 40.1 s | 21.6 s |
+
+The counts and the solutions are identical before and after in both, so the
+guarded reason changes nothing a weighting scheme sees. On `n31`, nodes in
+10 s go from 7,716–7,835 to 25,140–25,894 (three runs each). With proofs on, a
+reason is now materialised at each inference rather than once at the start of
+the call, so an inference that follows another in the same call names the
+tighter bounds the first left. That is still a valid reason, and it is the only
+difference: 65 of `lex_test`'s 268 proofs at `--seed=1` change, with the same
+number of lines, each changed line a tighter bound in a reason, and all verify.
+
 **What the benchmarks do not exercise.** The reified forms (no corpus model has
 one), and shared variables over wide domains.
 
@@ -978,12 +1004,8 @@ rejected.** Kept as history; the present tense below describes `c9ceea25`.
    reified runs gained `NotIf` and `MustNotHold`. It works the literal out
    from the reification kind inside the constraint; #1185 is the follow-up
    that would have the dispatcher hand it over. Filed as #1137.
-1. **Build the reason only when it is needed.** Leave it as a deferred
-   `bounds_reason`, and build the concatenated scope once, at install, rather
-   than per call. The A/B above is the first half, on the same tree: up to 3.0
-   times the node throughput on the corpus. Small. Filed as #1141. Per #907's
-   lesson it wants a proof diff and a check under dom/wdeg, as the zephyrus
-   prefix check above began.
+1. **Build the reason only when it is needed.** **Done by #PRNUM** (#1141), as
+   proposed, with the proof diff and the dom/wdeg check above.
 2. **Treat an identical pair as equal.** Advance `α` over it and never count it
    as a witness or a block; decide the rule-2 case at such a pair as rule 4.
    That removes the width-proportional failure and the same-position loss of

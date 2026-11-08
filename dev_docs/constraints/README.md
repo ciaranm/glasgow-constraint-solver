@@ -340,10 +340,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   consistent on distinct variables, holes and unequal lengths included, at 4.2
   to 4.8 times Gecode's time on the same tree, node for node. The headline is
   the cost of
-  a call: it materialises a whole-scope reason on every call (#1141), and at
-  `c9ceea25` deferring it gave 1.58 times the node throughput on `zephyrus`
-  and 3.0 times on `mqueens` (the reason's content is unchanged; the builds'
-  proofs and first solutions agreed). Also: its proofs are quadratic in the
+  a call: it materialised a whole-scope reason on every call until #1141
+  deferred it, which proves `mqueens` 2014 optimal on the identical tree in a
+  quarter of the time. Also: its proofs are quadratic in the
   array per inference, 654 MB for 211 inferences at 200; repeated variables,
   which lex-leader symmetry breaking produces in seven corpus models, lose
   generalised arc consistency, and one such shape takes W/2 calls to fail;
