@@ -7,8 +7,8 @@
 > and `path`), #1316 (the directed forcing is a search per candidate root per
 > node and per edge on every call), #1312 (each open-root pinned lemma carries
 > the whole reason rather than its own piece's). Filed from the `dag` audit and
-> touching this family: #1309 (installing a propagator is quadratic in its
-> trigger count). Already open and touching it: #833 (the large-domain policy; only the root can be
+> touching this family: #1309 (installing a propagator was quadratic in its
+> trigger count; fixed by #1442). Already open and touching it: #833 (the large-domain policy; only the root can be
 > wide, and `define_bound` narrows it), #868 (cross-solver comparisons; this document gives one, by hand),
 > #1006 (MiniZinc shape lanes). See [Next steps](#next-steps). Tracked under
 > #871.
@@ -392,7 +392,8 @@ scope with a linear `contains` per trigger (`propagators.cc:724–748`), and the
 unions it into the constraint's scope with another linear `contains` per scope
 variable (`765–769`), so fixing the first loop alone leaves it quadratic. The
 `dag` audit measured about 11 s to the first node on a 100,000-node path, and
-this function as about two thirds of a 30,000-node run (#1309).
+this function as about two thirds of a 30,000-node run (#1309, since fixed by
+#1442).
 
 ### Propagator inventory
 

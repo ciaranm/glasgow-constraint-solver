@@ -258,3 +258,38 @@ TEST_CASE("Propagator scope and variable-to-constraint adjacency")
     auto unused = state.allocate_integer_variable_with_state(0_i, 0_i);
     CHECK(propagators.constraint_indices_of_variable(unused).empty());
 }
+
+TEST_CASE("Constraint scope is the deduplicated union of its propagators' scopes, across interleaved installs")
+{
+    // Issue #1309 derives a constraint's scope and each variable's adjacency from one
+    // membership test, so pin both when a constraint's propagators are installed in
+    // several pieces, with another constraint's in between, over shared variables.
+    State state;
+    auto w = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto z = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    Stats stats;
+    Propagators propagators{stats};
+    // Constraint index 0 over y and x (a view of x, and x again).
+    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {y, x + 1_i}, .on_bounds = {x}});
+    // Constraint index 1 over x and z.
+    propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {x, z}});
+    // Constraint index 0 again, over x (already there), w (new) and y (already there).
+    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_bounds = {x, w}, .scope_only = {y}});
+    // Constraint index 1 again, over z (already there) and w (new to it).
+    propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_instantiated = {z, w, z}});
+
+    CHECK(propagators.scope_of_propagator(0) == vector<SimpleIntegerVariableID>{y, x});
+    CHECK(propagators.scope_of_propagator(2) == vector<SimpleIntegerVariableID>{x, w, y});
+    CHECK(propagators.scope_of_propagator(3) == vector<SimpleIntegerVariableID>{z, w});
+
+    CHECK(propagators.scope_of_constraint(0) == vector<SimpleIntegerVariableID>{y, x, w});
+    CHECK(propagators.scope_of_constraint(1) == vector<SimpleIntegerVariableID>{x, z, w});
+
+    CHECK(propagators.constraint_indices_of_variable(w) == vector<int>{0, 1});
+    CHECK(propagators.constraint_indices_of_variable(x) == vector<int>{0, 1});
+    CHECK(propagators.constraint_indices_of_variable(y) == vector<int>{0});
+    CHECK(propagators.constraint_indices_of_variable(z) == vector<int>{1});
+}

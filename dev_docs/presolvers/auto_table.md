@@ -17,7 +17,7 @@
 > [`parity_system_gathering.md`](parity_system_gathering.md)'s audit).
 > Already open and touching it: #983 (no front end can add it), #1210
 > (`AssertionLevel::Links`), #1309 (installs under one unnamed constraint
-> grow its scope), #868 (cross-solver). Filed in review of this document:
+> grew its scope quadratically; fixed by #1442), #868 (cross-solver). Filed in review of this document:
 > #1387 (a zero-tuple run on a reused stats block kept the previous
 > `compact_table`; fixed by #1449). Machinery owned by
 > [`table.md`](../constraints/table.md): #1116. Tracked under #871.
@@ -484,7 +484,7 @@ The four costs the template asks to keep apart:
    document says, unless a later `AutoTable`'s subproblem made that first
    call (#1378). Installing it under the shared
    `CurrentlyUnnamedConstraint` adds its scope to that constraint's
-   scope, whose deduplication is linear per trigger (#1309); negligible
+   scope, whose deduplication was linear per trigger until #1309 (#1442); negligible
    at these sizes (`skyscrapers 9`: 18 tables of 9 positions).
 4. **Certificate generation**, at `Off` only. There are two `red` lines per
    tuple of `n + 1` terms each, plus the `=` and `≥` atom definitions of

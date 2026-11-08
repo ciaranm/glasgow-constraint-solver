@@ -394,7 +394,8 @@ each propagator is quadratic in its trigger count, because
 `Propagators::install_returning_id` deduplicates the scope with a linear search
 per trigger (`propagators.cc:724–748`), and then unions it into the
 constraint's scope with another (`:765–769`), so fixing the first alone leaves
-the install quadratic (#1309). That union is per constraint ID, and this
+the install quadratic (#1309; both are linear since #1442, and what
+follows describes the audit's tree). That union is per constraint ID, and this
 family's three propagators share one. Every propagator here has at least `E`
 triggers (the reachability child `n + E + 1`, `DTree`'s in-degree propagator
 `E`), so with proofs off the root is quadratic in the graph. Not measured for

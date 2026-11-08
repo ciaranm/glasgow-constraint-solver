@@ -21,8 +21,8 @@
 > which this family's proofs meet too), #598 and #983 (the presolver's reach;
 > #983 is the parity system's issue, and its general half is about presolver
 > reach; recorded in [`difference_logic.md`](../presolvers/difference_logic.md)),
-> #868 (cross-solver comparison), #1309 (installing is quadratic in the
-> trigger count, from either entry point), #816 (initialisers, root
+> #868 (cross-solver comparison), #1309 (installing was quadratic in the
+> trigger count, from either entry point; the engine's part is fixed by #1442), #816 (initialisers, root
 > simplification's included, do not observe `--timeout`), and the sibling
 > #1298 (reified linear
 > inequalities, the same class of overflow). Filed since: #1378, reaching in
@@ -401,7 +401,8 @@ Four costs, kept apart.
    nothing is conditional, and registers one trailed `size_t`. Installing is
    quadratic in the trigger count, from either entry point:
    `Propagators::install_returning_id` deduplicates each trigger with a
-   linear `contains` (#1309), and the condition-variable list is built with a
+   linear `contains` (#1309; linear since #1442), and the condition-variable
+   list is built with a
    linear `find` per conditional edge, conditional static bound and
    disallowed condition (`difference_graph.cc:1189-1197`), so
    `O(conditions × distinct condition variables)`.

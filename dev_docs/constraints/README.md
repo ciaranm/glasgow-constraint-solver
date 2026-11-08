@@ -601,8 +601,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   has the same defect). The propagator rebuilds everything on every call and
   searches edges that cannot close a cycle; two changes that keep every
   inference cut 29% of the instructions on `maximum-dag` `25_04` (#1310).
-  Installing any one-propagator constraint is quadratic in its trigger count,
-  about 11 s at the root of a 100,000-node path (#1309, engine). The encoding costs
+  Installing any one-propagator constraint was quadratic in its trigger count,
+  about 11 s at the root of a 100,000-node path, until #1309 (engine; fixed by
+  #1442, now 1.9 s). The encoding costs
   nodes × (nodes + edges) per strongly connected component, so even one
   400-node cycle is 52 MB of OPB. `connectivity-proofs.md` stays as the design note, shared with
   `reachable.md`.
@@ -1042,7 +1043,8 @@ variant](TEMPLATE.md#the-presolver-variant).
         edges.
       - It was most of the presolver's time on `difference_chain`.
       - It took at most 1 ms on any challenge instance.
-    - Installing its one propagator is quadratic in the node count (#1309).
+    - Installing its one propagator was quadratic in the node count (#1309,
+      fixed by #1442).
     - `glasgow_scp_solver` has no switch for it (#1374).
     - It raises the degree of every lifted variable, so `dom_then_deg` can
       search differently even where it propagates nothing.
@@ -1124,7 +1126,8 @@ variant](TEMPLATE.md#the-presolver-variant).
       on, VeriPB rejects the proof (#1381).
     - Its own pass is quadratic in time and memory in the XOR structure: setup
       to the first node takes 6.7 s and 1.4 GB on 32,000 two-row components,
-      against 0.13 s without it (#1380; #1309 adds the engine's share).
+      against 0.13 s without it (#1380; #1309 added the engine's share,
+      until #1442).
     - Retiring the gathered donors, the default, is not a saving in general.
       On a chain of unit inferences the system's proof grows quadratically:
       at 4,096 variables with the fixing `Equals` posted first, 145 MB

@@ -485,6 +485,28 @@ struct Propagators::Imp : RefinedWatchSink
     vector<vector<int>> var_constraint_indices;
     vector<vector<SimpleIntegerVariableID>> constraint_scope;
 
+    // Scratch for deduplicating a variable list in linear time (issue #1309), indexed
+    // by variable index: a variable is already in the list being built iff its entry
+    // equals that list's stamp. Every list gets a fresh stamp, so nothing is cleared.
+    vector<long long> dedup_stamp;
+    long long next_dedup_stamp = 0;
+
+    // Starts a fresh list; then first_sight(v) is true once per variable.
+    auto new_dedup_stamp() -> long long
+    {
+        return ++next_dedup_stamp;
+    }
+
+    auto first_sight(const SimpleIntegerVariableID & v, long long stamp) -> bool
+    {
+        if (dedup_stamp.size() <= v.index)
+            dedup_stamp.resize(v.index + 1, 0);
+        if (dedup_stamp[v.index] == stamp)
+            return false;
+        dedup_stamp[v.index] = stamp;
+        return true;
+    }
+
     // The variables whose holes affect each propagator (Triggers::
     // holes_affect_propagation, derived from the triggers unless the propagator
     // said otherwise), views resolved and duplicates removed. Indexed by
@@ -721,14 +743,15 @@ auto Propagators::install_returning_id(const ConstraintID & constraint_id, Propa
     auto & scope = _imp->propagator_scope.emplace_back();
     scope.reserve(triggers.on_change.size() + triggers.on_bounds.size() + triggers.on_instantiated.size() + triggers.scope_only.size());
 
+    auto scope_stamp = _imp->new_dedup_stamp();
     auto add_scope_var = [&](const IntegerVariableID & var) {
         overloaded{//
             [&](const SimpleIntegerVariableID & v) {
-                if (! contains(scope, v))
+                if (_imp->first_sight(v, scope_stamp))
                     scope.push_back(v);
             },
             [&](const ViewOfIntegerVariableID & v) {
-                if (! contains(scope, v.actual_variable))
+                if (_imp->first_sight(v.actual_variable, scope_stamp))
                     scope.push_back(v.actual_variable);
             },
             [&](const ConstantIntegerVariableID &) {}}
@@ -749,24 +772,27 @@ auto Propagators::install_returning_id(const ConstraintID & constraint_id, Propa
 
     _imp->propagator_hole_sensitivity.push_back(hole_sensitivity_of(triggers));
 
-    // Adjacency: each scope variable participates in this constraint.
+    // Adjacency, each scope variable participating in this constraint, and the union
+    // of this constraint's propagators' scopes, aggregated by dense constraint index
+    // (scope_of_constraint): the |future| > 1 filter of the weighted-degree heuristic
+    // walks it. Both are appended to only here, and in the same circumstances, so a
+    // variable is in the constraint's scope iff the constraint is in its adjacency
+    // list, and one membership test serves both (issue #1309: a test against the
+    // growing constraint scope made installing a k-variable propagator Theta(k^2)). The
+    // test is over the variable's own adjacency list, and is skipped altogether for a
+    // constraint's first propagator, whose index is new and so in no list yet.
+    if (_imp->constraint_scope.size() <= static_cast<std::size_t>(constraint_index))
+        _imp->constraint_scope.resize(constraint_index + 1);
+    auto & cscope = _imp->constraint_scope[constraint_index];
     for (const auto & v : scope) {
         if (_imp->var_constraint_indices.size() <= v.index)
             _imp->var_constraint_indices.resize(v.index + 1);
         auto & indices = _imp->var_constraint_indices[v.index];
-        if (! contains(indices, constraint_index))
+        if (inserted || ! contains(indices, constraint_index)) {
             indices.push_back(constraint_index);
-    }
-
-    // The union of this constraint's propagators' scopes, aggregated by dense
-    // constraint index (scope_of_constraint): the |future| > 1 filter of the
-    // weighted-degree heuristic walks it.
-    if (_imp->constraint_scope.size() <= static_cast<std::size_t>(constraint_index))
-        _imp->constraint_scope.resize(constraint_index + 1);
-    auto & cscope = _imp->constraint_scope[constraint_index];
-    for (const auto & v : scope)
-        if (! contains(cscope, v))
             cscope.push_back(v);
+        }
+    }
 
     // Degree: once per distinct scope variable. A variable the propagator
     // constrains raises its degree by one, no matter how many trigger slots or
@@ -848,8 +874,9 @@ auto Propagators::install_with_optional_interior_pruning(const ConstraintID & co
     wire(fallback_triggers.on_instantiated, &Propagators::trigger_on_instantiated);
 
     vector<SimpleIntegerVariableID> underlying_targets;
+    auto targets_stamp = _imp->new_dedup_stamp();
     for (const auto & t : targets)
-        if (auto u = underlying_variable(t); u && ! contains(underlying_targets, *u))
+        if (auto u = underlying_variable(t); u && _imp->first_sight(*u, targets_stamp))
             underlying_targets.push_back(*u);
 
     _imp->optional_interior_prunings.push_back(Imp::OptionalInteriorPruningPair{.id = id,

@@ -950,8 +950,8 @@ instructions in `memmove`. A null control, the unmodified `mdd.cc` built the
 same way, matches the shipped instruction counts to within a millionth. The
 control still grows faster than linearly, but not in this family: a third of
 its instructions at 20,000 are in installing the propagator
-(`Propagators::install_returning_id`, quadratic in a propagator's scope,
-#1309). This is a measurement of the copy, not a validated fix.
+(`Propagators::install_returning_id`, quadratic in a propagator's scope
+until #1309, fixed by #1442). This is a measurement of the copy, not a validated fix.
 
 ### Proof performance
 

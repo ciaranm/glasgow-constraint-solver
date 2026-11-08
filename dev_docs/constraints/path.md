@@ -10,7 +10,7 @@
 > different defect with the opposite answer: a satisfiable empty `dag` or
 > four-argument `subgraph` that the overrides flatten to a wrong
 > `UNSATISFIABLE`. Also touching this family: #1309 (the engine's quadratic
-> install) and #1316 (the directed forcing `DPath` inherits). The rest of what
+> install, fixed by #1442) and #1316 (the directed forcing `DPath` inherits). The rest of what
 > it would change is
 > small and is under [Next steps](#next-steps). Already open and
 > touching this family: #868 (cross-solver comparisons; this document gives one,
@@ -406,7 +406,7 @@ into the constraint's scope with another linear `contains` per scope variable
 (`:765–769`). Fixing the first loop alone leaves the install quadratic. This
 class's propagator has about eight trigger entries per edge
 ([below](#propagator-inventory)), so its install is
-`Θ(|triggers| · |scope|)`. This engine defect is #1309.
+`Θ(|triggers| · |scope|)`. This engine defect was #1309, fixed by #1442.
 
 ### Propagator inventory
 

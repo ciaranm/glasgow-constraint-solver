@@ -13,7 +13,7 @@
 > through the presolver only with `incrementally(false)`, the donors retired and
 > simplification off, which no front end selects. Already open and touching this
 > presolver: #598 (the negated forms, deliberately not lifted), #1309
-> (installing its one propagator is quadratic in its scope), #816 (the root
+> (installing its one propagator was quadratic in its scope; fixed by #1442), #816 (the root
 > initialiser it installs does not observe `--timeout`), #983 (no `gcspy`
 > plumbing), #582 (no runtime
 > propagator priorities), #1072, #594 and #1210 (owned by `difference.md`), and
@@ -620,8 +620,8 @@ The install is where it stops being linear. `Propagators::install_returning_id`
 deduplicates the propagator's scope with a linear `contains` per trigger
 (`propagators.cc:721–748`), and this propagator's scope is every node plus
 every condition variable. So the install is quadratic in the node count:
-#1309, already open. It covers both the scope loop and the constraint-scope
-loop. At 100,000 nodes, `perf` puts about 61% of the process's samples in that
+#1309, fixed by #1442, which makes both the scope loop and the
+constraint-scope loop linear. The figures that follow are the audit's. At 100,000 nodes, `perf` puts about 61% of the process's samples in that
 function, inside `install_difference_propagator`. That is about 3.0 s of a 4.9 s
 process (the fact-check's rerun): nearly all of the 3.1 s pass.
 
@@ -896,7 +896,7 @@ on its nodes.
      `State`'s per-value iterators nowhere at all" is true of
      `difference_logic.cc`, which has no `State` read.
    - The scan is proportional to the number of posted constraints, plus the
-     install's quadratic in nodes (#1309).
+     install's quadratic in nodes (#1309, until #1442).
    - Neither the weights nor a domain's width changes the pass time: the
      table above, at `w = 100` and `w = 10¹²`.
    - The installed initialiser is width-free too (`difference.md`).
@@ -1753,10 +1753,9 @@ These are phrased as a user meets them:
    are a deliberate limit, not a defect. An earlier version of this document suggested
    seeding the potentials with the variables' bounds. It was never tried, and it
    is withdrawn.
-3. **#1309** (open): deduplicate the install's two scope loops (the scope and
-   the constraint scope) with sets. Small. At 100,000 nodes that function is
-   nearly all of the 3.1 s pass. Do `install_difference_propagator`'s
-   `condition_vars` `find` at the same time, before #1373 makes it matter.
+3. **#1309: done**, by #1442: the install's two scope loops are linear.
+   Still to do: `install_difference_propagator`'s `condition_vars` `find`
+   (#1384's neighbour), before #1373 makes it matter.
 4. **Reconsider the default of `simplifying_at_root` for this entry point,
    or make the root pass cheaper.** Do not add a budget. On real models the
    pass is a millisecond. On a dense connected graph it is the largest cost

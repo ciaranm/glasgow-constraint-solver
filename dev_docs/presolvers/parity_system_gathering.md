@@ -14,7 +14,7 @@
 > switch. Already open
 > and touching this presolver: #983 (no front end reaches it, and
 > three-argument `bool_xor` donors are skipped), #1309 (installing many
-> propagators under one constraint id is quadratic), #1386 (a chain of unit
+> propagators under one constraint id was quadratic; fixed by #1442), #1386 (a chain of unit
 > inferences made in one system call has a quadratic proof; retiring the
 > donors exposes it, but it is the system propagator's), #310 (a range literal
 > throws with proofs on), #649 (implied equivalences have nowhere to live),
@@ -65,7 +65,7 @@ Five things to know before touching it.
   candidate row, and recounts every atom for every component. On 32,000
   two-row components, setup to the first search node takes 6.7 s and 1.4 GB,
   against 0.13 s and 85 MB without the presolver (#1380). Most of that is the
-  pass; the engine adds its own quadratic term through #1309.
+  pass; the engine added its own quadratic term through #1309, until #1442.
 - **Its proofs are not chain-portable for equality-type literals over Boolean
   variables.** The header calls
   in-proof slack rows "the chain-portable option". Against the OPB
@@ -503,7 +503,8 @@ increment. The dense matrix shows mostly as memory: `build_gf2_system`,
 A scratch patch that canonicalises sparsely and counts atoms in one pass
 (`p3-scale/sparse-scan.patch`, on no branch; it passes the presolver's test)
 takes 1.43 s and 175 MB at `k = 32,000`. There, 70% of the samples are in
-`install_returning_id`. That is #1309's constraint-scope loop: every component's
+`install_returning_id`. That is #1309's constraint-scope loop (linear since
+#1442): every component's
 propagator is installed under the one `CurrentlyUnnamedConstraint`, so the
 union of their scopes grows with every install. The candidate's figures are
 for scale, not a saving claimed for shipped code.
@@ -594,8 +595,8 @@ operands.
 - **Overflow.** None in the pass. The proof's `pol` coefficients are 1, 2 and
   the division by 2.
 - **Large models.** The pass is quadratic in rows and atoms (cost 1 above,
-  #1380), and the install adds #1309's quadratic term in the gathered
-  variables.
+  #1380); until #1442 the install added #1309's quadratic term in the
+  gathered variables.
 
 ### Interval efficiency
 
@@ -1355,7 +1356,8 @@ elimination, which runs before any unit is inferred.
   `ReifiedEquals` whose `neq` disagrees with its condition (#1381).
 - **Three-argument `bool_xor`, and every reified Boolean equality, is
   skipped**, though an `Iff` over `{0, 1}` is a 3-XOR (#983).
-- **Quadratic in the XOR structure's size** (#1380, #1309), and the pass
+- **Quadratic in the XOR structure's size** (#1380; #1309's engine term is
+  fixed by #1442), and the pass
   cannot be stopped: `Presolver::run` takes no abort flag (`presolver.hh:32`;
   `solve.cc:378` passes none), so an abort flag, and so any `--timeout`, does
   not reach it (#816).
@@ -1395,7 +1397,8 @@ Ranked by what they buy for what they cost.
    grouping, and one pass for the atom counts. The scratch patch passes the
    test, and on 32,000 components cuts setup to the first node from 6.7 s and
    1.4 GB to 1.4 s and 175 MB; of the remaining 1.4 s, about 72% is
-   `install_returning_id` (#1309) and under 2% is the pass.
+   `install_returning_id` (#1309, since fixed by #1442) and under 2% is the
+   pass.
 3. **Make the slack derivation chain-portable (#1193)**: either
    #1193's "make the encodings agree", or restate each step clause by RUP in
    the tracker's spelling before the subproof cites it (verified by hand for

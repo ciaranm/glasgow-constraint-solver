@@ -7,8 +7,8 @@
 > same line in `fzn_dag.mzn`; fix open as #1363), #1311 (every call rescans
 > every edge, so the
 > class is slower than the two clauses per edge it replaces). Also touching
-> this family: #1309 (the engine's propagator install is quadratic in the
-> trigger count). Already open and touching this family: #868 (cross-solver
+> this family: #1309 (the engine's propagator install was quadratic in the
+> trigger count; fixed by #1442). Already open and touching this family: #868 (cross-solver
 > comparisons; this document gives one, by hand). Tracked under #871.
 
 `Subgraph(edges, ns, es)` is MiniZinc's `subgraph`: over a fixed edge list, 0/1
@@ -251,7 +251,7 @@ with a linear `contains` per trigger (`propagators.cc:724–748`), and then
 builds the constraint's scope union the same way (`:765–769`), so with `n + E`
 triggers it is quadratic in `n + E`, with proofs off as well, and fixing the
 first loop alone leaves it quadratic (#1309). That engine cost was measured on
-`Dag`; it was not measured here.
+`Dag`; it was not measured here. Both loops are linear since #1442.
 
 ### Propagator inventory
 
@@ -640,9 +640,11 @@ the table above, which is this audit's run):
 
 With the disable it makes fewer calls than the decomposition and is as fast or
 slightly faster: 11.48·10⁹ instructions against 11.52·10⁹ on the grid, and on
-the paths the time gaps are within noise. Its install is still quadratic in the
-number of edges today, through the engine's constraint-scope union (#1309),
-since it installs one propagator per edge under one constraint. Its proofs of
+the paths the time gaps are within noise. At the audit its install was still
+quadratic in the number of edges, through the engine's constraint-scope union
+(#1309), since it installs one propagator per edge under one constraint; with
+#1442 the audit's per-edge install probe takes 0.13 s rather than 4.49 s at
+80,000 edges. Its proofs of
 the 2×3 and 3×3 grid enumerations verify (491 and 21,799 solutions). Three
 runs of this audit's own on the grid agree (median 1.458 s against 1.537 s,
 core 135). #1311 proposes this version.
@@ -734,7 +736,7 @@ the propagator infers the same with proofs on and off.
    decided or entailed (both endpoints fixed 1), as the candidate with the
    entailment disable above: as fast as the decomposition or slightly faster,
    with fewer calls, and the same rules, rows and hint. Small; its install
-   stays quadratic until #1309 is fixed. Guard the reason on `want_reasons()`
+   is linear since #1309 (#1442). Guard the reason on `want_reasons()`
    while there. #1311. The same structure
    would let `Reachable` and `Dag` post a `Subgraph` child in place of their
    copies. Whether their copies of the scan cost them anything was not
