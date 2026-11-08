@@ -521,8 +521,10 @@ rest of the propagation is interval-level.
      shifts. A whole root solve of that `ArrayMax` stays quadratic for other
      reasons: 97% of it is the entry pass's `in_domain` scans (#1166). The
      enumeration under [CPU performance](#cpu-performance), where this pass is
-     most of the propagator, moves by under 1% of instructions and nothing
-     measurable in time. `min_max_test`'s `many_intervals` instances (entries
+     most of the propagator, loses 4.3 to 4.4% of its instructions on the same
+     tree, because the pass now walks each entry with `for_each_interval`
+     rather than an `each_interval()` coroutine (a first version that kept the
+     coroutine cost 0.9 to 1.0%). `min_max_test`'s `many_intervals` instances (entries
      over 21 and 8 separated values, 29 intervals) reach the merge, with and
      without proofs; dropping the merged union loses solutions there.
    - **Single support:** `domains_intersect` to find the supports, and

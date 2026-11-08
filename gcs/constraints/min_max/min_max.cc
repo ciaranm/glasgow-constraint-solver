@@ -151,20 +151,20 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 for (const auto & var : vars) {
                     if (unsupported.empty())
                         break;
-                    // The copy has to be a named local: each_interval() hands out
-                    // a generator that *borrows* the set, which must outlive it
-                    // (see IntervalSet's class documentation). Iterating over a
-                    // temporary's generator leaves it dangling, which reads
-                    // garbage intervals, fails to erase the values that really
-                    // are supported, and so removes supported values from the
-                    // result -- lost solutions, not merely lost pruning.
+                    // Walked with for_each_interval(), which needs no coroutine
+                    // frame: an each_interval() generator here cost about 1% of
+                    // the instructions of a min/max enumeration (as in In's step 1,
+                    // #1162). The copy stays a named local, which each_interval()
+                    // would need (a temporary's generator dangles, reads garbage
+                    // intervals, and so removes supported values from the result:
+                    // lost solutions, not merely lost pruning).
                     auto var_values = state.copy_of_values(var);
-                    for (auto [lo, hi] : var_values.each_interval()) {
+                    var_values.for_each_interval([&](Integer lo, Integer hi) {
                         if (pieces++ < merge_from_pieces)
                             unsupported.erase_range(lo, hi);
                         else
                             gathered.emplace_back(lo, hi);
-                    }
+                    });
                 }
 
                 if (! gathered.empty()) {
