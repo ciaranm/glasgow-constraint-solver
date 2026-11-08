@@ -11,7 +11,7 @@
 > `AtMostOneSmartTable` pays).
 > **Fixed since the audit**: #1155 (every call walked the value variable's
 > domain while it was unfixed), by #1430; #1156 (the `on_change` triggers
-> declared every variable's holes relevant), by #PRNUM; #1121 (`AtMostOneSmartTable`'s child named no
+> declared every variable's holes relevant), by #1431; #1121 (`AtMostOneSmartTable`'s child named no
 > constraint in its hints), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
@@ -765,7 +765,7 @@ performance](#cpu-performance), against an unpatched build of the same tree
    up to seven values; the other 653,184 are solution leaves). The audit row
    should then be pinned `Clean`, and gain a sibling with `val` fixed and one
    with holes. Small, and the one that matters. Filed as #1155, under #833.
-2. *Done by #PRNUM (#1156), as below.* **Trigger on instantiation** (patch B). `on_instantiated` on every position
+2. *Done by #1431 (#1156), as below.* **Trigger on instantiation** (patch B). `on_instantiated` on every position
    and on `val` is exact, as [the inventory](#propagator-inventory) argues, and
    derives "holes affect nothing" for every variable, which is the truth. It
    saves the wakes on non-fixing changes: propagations fall from 781,642 to
