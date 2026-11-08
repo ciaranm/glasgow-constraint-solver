@@ -373,7 +373,7 @@ namespace
             return gt_data.at(i);
         }
         else {
-            auto flag_name = format("d[{}][{}]", ctx.root, i);
+            auto flag_name = format("d[{}][{}]", j, i);
             greater_than_flag = ctx.logger.create_proof_flag(flag_name);
 
             auto forwards_reif_line = ctx.logger.emit_red_proof_lines_forward_reifying(
