@@ -584,7 +584,7 @@ single runs unless marked as medians.
   is linear.
   - Since #1160 both scans, and `erase`'s, start at a binary search on the
     intervals' upper ends once a set has eight or more intervals (a shorter
-    one, nearly every domain, is scanned from the front as before). On #PRNUM,
+    one, nearly every domain, is scanned from the front as before). On #1435,
     fataepyc-09, `carve` takes 2.1 ms at 10⁴ (0.101 s on `ebc98856`), 6.2 ms
     at 3·10⁴ (0.895 s) and 21 ms at 10⁵ (9.92 s).
   - Every other constraint's `not_in_range` on a many-interval domain gets the
@@ -1140,7 +1140,7 @@ reached: since #1215 such a constant is refused at construction
 
 ### Next steps
 
-1. *Done by #PRNUM (#1160), with `erase` too, and a linear scan kept below
+1. *Done by #1435 (#1160), with `erase` too, and a linear scan kept below
    eight intervals.* **Binary-search the interval scans in
    `State::change_state_for_not_in_range` (`IntervalSet::erase_range` and
    `contains_any_of`).**
