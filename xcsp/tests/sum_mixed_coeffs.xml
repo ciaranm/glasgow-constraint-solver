@@ -1,0 +1,13 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[2]"> 0..3 </array>
+    <var id="y"> 0..3 </var>
+  </variables>
+  <constraints>
+    <sum>
+      <list> x[] </list>
+      <coeffs> 2 y </coeffs>
+      <condition> (eq,4) </condition>
+    </sum>
+  </constraints>
+</instance>

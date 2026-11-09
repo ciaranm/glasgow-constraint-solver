@@ -1,0 +1,56 @@
+--- a/src/XCSP3Manager.cc
++++ b/src/XCSP3Manager.cc
+@@ -558,12 +558,32 @@
+ }
+ 
+ 
++// True if the list has both an integer entry and one that is not.
++static bool isMixedList(vector<XVariable *> &list) {
++    bool anyInteger = false, anyOther = false;
++    int v;
++    for(XEntity *xe: list) {
++        if(isInteger(xe, v))
++            anyInteger = true;
++        else
++            anyOther = true;
++    }
++    return anyInteger && anyOther;
++}
++
++
+ void XCSP3Manager::newConstraintSum(XConstraintSum *constraint) {
+     if(discardedClasses(constraint->classes))
+         return;
+     XCondition xc;
+     constraint->extractCondition(xc);
+ 
++    // The code below decides whether the coefficients are integers from the
++    // first one alone, so a mixed list such as "2 y" was read as integers,
++    // repeating 2 for y. Refuse a mixed list.
++    if(isMixedList(constraint->values))
++        throw runtime_error("sum with both integer and variable coefficients is not supported");
++
+     vector<Tree *> trees;
+     containsTrees(constraint->list, trees);
+     if(trees.size() > 0) { // alldif over tree
+@@ -573,7 +593,8 @@
+             vector<int> coefs;
+             int v;
+             for(XEntity *xe: constraint->values) {
+-                isInteger(xe, v);
++                if(!isInteger(xe, v))
++                    throw runtime_error("sum over expressions with variable coefficients is not supported");
+                 coefs.push_back(v);
+             }
+             callback->buildConstraintSum(constraint->id, trees, coefs, xc);
+@@ -628,6 +649,10 @@
+ void XCSP3Manager::newConstraintCount(XConstraintCount *constraint) {
+     if(discardedClasses(constraint->classes))
+         return;
++    // As for sum: the code below decides whether the values are integers from
++    // the first one alone, so a mixed list such as "2 y" was read as "2 2".
++    if(isMixedList(constraint->values))
++        throw runtime_error("count with both integer and variable values is not supported");
+     int value;
+     XCondition xc;
+     constraint->extractCondition(xc);

@@ -21,8 +21,14 @@ include(FetchContent)
 # it now passes the value on as the condition (eq, value), which the binding
 # handles. And it decided whether a list was all integers from its first entry
 # alone, so a mixed list such as "7 x[0]" was read as integers, repeating 7 for
-# x[0]; it now checks every entry. Each patch is applied by its own COMMAND, and
-# each is skipped if already in place.
+# x[0]; it now checks every entry.
+#
+# The fourth patch refuses a <sum> whose <coeffs>, or a <count> whose <values>,
+# mixes integers and variables (#1450). Upstream decided from the first entry
+# alone, so "2 y" was read as "2 2", silently. A list of variables alone is
+# not supported by the binding either, so a mixed one is refused rather than
+# posted. Each patch is applied by its own COMMAND, and each is skipped if
+# already in place.
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
     GIT_TAG 179670dd97cd2b87cdeb93aa7268b57bba719490
@@ -31,6 +37,8 @@ FetchContent_Declare(xcsp3_cpp_parser
     COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_knapsack_group.patch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_element_member.patch
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
+    COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_mixed_lists.patch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(xcsp3_cpp_parser)
@@ -257,6 +265,21 @@ add_xcsp_refusal_test(range_condition_past_int32 "stoi")
 # An index-free element whose condition is not (eq, value): not membership, so
 # not In, and still refused (#1164).
 add_xcsp_refusal_test(element_member_condition_lt "only an \\(eq, value\\) condition is supported")
+# A <sum> whose <coeffs>, or a <count> whose <values>, mixes integers and
+# variables (#1450). The parser decided from the first entry, so "2 y" was read
+# as "2 2" and y left free; the fourth parser patch refuses a mixed list in
+# either order. The tree form read every coefficient as an integer unchecked.
+# The binding supports neither variable coefficients nor variable values, so
+# the order with a variable first, and the tree form, were refused already, by
+# the binding; these pin that the parser now refuses them first. The count
+# lanes cover the generic form and the (eq, k) form the parser dispatches to
+# among.
+add_xcsp_refusal_test(sum_mixed_coeffs "sum with both integer and variable coefficients is not supported")
+add_xcsp_refusal_test(sum_mixed_coeffs_var_first "sum with both integer and variable coefficients is not supported")
+add_xcsp_refusal_test(sum_tree_var_coeffs "sum over expressions with variable coefficients is not supported")
+add_xcsp_refusal_test(count_mixed_values "count with both integer and variable values is not supported")
+add_xcsp_refusal_test(count_mixed_values_var_first "count with both integer and variable values is not supported")
+add_xcsp_refusal_test(count_among_mixed_values "count with both integer and variable values is not supported")
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to

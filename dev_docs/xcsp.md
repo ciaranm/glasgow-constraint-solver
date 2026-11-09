@@ -312,7 +312,17 @@ A third, `xcsp/xcsp3_parser_element_member.patch`, is applied after those two
 (#1164): an index-free `<element>` over a list of integers reaches the binding
 as the condition `(eq, value)` instead of throwing, and a list counts as all
 integers only if every entry is one; see [Element with no
-index](#element-with-no-index).
+index](#element-with-no-index). That check is in `newConstraintElement` only.
+
+A fourth, `xcsp/xcsp3_parser_mixed_lists.patch`, is the same bug at other sites
+(#1450). Upstream decided whether a `<sum>`'s `<coeffs>` or a `<count>`'s
+`<values>` were integers from the first entry alone, so `2 y` was read as `2 2`
+and `y` left free, a silent wrong answer. A list of variables alone is not
+supported by the binding for either constraint, so the patch refuses a mixed
+list, in either order, rather than posting it; it also refuses a variable
+coefficient on a sum over expressions, which upstream read as an integer
+without checking. `newConstraintElementMatrix` still has the first-entry shape,
+but the parser rejects a mixed matrix before reaching it.
 
 ## Testing
 
