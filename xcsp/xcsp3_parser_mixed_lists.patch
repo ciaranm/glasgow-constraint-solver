@@ -1,6 +1,16 @@
 --- a/src/XCSP3Manager.cc
 +++ b/src/XCSP3Manager.cc
-@@ -558,12 +558,32 @@
+@@ -456,7 +456,8 @@
+         vector<int> except;
+         for(auto *xv: constraint->values) {
+             int v;
+-            isInteger(xv, v);
++            if(!isInteger(xv, v))
++                throw runtime_error("allDifferent: the except values must be integers");
+             except.push_back(v);
+         }
+         callback->buildConstraintAlldifferentExcept(constraint->id, constraint->list, except);
+@@ -558,12 +559,32 @@
  }
  
  
@@ -33,7 +43,7 @@
      vector<Tree *> trees;
      containsTrees(constraint->list, trees);
      if(trees.size() > 0) { // alldif over tree
-@@ -573,7 +593,8 @@
+@@ -573,7 +594,8 @@
              vector<int> coefs;
              int v;
              for(XEntity *xe: constraint->values) {
@@ -43,7 +53,7 @@
                  coefs.push_back(v);
              }
              callback->buildConstraintSum(constraint->id, trees, coefs, xc);
-@@ -628,6 +649,10 @@
+@@ -628,6 +650,10 @@
  void XCSP3Manager::newConstraintCount(XConstraintCount *constraint) {
      if(discardedClasses(constraint->classes))
          return;
@@ -54,3 +64,39 @@
      int value;
      XCondition xc;
      constraint->extractCondition(xc);
+@@ -1291,7 +1317,8 @@
+     vector<int> values;
+     int v;
+     for(XEntity *xe: constraint->values) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("instantiation: the values must be integers");
+         values.push_back(v);
+     }
+     callback->buildConstraintInstantiation(constraint->id, constraint->list, values);
+@@ -1341,7 +1368,8 @@
+     vector<int> values;
+     int v;
+     for(XEntity *xe: constraint->values) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("precedence: the values must be integers");
+         values.push_back(v);
+     }
+     if(values.empty())
+@@ -1387,11 +1415,13 @@
+     vector<int> profits, weights;
+     int v;
+     for(XEntity *xe: constraint->profits) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("knapsack: the profits must be integers");
+         profits.push_back(v);
+     }
+     for(XEntity *xe: constraint->weights) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("knapsack: the weights must be integers");
+         weights.push_back(v);
+     }
+     XCondition weightsCondition, profitsCondition;

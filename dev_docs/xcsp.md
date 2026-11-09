@@ -317,12 +317,21 @@ index](#element-with-no-index). That check is in `newConstraintElement` only.
 A fourth, `xcsp/xcsp3_parser_mixed_lists.patch`, is the same bug at other sites
 (#1450). Upstream decided whether a `<sum>`'s `<coeffs>` or a `<count>`'s
 `<values>` were integers from the first entry alone, so `2 y` was read as `2 2`
-and `y` left free, a silent wrong answer. A list of variables alone is not
+and `y` left free, a silent wrong answer. The specification allows a list of
+integers or a list of variables there, not a mix (arXiv:1611.03398v5, Syntax 42
+for `<sum>`; `<count>` has the same form), but the parser accepts one. A list of
+variables alone is not
 supported by the binding for either constraint, so the patch refuses a mixed
 list, in either order, rather than posting it; it also refuses a variable
 coefficient on a sum over expressions, which upstream read as an integer
-without checking. `newConstraintElementMatrix` still has the first-entry shape,
-but the parser rejects a mixed matrix before reaching it.
+without checking. Where XCSP3 allows only integers (an `<allDifferent>`'s
+`<except>`, an `<instantiation>`'s or a `<precedence>`'s `<values>`, a
+`<knapsack>`'s `<weights>` and `<profits>`), upstream ignored a failed integer
+read, so a variable there was read as the entry before it; the patch refuses
+those too. `newConstraintElementMatrix` still has the first-entry shape, but the
+parser rejects a mixed matrix before reaching it. Sites that split a list into
+its integers and its variables (`<cardinality>`, `<cumulative>`, `<noOverlap>`)
+pass the binding two lists of the wrong length, which it refuses.
 
 ## Testing
 

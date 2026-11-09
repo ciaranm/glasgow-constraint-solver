@@ -27,8 +27,11 @@ include(FetchContent)
 # mixes integers and variables (#1450). Upstream decided from the first entry
 # alone, so "2 y" was read as "2 2", silently. A list of variables alone is
 # not supported by the binding either, so a mixed one is refused rather than
-# posted. Each patch is applied by its own COMMAND, and each is skipped if
-# already in place.
+# posted. It also refuses a variable where only integers are allowed, which the
+# parser read as the entry before it: an allDifferent's except values, an
+# instantiation's or a precedence's values, a knapsack's weights or profits.
+# Each patch is applied by its own COMMAND, and each is skipped if already in
+# place.
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
     GIT_TAG 179670dd97cd2b87cdeb93aa7268b57bba719490
@@ -280,6 +283,16 @@ add_xcsp_refusal_test(sum_tree_var_coeffs "sum over expressions with variable co
 add_xcsp_refusal_test(count_mixed_values "count with both integer and variable values is not supported")
 add_xcsp_refusal_test(count_mixed_values_var_first "count with both integer and variable values is not supported")
 add_xcsp_refusal_test(count_among_mixed_values "count with both integer and variable values is not supported")
+# A variable where XCSP3 allows only integers: an allDifferent's <except>, an
+# instantiation's <values>, a precedence's <values>, and a knapsack's <weights>
+# and <profits>. The parser ignored the failed integer read, so y was read as
+# the entry before it and left free, a wrong answer for each; the fourth parser
+# patch refuses them.
+add_xcsp_refusal_test(all_different_except_var "allDifferent: the except values must be integers")
+add_xcsp_refusal_test(instantiation_var "instantiation: the values must be integers")
+add_xcsp_refusal_test(precedence_var "precedence: the values must be integers")
+add_xcsp_refusal_test(knapsack_var_weight "knapsack: the weights must be integers")
+add_xcsp_refusal_test(knapsack_var_profit "knapsack: the profits must be integers")
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to
