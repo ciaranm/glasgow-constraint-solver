@@ -74,9 +74,9 @@ namespace
     // `or_equal` at every decision point that asks "is prefix_equal[n] alone
     // enough?".
     auto run_lex_pass(const State & state, auto & inference, ProofLogger * const logger, const vector<IntegerVariableID> & vars_1,
-        const vector<IntegerVariableID> & vars_2, bool or_equal, const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_flags,
-        const shared_ptr<vector<ProofFlag>> & decision_at_flags, const Literal & cond, ConstraintStateHandle state_handle, const ConstraintID & owner)
-        -> PropagatorState
+        const vector<IntegerVariableID> & vars_2, const ReasonVars & all_vars, bool or_equal,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_flags, const shared_ptr<vector<ProofFlag>> & decision_at_flags,
+        const Literal & cond, ConstraintStateHandle state_handle, const ConstraintID & owner) -> PropagatorState
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
@@ -99,9 +99,11 @@ namespace
                 break;
         }
 
-        auto all_vars = vars_1;
-        all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
-        auto reason = eager_reason(bounds_reason(all_vars, cond), state);
+        // Every variable's bounds, and cond. all_vars is vars_1 then vars_2,
+        // built once at install. The reason is deferred, so it is
+        // materialised only at an inference, against the state then, and not
+        // built at all when no proof will read it (#1141).
+        auto reason = inference.want_reasons() ? with_extra(Reason{BothBoundsReasonOver{all_vars}}, optional<Literal>{cond}) : Reason{};
 
         // Walking off the end means all common-prefix positions are forced
         // equal. Whether that satisfies the constraint depends on
@@ -275,21 +277,17 @@ namespace
     // the appropriate verdict (carrying the materials for the dispatcher
     // to use if it decides to infer the cond literal). Otherwise, return
     // StillUndecided.
-    auto run_lex_undecided_detection(const State & state, ProofLogger * const, const vector<IntegerVariableID> & vars_1,
-        const vector<IntegerVariableID> & vars_2, bool or_equal, const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_gt_flags,
-        const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags, const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
-        const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags, const optional<Literal> & must_hold_scaffold_under,
-        const optional<Literal> & must_not_hold_scaffold_under, const ConstraintID & owner)
+    auto run_lex_undecided_detection(const State & state, bool want_reasons, const vector<IntegerVariableID> & vars_1,
+        const vector<IntegerVariableID> & vars_2, const ReasonVars & all_vars, bool or_equal,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_gt_flags, const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags, const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
+        const optional<Literal> & must_hold_scaffold_under, const optional<Literal> & must_not_hold_scaffold_under, const ConstraintID & owner)
         -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>>
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
         auto n = min(n1, n2);
         bool equal_prefix_satisfies = (n1 > n2) || (or_equal && n1 == n2);
-
-        auto all_vars = vars_1;
-        all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
-        auto reason = eager_reason(bounds_reason(all_vars), state);
 
         size_t k = 0;
         bool definitely_holds = false;
@@ -330,6 +328,11 @@ namespace
 
         if (! definitely_holds && ! definitely_does_not_hold)
             return reification_verdict::StillUndecided{};
+
+        // Every variable's bounds, built only once there is a verdict, and only
+        // when a proof will read it (#1141). The scaffold is written under
+        // these literals, so they are materialised here, eagerly.
+        auto reason = want_reasons ? eager_reason(Reason{BothBoundsReasonOver{all_vars}}, state) : ReasonLiterals{};
 
         // When the dispatcher infers a cond literal, the framework's RUP
         // step will assume the *negation* of the inferred literal. The
@@ -560,21 +563,30 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
     for (auto & v : _vars_2)
         triggers.on_bounds.push_back(v);
 
-    auto enforce_constraint_must_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal, prefix_equal_gt_flags = _prefix_equal_gt_flags,
-                                            decision_at_gt_flags = _decision_at_gt_flags, state_handle = _state_handle,
-                                            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger,
-                                            const Literal & cond) -> PropagatorState {
+    // Each direction's reason ranges over both arrays, first operand first, so
+    // build the two concatenations once here rather than on every call.
+    auto concatenated = [](const vector<IntegerVariableID> & a, const vector<IntegerVariableID> & b) {
+        auto result = a;
+        result.insert(result.end(), b.begin(), b.end());
+        return ReasonVars{move(result)};
+    };
+    auto vars_1_then_2 = concatenated(_vars_1, _vars_2), vars_2_then_1 = concatenated(_vars_2, _vars_1);
+
+    auto enforce_constraint_must_hold = [vars_1 = _vars_1, vars_2 = _vars_2, all_vars = vars_1_then_2, or_equal,
+                                            prefix_equal_gt_flags = _prefix_equal_gt_flags, decision_at_gt_flags = _decision_at_gt_flags,
+                                            state_handle = _state_handle, owner = constraint_id()](const State & state, auto & inference,
+                                            ProofLogger * const logger, const Literal & cond) -> PropagatorState {
         return run_lex_pass(
-            state, inference, logger, vars_1, vars_2, or_equal, prefix_equal_gt_flags, decision_at_gt_flags, cond, state_handle, owner);
+            state, inference, logger, vars_1, vars_2, all_vars, or_equal, prefix_equal_gt_flags, decision_at_gt_flags, cond, state_handle, owner);
     };
 
-    auto enforce_constraint_must_not_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal, prefix_equal_lt_flags = _prefix_equal_lt_flags,
-                                                decision_at_lt_flags = _decision_at_lt_flags, state_handle = _state_handle,
-                                                owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger,
-                                                const Literal & cond) -> PropagatorState {
+    auto enforce_constraint_must_not_hold = [vars_1 = _vars_1, vars_2 = _vars_2, all_vars = vars_2_then_1, or_equal,
+                                                prefix_equal_lt_flags = _prefix_equal_lt_flags, decision_at_lt_flags = _decision_at_lt_flags,
+                                                state_handle = _state_handle, owner = constraint_id()](const State & state, auto & inference,
+                                                ProofLogger * const logger, const Literal & cond) -> PropagatorState {
         // Negation: enforce vars_2 (>|>=) vars_1 with or_equal flipped.
         return run_lex_pass(
-            state, inference, logger, vars_2, vars_1, ! or_equal, prefix_equal_lt_flags, decision_at_lt_flags, cond, state_handle, owner);
+            state, inference, logger, vars_2, vars_1, all_vars, ! or_equal, prefix_equal_lt_flags, decision_at_lt_flags, cond, state_handle, owner);
     };
 
     // Each verdict's scaffold is stated under the negation of the cond literal
@@ -596,13 +608,14 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
     }
         .visit(_reif_cond);
 
-    auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal, prefix_equal_gt_flags = _prefix_equal_gt_flags,
-                                         decision_at_gt_flags = _decision_at_gt_flags, prefix_equal_lt_flags = _prefix_equal_lt_flags,
-                                         decision_at_lt_flags = _decision_at_lt_flags, must_hold_scaffold_under, must_not_hold_scaffold_under,
-                                         owner = constraint_id()](const State & state, auto &, ProofLogger * const logger,
+    auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), all_vars = vars_1_then_2, or_equal,
+                                         prefix_equal_gt_flags = _prefix_equal_gt_flags, decision_at_gt_flags = _decision_at_gt_flags,
+                                         prefix_equal_lt_flags = _prefix_equal_lt_flags, decision_at_lt_flags = _decision_at_lt_flags,
+                                         must_hold_scaffold_under, must_not_hold_scaffold_under,
+                                         owner = constraint_id()](const State & state, auto & inference, ProofLogger * const,
                                          const IntegerVariableCondition &) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
-        return run_lex_undecided_detection(state, logger, vars_1, vars_2, or_equal, prefix_equal_gt_flags, decision_at_gt_flags,
-            prefix_equal_lt_flags, decision_at_lt_flags, must_hold_scaffold_under, must_not_hold_scaffold_under, owner);
+        return run_lex_undecided_detection(state, inference.want_reasons(), vars_1, vars_2, all_vars, or_equal, prefix_equal_gt_flags,
+            decision_at_gt_flags, prefix_equal_lt_flags, decision_at_lt_flags, must_hold_scaffold_under, must_not_hold_scaffold_under, owner);
     };
 
     install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _reif_cond, triggers, std::move(enforce_constraint_must_hold),
