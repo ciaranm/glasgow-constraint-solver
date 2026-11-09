@@ -3,15 +3,15 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1121 ·
-> **Open issues** filed by this audit: #1157 (every reason is the whole
-> scope), #1158 (the encoding is `Count`'s from before #354), #1159 (not
+> **Open issues** filed by this audit: #1158 (the encoding is `Count`'s from before #354), #1159 (not
 > `bounds(Z)` on repeated or aliased variables). Already open and touching
 > this family: #833 (the large-domain policy, which names this family's walk
 > over the value variable), and #1128 (`SmartTable`'s per-call copies, which
 > `AtMostOneSmartTable` pays).
 > **Fixed since the audit**: #1155 (every call walked the value variable's
 > domain while it was unfixed), by #1430; #1156 (the `on_change` triggers
-> declared every variable's holes relevant), by #1431; #1121 (`AtMostOneSmartTable`'s child named no
+> declared every variable's holes relevant), by #1431; #1157 (every reason
+> was the whole scope), by #1432; #1121 (`AtMostOneSmartTable`'s child named no
 > constraint in its hints), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
@@ -59,8 +59,9 @@ Five things to know before touching it.
   counter in `0..1`. On the same search tree (the same branching, the same
   recursions, no failures) that takes 1.5 to 1.8 times `AtMostOne`'s time and
   writes 1.8 times its proof lines, 4.2 times its bytes.
-- **Every inference's reason is the whole scope**, every variable's domain,
-  where two literals suffice.
+- **Every inference's reason is two literals** since #1157, built only when a
+  proof will read it. Until then it was the whole scope, every variable's
+  domain.
 - **Its encoding is `Count`'s from before #354**, strict `gt`/`lt` flags and
   an unlabelled row, where `cake_pb_cp`'s is today's `Count` encoding. The
   verified chain still passes; `opbdiff` cannot match a row.
@@ -245,9 +246,9 @@ literal layer introduces lazily when a reason or conclusion names them.
 ### Initialisation and global data
 
 `prepare()` declines to install anything for fewer than two positions. There is
-no initialiser. `install_propagators()` builds the whole-scope reason once,
-`generic_reason(vars + val)`, and captures it; the domain walk it implies is
-deferred until a proof-logging tracker materialises it.
+no initialiser. Until #1157 `install_propagators()` built a whole-scope reason
+once, `generic_reason(vars + val)`, and captured it; each inference now builds
+its own two-literal reason, and only when a proof will read it.
 
 `AtMostOneSmartTable::prepare()` builds `n` rows, row `i` saying every
 position but `i` differs from `val`, installs the `SmartTable`, and returns
@@ -413,11 +414,10 @@ the rest of this section describes as audited.
    fataepyc-09, `taskset -c 4`, 2026-11-08: `W = 10⁷` takes 85 µs to the
    first solution with three positions (2.04 s before) and 126 µs with ten
    (13.2 s before), with the same recursions and propagations.
-2. **The reason side.** Every inference's reason is `generic_reason` over the
-   whole scope, materialised per run, not per value (#935), and only by a
-   proof-logging tracker, so it costs nothing with proofs off. With proofs on it
-   is `O(n + runs)` literals per inference, including the runs of `val`'s own
-   holes, which rule 1 creates; the minimal reason is two literals.
+2. **The reason side.** Two literals per inference, built only when
+   `want_reasons()` says a proof will read it: nothing with proofs off. Until
+   #1157 it was `generic_reason` over the whole scope, `O(n + runs)` literals
+   per inference, including the runs of `val`'s own holes.
 3. **The proof side.** One RUP line per inference, no second form, so nothing
    for a width gate to choose. The encoding is logarithmic in width.
 4. **The audit lane.** Two rows, both `KnownTrip`: `AtMostOne{wide(3),
@@ -459,13 +459,13 @@ conflicts. The reason comes along by Theorem 2.6. See
 replays it by unit propagation alone, so **Offline reconstructibility** is
 `offline` for both rules, and **Proof size** is one line.
 
-**The reason is the whole scope, and not minimal.** It is every variable's
-domain, lower and upper bound plus one literal per run of holes, or the one
-equality for a fixed variable. Only two of those literals are needed. The
-extra ones are true, so they do not weaken the clause's validity, but they
-lengthen every assertion a justifier must trim: a 4-position rule-1 assertion
-measured at `Inferences` carries nine literals where three would do. See
-[Next steps](#next-steps).
+**The reason is two literals, and minimal.** Since #1157 each rule names
+exactly the two fixed variables its RUP uses, as the rules below say, guarded
+on `want_reasons()`. Dropping either literal from either rule's reason is
+rejected by VeriPB (by hand, `at_most_one_test` at seeds 1, 2 and 3, every
+case). Until #1157 the reason was the whole scope, every variable's bounds plus
+one literal per run of holes: a 4-position rule-1 assertion measured at
+`Inferences` carried nine literals where three now do.
 
 **There is one wire form.** `hints::AtMostOne`, `(constraint_id <id>)`, no
 subhint and no payload.
@@ -510,10 +510,13 @@ subhint and no payload.
   (the thesis's Encoding Procedure 4.3 is the smart-table one); ours, through
   **Theorem 2.8**, as in the preamble: the negated conclusion `val = v` and the
   reason's `vars[i] = v`, `vars[j] = v`.
-- **Reason** — the whole scope, as the preamble says. Minimal would be
-  `{vars[i] = v, vars[j] = v}`. Not guarded on `want_reasons()`, but lazy: the
-  captured `GenericReasonOver` is materialised only by a proof-logging
-  tracker.
+- **Reason** — `{vars[i] = v, vars[j] = v}`, the first two positions fixed to
+  `v`, built only when `want_reasons()` (since #1157; until then the whole
+  scope). The assertion below is the audit's, from before; the same rule now
+  asserts, on the `n = d = 5` benchmark:
+  ```
+  a 1 ~i[y][eq0] 1 ~i[x[0]][eq0] 1 ~i[x[1]][eq0] >= 1::at_most_one:((constraint_id _1));
+  ```
 - **Assertion** — `val ≠ v ∨ ¬reason`. Measured at `Inferences` on the `var`
   probe (four positions over `0..3`, `y ∈ 0..3`):
   ```
@@ -526,9 +529,9 @@ subhint and no payload.
 - **Proof size** — one line per inference, whatever the width; the line has
   `O(n + runs)` literals.
 - **Gaps** — `None.`
-- **Tightness** — `Not shown.` No mutation lane exists for this family. The
-  corruption to try is dropping one of the two fixed positions from the
-  reason.
+- **Tightness** — `Shown`, by hand, no lane: since #1157, dropping either of
+  the two fixed positions from the reason is rejected on `at_most_one_test`
+  seeds 1, 2 and 3.
 
 ### Rule: only-holder
 
@@ -546,7 +549,9 @@ subhint and no payload.
   (the thesis's Encoding Procedure 4.3 is the smart-table one); ours, through
   **Theorem 2.8**: the negated conclusion `vars[j] = v` and the reason's
   `val = v`, `vars[k] = v`.
-- **Reason** — the whole scope. Minimal would be `{val = v, vars[k] = v}`.
+- **Reason** — `{val = v, vars[k] = v}`, built only when `want_reasons()`
+  (since #1157; until then the whole scope, as in the audit's assertion
+  below). Now `a 1 ~i[x[1]][eq0] 1 ~i[y][eq0] 1 ~i[x[0]][eq0] >= 1`.
 - **Assertion** — `vars[j] ≠ v ∨ ¬reason`. Measured at `Inferences`:
   ```
   a 1 ~i[x[3]][eq1] 1 ~i[x[0]][eq0] 1 ~i[x[1]][eq0] 1 ~i[x[2]][eq1] 1 ~i[x[3]][ge0] 1 i[x[3]][ge4] 1 ~i[y][eq1] >= 1::at_most_one:((constraint_id _1));
@@ -557,7 +562,9 @@ subhint and no payload.
 - **Offline reconstructibility** — `offline`.
 - **Proof size** — one line per inference.
 - **Gaps** — `None.`
-- **Tightness** — `Not shown.`
+- **Tightness** — `Shown`, by hand, no lane: since #1157, dropping `val = v`
+  or `vars[k] = v` from the reason is rejected on `at_most_one_test` seeds 1, 2
+  and 3.
 
 ## Evidence
 
@@ -595,7 +602,8 @@ at_most_one_test --seed=1`, and the same with `--view-position=mixed`, at
 solutions and a SmartTable one with 1,304, each stopped at 300 and checked for
 soundness only. Every fixed shape runs complete.
 
-**Tightness:** no mutation lane, and no refusal shown by hand.
+**Tightness:** no mutation lane. By hand, since #1157, each reason literal
+of each rule is load-bearing; see the rules.
 
 **What the tests do not cover.**
 
@@ -785,7 +793,12 @@ performance](#cpu-performance), against an unpatched build of the same tree
    0.881 s in the same batch). With proofs on, the `n = d = 5` enumeration's
    3,516 family assertions shrink from 584,580 bytes to 305,892 at
    `Inferences`, and its `Off` proof from 10.86 MB to 10.58 MB,
-   verifying in about the same time. Small. Filed as #1157.
+   verifying in about the same time. Small. Filed as #1157. *Done by
+   #1432*: on the same tree with proofs off the benchmark is unchanged
+   (0.730–0.737 s in both orders, against 0.730–0.755 s), the `n = d = 5`
+   enumeration's family assertions at `Inferences` halve (204,264 bytes to
+   101,268 over 1,164), and its `Off` proof goes from 10.36 MB to 10.26 MB,
+   verifying.
 4. **Conform the encoding to `cake_pb_cp`'s** (patch D). Write `Count`'s three
    flags, `ge`, `le` and `eq`, named by position under the constraint ID, and
    label the row `am1`, as `Count` was conformed under #354. With a variable
