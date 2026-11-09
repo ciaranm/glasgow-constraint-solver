@@ -5,7 +5,8 @@
 > **Audited** 2026-10-10 at `86caad24` ·
 > **Open issues** filed by this audit: #1337 (negative item values and
 > totals, which MiniZinc allows, give an error from MiniZinc, and negative
-> items, weights or profits, which XCSP3 allows, an abort from XCSP3), #1340
+> items, which XCSP3 allows, an abort from XCSP3; a negative weight or profit
+> was an abort too until #1447 made it `s UNSUPPORTED`), #1340
 > (the interior-value pass walks every value of each total and scans every
 > terminal state for it: quadratic in a wide item), #1334 (`PerCall` dropped
 > coefficients past the end of the item list without a word; fixed by
@@ -73,14 +74,16 @@ Four things to know before touching it.
   proofs off `Upfront` is the slower of the two (1.14 to 1.38 times the
   instructions); it walks fixed items too and tests every edge against the
   static diagram, and which of the two costs more was not measured.
-- **Negative values are refused, not handled.** A negative coefficient, item
-  lower bound or total lower bound throws `InvalidProblemDefinitionException`
-  from `prepare()`. MiniZinc's own definition requires non-negative weights and
+- **Negative values are refused, not handled.** A negative coefficient throws
+  `InvalidProblemDefinitionException` from the constructor (since #1447), and a
+  negative item or total lower bound from `prepare()`. MiniZinc's own definition requires non-negative weights and
   profits (its wrapper asserts it, so every solver errors on them) but
   *constrains* items and totals to be non-negative, so a model with `var -1..2`
   items or a total declared `var -3..20` errors where Gecode solves it; XCSP3
-  has no sign restriction on items, weights or profits, and the throw escapes
-  the XCSP3 binary as an abort (#1337). With proofs on at `AssertionLevel::Off` (which
+  has no sign restriction on items, weights or profits. A negative weight or
+  profit is refused while the model is built, which the XCSP3 binary reports as
+  `s UNSUPPORTED` (exit 1, since #1447); a negative item value throws from
+  `prepare()`, inside `solve_with`, and escapes the binary as an abort (#1337). With proofs on at `AssertionLevel::Off` (which
   is what `--prove` gives), a total that is a constant or a view throws
   `UnimplementedException` (#1229) as soon as a cap-exceeded or lower-bound
   `pol` names it; MiniZinc reaches that with a fixed capacity, and both corpus
@@ -161,9 +164,11 @@ profit})`.
     The parser reads the weight condition from the first `<condition>` and the
     profit condition from the second, so the element order is `<list>`,
     `<weights>`, `<condition>`, `<profits>`, `<condition>`; it ignores a
-    `<limit>`. A negative weight, profit or item value throws from
-    `Knapsack::prepare()`, inside `solve_with`, where the binary catches only
-    `IntegerOverflow`, so the process aborts (exit 134; #1337). **A
+    `<limit>`. A negative weight or profit throws from the constructor while
+    the model is built, which the binary reports as `s UNSUPPORTED` (exit 1,
+    since #1447). A negative item value throws from `Knapsack::prepare()`,
+    inside `solve_with`, where the binary catches only `IntegerOverflow`, so the
+    process aborts (exit 134; #1337). **A
     `<knapsack>` inside a `<group>` crashes the parser** (#1354), with
     proofs off or on, before the knapsack reaches the solver (the front end
     posts each constraint from its callback as it is parsed, `:842`, so
@@ -229,8 +234,11 @@ status and solution set together.
   agrees. ACE itself fails on 45 instances (an `ArrayIndexOutOfBoundsException`
   in its `Problem.sum`), which are not counted. The 56 disagreements are all
   aborts on a negative weight (32) or a negative domain value (24); a negative
-  profit aborts the same way, since `prepare()`'s coefficient check covers
-  every row (`knapsack.cc:612–615`). Every instance posts plain `<knapsack>`
+  profit aborted the same way, since `prepare()`'s coefficient check covered
+  every row. Since #1447 the coefficient check is in the constructor
+  (`knapsack.cc:79-82`), so a negative weight or profit is now `s UNSUPPORTED`
+  (exit 1) and a negative domain value still aborts, each checked on a
+  two-item probe at `fffade10`; the sweep was not re-run. Every instance posts plain `<knapsack>`
   elements; none is inside a `<group>`, which crashes (#1354, in the footnote
   above).
 - **`.scp`:** `knapsack_sat` and `knapsack_unsat` chain-verify; see [Cake
@@ -1317,8 +1325,8 @@ derivation:
 - **A model with negative item values or totals does not run from MiniZinc**,
   which errors where its own definition would have constrained them to be
   non-negative (negative weights and profits are refused by MiniZinc's wrapper
-  for every solver). **XCSP3 aborts** on a negative item value, weight or
-  profit. #1337.
+  for every solver). **XCSP3 aborts** on a negative item value, and reports a
+  negative weight or profit as `s UNSUPPORTED` (since #1447). #1337.
 - **XCSP3 crashes on a `<knapsack>` inside a `<group>`** (`SIGSEGV` in the
   parser, proofs off or on); the same rows written as separate `<knapsack>`
   constraints work. The bug is in the pinned parser, not in Glasgow's
@@ -1347,7 +1355,9 @@ derivation:
    `fzn_knapsack` post `x[i] ≥ 0`, `W ≥ 0` and `P ≥ 0` (or clamp) as the
    standard definition does; in XCSP3, decompose shapes with negative item
    values, weights or profits to linear equalities, and catch `InvalidProblemDefinitionException`
-   around the solve so a refusal is `UNSUPPORTED` rather than an abort. Small.
+   around the solve so a refusal of a negative item value is `UNSUPPORTED`
+   rather than an abort (a negative weight or profit already is, since #1447,
+   because the constructor refuses it while the model is built). Small.
 3. **Fix the parser's grouped knapsack** (#1354): tag the group `KNAPSACK`
    in `KnapsackTagAction::beginTag` and copy the template's profit condition
    in `XConstraintKnapsack::unfoldParameters` before unfolding it; both are

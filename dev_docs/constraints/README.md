@@ -769,8 +769,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   root with proofs off and wrote over 40 GB of proof with them on (#1341); the
   interior-value pass is quadratic in a wide item (#1340); a negative item
   value or total errors from MiniZinc (whose own definition constrains them
-  non-negative), and a negative item value, weight or profit aborts XCSP3
-  (#1337); until #1334 (fixed by #1447) `PerCall` silently dropped excess
+  non-negative), and a negative item value aborts XCSP3, where a negative
+  weight or profit is `s UNSUPPORTED` since #1447 (#1337); until #1334 (fixed by #1447) `PerCall` silently dropped excess
   coefficients; and #1229's
   constant-total crash with proofs at `AssertionLevel::Off` is reachable from
   a MiniZinc fixed capacity under `--prove` (commented on #1229). `Upfront`'s
