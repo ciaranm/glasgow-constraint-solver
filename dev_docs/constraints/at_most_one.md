@@ -593,8 +593,8 @@ subhint and no payload.
   `a`, `−a`, `a + 1`, `a − 1` and `c` against positions over the same
   variables, under plain `solve_for_tests`. Each enumerates completely under
   the default caps.
-- **`hole_wakes_test`**, since #1451: a hole in a position does not wake the
-  propagator and an instantiation does, counted in propagator calls. Proofs are
+- **`hole_wakes_test`**, since #1451: a hole in a position or in `val` does not
+  wake the propagator and an instantiation does, counted in propagator calls. Proofs are
   byte-identical either way, so this is what pins the triggers (#1156).
 - **`smart_table_dup`** (`smart_table_dup_test`), since #1182: posts
   `AtMostOneSmartTable` as a problem's only constraint, solves it at

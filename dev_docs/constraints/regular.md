@@ -839,8 +839,8 @@ the OPB, in the root's proof and in the regex front end.
    so every pruning copied it through `Reason`'s converting constructor: with
    proofs off a call that pruned `p` values cost `O(p · n)` in copies. Since
    #1445 `PerCall` builds the reason only when a logger or the tracker will
-   read it (`regular_legacy.cc:347`) and converts it to one `Reason` at the
-   first pruning (`:419`), and since #1446 the short-reason flag is defined
+   read it (`regular_legacy.cc:357`) and converts it to one `Reason` at the
+   first pruning (`:428-429`), and since #1446 the short-reason flag is defined
    only when a line or an inference first cites it. `Upfront` passes the declarative reason
    (`regular.cc:346`), so with proofs off it copies nothing; with proofs on,
    the inference tracker materialises that generic reason at every removal

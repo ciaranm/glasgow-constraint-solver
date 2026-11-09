@@ -101,13 +101,16 @@ Four things to know before touching it.
 Σ_{i < n} coefficients[x][i] · vars[i] = totals[x].
 ```
 
-The class requires, and checks in `prepare()` (`knapsack.cc:601–623`, and
-`knapsack_upfront.cc:858–885` for `Upfront`), that `k ≥ 1`, that every row has
-the same length, that every coefficient is non-negative, and that every item and
-every total has a non-negative initial lower bound. Each failure throws
-`InvalidProblemDefinitionException`. The constructor checks only that every
-coefficient lies in `±(2⁶⁰ − 1)` (`innards::require_bounded`,
-`knapsack.cc:64`, `:70`), and throws `IntegerOverflow` otherwise. The
+The class requires that `k ≥ 1`, that there is one total per row, that every
+row has one coefficient per item, that every coefficient is non-negative, and
+that every item and every total has a non-negative initial lower bound. Each
+failure throws `InvalidProblemDefinitionException`. The constructor checks the
+shape and the signs of the coefficients (`check_knapsack_arguments`,
+`knapsack.cc:69-82`, called at `:90` and `:97`, since #1447), and that every
+coefficient lies in `±(2⁶⁰ − 1)` (`innards::require_bounded`, `:89`, `:96`),
+throwing `IntegerOverflow` for that; `prepare()` checks the items' and totals'
+lower bounds (`knapsack.cc:632`, `:636`). `Upfront` also repeats every check in
+`knapsack_upfront_prepare` (`knapsack_upfront.cc:859–885`). The
 two-total constructor is `Knapsack({weights, profits}, vars, {weight,
 profit})`.
 
@@ -604,9 +607,9 @@ call in 120 s with proofs off, under either strategy, where a total in `0..10⁹
 takes 15 to 16 s (the fact-check's `edge.cc`, cases 8 and 9).
 
 **Negative values and zero.** Zero is ordinary everywhere (a zero coefficient,
-an item or total at 0, `n = 0`). Negatives are refused in `prepare()`: a
-negative coefficient, item lower bound or total lower bound throws
-`InvalidProblemDefinitionException`. The DP's over-cap prune relies on every
+an item or total at 0, `n = 0`). Negatives are refused: a negative coefficient
+by the constructor (since #1447), and a negative item or total lower bound by
+`prepare()`, each throwing `InvalidProblemDefinitionException`. The DP's over-cap prune relies on every
 contribution being non-negative, so the refusal is what keeps it sound; the
 front ends' problem is that they pass such shapes through (#1337).
 

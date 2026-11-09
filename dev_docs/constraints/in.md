@@ -432,7 +432,7 @@ when the variable or view is made.
 - *Empty lists, a singleton `var`, and `var` among its own candidates* are
   covered by the test, per #254. A constant `var` is not: the test's
   `create_integer_variable_or_constant` always returns a variable
-  (`constraints_test_utils.hh:1266–1270`).
+  (`constraints_test_utils.hh:1267–1271`).
 - ***A repeated candidate blocks the single-support rule.*** Step 3 fires only
   when exactly one candidate intersects `dom(var)`, and the scan
   (`in.cc:309–319`) counts positions, not variables. `In{x, {y, y}}` with

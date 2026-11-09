@@ -208,6 +208,7 @@ auto run_val_kind_tests(Variant variant, bool proofs) -> void
     vector<Term> mixed{{0, 1, 1}, {1}, {2, -1, 0}}; // a + 1, b, -c
 
     run_val_kind_test(variant, proofs, "d + 1", abcd, plain, {3, 1, 1});
+    run_val_kind_test(variant, proofs, "d + 1, mixed positions", abcd, mixed, {3, 1, 1});
     run_val_kind_test(variant, proofs, "-d + 2", abcd, plain, {3, -1, 2});
     run_val_kind_test(variant, proofs, "-d + 2, mixed positions", abcd, mixed, {3, -1, 2});
     run_val_kind_test(variant, proofs, "constant 1", abc, plain, {-1, 1, 1});

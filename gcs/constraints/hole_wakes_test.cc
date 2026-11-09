@@ -181,9 +181,9 @@ TEST_CASE("A hole in a load wakes BinPacking's upfront Stage 3")
 
 namespace
 {
-    // Two positions and a value over 1..3, with x1 losing `holes` once t is 1.
-    // Returns how many propagator calls branching t = 1 made.
-    auto propagations_when_punching_at_most_one(vector<Integer> holes) -> unsigned long long
+    // Two positions and a value over 1..3, with x1 (or val) losing `holes` once
+    // t is 1. Returns how many propagator calls branching t = 1 made.
+    auto propagations_when_punching_at_most_one(vector<Integer> holes, bool punch_val = false) -> unsigned long long
     {
         State state;
         Stats stats;
@@ -195,7 +195,7 @@ namespace
         auto t = state.allocate_integer_variable_with_state(0_i, 1_i);
 
         AtMostOne{{x1, x2}, val}.install(propagators, state, nullptr);
-        install_hole_puncher(propagators, t, x1, std::move(holes));
+        install_hole_puncher(propagators, t, punch_val ? val : x1, std::move(holes));
         REQUIRE(propagators.propagate(Literals{}, state, nullptr));
 
         Stats before;
@@ -212,11 +212,14 @@ TEST_CASE("A hole does not wake AtMostOne")
 {
     // Removing 2 from x1 leaves it unfixed: only the puncher runs.
     CHECK(propagations_when_punching_at_most_one({2_i}) == 1);
+    // And the same for val, which has a trigger of its own.
+    CHECK(propagations_when_punching_at_most_one({2_i}, true) == 1);
 }
 
 TEST_CASE("An instantiation does wake AtMostOne")
 {
-    // The control for the case above: removing 1 and 3 fixes x1 to 2, which
-    // wakes AtMostOne, so the count does see it.
+    // The control for the case above: removing 1 and 3 fixes x1 (or val) to
+    // 2, which wakes AtMostOne, so the count does see it.
     CHECK(propagations_when_punching_at_most_one({1_i, 3_i}) == 2);
+    CHECK(propagations_when_punching_at_most_one({1_i, 3_i}, true) == 2);
 }

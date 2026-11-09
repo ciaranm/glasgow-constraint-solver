@@ -482,7 +482,7 @@ over the bit makes both failing proofs verify against its otherwise unchanged
 OPB, so nothing else is involved. `verified_encodings/scp_cases`
 has no `binpacking` case yet, so no chain test covers the family; its proofs
 are checked against the solver's own OPB (workflow 1), where they verify. The
-`.scp` round-trips (`scp_reader_test.cc:1741`).
+`.scp` round-trips (`scp_reader_test.cc:1925`).
 
 ### Proof-time state
 
