@@ -185,7 +185,8 @@ it:
 
 `run_test_and_expect_verify_failure.bash` is the inverse, for mutation testing:
 the binary writes a knowingly wrong proof and the run passes only if `veripb`
-*rejects* it. Mutation lanes are the exception to the split above — a handful of
+*rejects* it, by failing a step of the proof for the reason the lane names with
+`--expect`. Mutation lanes are the exception to the split above — a handful of
 constraint tests are driven through these wrappers with `--mutate=` and the
 wrapper's `--basename`, which names the one proof the wrapper then checks. See
 [constraints.md](constraints.md) (Mutation testing).

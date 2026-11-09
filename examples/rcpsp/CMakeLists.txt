@@ -63,10 +63,10 @@ add_test(NAME rcpsp_dzn_inferred COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_tes
 # honest proof behind and nothing to say so --- the shape a no-op presolver
 # passing every check has, one layer out. Both lanes, because the two presolvers
 # forward it separately.
-add_test(NAME rcpsp_dzn_inferred_disjunctive_mutated COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_expect_verify_failure.bash
+add_test(NAME rcpsp_dzn_inferred_disjunctive_mutated COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
     --basename rcpsp_dzn_inferred_disjunctive_mutated
     $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-disjunctive --mutate-makespan-bound)
-add_test(NAME rcpsp_dzn_inferred_cumulative_mutated COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_expect_verify_failure.bash
+add_test(NAME rcpsp_dzn_inferred_cumulative_mutated COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
     --basename rcpsp_dzn_inferred_cumulative_mutated
     $<TARGET_FILE:rcpsp> --dzn ${CMAKE_CURRENT_SOURCE_DIR}/sample.dzn --infer-cumulative --mutate-makespan-bound)
 
