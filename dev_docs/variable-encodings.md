@@ -67,7 +67,9 @@ variable.
 
 Transcripts in the per-constraint documents quote the names as they were when
 they were measured, and those from before this scheme spell a view
-`p[<index>_view_of_X_plus_c]` with link rows `@c[view_of_X_plus_c][viewle]`.
+`p[<index>_view_of_X_plus_c]`, its atom-definition labels `@po[<index>][…]`
+(so `@po[0][eq4][r]` for an atom now labelled `@w[X][c][eq4][r]`), and its link
+rows `@c[view_of_X_plus_c][viewle]`.
 
 ## The two axes, and the one primitive underneath
 

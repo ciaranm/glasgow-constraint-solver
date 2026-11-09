@@ -225,12 +225,13 @@ since #1202, `run_constant_table_test`, `table_test.cc:191`, which posts a real
 **The proof handles views.** Every rule states literals on the positions as
 posted. Since #1208, a view that a model row names gets a bit vector of its
 own when the row is written, and its `=` literals are defined over that, with
-two channel rows to the underlying variable: a `Table` over `x + 3` names
-`p[0_view_of_x_plus_3][eq4]` and so on, each defined (rows labelled
-`@po[0][eq4][r]` and `[f]`) over the view's `≥` literals, `p[…][ge4]` and
-`p[…][ge5]`, which are defined in turn over its bits `p[0_view_of_x_plus_3][b…]`
-(`tmp/fd871-comments-1008/tables/probes/enc.cc view`). The view lanes run
-with proofs.
+two channel rows to the underlying variable (`@w[x][3][le]` and `[ge]`): a
+`Table` over `x + 3` names `w[x][3][eq4]` and so on, each defined (rows labelled
+`@w[x][3][eq4][r]` and `[f]`) over the view's `≥` literals, `w[x][3][ge4]` and
+`w[x][3][ge5]`, which are defined in turn over its bits `w[x][3][b…]`
+(`tmp/fd871-comments-1008/tables/probes/enc.cc view`; names re-checked at
+`fffade10`, since #1419 renamed them from `p[0_view_of_x_plus_3][…]` and
+`@po[0][…]`). The view lanes run with proofs.
 
 ### Reification
 
