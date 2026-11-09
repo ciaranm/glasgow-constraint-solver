@@ -589,31 +589,20 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
             state, inference, logger, vars_2, vars_1, all_vars, ! or_equal, prefix_equal_lt_flags, decision_at_lt_flags, cond, state_handle, owner);
     };
 
-    // Each verdict's scaffold is stated under the negation of the cond literal
-    // the dispatcher infers for it, which is the literal define_proof_model
-    // half-reified the scaffold's direction on: the less direction on ~cond
-    // for Iff and on cond for NotIf, the greater direction on cond for If and
-    // Iff. A verdict the kind infers nothing for gets nullopt, and MustHold and
-    // MustNotHold never reach the undecided pass.
-    optional<Literal> must_hold_scaffold_under, must_not_hold_scaffold_under;
-    overloaded{
-        [&](const reif::MustHold &) {},                                     //
-        [&](const reif::MustNotHold &) {},                                  //
-        [&](const reif::If & r) { must_not_hold_scaffold_under = r.cond; }, //
-        [&](const reif::NotIf & r) { must_hold_scaffold_under = r.cond; },  //
-        [&](const reif::Iff & r) {
-            must_hold_scaffold_under = ! r.cond;
-            must_not_hold_scaffold_under = r.cond;
-        } //
-    }
-        .visit(_reif_cond);
-
     auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), all_vars = vars_1_then_2, or_equal,
                                          prefix_equal_gt_flags = _prefix_equal_gt_flags, decision_at_gt_flags = _decision_at_gt_flags,
                                          prefix_equal_lt_flags = _prefix_equal_lt_flags, decision_at_lt_flags = _decision_at_lt_flags,
-                                         must_hold_scaffold_under, must_not_hold_scaffold_under,
                                          owner = constraint_id()](const State & state, auto & inference, ProofLogger * const,
-                                         const IntegerVariableCondition &) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
+                                         const CondLiteralsToInfer & to_infer) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
+        // Each verdict's scaffold is stated under the negation of the cond
+        // literal the dispatcher infers for it, which is the literal
+        // define_proof_model half-reified the scaffold's direction on: the less
+        // direction on ~cond for Iff and on cond for NotIf, the greater
+        // direction on cond for If and Iff. A verdict the kind infers nothing
+        // for gets nullopt (#1185).
+        auto negated = [](const optional<Literal> & lit) -> optional<Literal> { return lit ? optional<Literal>{! *lit} : nullopt; };
+        auto must_hold_scaffold_under = negated(to_infer.if_must_hold);
+        auto must_not_hold_scaffold_under = negated(to_infer.if_must_not_hold);
         return run_lex_undecided_detection(state, inference.want_reasons(), vars_1, vars_2, all_vars, or_equal, prefix_equal_gt_flags,
             decision_at_gt_flags, prefix_equal_lt_flags, decision_at_lt_flags, must_hold_scaffold_under, must_not_hold_scaffold_under, owner);
     };

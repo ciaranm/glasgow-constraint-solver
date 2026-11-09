@@ -499,7 +499,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 
     auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, owner = constraint_id(), mutation = _proof_mutation](const State & state, auto & inference,
                                          ProofLogger * const logger,
-                                         const IntegerVariableCondition & cond) -> ReificationVerdictFor<EqualsJustification> {
+                                         const CondLiteralsToInfer & to_infer) -> ReificationVerdictFor<EqualsJustification> {
         // Aliased non-constant operands: equality definitely holds regardless of
         // domain. Returning MustHold here lets the dispatcher pin the cond
         // immediately at root, instead of waiting until search fixes v1 to a
@@ -543,7 +543,14 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         else {
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
-                auto [no_overlap, reason] = no_overlap_justification(state, logger, v1, v2, cond, owner, inference.want_reasons(), mutation);
+                // The scaffold sits under the negation of the literal a
+                // must-not-hold verdict infers (cond, unless the kind infers
+                // nothing). Under NotIf it infers nothing, but the verdict is
+                // still what disables the propagator, so it gets a placeholder
+                // for a justification the dispatcher then discards (#1185).
+                Literal scaffold_under = to_infer.if_must_not_hold ? ! *to_infer.if_must_not_hold : Literal{TrueLiteral{}};
+                auto [no_overlap, reason] =
+                    no_overlap_justification(state, logger, v1, v2, scaffold_under, owner, inference.want_reasons(), mutation);
                 return reification_verdict::MustNotHold<EqualsJustification>{
                     .justification = JustifyExplicitly{no_overlap, ThenRUP::Yes}, //
                     .reason = reason                                              //
