@@ -285,6 +285,9 @@ add_scp_chain_test(circuit_unsat  none)
 # The same successor variable twice: the all_different pair rows for the two
 # slots are a unit and its negation, which the root contradiction cites (#1047).
 add_scp_chain_test(circuit_aliased_unsat  none)
+# The empty successor array is vacuously a circuit, so the free A gives two
+# solutions; it used to crash the solver, or overflow with --prove (#1307).
+add_scp_chain_test(circuit_empty_sat      none)
 
 # none (chain-only): array_min / array_max. cake now FULLY reifies the per-value
 # selector x[id][i] <=> (var = result) (it used to half-reify, which left the
