@@ -195,12 +195,17 @@ distinct sites forming an independent set of size `p`; if `|A| - |M| < p` no
 such set exists, so `z < t`. The greedy matching is only *weakly monotone*, so
 the binary search is a heuristic for a good level, not a monotonicity proof —
 but every refutation is certified individually, so soundness never rests on the
-search (paper Section 4.4). At the smallest refuted `t*` we infer `z <= t*-1`;
-if `t* <= z_min` the node fails instead.
+search (paper Section 4.4). At the refuted level `t` the search settles on, let
+`t*` be the next smaller distinct distance (the previous level, or 0 if there
+is none). The conflict graph is the same for every level in `(t*, t]`, so the
+matching refutes `t* + 1` too, and we infer `z <= t*` (#1170; until then
+`z <= t-1`). If `t* < z_min` the node fails instead.
 
 **The justification: a guarded counting derivation.** The guard literal is
-`g = [z <= t-1] = ~[z >= t]`. Everything is proved under the assumption
-`z >= t` (which makes `g` false), and `g` is the final conclusion. The emit
+`g = [z <= t*] = ~[z >= t* + 1]`. Everything is proved under the assumption
+`z >= t* + 1` (which makes `g` false), and `g` is the final conclusion. Every
+guarded pair clause below holds at `t*`: a cross-site pair has `D[a,b] < t`,
+so `D[a,b] <= t*`, and the same-site count row gives `z <= 0 <= t*`. The emit
 callback (`JustifyExplicitly{emit, ThenRUP::Yes}`, all lines `Temporary`)
 mirrors `justify_all_different_hall_set_or_violator` from `justify.cc`:
 
@@ -244,7 +249,7 @@ mirrors `justify_all_different_hall_set_or_violator` from `justify.cc`:
    remains is `g` with coefficient exactly one (the surviving numerator is
    `p - (|A| - |M|) >= 1`, which is precisely the refutation inequality),
    possibly plus a few `[x_i=a]` literals for pruned / holey / out-of-active
-   values. `ThenRUP::Yes` then RUPs `z <= t-1` (or `false` on the contradiction
+   values. `ThenRUP::Yes` then RUPs `z <= t*` (or `false` on the contradiction
    path) under the reason, discharging those leftover literals.
 
    Over a definition range wider than 100 values the at-least-one is an
@@ -266,21 +271,21 @@ Constant positions carry no at-least-one from the tracker; their `[x_i=c]`
 folds to the constant `1` in the pol sum and `0` in the `~` terms, cancelling
 exactly, so they are simply skipped.
 
-**The contradiction path** (`t* <= z_min`) runs the same emit under
+**The contradiction path** (`t* < z_min`) runs the same emit under
 `inference.contradiction` with `z >= z_min` added to the reason: the pol still
-derives `g = [z <= t-1]`, which is domain-false given `z >= z_min >= t`, so RUP
+derives `g = [z <= t*]`, which is domain-false given `z >= z_min > t*`, so RUP
 closes the node.
 
-**Why `z <= t-1` and not the previous distinct level `t*`.** Refuting `t`
-proves `z` is strictly below `t`, i.e. `z <= t-1` — that is exactly what the
-counting certificate gives. The stronger claim `z <= t*` (the largest distinct
-distance below `t`) is *not* plain RUP: it would require the min-attained
-ladder disjunction `[z >= t*] \/ m_{t*}` to unit-propagate `m_{t*}`, but
-`m_{t*}` is a free disjunction of witness flags that the matching argument does
-not force. A per-witness case analysis could recover it; it is a measured
-follow-up only if search shows it matters, and only the single final refuted
-level is justified per tightening. In practice `z <= t-1` plus the ladder and
-the rest of propagation lands `z` on an achievable level anyway.
+**Why `z <= t*` and not `z <= t-1`.** Until #1170 the guard was
+`[z <= t-1]`, on the reasoning that refuting `t` proves `z < t`, and that
+`z <= t*` is not RUP from `z <= t-1` (it would need the ladder disjunction
+`[z >= t*] \/ m_{t*}` to unit-propagate `m_{t*}`, which the matching does not
+force). That is true, but `z <= t*` never has to be derived from the weaker
+bound: the counting derivation proves it directly, guarded at `t*`, since its
+pair clauses are the same ones. On 20-site random Euclidean instances with six
+positions this cuts the tree by about half (2,816 recursions to 1,380 under
+`PairSupportMatch`, seed 1); on grids, whose rounded distances are consecutive
+integers, `t* = t - 1` and nothing changes.
 
 ## Costs and measured numbers
 
