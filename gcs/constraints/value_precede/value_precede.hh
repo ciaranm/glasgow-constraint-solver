@@ -2,9 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_VALUE_PRECEDE_VALUE_PRECEDE_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <map>
 #include <vector>
 
 namespace gcs
@@ -33,6 +35,10 @@ namespace gcs
     private:
         std::vector<Integer> _chain;
         std::vector<IntegerVariableID> _vars;
+
+        // For each chain value v, the encoding's flag [pos[v] >= n], "v is
+        // absent". Set by define_proof_model, so empty when proofs are off.
+        std::map<Integer, innards::ProofFlag> _absent_flags;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;

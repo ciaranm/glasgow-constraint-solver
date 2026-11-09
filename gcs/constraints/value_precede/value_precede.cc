@@ -100,6 +100,7 @@ auto ValuePrecede::define_proof_model(ProofModel & model, const State &) -> void
         for (size_t k = 1; k <= n; ++k)
             ges.push_back(model.create_proof_flag_values_fully_reifying(_constraint_id, vector<long long>{v.raw_value, static_cast<long long>(k)},
                 "pge", WPBSum{} + 1_i * pos_v >= Integer{static_cast<long long>(k)}));
+        _absent_flags.emplace(v, ges.back());
         pge.emplace(v, move(ges));
 
         // Whether vars[i] can be v at all, by its declared bounds. Where it cannot,
@@ -159,18 +160,6 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
     // Decompose into one propagator per consecutive chain pair. Each pair
     // (s, t) enforces value_precede(s, t, vars): if any element of vars is
     // t, then a strictly earlier element must be s.
-    //
-    // Algorithm: find alpha = leftmost index where s could still appear,
-    // or n if s is impossible anywhere. Then x[i] = t is forbidden whenever
-    // no earlier x[j] could be s — that's i in [0, alpha], inclusive at
-    // alpha (since "earlier" means j < alpha, and no j < alpha can be s by
-    // definition of alpha). When alpha == n there is no later position
-    // either, so t is forbidden everywhere.
-    //
-    // The s == t case is handled by the same algorithm: pruning s from
-    // [0, alpha] removes s from x[alpha], shifting alpha forward, and
-    // eventually alpha == n. Each individual prune is RUP-derivable from
-    // the encoding's `pos[s] ≥ n` constraint plus the upper bound.
     for (size_t j = 1; j < _chain.size(); ++j) {
         Integer s = _chain[j - 1];
         Integer t = _chain[j];
@@ -179,14 +168,65 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
         for (const auto & v : _vars)
             triggers.on_change.push_back(v);
 
+        if (s == t) {
+            // A repeated adjacent value: s may not appear at all, since its
+            // first occurrence would need an earlier one. Each removal is RUP
+            // from the encoding alone (the upper-bound row for s at i against
+            // the nos row pos[s] >= n), so it needs no reason, and every
+            // position is pruned in one call.
+            propagators.install(
+                constraint_id(),
+                [vars = _vars, s, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    for (const auto & v : vars)
+                        if (state.in_domain(v, s))
+                            inference.infer(logger, v != s, JustifyUsingRUP{hints::ValuePrecede{owner}}, NoReason{});
+                    return PropagatorState::DisableUntilBacktrack;
+                },
+                triggers);
+            continue;
+        }
+
+        // Law and Lee's algorithm (CP 2004) for a pair with s != t. Let alpha
+        // be the first position that could still be s (n if none).
+        //
+        //  - Every position up to and including alpha has no possible s
+        //    strictly before it, so t is removed there (everywhere if alpha
+        //    is n).
+        //  - If some later position gamma is fixed to t, and no position
+        //    strictly between alpha and gamma could be s, then alpha is the
+        //    only place the s that gamma needs can go, so x[alpha] = s.
+        //
+        // Over distinct variables the two together are GAC on the pair.
+        //
+        // Both are proved the same way, about a position i holding t (the
+        // removal's i, or gamma). The reason makes every earlier position
+        // other than the one being concluded about not s, so the existence
+        // rows climb to [pos[s] >= i]. x[i] = t gives pos[t] <= i through the
+        // upper-bound row, and the precede row then wants pos[t] >= pos[s] + 1,
+        // which is Theorem 2.9's contradictory triple. But the precede row is
+        // switched off by [pos[t] >= n], and unit propagation does not find
+        // that flag false from pos[t] <= i alone: it is opposing bounds on one
+        // bit sum (Theorem 2.7) only once the flag is assumed, so it only
+        // falls out by itself when the bound happens to fix a high bit. So
+        // each inference first states x[i] = t -> not [pos[t] >= n], and then
+        // RUPs.
+        auto t_absent = _absent_flags.empty() ? std::nullopt : std::optional{_absent_flags.at(t)};
+
         propagators.install(
             constraint_id(),
-            // The reason ranges over the fixed variable scope, so build it once
-            // at install (capture-init) and reuse it rather than rebuilding it
-            // every wake. See dev_docs/propagator-performance.md.
-            [vars = _vars, s, t, reason = generic_reason(_vars), owner = constraint_id()](
+            [vars = _vars, s, t, t_absent, owner = constraint_id()](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 auto n = vars.size();
+
+                // States x[i] = t -> not [pos[t] >= n], then RUPs: see above.
+                auto t_at_means_t_present = [&](size_t i) {
+                    return JustifyExplicitly{[&, i](const ReasonLiterals &) -> void {
+                                                 if (logger && t_absent)
+                                                     logger->emit_rup_proof_line(
+                                                         WPBSum{} + 1_i * (vars[i] != t) + 1_i * ! *t_absent >= 1_i, ProofLevel::Temporary);
+                                             },
+                        ThenRUP::Yes, hints::ValuePrecede{owner}};
+                };
 
                 size_t alpha = n;
                 for (size_t i = 0; i < n; ++i) {
@@ -196,21 +236,52 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
                     }
                 }
 
-                // Prune t from positions [0, min(alpha+1, n)). If alpha == n
-                // this is all positions; otherwise it's positions 0..alpha
-                // inclusive.
+                // Remove t from positions [0, alpha], or all of them if alpha
+                // is n. The reason for removing t at i is just that no
+                // earlier position can be s: { x[i'] != s : i' < i }, which
+                // grows by one literal per position.
+                ReasonLiterals prefix;
                 auto prune_up_to = (alpha == n) ? n : alpha + 1;
                 for (size_t i = 0; i < prune_up_to; ++i) {
                     if (state.in_domain(vars[i], t))
-                        inference.infer(logger, vars[i] != t, JustifyUsingRUP{hints::ValuePrecede{owner}}, reason);
+                        inference.infer(
+                            logger, vars[i] != t, t_at_means_t_present(i), inference.want_reasons() ? Reason{ExplicitReason{prefix}} : Reason{});
+                    if (inference.want_reasons())
+                        prefix.emplace_back(vars[i] != s);
                 }
 
                 if (alpha == n)
                     return PropagatorState::DisableUntilBacktrack;
 
+                // The forcing half. Scan forward from alpha for whichever
+                // comes first: a second position that could be s (nothing to
+                // force), or a position fixed to t. The state is read after
+                // the removals above, which is only ever narrower than what
+                // the scan for alpha saw, so "no s before alpha" still holds.
+                for (size_t gamma = alpha + 1; gamma < n; ++gamma) {
+                    if (state.in_domain(vars[gamma], s))
+                        break;
+                    if (state.has_single_value(vars[gamma]) && state.lower_bound(vars[gamma]) == t) {
+                        // Reason: x[gamma] = t, and x[i'] != s for every
+                        // i' < gamma other than alpha.
+                        auto reason = [&]() -> Reason {
+                            if (! inference.want_reasons())
+                                return Reason{};
+                            ReasonLiterals lits;
+                            for (size_t i = 0; i < gamma; ++i)
+                                if (i != alpha)
+                                    lits.emplace_back(vars[i] != s);
+                            lits.emplace_back(vars[gamma] == t);
+                            return Reason{ExplicitReason{move(lits)}};
+                        }();
+                        inference.infer(logger, vars[alpha] == s, t_at_means_t_present(gamma), reason);
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                }
+
                 // If the alpha position is fixed to s, this pair is fully
                 // discharged regardless of later positions.
-                if (state.has_single_value(vars[alpha]) && state.bounds(vars[alpha]).first == s)
+                if (state.has_single_value(vars[alpha]) && state.lower_bound(vars[alpha]) == s)
                     return PropagatorState::DisableUntilBacktrack;
 
                 return PropagatorState::Enable;

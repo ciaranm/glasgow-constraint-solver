@@ -315,13 +315,14 @@ variant](TEMPLATE.md#the-presolver-variant).
 - [`value_precede.md`](value_precede.md) — `ValuePrecede`, a value chain
   whose each value first appears before the next: one propagator per
   consecutive pair over `cake_pb_cp`'s first-occurrence encoding, matched
-  label for label, and quadratic in the array per chain value. It removes a
-  later value wherever no earlier one can precede it, and nothing else: Law and
-  Lee's forcing half is missing, so it is neither GAC nor `bounds(Z)`, and a
-  backwards enumeration of restricted-growth strings meets 247,823 failures
-  where Gecode's `precede` has none, at 8.0 times the time. Every removal's
-  reason is the whole array. The proofs are one RUP per removal, by a
-  procedure of our own through three of the thesis's theorems.
+  label for label, and quadratic in the array per chain value. Each pair runs
+  Law and Lee's algorithm, so it is GAC over distinct variables; until #1145
+  the forcing half was missing, and a backwards enumeration of
+  restricted-growth strings met 247,823 failures where Gecode's `precede` has
+  none, at 8.0 times the time. A chain is propagated pair by pair. Each
+  inference's reason is the earlier positions' `≠ s` literals, and its proof
+  is a helper line and a RUP, by a procedure of our own through three of the
+  thesis's theorems.
 - [`seq_precede_chain.md`](seq_precede_chain.md) — `SeqPrecedeChain`, the
   chain `1, 2, 3, …` over positions: it clamps any variable whose declared
   bound exceeds the array length and installs a `ValuePrecede`, so it inherits
