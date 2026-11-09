@@ -3,15 +3,15 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1121 ·
-> **Open issues** filed by this audit: #1156 (the `on_change` triggers
-> declare every variable's holes relevant), #1157 (every reason is the whole
+> **Open issues** filed by this audit: #1157 (every reason is the whole
 > scope), #1158 (the encoding is `Count`'s from before #354), #1159 (not
 > `bounds(Z)` on repeated or aliased variables). Already open and touching
 > this family: #833 (the large-domain policy, which names this family's walk
 > over the value variable), and #1128 (`SmartTable`'s per-call copies, which
 > `AtMostOneSmartTable` pays).
 > **Fixed since the audit**: #1155 (every call walked the value variable's
-> domain while it was unfixed), by #1430; #1121 (`AtMostOneSmartTable`'s child named no
+> domain while it was unfixed), by #1430; #1156 (the `on_change` triggers
+> declared every variable's holes relevant), by #1431; #1121 (`AtMostOneSmartTable`'s child named no
 > constraint in its hints), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
@@ -257,18 +257,20 @@ false.
 
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
-| the at-most-one propagator | `on_change`, every position and `val` | derived: every variable; **really nothing** | 1, 2 | always, for two or more positions | never claims; is on distinct variables, and not when `val` is among the positions | never |
+| the at-most-one propagator | `on_instantiated`, every position and `val` | derived: nothing, which is the truth | 1, 2 | always, for two or more positions | never claims; is on distinct variables, and not when `val` is among the positions | never |
 
-**The triggers overstate the holes.** Both rules read only which variables are
+**The triggers are exact since #1156.** Both rules read only which variables are
 fixed, and to what. A hole in a position cannot fix it, and a hole in `val`
 cannot fix `val` and only removes a value rule 1 might have removed, so no
 removal strictly inside anyone's bounds can give this propagator an inference
-it could not already make. But
-`on_change` derives "affected" for every variable, so an `AtMostOne` keeps
-every other constraint's optional interior pruning live on all of its
-variables (see [Interior values](#interior-values-and-optional-pruning)). The
-same fact makes every non-fixing domain change a wasted wake. `on_instantiated`
-on every variable is exact; a tested patch is in [Next steps](#next-steps).
+it could not already make. So it triggers `on_instantiated` on every
+variable. Until #1156 it triggered `on_change`, which derived "affected" for
+every variable, so an `AtMostOne` kept every other constraint's optional
+interior pruning live on all of its variables (see [Interior
+values](#interior-values-and-optional-pruning)), and every non-fixing domain
+change was a wasted wake: on the `n = d = 6` benchmark below, propagations fall
+from 781,642 to 770,757 with `y` first and from 842,696 to 790,441 with `y`
+last, one per search node, on the same tree and at the same wall time.
 
 **Idempotence.** Not claimed, and not true of every shape. On distinct
 variables one call is a fixpoint of both rules: rule 1 runs first and can only
@@ -312,14 +314,13 @@ rule 1 walked `val`'s domain instead.
 **Offers.** `None.` The rules only remove a fixed value, and at their fixpoint
 the constraint is already generalised arc consistent on distinct variables.
 
-**Observes.** **Nothing, on any variable, but it declares everything.** Both
+**Observes.** **Nothing, on any variable, and since #1156 it says so.** Both
 rules read fixedness only, so no hole affects this family's propagation, in the
-sense of [`optional-interior-pruning.md`](../optional-interior-pruning.md). The
-`on_change` triggers derive the opposite, and nothing sets
-`Triggers::holes_affect_propagation`, so an `AtMostOne` over a variable is a
-reason for somebody else's optional interior pruning on that variable to stay
-on. That is the direction that is never unsound, only weaker. Switching the
-triggers to `on_instantiated` fixes it.
+sense of [`optional-interior-pruning.md`](../optional-interior-pruning.md), and
+its `on_instantiated` triggers derive exactly that. Until #1156 its
+`on_change` triggers derived the opposite, so an `AtMostOne` over a variable
+was a reason for somebody else's optional interior pruning on that variable to
+stay on.
 
 ### Robustness and limits
 
@@ -764,7 +765,7 @@ performance](#cpu-performance), against an unpatched build of the same tree
    up to seven values; the other 653,184 are solution leaves). The audit row
    should then be pinned `Clean`, and gain a sibling with `val` fixed and one
    with holes. Small, and the one that matters. Filed as #1155, under #833.
-2. **Trigger on instantiation** (patch B). `on_instantiated` on every position
+2. *Done by #1431 (#1156), as below.* **Trigger on instantiation** (patch B). `on_instantiated` on every position
    and on `val` is exact, as [the inventory](#propagator-inventory) argues, and
    derives "holes affect nothing" for every variable, which is the truth. It
    saves the wakes on non-fixing changes: propagations fall from 781,642 to

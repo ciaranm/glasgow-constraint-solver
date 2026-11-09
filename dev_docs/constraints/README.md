@@ -395,8 +395,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   a tested patch: while the value
   variable was unfixed every call walked its whole domain, about 0.4 s a call at
   10⁷ values, until #1155 collected the fixed values instead, `O(n log n)`;
-  its `on_change` triggers declare every variable's holes relevant, though
-  none is; every reason is the whole scope where two literals suffice; and its
+  its `on_change` triggers declared every variable's holes relevant, though
+  none is, until #1156 made them `on_instantiated`; every reason is the whole scope where two literals suffice; and its
   encoding is `Count`'s from before `Count` was conformed to `cake_pb_cp`. Not
   merged with `counting`: no shared code, and it is the cheaper special case.
 - [`in.md`](in.md) — `In`: a variable equals one of a list of constants or
