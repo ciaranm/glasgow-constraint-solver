@@ -66,8 +66,9 @@ veripb --force-checked-deletion "${proofname}.opb" "${proofname}.pbp" || exit 1
 # after the fact, in a place that looks like a solver bug. Checking it here
 # means the example that posts the constraint is what reports it. The constraint
 # tests do the same thing in-process (check_scp_writer_reader_symmetry); this
-# covers the examples, benchmarks and frontend binaries, which are where the
-# less-common constraints actually get posted.
+# covers the examples and the minicp benchmarks, which are where the
+# less-common constraints actually get posted. No frontend test uses this
+# script.
 #
 # The solver's path comes from scp_solver_path, which CMake generates beside the
 # binaries; GCS_SCP_SOLVER overrides it. Both absent (running outside a build
@@ -92,7 +93,9 @@ if [[ -n $scp_solver && -x $scp_solver && -e ${proofname}.scp ]] ; then
     if [[ $scp_read_status -eq 2 ]] ; then
         echo "$0: ${proofname}.scp names a constraint gcs::read_scp cannot read -- see dev_docs/workflow2_testing.md" 1>&2
         exit 1
-    elif [[ $scp_read_status -ne 0 && $scp_read_status -ne 3 ]] ; then
+    elif [[ $scp_read_status -eq 3 ]] ; then
+        echo "note: ${proofname}.scp is a shape gcs::read_scp cannot rebuild; passing"
+    elif [[ $scp_read_status -ne 0 ]] ; then
         echo "$0: gcs::read_scp could not read back ${proofname}.scp -- see dev_docs/workflow2_testing.md" 1>&2
         exit 1
     fi

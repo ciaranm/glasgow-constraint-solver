@@ -438,8 +438,8 @@ the obvious one. The description is read out of the `.scp` and matched, which
 catches a flag that stops reaching `s_expr()`; then it is read back with
 `read_scp`, re-solved, and its solution **set** compared with the posted
 model's, which catches a keyword and a condition that no longer agree.
-`check_scp_writer_reader_symmetry` asks only whether the reader has a *case*
-for the keyword it was handed. Repairing either half of the old bug alone
+`check_scp_writer_reader_symmetry` asks only that the reader reads the `.scp`
+back without error; it never re-solves what it rebuilt. Repairing either half of the old bug alone
 emits the opposite constraint — with the same number of solutions — which is
 why the comparison is of sets and not of counts.
 

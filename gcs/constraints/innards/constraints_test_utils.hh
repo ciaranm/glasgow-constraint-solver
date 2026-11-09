@@ -238,9 +238,9 @@ namespace gcs::test_innards
      * \brief Assert that the model read back from a test's `.scp` has the
      * solution set the model that wrote it had.
      *
-     * check_scp_writer_reader_symmetry above asks whether read_scp has a *case*
-     * for what the writer emitted. It cannot ask whether that case rebuilds the
-     * same constraint, and a description that parses can still say something
+     * check_scp_writer_reader_symmetry above asks whether read_scp reads back
+     * what the writer emitted without error. It cannot ask whether what it
+     * rebuilds is the same constraint, and a description that parses can still say something
      * else: issue #865 was a NotEqualsIff describing itself as an `equals_iff`
      * over a negated condition, which is a different sentence about the same
      * solution set and so invisible to a reader that only has to parse it. Two
@@ -252,7 +252,8 @@ namespace gcs::test_innards
      * count is a weak witness for a family whose modes differ by which half of
      * the space they keep.
      *
-     * Opt-in, and strict where the symmetry check is deliberately forgiving.
+     * Opt-in, and strict where the symmetry check forgives a shape the public
+     * constructors cannot rebuild.
      * read_scp does not promise that every *instance* round-trips -- a
      * non-deterministic automaton, for one, is a shape the public constructors
      * cannot rebuild -- so a caller has to hand this an instance that can

@@ -627,7 +627,8 @@ auto run_hint_inventory_equals_test() -> void
 // read_scp and re-solved, which is what catches a keyword and a condition that
 // no longer agree with each other. Every other proving test in this file
 // exercises the writer, and none of them can see either failure:
-// check_scp_writer_reader_symmetry asks only that the reader has a case.
+// check_scp_writer_reader_symmetry asks only that the reader reads the .scp
+// back without error, and never re-solves what it rebuilt.
 //
 // Named variables and bare handles, deliberately: an instance has to be one
 // read_scp can rebuild for the semantic half to run at all.
