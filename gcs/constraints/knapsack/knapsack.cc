@@ -58,16 +58,43 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    // The checks on the arguments themselves, shared by both proof strategies so
+    // that the strategy cannot change whether a call is accepted (#1334): the
+    // per-call strategy used not to check that a row was as long as the item
+    // list, so it ignored a longer row's extra coefficients and threw
+    // std::out_of_range on a shorter one, where Upfront refused both. The checks
+    // that need the initial domains stay in prepare().
+    auto check_knapsack_arguments(
+        const vector<vector<Integer>> & coeffs, const vector<IntegerVariableID> & vars, const vector<IntegerVariableID> & totals) -> void
+    {
+        if (coeffs.size() != totals.size())
+            throw InvalidProblemDefinitionException{"Knapsack: there must be one total per coefficient row"};
+        if (coeffs.empty())
+            throw InvalidProblemDefinitionException{"Knapsack: at least one coefficient row is required"};
+        for (const auto & row : coeffs)
+            if (row.size() != vars.size())
+                throw InvalidProblemDefinitionException{"Knapsack: every coefficient row must have one coefficient per item"};
+        for (const auto & row : coeffs)
+            for (const auto & c : row)
+                if (c < 0_i)
+                    throw InvalidProblemDefinitionException{"Knapsack: coefficients must be non-negative"};
+    }
+}
+
 Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits, vector<IntegerVariableID> vars, IntegerVariableID weight,
     IntegerVariableID profit) : _coeffs({move(weights), move(profits)}), _vars(move(vars)), _totals({weight, profit})
 {
     innards::require_bounded(_coeffs, "a coefficient of Knapsack");
+    check_knapsack_arguments(_coeffs, _vars, _totals);
 }
 
 Knapsack::Knapsack(vector<vector<Integer>> coefficients, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) :
     _coeffs(move(coefficients)), _vars(move(vars)), _totals(move(totals))
 {
     innards::require_bounded(_coeffs, "a coefficient of Knapsack");
+    check_knapsack_arguments(_coeffs, _vars, _totals);
 }
 
 auto Knapsack::with_proof_strategy(KnapsackProofStrategy strategy) -> Knapsack &
@@ -583,8 +610,9 @@ auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const 
 {
     // The two strategies draw the same inferences and share this OPB encoding;
     // they differ only in the proof scaffolding, so each has its own three-phase
-    // implementation over the same arguments. Validation lives in whichever one
-    // runs, since the messages differ.
+    // implementation over the same arguments. The shape of the arguments is
+    // checked by the constructor for both (#1334); the checks on the initial
+    // domains live in whichever one runs.
     //
     // The upfront strategy's static DAG holds every partial sum, and cannot be
     // built when they do not fit in an Integer. Without a proof to write the
@@ -598,22 +626,7 @@ auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const 
         return true;
     }
 
-    if (_coeffs.size() != _totals.size())
-        throw InvalidProblemDefinitionException{"mismatch between coefficients and totals sizes for knapsack"};
-
-    if (_coeffs.empty())
-        throw InvalidProblemDefinitionException{"empty knapsack coefficients"};
-    unsigned n_vars = _coeffs.begin()->size();
-
-    for (auto & c : _coeffs)
-        if (c.size() != n_vars)
-            throw InvalidProblemDefinitionException{"not sure what to do about different coefficient array sizes for knapsack"};
-
-    for (auto & cc : _coeffs)
-        for (auto & c : cc)
-            if (c < 0_i)
-                throw InvalidProblemDefinitionException{"not sure what to do about negative coefficients for knapsack"};
-
+    // The shape of the arguments was checked by the constructor.
     for (auto & v : _vars)
         if (initial_state.lower_bound(v) < 0_i)
             throw InvalidProblemDefinitionException{"can only support non-negative variables for knapsack"};

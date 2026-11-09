@@ -166,9 +166,54 @@ auto run_dup_knapsack_test(bool proofs, const string & label, pair<int, int> val
     (void)valrange;
 }
 
+// Malformed arguments are refused when the constraint is built, whatever the
+// proof strategy (#1334). The per-call strategy used to ignore a row's
+// coefficients past the item list and to throw std::out_of_range on a short row,
+// where Upfront refused both, so whether a call was accepted depended on the
+// strategy.
+auto run_malformed_tests() -> bool
+{
+    Problem p;
+    auto xs = p.create_integer_variable_vector(2, 0_i, 1_i, "x");
+    auto t = p.create_integer_variable(0_i, 10_i, "t");
+    auto u = p.create_integer_variable(0_i, 10_i, "u");
+
+    bool all_refused = true;
+    auto expect_refused = [&](const string & label, auto && build) {
+        try {
+            build();
+            println(cerr, "knapsack malformed {}: accepted, expected InvalidProblemDefinitionException", label);
+            all_refused = false;
+        }
+        catch (const InvalidProblemDefinitionException &) {
+        }
+    };
+
+    expect_refused("row longer than the items", [&] { [[maybe_unused]] Knapsack k{vector<vector<Integer>>{{1_i, 2_i, 4_i}}, xs, {t}}; });
+    expect_refused("row shorter than the items", [&] { [[maybe_unused]] Knapsack k{vector<vector<Integer>>{{1_i}}, xs, {t}}; });
+    expect_refused("rows of different lengths", [&] { [[maybe_unused]] Knapsack k{vector<vector<Integer>>{{1_i, 2_i}, {1_i}}, xs, {t, u}}; });
+    expect_refused("more rows than totals", [&] { [[maybe_unused]] Knapsack k{vector<vector<Integer>>{{1_i, 2_i}, {3_i, 4_i}}, xs, {t}}; });
+    expect_refused("no rows", [&] { [[maybe_unused]] Knapsack k{vector<vector<Integer>>{}, xs, {}}; });
+    expect_refused("a negative coefficient", [&] { [[maybe_unused]] Knapsack k{vector<vector<Integer>>{{1_i, -2_i}}, xs, {t}}; });
+    expect_refused("two-row form, short profits", [&] { [[maybe_unused]] Knapsack k{vector<Integer>{1_i, 2_i}, vector<Integer>{3_i}, xs, t, u}; });
+
+    // And a well-formed one is still accepted.
+    try {
+        [[maybe_unused]] Knapsack k{vector<vector<Integer>>{{1_i, 2_i}}, xs, {t}};
+    }
+    catch (const InvalidProblemDefinitionException &) {
+        println(cerr, "knapsack well-formed: refused");
+        all_refused = false;
+    }
+    return all_refused;
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
+
+    if (! run_malformed_tests())
+        return EXIT_FAILURE;
 
     vector<tuple<pair<int, int>, vector<vector<int>>, vector<pair<int, int>>>> data = {{{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 1000}}}, //
         {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{3, 8}, {3, 1000}}},                                                                                //
