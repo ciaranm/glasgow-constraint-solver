@@ -990,28 +990,66 @@ namespace
         ctx.logger.emit_rup_proof_line_under_reason(ctx.reason, WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 
-    auto explore(const State & state, auto & inference, ProofLogger * const logger, SCCReason & reason, const ConstraintID & owner, const long & node,
-        const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data, const SCCOptions & options)
+    // One level of explore()'s depth-first walk: the node, its successors still to walk
+    // (positions next to end of the shared value buffer below), and the back edges found
+    // below it.
+    struct ExploreFrame
+    {
+        long node;
+        std::size_t begin, next, end;
+        vector<pair<long, long>> back_edges;
+    };
+
+    // explore()'s working storage, kept across the walks of one propagator call. A frame's
+    // successors are copied into values when it is entered, the moment at which the
+    // recursive walk (before #1327) took its each_value_mutable() copy of the domain, so
+    // later inferences in the same walk do not change which values it visits. Copying
+    // also avoids a coroutine frame per node. A child's values sit above its parent's
+    // and are dropped when it is left.
+    struct ExploreStack
+    {
+        vector<ExploreFrame> frames;
+        vector<Integer> values;
+    };
+
+    // Tarjan's walk from start, written with an explicit stack of frames rather than by
+    // recursion, so that its depth is bounded by the heap and not by the native stack
+    // (issue #1327: a fixed ring of 10,000 nodes overflowed 8 MiB). The visiting order,
+    // and so every inference and proof line, is the recursive walk's: a frame is entered
+    // where the recursive call was made, and its parent moves on to its next successor
+    // only once it is left.
+    auto explore(const State & state, auto & inference, ProofLogger * const logger, SCCReason & reason, const ConstraintID & owner, const long start,
+        const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data, const SCCOptions & options, ExploreStack & stack)
         -> vector<pair<long, long>>
     {
-        data.visit_number[node] = data.count;
-        data.lowlink[node] = data.count;
-        data.count++;
+        // The caller's stack is empty, and is empty again on return.
 
-        vector<pair<long, long>> back_edges{};
+        auto enter = [&](long node) {
+            data.visit_number[node] = data.count;
+            data.lowlink[node] = data.count;
+            data.count++;
+            auto begin = stack.values.size();
+            state.for_each_value_immutable(succ[node], [&](Integer v) { stack.values.push_back(v); });
+            stack.frames.push_back(ExploreFrame{node, begin, begin, stack.values.size(), {}});
+        };
 
-        for (const auto & w : state.each_value_mutable(succ[node])) {
-            auto next_node = w.raw_value;
+        enter(start);
+        while (true) {
+            auto & frame = stack.frames.back();
+            auto node = frame.node;
 
-            if (data.visit_number[next_node] == -1) {
-                auto w_back_edges = explore(state, inference, logger, reason, owner, next_node, succ, data, proof_data, options);
-                back_edges.insert(back_edges.end(), w_back_edges.begin(), w_back_edges.end());
-                data.lowlink[node] = pos_min(data.lowlink[node], data.lowlink[next_node]);
-            }
+            if (frame.next != frame.end) {
+                const Integer w = stack.values[frame.next];
+                auto next_node = w.raw_value;
 
-            else {
+                if (data.visit_number[next_node] == -1) {
+                    // Descend; this frame resumes, and advances, when the child is left.
+                    enter(next_node);
+                    continue;
+                }
+
                 if (data.visit_number[next_node] >= data.start_prev_subtree && data.visit_number[next_node] <= data.end_prev_subtree) {
-                    back_edges.emplace_back(node, next_node);
+                    frame.back_edges.emplace_back(node, next_node);
                 }
                 else if (data.visit_number[next_node] < data.start_prev_subtree) {
                     auto prove_edge_absent = [&]() {
@@ -1047,30 +1085,43 @@ namespace
                     }
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
+                ++frame.next;
+                continue;
             }
-        }
 
-        if (data.lowlink[node] == data.visit_number[node]) {
-            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                logger->emit_proof_comment("More than one SCC");
-                auto ctx = SCCProofContext{state, *logger, reason.get(), succ, proof_data, node, options};
-                prove_reachable_set_too_small(ctx);
+            // Every successor of node has been walked.
+            if (data.lowlink[node] == data.visit_number[node]) {
+                if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                    logger->emit_proof_comment("More than one SCC");
+                    auto ctx = SCCProofContext{state, *logger, reason.get(), succ, proof_data, node, options};
+                    prove_reachable_set_too_small(ctx);
+                }
+                inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason.get());
             }
-            inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason.get());
+
+            auto back_edges = std::move(frame.back_edges);
+            stack.values.erase(stack.values.begin() + static_cast<std::ptrdiff_t>(frame.begin), stack.values.end());
+            stack.frames.pop_back();
+            if (stack.frames.empty())
+                return back_edges;
+
+            auto & parent = stack.frames.back();
+            parent.back_edges.insert(parent.back_edges.end(), back_edges.begin(), back_edges.end());
+            data.lowlink[parent.node] = pos_min(data.lowlink[parent.node], data.lowlink[node]);
+            ++parent.next;
         }
-        else
-            return back_edges;
     }
 
     auto check_sccs(const State & state, auto & inference, ProofLogger * const logger, SCCReason & reason, const ConstraintID & owner,
         const vector<IntegerVariableID> & succ, const SCCOptions & options, SCCProofData & proof_data) -> void
     {
         auto data = SCCPropagatorData(succ.size());
+        ExploreStack explore_stack;
 
         for (const auto & v : state.each_value_mutable(succ[data.root])) {
             auto next_node = v.raw_value;
             if (data.visit_number[next_node] == -1) {
-                auto back_edges = explore(state, inference, logger, reason, owner, next_node, succ, data, proof_data, options);
+                auto back_edges = explore(state, inference, logger, reason, owner, next_node, succ, data, proof_data, options, explore_stack);
 
                 if (back_edges.empty()) {
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {

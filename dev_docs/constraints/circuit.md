@@ -15,10 +15,10 @@
 > comparisons; this document gives one, by hand), #1006 (MiniZinc shape
 > lanes), #364 (incrementality survey). Filed since: #1326 (`SubCircuit`'s
 > pigeonhole grows with a wide-declared successor's declared width; see
-> [Known limitations](#known-limitations)) and #1327 (`Circuit`'s `SCC` walk
-> recurses once per level and overflows the native stack on large instances;
-> see [Robustness](#robustness-and-limits)).
-> **Fixed since the audit**: #1307 (a `Circuit` over an empty array
+> [Known limitations](#known-limitations)).
+> **Fixed since the audit**: #1327 (`Circuit`'s `SCC` walk recursed once per
+> level and overflowed the native stack on large instances; see
+> [Robustness](#robustness-and-limits)), by #1440; #1307 (a `Circuit` over an empty array
 > crashed), by #1439; #1317 (the `SCC` propagator built its
 > whole-scope reason on every call, proofs off too, and with proofs defined a
 > short-reason flag on every call), by #1438; #1388 (the precedence flags
@@ -46,7 +46,7 @@ they were built and what they cost.
 Four things to know before touching it.
 
 - **It finds the right answers everywhere this audit looked, bar two crashes
-  (one since fixed), and one option makes its proof wrong.** Random holey instances up to six
+  (both since fixed), and one option makes its proof wrong.** Random holey instances up to six
   nodes, with constants, offset views and values outside `0..n-1`, through
   every algorithm and option: no lost and no spurious solution in 2,000 trials
   per configuration. MiniZinc on both versions, XCSP3 against ACE and the
@@ -55,10 +55,11 @@ Four things to know before touching it.
   segfaulted under its default algorithm and failed on an integer overflow
   whenever a proof was written; now it is vacuously true, as `SubCircuit{}`
   always was, and MiniZinc guards the shape before it reaches either. The
-  second is size: `Circuit`'s default `SCC` walk recurses once
-  per level of its depth-first tree, and with an 8 MiB stack it segfaults
-  during root propagation, proofs off, from about 7,700 nodes on a fixed ring
-  and at 10,000 nodes on every domain shape tried (#1327). The wrong proof is
+  second was size: until #1327 (fixed by #1440), `Circuit`'s default `SCC`
+  walk recursed once per level of its depth-first tree, and with an 8 MiB
+  stack it segfaulted during root propagation, proofs off, from about 7,700
+  nodes on a fixed ring and at 10,000 nodes on every domain shape tried; it
+  now keeps its own stack of frames. The wrong proof is
   `Circuit`'s `SCC` with
   `with_prune_skip(false)`: the answers stay right, but the certificates of
   *fix required* and *no back edge* assume skip edges are already pruned, and
@@ -76,7 +77,10 @@ Four things to know before touching it.
   `tsp` benchmark run with `--propagator scc`. With proofs on, the flag
   definitions were 39% of the proof's bytes on a 12-node enumeration and 52%
   on a 14-node one: the 14-node proof goes from 54.5 MB to 28.2 MB, and
-  VeriPB from 43.3 s to 39.8 s.
+  VeriPB from 43.3 s to 39.8 s. Since #1327 (#1440) the walk copies each
+  node's successors into a shared buffer instead of holding a coroutine per
+  node, which takes the same enumeration from 3.43e9 to 2.63e9 instructions
+  (0.60 s to 0.48 s), again on the same tree.
 - **`Circuit`'s `SCC` hints-only proof is wrong in three rules.** At the
   assertion levels, *fix required* and the two *prune skip* rules assert their
   conclusion as a bare unit clause, which is not a consequence of the model:
@@ -649,9 +653,19 @@ correct (the differential above).
 - *Constants:* see [Variable kinds](#variable-kinds-and-views).
 - *`with_required_node()` on an interior hole:* rejected, #1228.
 
-**Recursion depth: `Circuit`'s `SCC` overflows the native stack on large
-instances (#1327).** `explore` (`circuit_scc.cc:940`) is Tarjan's walk written
-recursively: it calls itself at `:954` for each unvisited successor, entered
+**Recursion depth: `Circuit`'s `SCC` overflowed the native stack on large
+instances, until #1327** (fixed by #1440). Since then `explore` keeps an
+explicit stack of frames (each a node, its successors still to walk, and the
+back edges found below it), so its depth is bounded by the heap; it visits in
+the same order, and the proofs on the Circuit lanes and on 12- to 14-node
+enumerations are byte-identical. `circuit_test` runs 20,000-node rings at the
+root, fixed and with two successors each, which segfault with the recursive
+walk. Copying each frame's successors into one shared buffer, rather than
+holding an `each_value_mutable()` coroutine per frame, also takes 23% of the
+instructions off the 16-node enumeration of [CPU
+performance](#cpu-performance), on the same tree. What follows is the audit's
+account of the recursive walk. `explore` (`circuit_scc.cc:940`) was Tarjan's
+walk written recursively: it calls itself at `:954` for each unvisited successor, entered
 from `check_sccs` at `:1006`, so the stack holds one frame per level of the
 depth-first tree, up to `n` deep, and nothing bounds it. On the audit build
 (GCC 15.2, Release, x86-64; `86caad24`, 2026-10-09, fataepyc-10;
@@ -683,7 +697,9 @@ MiniZinc (`fzn_glasgow.cc:947`), the `.scp` reader (`scp_reader.cc:1174`) and
 `gcspy` (`gcspy.cc:325`) all post the default `SCC`; XCSP3's `<circuit>` posts
 `SubCircuit`. With proofs on the encoding is `Θ(n²)` rows, so no proof was
 tried at this size. An explicit stack of traversal frames removes the
-dependence.
+dependence, as #1440 does. With it, a fixed ring takes 0.19 s at 10,000
+nodes, 0.68 s at 20,000 and 2.77 s at 40,000: what grows quadratically there is
+the value consistent all-different and installation (#1309), not the walk.
 
 **Overflow.** Nothing to guard: every successor value and position in
 either encoding is at most `n` in magnitude, the wrap rows' coefficients are
@@ -712,9 +728,9 @@ for propagation, not for every proof: a successor declared wide makes
    (`each_value_mutable`, `each_value_immutable` over successors);
    `SubCircuit`'s reachability layers, reverse graph and candidate snapshot
    (`for_each_walkable_value`); and the value consistent pass. None is over a
-   domain wider than the array. The Tarjan walk is recursive, so its stack
-   depth is up to `n` whatever the width (#1327; see
-   [Robustness](#robustness-and-limits)).
+   domain wider than the array. The Tarjan walk keeps its own stack, up to `n`
+   frames deep whatever the width; until #1327 it recursed, one native frame
+   per level (see [Robustness](#robustness-and-limits)).
 2. **The reason side.** Every reason is `generic_reason` over the whole
    successor array (plus the size, for the tour-size rules), one literal per
    fixed variable and two bounds plus one per hole run otherwise, and found one
@@ -998,8 +1014,9 @@ written; they are cited per rule as history, not as lanes.
 - **Tightness** — `Not shown.`
 
 The remaining `Circuit` rules run only under `SCC`, from one depth-first walk
-from node 0 (`check_sccs`, `explore`; recursive, one native frame per tree
-level, which overflows an 8 MiB stack from about 7,700 nodes, #1327), which is
+from node 0 (`check_sccs`, `explore`; an explicit stack of frames since
+#1327, whose recursive walk overflowed an 8 MiB stack from about 7,700
+nodes), which is
 Gecode's and Francis and Stuckey's: Tarjan's lowlinks, the subtrees hanging
 off the root, and
 Carlsson's condition that each subtree after the first has a back edge into
@@ -1560,9 +1577,6 @@ seeded.
   constraints and from search. The audit's fuzz covered holey random domains,
   constants and views against a brute force (no failure), but nothing in tree
   does, nor checks the root fixpoint against GAC.
-- **A deep `SCC` walk.** Nothing in tree runs a `Circuit` large enough to
-  overflow `explore`'s recursion (#1327); a fixed ring of a few tens of
-  thousands of nodes, checked at the root, would pin it.
 - **The assertion levels.** No lane runs any of this family at
   `Definitions`, `Links` or `Inferences` and checks the asserted clauses,
   which is how rules 10 to 12's bare units went unnoticed.
@@ -1775,9 +1789,6 @@ different harness. They are not re-measured here.
 
 ### Known limitations
 
-- **A large `Circuit` crashes the solver under the default `SCC`,** proofs
-  off, at the root: the recursive walk overflows an 8 MiB stack from about
-  7,700 nodes on the audit build (#1327). `Prevent` does not.
 - **`Circuit` with `with_prune_skip(false)` can write a proof VeriPB rejects**
   (#1306).
 - **A one-node `circuit` is satisfiable** in Glasgow, Gecode and `cake_pb_cp`,
@@ -1803,12 +1814,8 @@ different harness. They are not re-measured here.
 ### Next steps
 
 1. **Done** (#1307, by #1439): the empty `Circuit` is vacuously true.
-2. **Make `explore` iterative** (#1327). Replace the recursion at
-   `circuit_scc.cc:954` with an explicit stack of frames (node, position in
-   its successor walk, and the back edges found so far), so the depth is
-   heap-bounded; the walk's order, and so every inference and proof line,
-   should stay the same, which a proof diff on the existing lanes checks.
-   Add a root-only lane on a fixed ring of a few tens of thousands of nodes.
+2. **Done** (#1327, by #1440): `explore` keeps an explicit stack of
+   frames, and `circuit_test` has a root-only lane on 20,000-node rings.
 3. **Make rules 8 and 10 safe without prune skip** (#1306).
    Either run them only when `prune_skip` is on, as JP 6.16 and 6.17's
    preconditions require, or prune the skip edges in the proof (the rule 11
