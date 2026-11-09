@@ -874,9 +874,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   constraints, which dom/wdeg reads); a store grown by user code mid-search is
   enforced on the refined path only at the next root propagation (so never,
   without restarts) and gets a rejected proof on the scan path (#1393); and
-  the engine's refined-watch undo, a linear search per removed watch, takes
-  59% of the profile samples of `tsp --restarts=100`, and searching from the
-  back halves that run's time (#1394).
+  the engine's refined-watch undo, a linear search per removed watch, took
+  59% of the profile samples of `tsp --restarts=100`, until searching from the
+  back (#1394, by #1441) cut that run's time by 2.5 times.
   What other uses would need is recorded as Known limitations and Next steps.
 
 ## Presolvers

@@ -12,8 +12,9 @@
 > scope: it never adopted #506's `scope_only`, so under dom/wdeg with restarts
 > the store's conflicts weight no variable), #1393 (a `NogoodStore` grown by
 > user code mid-search: the two paths disagree, and the scan path's proof is
-> rejected) and #1394 (the engine's refined-watch undo, 59% of the profile
-> samples of `tsp --restarts=100`). Already open and touching this family: #131
+> rejected). Fixed since: #1394 (the engine's refined-watch undo, 59% of the
+> profile samples of `tsp --restarts=100`), by #1441, which searches from the
+> back. Already open and touching this family: #131
 > (a generic watched-clause propagator, the natural home for this one,
 > `NegativeTable`'s and the logical family's), #310 (range literals cannot be
 > written into the model, so a range literal in a posted nogood throws with
@@ -851,7 +852,8 @@ tree, and its rows are the same-tree comparison.
   --timeout 40` (audit build, `perf record -F 999 -g`) puts 59.4% of samples in
   the `on_backtrack` callback of `Propagators::propagate`, which undoes
   refined-watch edits by searching the variable's watch list from the front for
-  each watch it removes (`propagators.cc:1074-1092`), 6.0% in the firing loop,
+  each watch it removes (`propagators.cc:1074-1092`; from the back since
+  #1394), 6.0% in the firing loop,
   5.7% in `literal_is_entailed` and 3.1% in this family's propagator. That is
   hotspot context; the saving is the next measurement.
 - **Searching from the back halves it at `--restarts=100`** (#1394): same
@@ -860,6 +862,11 @@ tree, and its rows are the same-tree comparison.
   (24,043 nogoods). At `--restarts=300` the gain is smaller, 26.9 s and 155.4 G
   against 21.2 s and 112.4 G (11,356 nogoods). Run on another core while the
   scan rows ran; the fact-check's re-run agrees on instructions to four figures.
+  As shipped by #1441, against main's library, the same 1,000,000-trace-call
+  copy takes 89.3 s and 543.6 G instructions against 35.6 s and 197.9 G at
+  `--restarts=100`, and 26.4 s and 151.8 G against 21.0 s and 111.9 G at
+  `--restarts=300`, with identical output; without restarts, 13.2 s either
+  way (68.29 G instructions in both).
 - `refined-triggers.md`'s table (`tsp --restarts=10000`, 190.6 s scan against
   58.4 s refined against a 55.6 s floor, 2026-07, to the end of the search) is
   a different series on an older tree and should not be mixed with these.
@@ -927,8 +934,9 @@ Restart use:
   conditions of its own, [Next steps](#next-steps), item 7) and no
   minimisation (the reduction is Lecoutre et al.'s first one only), so a long
   restart run slows with it; `tsp --restarts=100` runs at about a sixth of the
-  node rate of the same search without restarts, most of it in the engine's
-  watch undo (see [CPU performance](#cpu-performance); #1394).
+  node rate of the same search without restarts; until #1394 most of that was
+  the engine's watch undo, and with it fixed the run is about 2.7 times the
+  no-restart time (see [CPU performance](#cpu-performance)).
 - **Two literals on one variable** are propagated as atoms, so
   `{x ≥ 3, x < 6}` removes nothing until search or other propagation entails
   one of them. Learned nogoods have such pairs too (bound-split branching keeps
@@ -971,13 +979,11 @@ Anything else, which would need work first:
    replayed decisions, not equal node counts. Whether a store conflict should
    weight every variable or only the failing clause's is a heuristic question
    to settle with it.
-4. **Make the refined-watch undo cheap** (#1394, the engine's).
-   Searching the watch list from the back in `on_backtrack` halves
-   `tsp --restarts=100`'s time on the same tree, and saves about a fifth at
-   `--restarts=300` (above); a one-line change in `propagators.cc`, with no
-   change to state or proof, not yet run against the suite. The other clients
-   of the watch index (`NegativeTable`, the long-clause `Or`, the slack-watched
-   `LinearInequality` of #507) were not measured.
+4. **Done** (#1394, by #1441): the refined-watch undo searches the watch
+   list from the back. The other clients of the watch index (`NegativeTable`,
+   the long-clause `Or`, the slack-watched `LinearInequality` of #507) were not
+   measured; the firing loop, which tests every watch on a changed variable, is
+   the next candidate for a long store.
 5. **Make the public surface match the intent** (#1393): move the
    growable constructor and `NogoodStore` into `innards` (only `solve.cc` and
    `Nogoods::clone()` use the constructor), or support mid-search additions
