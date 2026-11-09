@@ -639,7 +639,7 @@ auto main(int argc, char * argv[]) -> int
     // everything, so it is raised; kappa over the remaining {1, 3, 4} is five,
     // which the gcd cannot reach. Both halves of the rule, in one fixture.
     // Since {1, 3, 4} overshoots five by three, the raise took four `pol`
-    // steps until #1242; by contradiction it is one `red`.
+    // steps until #1242; by contradiction it is one `pbc`.
     const Instance knapsack_raise{{{0, 3}, {0, 3}, {0, 3}, {0, 3}}, {2, 2, 2, 2}, {1, 3, 4, 6}, 6};
 
     // Heights {5, 4, 2} against a capacity of six: the issue's R1 fixture,

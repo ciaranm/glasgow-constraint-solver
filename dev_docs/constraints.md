@@ -1134,8 +1134,8 @@ veripb rejects.
 
 It also has to reject for the right reason, and each lane says what that is
 with `--expect`, naming one of the `GCS_VERIPB_REJECTS_*` variables in the
-top-level `CMakeLists.txt` (a RUP step, a proofgoal, or an implication check
-against a hint). The harness further requires that veripb failed a *step* of
+top-level `CMakeLists.txt` (a RUP step, a proof by contradiction, or an implication
+check against a hint). The harness further requires that veripb failed a *step* of
 the proof. Without that, a proof that is missing, truncated or does not parse
 is rejected too, and the lane passes having checked nothing; and a corruption
 that stops breaking the step it was aimed at, but happens to break a different
