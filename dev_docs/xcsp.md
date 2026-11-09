@@ -320,18 +320,35 @@ A fourth, `xcsp/xcsp3_parser_mixed_lists.patch`, is the same bug at other sites
 and `y` left free, a silent wrong answer. The specification allows a list of
 integers or a list of variables there, not a mix (arXiv:1611.03398v5, Syntax 42
 for `<sum>`; `<count>` has the same form), but the parser accepts one. A list of
-variables alone is not
-supported by the binding for either constraint, so the patch refuses a mixed
-list, in either order, rather than posting it; it also refuses a variable
-coefficient on a sum over expressions, which upstream read as an integer
-without checking. Where XCSP3 allows only integers (an `<allDifferent>`'s
+variables alone is not supported by the binding for either constraint, so the
+patch refuses a mixed list, in either order, rather than posting it; it also
+refuses a variable coefficient on a sum over expressions, which upstream read as
+an integer without checking. Where XCSP3 allows only integers (an `<allDifferent>`'s
 `<except>`, an `<instantiation>`'s or a `<precedence>`'s `<values>`, a
 `<knapsack>`'s `<weights>` and `<profits>`), upstream ignored a failed integer
 read, so a variable there was read as the entry before it; the patch refuses
-those too. `newConstraintElementMatrix` still has the first-entry shape, but the
-parser rejects a mixed matrix before reaching it. Sites that split a list into
-its integers and its variables (`<cardinality>`, `<cumulative>`, `<noOverlap>`)
-pass the binding two lists of the wrong length, which it refuses.
+those too. `newConstraintElementMatrix` had the first-entry shape as well:
+`(1,y)(2,3)` was read with `y` as `1`. A matrix entry such as `x[0]` sends the
+parser down a compact-form branch that refuses a mix, but a plain variable
+reaches it, so the patch refuses a mixed matrix there.
+
+The same first-entry test was in `XConstraintGroup::unfoldVector`, which
+substitutes a group's arguments into each list of its template. A template that
+mixes parameters with integers or variables, such as `<coeffs> 1 %0 </coeffs>`
+or `<list> %0 x[0] </list>`, is valid XCSP3, but one whose first entry was not
+a parameter kept its parameters unsubstituted, and one whose first entry was
+dereferenced a null for each later non-parameter (a segfault). The patch
+substitutes entry by entry, so those templates now post. ACE 2.6 cannot read
+them either, so the `xcsp_group_*_param` caches come from ACE on the
+written-out twins.
+
+Sites that split a list into its integers and its variables (`<cardinality>`,
+`<cumulative>`, `<noOverlap>`) pass the binding two lists of the wrong length,
+which it refuses. Three sites still ignore a failed integer read, unpatched:
+`<nValues>`'s `<except>` and `<stretch>`'s `<values>` (in `XMLParserTags.cc`),
+and `newConstraintFlow`. Each reaches a callback the binding does not support,
+so a variable there is reported unsupported, not misread; patch them if the
+binding ever supports one.
 
 ## Testing
 

@@ -30,8 +30,10 @@ include(FetchContent)
 # posted. It also refuses a variable where only integers are allowed, which the
 # parser read as the entry before it: an allDifferent's except values, an
 # instantiation's or a precedence's values, a knapsack's weights or profits.
-# Each patch is applied by its own COMMAND, and each is skipped if already in
-# place.
+# It refuses a mixed element matrix too, and substitutes a group's arguments
+# into a template's lists entry by entry, where upstream again decided from the
+# first entry whether a list held parameters. Each patch is applied by its own
+# COMMAND, and each is skipped if already in place.
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
     GIT_TAG 179670dd97cd2b87cdeb93aa7268b57bba719490
@@ -293,6 +295,17 @@ add_xcsp_refusal_test(instantiation_var "instantiation: the values must be integ
 add_xcsp_refusal_test(precedence_var "precedence: the values must be integers")
 add_xcsp_refusal_test(knapsack_var_weight "knapsack: the weights must be integers")
 add_xcsp_refusal_test(knapsack_var_profit "knapsack: the profits must be integers")
+# An element over a matrix of integers and a plain variable, (1,y)(2,3), which
+# the parser read with y as 1, giving v = 1 where v = y.
+add_xcsp_refusal_test(element_matrix_mixed "element with both integers and variables in a matrix is not supported")
+# Group templates mixing parameters with integers or variables, which are valid
+# XCSP3: <coeffs> 1 %0 </coeffs> was refused as a mixed list (and before the
+# fourth patch, read as 1 1); <list> x[0] %0 </list> kept %0 unsubstituted; and
+# <list> %0 x[0] </list> segfaulted. ACE 2.6 cannot read such templates, so the
+# caches came from ACE on the written-out twins (two plain <sum>s each).
+add_xcsp_test(group_coeffs_param)
+add_xcsp_test(group_list_param)
+add_xcsp_test(group_list_param_first)
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to

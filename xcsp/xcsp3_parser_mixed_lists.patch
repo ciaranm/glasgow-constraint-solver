@@ -1,3 +1,36 @@
+--- a/src/XCSP3Code.cc
++++ b/src/XCSP3Code.cc
+@@ -293,20 +293,17 @@
+ 
+ 
+ void XConstraintGroup::unfoldVector(vector<XVariable *> &toUnfold, vector<XVariable *> &args, vector<XVariable *> &initial) {
+-    XParameterVariable *xp;
+-    if(initial.size() == 0)
+-        return;
+-    if((xp = dynamic_cast<XParameterVariable *>(initial[0])) == NULL) {  // non parametrized vector
+-        toUnfold.assign(initial.begin(), initial.end());
+-        return;
+-    }
+-    if(xp->number == -1) { // %...
+-        toUnfold.assign(args.begin() + (XParameterVariable::max == -1 ? 0 : XParameterVariable::max + 1), args.end());
+-        return;
+-    }
++    // Entry by entry. Deciding from the first entry alone whether the vector
++    // was parametrized left "1 %0" with its parameter unsubstituted, and
++    // dereferenced a null for each non-parameter after a first "%0".
+     for(XVariable *xv : initial) {
+-        xp = dynamic_cast<XParameterVariable *>(xv);
+-        toUnfold.push_back(args[xp->number]);
++        XParameterVariable *xp = dynamic_cast<XParameterVariable *>(xv);
++        if(xp == NULL)
++            toUnfold.push_back(xv);
++        else if(xp->number == -1) // %...
++            toUnfold.insert(toUnfold.end(), args.begin() + (XParameterVariable::max == -1 ? 0 : XParameterVariable::max + 1), args.end());
++        else
++            toUnfold.push_back(args[xp->number]);
+     }
+ }
+ 
 --- a/src/XCSP3Manager.cc
 +++ b/src/XCSP3Manager.cc
 @@ -456,7 +456,8 @@
@@ -64,7 +97,27 @@
      int value;
      XCondition xc;
      constraint->extractCondition(xc);
-@@ -1291,7 +1317,8 @@
+@@ -992,6 +1018,19 @@
+         return;
+     int v;
+ 
++    // As for sum: the code below decides whether the matrix is integers from
++    // its first entry alone, so (1,y)(2,3) was read with y as 1. Refuse a mix.
++    bool anyInteger = false, anyOther = false;
++    for(auto &row: constraint->matrix)
++        for(XVariable *xe: row) {
++            if(isInteger(xe, v))
++                anyInteger = true;
++            else
++                anyOther = true;
++        }
++    if(anyInteger && anyOther)
++        throw runtime_error("element with both integers and variables in a matrix is not supported");
++
+     if(isInteger(constraint->matrix[0][0], v)) {
+         vector<vector<int> > matrix;
+         matrix.resize(constraint->matrix.size());
+@@ -1291,7 +1330,8 @@
      vector<int> values;
      int v;
      for(XEntity *xe: constraint->values) {
@@ -74,7 +127,7 @@
          values.push_back(v);
      }
      callback->buildConstraintInstantiation(constraint->id, constraint->list, values);
-@@ -1341,7 +1368,8 @@
+@@ -1341,7 +1381,8 @@
      vector<int> values;
      int v;
      for(XEntity *xe: constraint->values) {
@@ -84,7 +137,7 @@
          values.push_back(v);
      }
      if(values.empty())
-@@ -1387,11 +1415,13 @@
+@@ -1387,11 +1428,13 @@
      vector<int> profits, weights;
      int v;
      for(XEntity *xe: constraint->profits) {
