@@ -953,8 +953,7 @@ Anything else, which would need work first:
   the refined path than on the scan path, since the refined one adds nothing to
   degree (#1392).
 - **A range literal in a posted nogood throws** with proofs on (#310, and
-  `s_expr()`), and **a view** makes the written `.scp` unreadable by our own
-  reader (generic).
+  `s_expr()`).
 - **No thread safety**: `clone()` shares the store, which has no
   synchronisation.
 

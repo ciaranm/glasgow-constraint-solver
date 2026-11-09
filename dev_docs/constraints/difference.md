@@ -1326,7 +1326,9 @@ What the tests do **not** cover:
   passed), on
   the decomposed model too (#1210), and accepts every model declared with
   value lists (359, 137 of them satisfiable).
-- **The `.scp` route with views**: unreadable by design (above).
+- **The `.scp` route with views** is covered by one round-trip only: the
+  reader has read view operands since #1423, and `scp_reader_test`'s
+  difference case writes and reads back two offset-view edges.
 
 This audit's own checks, all at `86caad24` on fataepyc-09:
 
