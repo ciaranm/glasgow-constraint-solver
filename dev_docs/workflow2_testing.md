@@ -231,17 +231,19 @@ Per-case `opbdiff` mode (3rd runner arg):
   to cake's and whose multiple identical-looking selectors defeat label matching
   (the deferred conform-the-solver item).
 
-**Most domains are kept off the `{0,1}` boundary**, but only to keep the
-`strict` cases byte-clean, *not* because a `{0,1}` variable breaks the chain. It
-used to: the solver named the single PB variable `i[v][eq1]` where cake names it
-`i[v][b0]`, and the differing OPB row counts mattered while VeriPB pinned them.
-Since `9678233f` (2026-06-17, relative proof-line references + dropping the `f`
-rule + the `b0` rename) the name agrees and the count does not matter. All that
-is left is that we emit one tautological row on `i[v][b0]` where cake emits
-labelled `lb` and `ub` rows, so `opbdiff` reports cake's extra `ub` line and the
-case cannot byte-match. `binary_less_equal_sat` and `binary_equals_unsat` are
-registered at `none` and cover exactly this; the reified forms, whose `(C = 1)`
-condition variable is `{0,1}`, chain for the same reason.
+**Most domains are kept off the `{0,1}` boundary**, to keep the `strict` cases
+byte-clean. The solver names a `{0,1}` variable's single PB variable `z[v]`
+(see [`variable-encodings.md`](variable-encodings.md#names-in-the-pb-files)),
+where cake_pb_cp, until it follows, still names it `i[v][b0]` and builds `ge`
+and `eq` atoms beside it. Until then every case with a `{0,1}` variable fails
+the full chain at the elaboration step, because the solver's proof names a
+variable cake's OPB does not have. (Before that rename the two agreed on
+`i[v][b0]`, from `9678233f` on, and all that was left was that we emit one
+tautological row on `i[v][b0]` where cake emits labelled `lb` and `ub` rows, so
+`opbdiff` reported cake's extra `ub` line and the case could not byte-match.)
+`binary_less_equal_sat` and `binary_equals_unsat` are registered at `none` and
+cover exactly this, along with the reified forms, whose `(C = 1)` condition
+variable is `{0,1}`.
 
 Adding a constraint to the harness is: drop a `.scp` in `scp_cases/` and add one
 `add_scp_chain_test(<case> <mode>)` line.
@@ -286,9 +288,10 @@ enum class ProofCheck { None, SelfVerify, CakeChain };
 2. ~~**bits-encoded domains**~~ — this gate is **obsolete**. It existed because a
    `{0,1}` variable was direct-encoded under a name cake did not use, and the
    differing OPB row counts broke the chain; `9678233f` renamed the single PB
-   variable to cake's `i[v][b0]` and dropped the `f` rule, and `{0,1}` models
-   have chained ever since (`binary_less_equal_sat` / `binary_equals_unsat`
-   cover it). Do not reintroduce it.
+   variable to cake's `i[v][b0]` and dropped the `f` rule. The `z[v]` rename
+   breaks the chain for `{0,1}` models again until cake_pb_cp follows, but that
+   is a naming mismatch to be fixed on cake's side, not a reason to gate:
+   do not reintroduce it.
 3. **tools present** — `cake_pb_cp` + veripb on PATH, else skip.
 
 ### Why it is still scaffolding
