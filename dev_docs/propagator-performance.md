@@ -234,6 +234,8 @@ propagators.install(id, [/* ... */, reason = std::move(all_vars_reason)](
 
 This was applied across `count`, `n_value`, `at_most_one`, `value_precede`,
 `linear_equality`, `linear_inequality`, `negative_table`, `regular`, and `sort`.
+(`value_precede` no longer hoists one: since #1426 each inference gives its own
+minimal reason.)
 It is the archetype of the "uniform, generally-sound" change above: on some
 constraints it's immeasurable, but it never hurts and removes an avoidable
 allocation from every hot path.

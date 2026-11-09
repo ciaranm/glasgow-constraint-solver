@@ -315,8 +315,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   no shared code.
 - [`value_precede.md`](value_precede.md) — `ValuePrecede`, a value chain
   whose each value first appears before the next: one propagator per
-  consecutive pair over `cake_pb_cp`'s first-occurrence encoding, matched
-  label for label, and quadratic in the array per chain value. Each pair runs
+  consecutive pair over a first-occurrence encoding linear in the array per
+  chain value (quadratic until #1416), which matches `cake_pb_cp`'s label for
+  label once cake makes the same change (#1413). Each pair runs
   Law and Lee's algorithm, so it is GAC over distinct variables; until #1145
   the forcing half was missing, and a backwards enumeration of
   restricted-growth strings met 247,823 failures where Gecode's `precede` has
