@@ -40,9 +40,10 @@ constant: `(maximize (X + -2))` is `max: 1 i[X][b0] 2 i[X][b1] ... -2 ;`. An
 objective never gets a proof-only bit vector of its own. One would be
 invisible to cake, and the solver's proof would cite view-linking labels that
 cake's OPB has no counterpart for. cake_pb_cp currently re-derives
-`(maximize V)` as the `min:` of its negation, and does not yet take a view as
-an objective, so until it does the chain checks only minimisations of a plain
-variable.
+`(maximize V)` as the `min:` of its negation, which VeriPB checks the solver's
+proof against all the same, since it minimises a `max:` in negated form
+anyway. It does not yet take a view as an objective, so until it does the
+chain checks only objectives over a plain variable.
 
 The reader rejects any version other than 1
 outright rather than guessing at an unknown grammar, which is what makes a
