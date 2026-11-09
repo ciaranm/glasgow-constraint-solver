@@ -194,11 +194,11 @@ namespace gcs::test_innards
      * into a throwaway Problem is an extra probe alongside the solve the test
      * already did, so anything it throws that is not a missing keyword is a
      * limitation of the probe, not a finding about the constraint under test —
-     * a view operand the grammar cannot parse, an instance shape the public
-     * constructors cannot rebuild, or a name Problem::check_name() rejects (the
-     * anonymous `_N` case was exactly that, and it is not an ScpReadError at
-     * all). Anything genuinely wrong with posting would already have failed the
-     * real solve above.
+     * an instance shape the public constructors cannot rebuild (a
+     * non-deterministic automaton, say), or a name Problem::check_name()
+     * rejects (the anonymous `_N` case was exactly that, and it is not an
+     * ScpReadError at all). Anything genuinely wrong with posting would already
+     * have failed the real solve above.
      *
      * Catching narrowly would mean every proving constraint test — which is all
      * of them — could start failing on an unrelated reader limitation, so the
@@ -252,13 +252,12 @@ namespace gcs::test_innards
      * the space they keep.
      *
      * Opt-in, and strict where the symmetry check is deliberately forgiving.
-     * read_scp does not promise that every *instance* round-trips -- a view
-     * operand does not render as a term the grammar parses, and the anonymous
-     * `_N` variable names a test usually gets are not names Problem::check_name()
-     * accepts -- so a caller has to hand this an instance that can round-trip,
-     * bare handles under names of its own choosing. In exchange, anything thrown
-     * from here is a finding about the writer rather than a limitation of the
-     * probe.
+     * read_scp does not promise that every *instance* round-trips -- a
+     * non-deterministic automaton, for one, is a shape the public constructors
+     * cannot rebuild -- so a caller has to hand this an instance that can
+     * round-trip, with variables under names of its own choosing. In exchange,
+     * anything thrown from here is a finding about the writer rather than a
+     * limitation of the probe.
      */
     inline auto check_scp_round_trip_solutions(
         const std::string & proof_name, const std::vector<std::string> & variable_names, const std::set<std::vector<int>> & expected) -> void
