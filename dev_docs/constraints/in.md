@@ -3,16 +3,17 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1215 and #1208 ·
-> **Open issues** filed by this audit: #1161 (the constants-only
-> `In` stays live after its only useful call, and declares holes it does not
-> read), #1162 (step 1's union is quadratic in interval counts), #1163
-> (repeated or aliased candidates lose `bounds(Z)`). **Fixed since the
-> audit**: #1164 (XCSP3's index-free `element` was unsupported), by #1434.
+> **Open issues** filed by this audit: #1162 (step 1's union is quadratic in
+> interval counts), #1163 (repeated or aliased candidates lose `bounds(Z)`).
 > Already open and touching this
 > family: #833 (the large-domain policy), #868 (cross-solver comparisons;
 > this document gives a whole-solve comparison by hand, not the
 > identical-tree one #868 asks for).
-> **Fixed since the audit**: the extreme-constant overflow with proofs on,
+> **Fixed since the audit**: #1160 (carving `K` listed values cost Θ(K²) in
+> the state layer's interval scans), by #1435; #1161 (the constants-only `In` stayed live after
+> its only useful call, and declared holes it does not read), by #1443; #1164
+> (XCSP3's index-free `element` was unsupported), by #1434; the
+> extreme-constant overflow with proofs on,
 > which had no issue of its own, by #1215 (which closed `Table`'s #1117); see
 > [Re-audit, 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
@@ -66,14 +67,15 @@ Four things to know before touching it.
   - Carving `K` holes cost Θ(K²) at the root, in the state layer's linear
     interval scans, until #1160 started those scans at a binary search:
     12.1 s for 10⁵ values then, 21 ms now.
-  - After its first call the posted `In` can never infer anything again, but
-    it stays live at `O(K)` per wake. On an enumeration of the variable that is
-    half the solve time.
-  - Its `on_change` trigger declares the variable's holes as observed, which
-    keeps every other constraint's optional interior pruning on that variable
-    switched on.
+  - After its first call the posted `In` can never infer anything again.
+    Until #1161 (fixed by #1443) it stayed live at `O(K)` per wake, half the
+    solve time on an enumeration of the variable; now it disables itself
+    until backtrack.
+  - Until the same fix, its `on_change` trigger declared the variable's holes
+    as observed, which kept every other constraint's optional interior
+    pruning on that variable switched on. It now declares none.
 
-  Tested fixes for all three are in [Next steps](#next-steps).
+  All three are fixed: #1160 by #1435, #1161 by #1443.
 - **A candidate that aliases `var`, or another candidate, weakens it.** The
   results stay sound, and every proof checked verifies. But:
   - `In{x, {y, y}}` never prunes `y`.
@@ -347,12 +349,13 @@ an `IntervalSet` (`in.cc:164–166`). There is no initialiser.
 
 | Propagator | Triggers | Holes affect | Rule(s) | Enabled by | Idempotent? | Self-disables? |
 |---|---|---|---|---|---|---|
-| the `In` propagator, constants only | `on_change` on `var` | derived: `var`, **an overstatement**; see below | 1 | always, when there are constants and no variable candidates | not claimed; one call is a fixpoint | only when `var` is fixed |
+| the `In` propagator, constants only | `on_change` on `var` | declared: nothing (#1161); see below | 1 | always, when there are constants and no variable candidates | not claimed; one call is a fixpoint | after every call (`DisableUntilBacktrack`, #1161) |
 | the `In` propagator, with variable candidates | `on_change` on `var` and every candidate | derived: all of them | 2, 3, 4, 5 | always, when there is a variable candidate | not claimed; one call is a fixpoint on distinct variables, and not with aliasing | only when `var` is fixed to a permitted constant |
 | the initial contradiction | — | nothing | 6 | both lists empty | — | — |
 
-**The constants-only branch declares a sensitivity it does not have.** What it
-infers is `dom(var)` minus the permitted set. A hole can only shrink that, so
+**The constants-only branch declared a sensitivity it does not have, until
+#1161** (fixed by #1443). What it infers is `dom(var)` minus the permitted
+set. A hole can only shrink that, so
 from any domains no hole ever gives it a new inference. After its first call it
 cannot infer anything at all. Its `on_change` trigger nevertheless derives
 "holes in `var` affect me". Every variable created from a vector, holey or not
@@ -365,7 +368,7 @@ Measured (`tmp/fd-small/in/probes/inholes.cc`, an `ElementConstantArray` under
   affect _1 (_2)`, where `_1` is the `In`.
 
 Declaring an empty `Triggers::holes_affect_propagation` for this branch gives
-`switched 1 of 1` on the vector form too. [Next steps](#next-steps) has it.
+`switched 1 of 1` on the vector form too, and since #1443 it does.
 
 **Idempotence.** Neither branch claims it. With variable candidates, on
 distinct variables, one call is a fixpoint:
@@ -380,10 +383,11 @@ A claim would be safe anyway, since the propagator machinery ignores claims
 when positions alias.
 
 **Self-disabling.** `DisableUntilBacktrack` when `var` is fixed to a value in
-`vals` (`in.cc:434–436`). The constants-only branch could disable after its
-first call whatever `var` is, since by then every value left is permitted and
-none can come back. It does not, and that costs `O(|vals| + intervals)` per
-wake for nothing; see [Interval efficiency](#interval-efficiency).
+`vals` (`in.cc:434–436`). The constants-only branch disables after every call
+whatever `var` is, since by then every value left is permitted and none can
+come back (#1161, by #1443). Before that it stayed live, at
+`O(|vals| + intervals)` per wake for nothing; see [Interval
+efficiency](#interval-efficiency).
 
 ### Mutable state and incrementality
 
@@ -1161,21 +1165,12 @@ reached: since #1215 such a constant is refused at construction
      `tmp/fd-small/in/NOTES.md`).
    - *Cost.* Small, but it is a shared primitive, and it wants a benchmark
      across families as well as the suite. Filed as #1160.
-2. **Stop the constants-only `In` after its first call, and have it declare no
-   hole sensitivity.**
-   - *The change.* Return `DisableUntilBacktrack` at the end of that branch
-     (every value left is permitted and none can return), and set
-     `Triggers::holes_affect_propagation` to an empty list for it.
-   - *Tested together* (`probes/in_fixes.patch`). `enumodd` goes from 30,002
-     propagations to 1, and from 3.83 s to 1.92 s at 3·10⁴. The `Element`
-     probe's optional pruning is switched off on the vector-declared result.
-     The `all_equal` benchmark above loses 1.62 million propagations and 27%
-     of its time (the fact-check's timing), and `Dubois-015` 262,134
-     propagations and 10% (with step 1's patch too). `in_test --seed=1`
-     passes, and so does the full suite with step 1's patch as well.
-   - *Cost.* Three lines of code; the analysis in
-     [`optional-interior-pruning.md`](../optional-interior-pruning.md) needs a
-     sentence. Filed as #1161.
+2. **Done** (#1161, by #1443): the constants-only `In` disables itself after
+   its first call and declares no hole sensitivity. Against main's library,
+   `enumodd` at 3·10⁴ goes from 30,002 propagations to 1 and 3.72 s to 1.80 s,
+   and the `all_equal` benchmark from 2,087,886 to 467,871 propagations (6.68 G
+   to 4.79 G instructions), with the same solutions; proofs on `in_test` and
+   the families that declare value-list variables are byte-identical.
 3. **Build step 1's union by merging, not by repeated `erase_range`.**
    - *The change.* A k-way merge of `vals` and the candidates' intervals,
      followed by one `each_interval_minus`, makes the call linear in interval
