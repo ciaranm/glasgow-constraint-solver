@@ -119,7 +119,7 @@ through. Five things to know before touching it:
     419 s and 1.1 GB, where the old budget's decline wrote 14,000 lines.
 - **A raise is one rule step whatever the capacity (#1242, fixed by
   #1280).** Where the rest of the row overshoots `kappa`, each raised task
-  gets one `red` whose subproof is a `pol` and a `rup >= 1` (six lines of
+  gets one `pbc` whose subproof is a `pol` and a `rup >= 1` (four lines of
   text), after its at-most-ones. `knapsack_raise` emits one raise line per
   raised row at every scale from ×1 to ×1,000. Before #1280 it was a loop of
   `pol` steps, up to one per unit of `kappa`: 20, 200 and 2,000 steps at ×1,
@@ -872,9 +872,9 @@ Facts common to every entry:
      - **`T = 0`**: `RUP` of `kappa · a_i ≤ kappa`.
      - **`T ≤ kappa`**: one `pol` summing the at-most-ones weighted by the
        others' coefficients, then `ia`.
-     - **`T > kappa`**: since #1280, one `red` of the goal
-       `kappa · a_i + Σ w_k · a_k ≤ kappa` with an empty witness, after the
-       task's at-most-ones (`cumulative_strengthening.cc:628–661`). Its
+     - **`T > kappa`**: since #1280, one proof by contradiction (`pbc`) of
+       the goal `kappa · a_i + Σ w_k · a_k ≤ kappa`, after the task's
+       at-most-ones. Its
        subproof adds the row so far to the negated goal and saturates, which
        leaves `a_i ≥ 1`, then closes with `rup >= 1`: `a_i = 1` sets every
        `a_k` to zero through the at-most-ones, and the negation reads
@@ -891,8 +891,8 @@ Facts common to every entry:
   `kappa`, which pushes out exactly what the donor's `h_i + h_j > C` pushes
   out (design note). Asserted on `r1` and `knapsack_raise`.
 - **Proof size** — at-most-ones `O(|F_t| · |N_t| + |F_t|²)` per row, and one
-  raise line per full task per row whatever `kappa` is (#1280): a `red` with
-  a `pol` and a `rup` inside, six lines of text, where the rest overshoots.
+  raise line per full task per row whatever `kappa` is (#1280): a `pbc` with
+  a `pol` and a `rup` inside, four lines of text, where the rest overshoots.
   `raise_lines_emitted` counts that line on all three paths
   (`cumulative_strengthening.cc:607`, `:618`, `:660`). Measured at
   `0a5b4ec6`: `knapsack_raise` emits 5 over 5 rows, `two_full` 10 over 5,

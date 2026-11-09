@@ -162,7 +162,7 @@ namespace gcs::innards::product_justify
 
     /**
      * \brief Conclude an inference from its per-case bounds: one
-     * red-with-empty-witness derivation of `reason => conclusion`, whose
+     * proof by contradiction (`pbc`) of `reason => conclusion`, whose
      * subproof derives a clause per case pattern — a pol add of the case's
      * premise line onto the negated goal where a premise exists, a plain RUP
      * clause where the case is dead under the reason — then combines them

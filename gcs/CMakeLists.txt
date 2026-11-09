@@ -884,18 +884,19 @@ if(GCS_BUILD_TESTS)
     # its rules on, over both dense families in turn.
     add_test(NAME disjunctive_2d_projection_search
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --projection --search 16)
-    set(disjunctive_2d_proofgoal_mutations skip_refutation skip_guard_weakening skip_presence_guard skip_resource_floor
+    set(disjunctive_2d_pbc_mutations skip_refutation skip_guard_weakening skip_presence_guard skip_resource_floor
         resource_skip_floor_escape_pins)
     foreach(mutation emit_nothing skip_refutation skip_guard_weakening skip_escape_pins overload_emit_nothing overload_skip_energy overload_skip_row
             edge_finding_one_too_far edge_finding_drop_pushed ttef_one_too_far ttef_drop_pushed projection_row_too_strong projection_skip_bridge
             projection_skip_refutations skip_presence_guard skip_presence_conjunct skip_size_floor
             projection_skip_size_floor skip_floor_escape_pins skip_resource_floor overload_skip_resource_floor
             projection_skip_resource_floor resource_skip_floor_escape_pins)
-        # Most of these break a RUP step. Skipping a step a proofgoal's subproof
-        # ends on breaks the proofgoal instead, and an over-strong projection row
-        # fails its implication check against the hinted row.
-        if(mutation IN_LIST disjunctive_2d_proofgoal_mutations)
-            set(reason ${GCS_VERIPB_REJECTS_PROOFGOAL})
+        # Most of these break a RUP step. Skipping a step a `pbc` subproof ends
+        # on leaves the line its `qed` names short of a contradiction instead,
+        # and an over-strong projection row fails its implication check against
+        # the hinted row.
+        if(mutation IN_LIST disjunctive_2d_pbc_mutations)
+            set(reason ${GCS_VERIPB_REJECTS_PBC})
         elseif(mutation STREQUAL projection_row_too_strong)
             set(reason ${GCS_VERIPB_REJECTS_HINT})
         else()

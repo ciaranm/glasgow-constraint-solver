@@ -392,10 +392,10 @@ if(GCS_BUILD_TESTS)
     # The reasons a mutation lane can expect veripb to give for rejecting its
     # proof: pass one to run_test_and_expect_verify_failure.bash as --expect.
     # Each is a substring of veripb's "Caused by:" text, short enough to survive
-    # rewording of the rest of the message (the proofgoal one has typos in it).
+    # rewording of the rest of the message.
     # Add a new one here, rather than spelling a message out at a call site.
     set(GCS_VERIPB_REJECTS_RUP "not implied by reverse unit propagation")
-    set(GCS_VERIPB_REJECTS_PROOFGOAL "proofgoal subproof")
+    set(GCS_VERIPB_REJECTS_PBC "is not contradicting, as specified by the hint")
     set(GCS_VERIPB_REJECTS_HINT "not syntactically implied by the constraint at the hint")
 endif()
 
