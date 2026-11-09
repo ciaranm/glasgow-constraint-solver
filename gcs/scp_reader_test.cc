@@ -911,6 +911,26 @@ TEST_CASE("read_scp: regular enumerates correctly")
         CHECK((s.at("X0") + s.at("X1") + s.at("X2")) % 2 == 0);
 }
 
+TEST_CASE("read_scp: a non-deterministic automaton is the one unrebuildable shape")
+{
+    // cake accepts an NFA, but Regular has no public constructor for one, so
+    // two edges on the same symbol out of one state get the typed error that the
+    // writer/reader symmetry checks tolerate. A malformed regular is a plain
+    // ScpReadError, which they do not.
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X0 0 1)) (constraints (_1 regular (X0) 2 ( ((0 0) (0 1)) () ) (1))) (prob_type "
+                              "enumerate) )"),
+        ScpUnrebuildableShapeError);
+    try {
+        enumerate("( (version 1) (variables (X0 0 1)) (constraints (_1 regular (X0) 2 ( ((0 0 1)) () ) (1))) (prob_type enumerate) )");
+        FAIL("a malformed regular edge was accepted");
+    }
+    catch (const ScpUnrebuildableShapeError &) {
+        FAIL("a malformed regular edge was reported as an unrebuildable shape");
+    }
+    catch (const ScpReadError &) {
+    }
+}
+
 TEST_CASE("read_scp: disjunctive enumerates correctly")
 {
     // Two length-2 tasks in 0..3 must not overlap, so their starts differ by at

@@ -69,12 +69,13 @@ Two checks enforce it, between them covering everything that writes a `.scp`:
 - **Constraint tests, in process.** `verify_proof_and_dispose` calls
   `test_innards::check_scp_writer_reader_symmetry`, which reads the test's own
   `.scp` back and fails if a keyword has no case
-  (`ScpUnsupportedConstraintError`). A new constraint's own test is what catches
-  the omission.
+  (`ScpUnsupportedConstraintError`) or if a case rejects what the writer put
+  under it. A new constraint's own test is what catches the omission.
 - **Examples, benchmarks and frontends.** `run_test_and_verify.bash` runs
   `glasgow_scp_solver --parse-only` over the `.scp` the run wrote. That binary
-  exits **2** for an unknown keyword and **1** for any other read failure, and
-  only 2 fails the test. Its path comes from `build/scp_solver_path`, which
+  exits **2** for an unknown keyword, **3** for a shape it cannot rebuild (see
+  below) and **1** for any other read failure, and everything but 0 and 3 fails
+  the test. Its path comes from `build/scp_solver_path`, which
   CMake generates beside the binaries, so no `add_test` registration needed
   changing; the check simply skips outside a build tree. This lane matters
   because some constraints are only ever posted by an example — `LexSmartTable`
@@ -84,14 +85,16 @@ Two checks enforce it, between them covering everything that writes a `.scp`:
 Two narrower things neither check demands:
 
 - **Not every instance need round-trip.** A shape the public constructors
-  cannot rebuild, such as a non-deterministic automaton, raises a plain
-  `ScpReadError`, which is tolerated. Only a missing *keyword* fails. The cost
-  is that a model whose first unreadable thing is such a shape hides any bad
-  keyword later in the same file, which is part of why both lanes exist. Views
-  were once the common case of this (`n_queens` was one), before the reader
-  learned view terms: in the constraint suite, 10,046 test `.scp` files failed
-  to read back on a view, and the 19 non-deterministic automata are now all
-  that is left.
+  cannot rebuild raises `ScpUnrebuildableShapeError`, which both checks
+  tolerate. There is one: a non-deterministic automaton, which cake accepts but
+  `Regular` has no public constructor for. Any other read failure fails, so the
+  cost is only that a model whose first unreadable thing is an automaton hides a
+  bad keyword later in the same file, which is part of why both lanes exist.
+  Both lanes used to tolerate every read failure, because views were
+  unreadable: in the constraint suite 10,046 test `.scp` files failed on a
+  view, and `n_queens` was one of the examples. Once the reader learned view
+  terms the 19 automata were all that was left in the suite, every example's
+  `.scp` read back cleanly, and the checks were narrowed to automata.
 - **Test-fixture constraints are exempt**, by the `test_...` naming convention
   (`test_tabulated_product`, `test_product_fragment`). Use that prefix for an
   ad-hoc Constraint that exists only to drive one piece of proof machinery.

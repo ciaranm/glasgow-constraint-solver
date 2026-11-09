@@ -33,9 +33,8 @@ namespace gcs
      *
      * The distinction is what lets the constraint tests assert writer/reader
      * *symmetry* — that every keyword Constraint::s_expr() can emit is one
-     * read_scp accepts — without also demanding that every instance round-trip
-     * (a non-deterministic automaton, say, is a shape the public constructors
-     * cannot rebuild, which is a known and separate reader limitation).
+     * read_scp accepts. See also ScpUnrebuildableShapeError, the one other
+     * failure those tests expect.
      *
      * \ingroup Core
      */
@@ -52,6 +51,25 @@ namespace gcs
         {
             return _operator_name;
         }
+    };
+
+    /**
+     * \brief The specific ScpReadError for a well-formed instance of a keyword
+     * this reader knows, in a shape the public constructors cannot rebuild.
+     *
+     * There is one such shape: a non-deterministic automaton, which cake_pb_cp
+     * accepts but Regular has no public constructor for. It is a known reader
+     * limitation rather than a malformed document, and the constraint tests'
+     * writer/reader symmetry check tolerates it and nothing else. Add a shape
+     * here only for the same reason; a shape that could be rebuilt is a missing
+     * reader case instead.
+     *
+     * \ingroup Core
+     */
+    class ScpUnrebuildableShapeError : public ScpReadError
+    {
+    public:
+        explicit ScpUnrebuildableShapeError(const std::string &);
     };
 
     /**
@@ -118,8 +136,8 @@ namespace gcs
      * `<`, although the writer only uses `=`, `!=`, `>=` and `<`.
      *
      * What the reader does *not* promise is that every *instance* round-trips:
-     * a few constraints accept shapes their public constructors cannot rebuild
-     * (a non-deterministic automaton, say). Those raise a plain ScpReadError.
+     * a non-deterministic automaton is a shape the public constructors cannot
+     * rebuild, and raises ScpUnrebuildableShapeError.
      * Throws SExprParseError on malformed input.
      *
      * \returns The variables by name, and the objective if there was one.
