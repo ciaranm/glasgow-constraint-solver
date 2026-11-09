@@ -34,6 +34,7 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files",                                   //
                 cxxopts::value<string>()->default_value("regex"))                                              //
             ("regex", "Post the constraint from a regular-expression string instead of an explicit automaton") //
+            ("nondeterministic", "Post \". * 1 .*\" instead, whose automaton is non-deterministic")            //
             ("stats", "Print solve statistics")                                                                //
             ;
 
@@ -54,7 +55,13 @@ auto main(int argc, char * argv[]) -> int
     auto x = p.create_integer_variable_vector(5, 0_i, 2_i, "x");
 
     // Regular constraint for the language given by 00*11*00* + 2*
-    if (options_vars.contains("regex")) {
+    if (options_vars.contains("nondeterministic")) {
+        // "Contains a 1", guessing which 1: state 0 has two edges on 1. The
+        // .scp it writes is one read_scp cannot rebuild, which is what the
+        // regex-nondeterministic test is for (see run_test_and_verify.bash).
+        p.post(Regular{x, ". * 1 .*"});
+    }
+    else if (options_vars.contains("regex")) {
         // The same language as a regular-expression string. It is compiled to an
         // NFA over the variables' domain (0..2) inside the constraint.
         p.post(Regular{x, "0 0* 1 1* 0 0* | 2 2*"});

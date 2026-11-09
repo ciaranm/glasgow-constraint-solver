@@ -315,8 +315,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   no shared code.
 - [`value_precede.md`](value_precede.md) — `ValuePrecede`, a value chain
   whose each value first appears before the next: one propagator per
-  consecutive pair over `cake_pb_cp`'s first-occurrence encoding, matched
-  label for label, and quadratic in the array per chain value. Each pair runs
+  consecutive pair over a first-occurrence encoding linear in the array per
+  chain value (quadratic until #1416), which matches `cake_pb_cp`'s label for
+  label once cake makes the same change (#1413). Each pair runs
   Law and Lee's algorithm, so it is GAC over distinct variables; until #1145
   the forcing half was missing, and a backwards enumeration of
   restricted-growth strings met 247,823 failures where Gecode's `precede` has
@@ -411,8 +412,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   failures, under different branching, GCS takes 3.3 to 3.7 times its time.
   Every listed domain from C++ and XCSP3 is an `In`, and so
   is Python's `post_in`, which is where the findings are: carving `K` values
-  costs Θ(K²) in the state layer's interval scans (12.1 s at 10⁵; 0.021 s with
-  a binary search); and, until #1161 (fixed by #1443), the posted `In`
+  cost Θ(K²) in the state layer's interval scans until #1160 (fixed by #1435,
+  a binary search: 12.1 s at 10⁵ before, 0.021 s after); and, until #1161 (fixed by #1443), the posted `In`
   stayed live after its only useful call, idle on real instances (262,179
   calls on XCSP3's `Dubois-015`, 1.6 million on the `all_equal` benchmark,
   whose time falls 27% with the fix), and its trigger marked the variable's
@@ -420,7 +421,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   on. Also: repeated or aliased
   candidates lose `bounds(Z)` and can take W/2 calls to fail; step 1 was
   quadratic in interval counts (#1162, fixed by #1444); and XCSP3's
-  index-free `element` was unsupported until #1164 mapped it onto `In`. Since #1215 a constant outside the solver's integer range is
+  index-free `element` was unsupported until #1434 mapped it onto `In`
+  (#1164). Since #1215 a constant outside the solver's integer range is
   refused at construction, so the 64-bit overflow the audit found with proofs
   on can no longer be reached.
 - [`min_max.md`](min_max.md) — `ArrayMin`, `ArrayMax`, `Min` and `Max`: one
@@ -768,8 +770,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   root with proofs off and wrote over 40 GB of proof with them on (#1341); the
   interior-value pass is quadratic in a wide item (#1340); a negative item
   value or total errors from MiniZinc (whose own definition constrains them
-  non-negative), and a negative item value, weight or profit aborts XCSP3
-  (#1337); until #1334 (fixed by #1447) `PerCall` silently dropped excess
+  non-negative), and a negative item value aborts XCSP3, where a negative
+  weight or profit is `s UNSUPPORTED` since #1447 (#1337); until #1334 (fixed by #1447) `PerCall` silently dropped excess
   coefficients; and #1229's
   constant-total crash with proofs at `AssertionLevel::Off` is reachable from
   a MiniZinc fixed capacity under `--prove` (commented on #1229). `Upfront`'s

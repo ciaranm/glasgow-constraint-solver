@@ -83,9 +83,10 @@ Three things to know before touching it.
   algorithm.** Every call rebuilds hash maps of every variable's values, one
   per tree of every live row (#1128); on the
   same search trees it is 17–23 times slower than the native `AtMostOne` and
-  8–15 times slower than the native `Lex`. With the default short reasons, it
-  defines a reason flag on every call whether or not anything follows, and never
-  deletes it; on one enumeration that takes checking from 0.79 s to 15.9 s.
+  8–15 times slower than the native `Lex`. Until #1446, with the default short
+  reasons, it defined a reason flag on every call whether or not anything
+  followed, and never deleted it; on one enumeration that took checking from
+  0.79 s to 15.9 s. The flag is now defined only when something first cites it.
 
 ## What it is
 

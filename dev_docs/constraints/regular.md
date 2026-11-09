@@ -683,11 +683,12 @@ stale entries included. And each call **rescans** every layer's
 supporting-value map to find values that have gone, which with the stale
 entries is `O(Σ_i |D_i⁰|)` for the **root** domains `D_i⁰`, then every value of
 every current domain to find values to prune (`O(Σ_i |D_i|)`), instead of the
-variables the trigger says changed; and it materialises the whole-scope reason first, unguarded by
-`want_reasons()` (`regular.cc:306`). With proofs off (or short reasons off),
-`PerCall` then copies that materialised reason at every pruning (see [Interval
-efficiency](#interval-efficiency), the
-reason side). #364 lists `regular` under "already
+variables the trigger says changed; and `Upfront` materialises the whole-scope
+reason first, unguarded by `want_reasons()` (`regular.cc:304`). Until #1445,
+`PerCall` did the same and, with proofs off (or short reasons off), then copied
+that materialised reason at every pruning; it now builds it only when a proof
+or the tracker will read it, as one `Reason` per call (see [Interval
+efficiency](#interval-efficiency), the reason side). #364 lists `regular` under "already
 incremental (no work needed)" as "the gold standard"; that is true of the
 content and not of the restore, as this audit's comment on #364 says. What it costs is under [CPU
 performance](#cpu-performance); what to do is [Next steps](#next-steps) item 4.
@@ -829,19 +830,19 @@ the OPB, in the root's proof and in the regex front end.
    None of these exits early, and none has a weaker arm behind it.
 2. **The reason side.** The reason is `generic_reason` over the whole scope:
    two bound literals per unfixed position plus one range literal per run of
-   holes, never per value, and the runs are found by interval (#935). It is
-   materialised on every call before anything is known to need it
-   (`eager_reason`, `regular.cc:306`; `regular_legacy.cc:291`), unguarded by
-   `want_reasons()`, proofs off too. `RegularBacchus` uses `NoReason`.
-   `PerCall` also passes that materialised `ReasonLiterals` to each
-   `infer_not_equal`, which takes a `const Reason &`, so every pruning copies
-   it through `Reason`'s converting constructor (`regular_legacy.cc:374`,
-   `reason.hh:185`). With proofs off that is the whole reason, and a call that
-   prunes `p` values costs `O(p · n)` in copies; with proofs on and the
-   default short reasons it is the one reason flag (`regular_legacy.cc:315-326`),
-   and the copy is cheap (it is the whole reason again under
-   `with_short_reasons(false)`). `Upfront` passes the declarative reason
-   (`regular.cc:348`), so with proofs off it copies nothing; with proofs on,
+   holes, never per value, and the runs are found by interval (#935). `Upfront`
+   materialises it on every call before anything is known to need it
+   (`eager_reason`, `regular.cc:304`), unguarded by `want_reasons()`, proofs
+   off too. `RegularBacchus` uses `NoReason`. Until #1445, `PerCall` did the
+   same (`regular_legacy.cc:291` then), and passed that materialised
+   `ReasonLiterals` to each `infer_not_equal`, which takes a `const Reason &`,
+   so every pruning copied it through `Reason`'s converting constructor: with
+   proofs off a call that pruned `p` values cost `O(p · n)` in copies. Since
+   #1445 `PerCall` builds the reason only when a logger or the tracker will
+   read it (`regular_legacy.cc:357`) and converts it to one `Reason` at the
+   first pruning (`:428-429`), and since #1446 the short-reason flag is defined
+   only when a line or an inference first cites it. `Upfront` passes the declarative reason
+   (`regular.cc:346`), so with proofs off it copies nothing; with proofs on,
    the inference tracker materialises that generic reason at every removal
    (`snapshot_reason`, `inference_tracker.hh:103-129`), as it does for every
    family whose reason is not lazy, at `Backtracking` too, where nothing is

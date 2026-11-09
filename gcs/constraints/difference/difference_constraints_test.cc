@@ -7,6 +7,7 @@
 #include <gcs/solve.hh>
 
 #include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -14,6 +15,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -32,6 +34,9 @@ using gcs::innards::IntegerOverflow;
 using std::cerr;
 using std::flush;
 using std::function;
+using std::getline;
+using std::ifstream;
+using std::istringstream;
 using std::make_optional;
 using std::make_shared;
 using std::mt19937;
@@ -680,8 +685,30 @@ namespace
     // every b fixed true; the closing edge has weight -1 and its own free
     // condition c. With root simplification, the witness path of the other 39
     // edges fixes c false; without, search refutes c = 1 by the negative cycle.
-    // Either way a reason listing a condition twice would write a proof line
-    // with a repeated literal, and a dropped one an unjustified line.
+    // Either way a dropped condition writes an unjustified line, which VeriPB
+    // rejects. A condition listed twice writes a line with a repeated literal,
+    // which VeriPB accepts, so check_no_repeated_literal looks for that: with
+    // the deduplication past 16 removed, each of these proofs has such lines.
+    auto check_no_repeated_literal(const string & proof_name) -> void
+    {
+        ifstream pbp{proof_name + ".pbp"};
+        if (! pbp)
+            throw UnexpectedException{"difference many conditions: cannot read " + proof_name + ".pbp"};
+        string line;
+        while (getline(pbp, line)) {
+            istringstream words{line};
+            string rule;
+            words >> rule;
+            if (rule != "rup" && rule != "a" && rule != "red")
+                continue;
+            set<string> literals;
+            string coefficient, literal;
+            while (words >> coefficient && coefficient != ">=" && words >> literal)
+                if (! literals.insert(literal).second)
+                    throw UnexpectedException{"difference many conditions: " + proof_name + ".pbp repeats " + literal + " in: " + line};
+        }
+    }
+
     auto run_many_conditions_test(bool proofs) -> void
     {
         long long first_count = -1;
@@ -707,8 +734,10 @@ namespace
                 return true;
             }},
                 proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
-            if (proofs)
+            if (proofs) {
+                check_no_repeated_literal(proof_name);
                 verify_proof_and_clean_up(proof_name);
+            }
             if (solutions == 0 || (first_count != -1 && solutions != first_count))
                 throw UnexpectedException{"difference many conditions: " + to_string(solutions) + " solutions"};
             first_count = solutions;
@@ -743,8 +772,10 @@ namespace
                            },
                 .branch = branch_with(variable_order::in_order(decided), value_order::largest_first())},
             proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
-        if (proofs)
+        if (proofs) {
+            check_no_repeated_literal(proof_name);
             verify_proof_and_clean_up(proof_name);
+        }
         if (stats.solutions != 1 || stats.failures == 0)
             throw UnexpectedException{"difference many conditions: expected a refutation then a solution, got " + to_string(stats.solutions) +
                 " solutions and " + to_string(stats.failures) + " failures"};

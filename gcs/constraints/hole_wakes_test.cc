@@ -13,8 +13,15 @@
  * So each case here punches the hole from a separate propagator that is woken
  * by nothing but an unrelated variable `t`, then checks that the constraint
  * drew the inference the hole licenses. Each passes only if the hole itself
- * woke the constraint. */
+ * woke the constraint.
+ *
+ * The converse is pinned too, for a constraint whose triggers were narrowed
+ * because no hole can give it an inference: AtMostOne watches instantiation
+ * only (#1156, #1431). Waking it on a hole as well is invisible to every
+ * other test, since its proofs come out byte-identical, so that case counts
+ * propagator calls instead. */
 
+#include <gcs/constraints/at_most_one.hh>
 #include <gcs/constraints/bin_packing.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/count.hh>
@@ -170,4 +177,49 @@ TEST_CASE("A hole in a load wakes BinPacking's upfront Stage 3")
     CHECK(state.lower_bound(load0) == 0_i);
     CHECK(state.upper_bound(load0) == 6_i);
     CHECK(state.optional_single_value(items[0]) == 1_i);
+}
+
+namespace
+{
+    // Two positions and a value over 1..3, with x1 (or val) losing `holes` once
+    // t is 1. Returns how many propagator calls branching t = 1 made.
+    auto propagations_when_punching_at_most_one(vector<Integer> holes, bool punch_val = false) -> unsigned long long
+    {
+        State state;
+        Stats stats;
+        Propagators propagators{stats};
+
+        auto x1 = state.allocate_integer_variable_with_state(1_i, 3_i);
+        auto x2 = state.allocate_integer_variable_with_state(1_i, 3_i);
+        auto val = state.allocate_integer_variable_with_state(1_i, 3_i);
+        auto t = state.allocate_integer_variable_with_state(0_i, 1_i);
+
+        AtMostOne{{x1, x2}, val}.install(propagators, state, nullptr);
+        install_hole_puncher(propagators, t, punch_val ? val : x1, std::move(holes));
+        REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+
+        Stats before;
+        propagators.fill_in_constraint_stats(before);
+        (void)state.new_epoch();
+        REQUIRE(branch_t_is_one(state, propagators, t));
+        Stats after;
+        propagators.fill_in_constraint_stats(after);
+        return after.propagations - before.propagations;
+    }
+}
+
+TEST_CASE("A hole does not wake AtMostOne")
+{
+    // Removing 2 from x1 leaves it unfixed: only the puncher runs.
+    CHECK(propagations_when_punching_at_most_one({2_i}) == 1);
+    // And the same for val, which has a trigger of its own.
+    CHECK(propagations_when_punching_at_most_one({2_i}, true) == 1);
+}
+
+TEST_CASE("An instantiation does wake AtMostOne")
+{
+    // The control for the case above: removing 1 and 3 fixes x1 (or val) to
+    // 2, which wakes AtMostOne, so the count does see it.
+    CHECK(propagations_when_punching_at_most_one({1_i, 3_i}) == 2);
+    CHECK(propagations_when_punching_at_most_one({1_i, 3_i}, true) == 2);
 }

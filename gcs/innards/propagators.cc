@@ -780,7 +780,11 @@ auto Propagators::install_returning_id(const ConstraintID & constraint_id, Propa
     // list, and one membership test serves both (issue #1309: a test against the
     // growing constraint scope made installing a k-variable propagator Theta(k^2)). The
     // test is over the variable's own adjacency list, and is skipped altogether for a
-    // constraint's first propagator, whose index is new and so in no list yet.
+    // constraint's first propagator, whose index is new and so in no list yet. A
+    // constraint's propagators are usually installed together, so its index is usually
+    // the last one a variable's list gained: check that first, and scan only if not, or
+    // every later propagator over a variable in many constraints costs its degree
+    // (#1451).
     if (_imp->constraint_scope.size() <= static_cast<std::size_t>(constraint_index))
         _imp->constraint_scope.resize(constraint_index + 1);
     auto & cscope = _imp->constraint_scope[constraint_index];
@@ -788,7 +792,7 @@ auto Propagators::install_returning_id(const ConstraintID & constraint_id, Propa
         if (_imp->var_constraint_indices.size() <= v.index)
             _imp->var_constraint_indices.resize(v.index + 1);
         auto & indices = _imp->var_constraint_indices[v.index];
-        if (inserted || ! contains(indices, constraint_index)) {
+        if (inserted || ! ((! indices.empty() && indices.back() == constraint_index) || contains(indices, constraint_index))) {
             indices.push_back(constraint_index);
             cscope.push_back(v);
         }

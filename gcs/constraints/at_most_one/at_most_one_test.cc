@@ -126,6 +126,104 @@ auto run_dup_at_most_one_test(
     check_results(proof_name, expected, actual);
 }
 
+// One term of an AtMostOne: a constant, or sign * unique[var] + offset.
+struct Term
+{
+    int var; // -1 for a constant, which is then the offset
+    int sign = 1;
+    int offset = 0;
+};
+
+auto term_value(const Term & t, const vector<int> & values) -> int
+{
+    return t.var < 0 ? t.offset : t.sign * values.at(t.var) + t.offset;
+}
+
+auto term_id(const Term & t, const vector<IntegerVariableID> & unique_vars) -> IntegerVariableID
+{
+    if (t.var < 0)
+        return constant_variable(Integer(t.offset));
+    if (t.sign > 0 && t.offset == 0)
+        return unique_vars.at(t.var); // the same handle, so aliasing is real
+    return t.sign > 0 ? unique_vars.at(t.var) + Integer(t.offset) : -unique_vars.at(t.var) + Integer(t.offset);
+}
+
+// val as a view, a constant, or a term over one of the positions' own
+// variables: the cases where rule 2's val == v literal and the val trigger
+// matter most. When val shares a variable with a position, the run checks
+// solutions and the proof but not consistency, as for the dup runs.
+auto run_val_kind_test(Variant variant, bool proofs, const string & what, const vector<pair<int, int>> & unique_domains,
+    const vector<Term> & positions, const Term & val_term) -> void
+{
+    auto label = (variant == Variant::Native) ? "at_most_one" : "at_most_one_smart_table";
+    print(cerr, "{} val kind {} domains={}{}", label, what, unique_domains, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected,
+        [&](const vector<int> & values) -> bool {
+            int v = term_value(val_term, values);
+            int matches = 0;
+            for (const auto & t : positions)
+                matches += (term_value(t, values) == v);
+            return matches <= 1;
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (const auto & t : positions)
+        array.push_back(term_id(t, unique_vars));
+    auto val = term_id(val_term, unique_vars);
+    if (variant == Variant::Native)
+        p.post(AtMostOne{array, val});
+    else
+        p.post(AtMostOneSmartTable{array, val});
+
+    bool aliased = false;
+    for (const auto & t : positions)
+        aliased = aliased || (val_term.var >= 0 && t.var == val_term.var);
+
+    auto proof_name = proofs ? make_optional(string{label} + "_test_val_kind") : nullopt;
+    if (aliased)
+        solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    else
+        solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
+auto run_val_kind_tests(Variant variant, bool proofs) -> void
+{
+    // Positions a, b, c and, where val needs one, its own variable d. Small
+    // enough that every run stays under the default test caps, so each is
+    // checked complete.
+    vector<pair<int, int>> abc{{-1, 2}, {-1, 2}, {-1, 2}};
+    vector<pair<int, int>> abcd{{-1, 2}, {-1, 2}, {-1, 2}, {0, 2}};
+    vector<Term> plain{{0}, {1}, {2}};
+    vector<Term> mixed{{0, 1, 1}, {1}, {2, -1, 0}}; // a + 1, b, -c
+
+    run_val_kind_test(variant, proofs, "d + 1", abcd, plain, {3, 1, 1});
+    run_val_kind_test(variant, proofs, "d + 1, mixed positions", abcd, mixed, {3, 1, 1});
+    run_val_kind_test(variant, proofs, "-d + 2", abcd, plain, {3, -1, 2});
+    run_val_kind_test(variant, proofs, "-d + 2, mixed positions", abcd, mixed, {3, -1, 2});
+    run_val_kind_test(variant, proofs, "constant 1", abc, plain, {-1, 1, 1});
+    run_val_kind_test(variant, proofs, "constant 1, mixed positions", abc, mixed, {-1, 1, 1});
+    // AtMostOneSmartTable refuses val among the positions, by design (see
+    // at_most_one.md, "Variable kinds and views"), so these are native only.
+    if (variant != Variant::Native)
+        return;
+    run_val_kind_test(variant, proofs, "a", abc, plain, {0});
+    run_val_kind_test(variant, proofs, "-a", abc, plain, {0, -1, 0});
+    run_val_kind_test(variant, proofs, "a + 1", abc, plain, {0, 1, 1});
+    run_val_kind_test(variant, proofs, "a - 1", abc, plain, {0, 1, -1});
+    run_val_kind_test(variant, proofs, "c, mixed positions", abc, mixed, {2});
+}
+
 auto run_all_tests(Variant variant, bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Boundary: empty / singleton — both vacuously true.
@@ -208,6 +306,8 @@ auto main(int argc, char * argv[]) -> int
             }
 
             if (run_dup) {
+                run_val_kind_tests(variant, proofs);
+
                 // {x, x} — forces x != val.
                 run_dup_at_most_one_test(variant, proofs, {{1, 3}}, {0, 0}, {1, 3});
                 // {x, x, y} — x != val; y unconstrained by it.

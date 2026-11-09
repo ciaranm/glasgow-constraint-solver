@@ -566,7 +566,7 @@ the observations move from one constraint to another:
   donor registers. A `≠ c` or `= c` literal over a wide variable declares holes
   in it, as the donor did.
 - **Retired donors stop counting.** The analysis skips permanently disabled
-  propagators (`propagators.cc:1668–1671`), so with the default retirement the
+  propagators (`propagators.cc:1692–1699`, `:1705–1708`), so with the default retirement the
   same variables are observed by the system instead. With
   `keeping_donor_propagators()` they are observed by both.
 - **Boolean donors' operands have no interior.** Their bounds are within

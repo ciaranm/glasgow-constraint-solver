@@ -115,6 +115,10 @@ namespace
         ReasonLiterals _full;
         const bool _short;
         optional<ReasonLiterals> _short_form;
+        // Set by take_as_reason(), which moves the reason out and leaves _full,
+        // or the engaged _short_form, moved-from. A get() after that would cite
+        // an empty reason without complaint, so refuse it instead.
+        bool _taken = false;
 
     public:
         CallReason(const State & state, ProofLogger * const logger, ReasonLiterals full, bool short_reasons) :
@@ -127,6 +131,8 @@ namespace
 
         [[nodiscard]] auto get() -> const ReasonLiterals &
         {
+            if (_taken)
+                throw UnexpectedException{"RegularLegacy's call reason was read after take_as_reason() moved it out"};
             if (! _short)
                 return _full;
             if (! _short_form) {
@@ -148,8 +154,12 @@ namespace
         {
             if (_short) {
                 (void)get();
+                _taken = true;
                 return Reason{std::move(*_short_form)};
             }
+            if (_taken)
+                throw UnexpectedException{"RegularLegacy's call reason was taken twice"};
+            _taken = true;
             return Reason{std::move(_full)};
         }
     };

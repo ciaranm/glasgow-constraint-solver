@@ -667,14 +667,13 @@ TEST_CASE("read_scp: multiply constraints survive write -> read -> write unchang
     auto x = original.create_integer_variable(-2_i, 2_i, "X");
     auto y = original.create_integer_variable(1_i, 3_i, "Y");
     auto z = original.create_integer_variable(-6_i, 6_i, "Z");
-    original.post(Multiply{x, y, z}); // plain: multiply
-    original.post(Multiply{x, x, z}); // aliased: still multiply
-    // (a view operand also writes a multiply term, but view terms are lists and
-    // the reader's resolve_variable only handles atoms, as for every other
-    // constraint -- so no view case here)
+    original.post(Multiply{x, y, z});                      // plain: multiply
+    original.post(Multiply{x, x, z});                      // aliased: still multiply
+    original.post(Multiply{x + 1_i, -y + 2_i, z});         // view operands: still multiply, written as view terms
     original.post(Multiply{constant_variable(2_i), y, z}); // constant operand: resolves to lin_equals
     original.post(Multiply{x, y, z});                      // the plain three-distinct-variables shape
     auto scp_a = prove_to_scp(original, "scp_reader_multiply_a");
+    CHECK(scp_a.contains(" multiply (X + 1) (-Y + 2) Z)"));
 
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
@@ -1944,8 +1943,10 @@ TEST_CASE("read_scp: binpacking, mdd, min_distance and nogoods survive write -> 
     original.post(MinDistance{std::vector<IntegerVariableID>{s0, s1}, z, MinDistance::Matrix{{0_i, 1_i, 3_i}, {1_i, 0_i, 2_i}, {3_i, 2_i, 0_i}},
         MinDistance::Matrix{{0_i, 1_i}, {0_i, 0_i}}});
     original.post(Nogoods{std::vector<Nogood>{{x0 == 0_i, x1 == 0_i}}});
+    original.post(Nogoods{std::vector<Nogood>{{x0 + 1_i == 2_i, -x1 + 1_i == 1_i}}}); // literals on views
 
     auto scp_a = prove_to_scp(original, "scp_reader_newglobals_a");
+    CHECK(scp_a.contains("((X0 + 1) = 2)"));
 
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
@@ -2024,7 +2025,10 @@ TEST_CASE("read_scp: difference survives write -> read -> write unchanged")
     auto c = original.create_integer_variable(0_i, 1_i, "C");
     auto d = original.create_integer_variable(0_i, 3_i, "D");
     original.post(DifferenceConstraints{std::vector<DifferenceEdge>{{a, b, 0_i}, {b, a, 1_i}, {a, b, 2_i, c == 1_i}, {b, a, 2_i, d >= 2_i}}});
+    // View operands, written and read as view terms (#1423).
+    original.post(DifferenceConstraints{std::vector<DifferenceEdge>{{a + 2_i, b + -1_i, 3_i}, {b, d + -1_i, 2_i, c == 0_i}}});
     auto scp_a = prove_to_scp(original, "scp_reader_difference_a");
+    CHECK(scp_a.contains("((A + 2) (B + -1) 3)"));
 
     Problem rebuilt;
     read_scp(rebuilt, scp_a);

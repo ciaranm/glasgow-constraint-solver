@@ -171,8 +171,8 @@ them with `run_test_only.bash`, which only runs the binary:
 ./build/equals_test
 ```
 
-**Binaries that take `--prove`** — the examples, benchmarks and frontends, plus
-the proof-innards tests under `gcs/` (`reification_test`, `invar_test`, the
+**Binaries that take `--prove`** — the examples and the `minicp_benchmarks`,
+plus the proof-innards tests under `gcs/` (`reification_test`, `invar_test`, the
 `range_witness_*` set) — leave the checking to `run_test_and_verify.bash`, which
 runs the binary with `--prove`, checks the proof with `veripb`, and then reads
 back any `.scp` it wrote with `glasgow_scp_solver --parse-only`, so that a

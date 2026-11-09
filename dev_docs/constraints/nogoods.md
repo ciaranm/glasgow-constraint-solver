@@ -262,7 +262,7 @@ when installed, and its nogoods are derived in the proof.
 None: `cake_pb_cp` has no `nogoods` rule (see the frontend footnote), and no
 `verified_encodings/scp_cases` fixture exists. `scp_reader_test` is what checks
 the reader, by enumerating one instance and round-tripping another
-(`scp_reader_test.cc:1725-1739`, `:1741`).
+(`scp_reader_test.cc:1909-1923`, `:1925`).
 
 ### Proof-time state
 
@@ -366,7 +366,7 @@ propagator subscribes to every variable, so any inference queues it for the
 next round, where it also sees what that round has inferred before it runs.
 The refined one is queued only by the inference that entails one of its
 watched literals, when the round boundary replays it
-(`propagators.cc:1002-1029`, `:1226-1297`). So at one node the store's unit
+(`propagators.cc:1004-1059`, `:1263-1334`). So at one node the store's unit
 inferences land at different points in the propagation. Propagation stops
 at the first propagator to meet a wipeout, and the conflict observers are
 told that propagator's constraint (`:1336-1341`, `:1382-1390`). `classic`
@@ -953,8 +953,7 @@ Anything else, which would need work first:
   the refined path than on the scan path, since the refined one adds nothing to
   degree (#1392).
 - **A range literal in a posted nogood throws** with proofs on (#310, and
-  `s_expr()`), and **a view** makes the written `.scp` unreadable by our own
-  reader (generic).
+  `s_expr()`).
 - **No thread safety**: `clone()` shares the store, which has no
   synchronisation.
 
