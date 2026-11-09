@@ -281,15 +281,21 @@ add_scp_chain_test(in_unsat      none)
 add_scp_chain_test(in_const_var_sat        none)
 add_scp_chain_test(in_const_var_mixed_sat  none)
 
-# none (chain-only): circuit. The solver's writer already emits cake's shape
-# (id circuit (succ...)); its embedded all_different sub-encoding even matches
-# cake (the #355 x[id][i_j] conform), but the Hamiltonicity / position-variable
-# layer is encoded differently (the solver's p[N_posK] position vars) and the
-# successor eq/ge literals trip #358 -- so it chain-verifies but is far from
-# byte-match. circuit_sat enumerates the two 3-node cycles; circuit_unsat
+# none (chain-only): circuit. The writer emits cake's shape (id circuit
+# (succ...)), the all_different clique is cake's (the #355 x[id][i_j] conform),
+# and so is the position layer, bits x[id][i_b][bin], labels and row contents
+# (#1459). What keeps these off strict is outside the family: cake writes a
+# tautological half-reified row with a 0 coefficient on its literal where we
+# write an equivalent tautology, and a {0,1} successor's eq atoms are its bit
+# here (#1193). circuit_sat enumerates the two 3-node cycles; circuit_unsat
 # confines successors to {0,1} so two of the four nodes are unreachable.
 add_scp_chain_test(circuit_sat    none)
 add_scp_chain_test(circuit_unsat  none)
+# Four nodes over narrowed intervals, two tours, whose SCC proof derives
+# pos[0] = 0 and reasons from it. Before #1459 that step was rejected against
+# cake's OPB, which had none of the solver's p[k_pos0] bits; the cases above
+# never reason about a position, so they passed either way.
+add_scp_chain_test(circuit_position_sat   none)
 # The same successor variable twice: the all_different pair rows for the two
 # slots are a unit and its negation, which the root contradiction cites (#1047).
 add_scp_chain_test(circuit_aliased_unsat  none)

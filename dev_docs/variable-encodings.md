@@ -55,7 +55,7 @@ hang off the base it gives:
 |---|---|---|
 | a real variable `X` | `i[X]` | `i[X][b0]`, `i[X][ge5]`, `@i[X][lb]` |
 | a view `X + c` or `-X + c` | `w[X][c]`, `w[-X][c]` | `w[X][2][b0]`, `w[-X][0][sign]`, `@w[X][2][ge5][r]`, link rows `@w[X][2][le]` / `[ge]` |
-| any other proof-only variable | `p[index_name]` | `p[3_pos0][b1]`, labels `@po[3][…]` |
+| any other proof-only variable | `p[index_name]` | `p[3_subpos][b1]`, labels `@po[3][…]` |
 
 A view's name says which view it is, never when it was registered: the offset is
 always written, so `X + 0` is `w[X][0]`, and `+` is not legal in a VeriPB name,
