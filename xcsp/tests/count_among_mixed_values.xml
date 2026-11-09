@@ -1,0 +1,13 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[3]"> 0..2 </array>
+    <var id="y"> 0..2 </var>
+  </variables>
+  <constraints>
+    <count>
+      <list> x[] </list>
+      <values> 2 y </values>
+      <condition> (eq,1) </condition>
+    </count>
+  </constraints>
+</instance>

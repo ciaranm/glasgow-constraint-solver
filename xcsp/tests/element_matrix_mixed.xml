@@ -1,0 +1,9 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <var id="i"> 0..1 </var> <var id="j"> 0..1 </var>
+    <var id="v"> 0..9 </var> <var id="y"> 5..6 </var>
+  </variables>
+  <constraints>
+    <element> <matrix> (1,y)(2,3) </matrix> <index> i j </index> <value> v </value> </element>
+  </constraints>
+</instance>

@@ -1,0 +1,15 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[2]"> 0..2 </array>
+    <var id="y"> 1..2 </var>
+  </variables>
+  <constraints>
+    <knapsack>
+      <list> x[] </list>
+      <weights> 1 y </weights>
+      <condition> (le,2) </condition>
+      <profits> 1 1 </profits>
+      <condition> (ge,0) </condition>
+    </knapsack>
+  </constraints>
+</instance>

@@ -1,0 +1,155 @@
+--- a/src/XCSP3Code.cc
++++ b/src/XCSP3Code.cc
+@@ -293,20 +293,17 @@
+ 
+ 
+ void XConstraintGroup::unfoldVector(vector<XVariable *> &toUnfold, vector<XVariable *> &args, vector<XVariable *> &initial) {
+-    XParameterVariable *xp;
+-    if(initial.size() == 0)
+-        return;
+-    if((xp = dynamic_cast<XParameterVariable *>(initial[0])) == NULL) {  // non parametrized vector
+-        toUnfold.assign(initial.begin(), initial.end());
+-        return;
+-    }
+-    if(xp->number == -1) { // %...
+-        toUnfold.assign(args.begin() + (XParameterVariable::max == -1 ? 0 : XParameterVariable::max + 1), args.end());
+-        return;
+-    }
++    // Entry by entry. Deciding from the first entry alone whether the vector
++    // was parametrized left "1 %0" with its parameter unsubstituted, and
++    // dereferenced a null for each non-parameter after a first "%0".
+     for(XVariable *xv : initial) {
+-        xp = dynamic_cast<XParameterVariable *>(xv);
+-        toUnfold.push_back(args[xp->number]);
++        XParameterVariable *xp = dynamic_cast<XParameterVariable *>(xv);
++        if(xp == NULL)
++            toUnfold.push_back(xv);
++        else if(xp->number == -1) // %...
++            toUnfold.insert(toUnfold.end(), args.begin() + (XParameterVariable::max == -1 ? 0 : XParameterVariable::max + 1), args.end());
++        else
++            toUnfold.push_back(args[xp->number]);
+     }
+ }
+ 
+--- a/src/XCSP3Manager.cc
++++ b/src/XCSP3Manager.cc
+@@ -456,7 +456,8 @@
+         vector<int> except;
+         for(auto *xv: constraint->values) {
+             int v;
+-            isInteger(xv, v);
++            if(!isInteger(xv, v))
++                throw runtime_error("allDifferent: the except values must be integers");
+             except.push_back(v);
+         }
+         callback->buildConstraintAlldifferentExcept(constraint->id, constraint->list, except);
+@@ -558,12 +559,32 @@
+ }
+ 
+ 
++// True if the list has both an integer entry and one that is not.
++static bool isMixedList(vector<XVariable *> &list) {
++    bool anyInteger = false, anyOther = false;
++    int v;
++    for(XEntity *xe: list) {
++        if(isInteger(xe, v))
++            anyInteger = true;
++        else
++            anyOther = true;
++    }
++    return anyInteger && anyOther;
++}
++
++
+ void XCSP3Manager::newConstraintSum(XConstraintSum *constraint) {
+     if(discardedClasses(constraint->classes))
+         return;
+     XCondition xc;
+     constraint->extractCondition(xc);
+ 
++    // The code below decides whether the coefficients are integers from the
++    // first one alone, so a mixed list such as "2 y" was read as integers,
++    // repeating 2 for y. Refuse a mixed list.
++    if(isMixedList(constraint->values))
++        throw runtime_error("sum with both integer and variable coefficients is not supported");
++
+     vector<Tree *> trees;
+     containsTrees(constraint->list, trees);
+     if(trees.size() > 0) { // alldif over tree
+@@ -573,7 +594,8 @@
+             vector<int> coefs;
+             int v;
+             for(XEntity *xe: constraint->values) {
+-                isInteger(xe, v);
++                if(!isInteger(xe, v))
++                    throw runtime_error("sum over expressions with variable coefficients is not supported");
+                 coefs.push_back(v);
+             }
+             callback->buildConstraintSum(constraint->id, trees, coefs, xc);
+@@ -628,6 +650,10 @@
+ void XCSP3Manager::newConstraintCount(XConstraintCount *constraint) {
+     if(discardedClasses(constraint->classes))
+         return;
++    // As for sum: the code below decides whether the values are integers from
++    // the first one alone, so a mixed list such as "2 y" was read as "2 2".
++    if(isMixedList(constraint->values))
++        throw runtime_error("count with both integer and variable values is not supported");
+     int value;
+     XCondition xc;
+     constraint->extractCondition(xc);
+@@ -992,6 +1018,19 @@
+         return;
+     int v;
+ 
++    // As for sum: the code below decides whether the matrix is integers from
++    // its first entry alone, so (1,y)(2,3) was read with y as 1. Refuse a mix.
++    bool anyInteger = false, anyOther = false;
++    for(auto &row: constraint->matrix)
++        for(XVariable *xe: row) {
++            if(isInteger(xe, v))
++                anyInteger = true;
++            else
++                anyOther = true;
++        }
++    if(anyInteger && anyOther)
++        throw runtime_error("element with both integers and variables in a matrix is not supported");
++
+     if(isInteger(constraint->matrix[0][0], v)) {
+         vector<vector<int> > matrix;
+         matrix.resize(constraint->matrix.size());
+@@ -1291,7 +1330,8 @@
+     vector<int> values;
+     int v;
+     for(XEntity *xe: constraint->values) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("instantiation: the values must be integers");
+         values.push_back(v);
+     }
+     callback->buildConstraintInstantiation(constraint->id, constraint->list, values);
+@@ -1341,7 +1381,8 @@
+     vector<int> values;
+     int v;
+     for(XEntity *xe: constraint->values) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("precedence: the values must be integers");
+         values.push_back(v);
+     }
+     if(values.empty())
+@@ -1387,11 +1428,13 @@
+     vector<int> profits, weights;
+     int v;
+     for(XEntity *xe: constraint->profits) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("knapsack: the profits must be integers");
+         profits.push_back(v);
+     }
+     for(XEntity *xe: constraint->weights) {
+-        isInteger(xe, v);
++        if(!isInteger(xe, v))
++            throw runtime_error("knapsack: the weights must be integers");
+         weights.push_back(v);
+     }
+     XCondition weightsCondition, profitsCondition;
