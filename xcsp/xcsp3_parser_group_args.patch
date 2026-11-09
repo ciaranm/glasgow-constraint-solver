@@ -1,0 +1,34 @@
+--- a/src/XCSP3Code.cc
++++ b/src/XCSP3Code.cc
+@@ -309,6 +309,16 @@
+ 
+ 
+ void XConstraintGroup::unfoldString(string &toUnfold, vector<XVariable *> &args) {
++    // A parameter past the end of an <args> was left in the string, or, as
++    // %12 with two arguments, had its %1 replaced and its 2 left behind.
++    for(size_t p = toUnfold.find('%') ; p != string::npos ; p = toUnfold.find('%', p + 1)) {
++        size_t q = p + 1;
++        while(q < toUnfold.size() && isdigit(static_cast<unsigned char>(toUnfold[q])))
++            q++;
++        if(q > p + 1 && (q - p - 1 > 9 || std::stoul(toUnfold.substr(p + 1, q - p - 1)) >= args.size()))
++            throw runtime_error("group: the template uses " + toUnfold.substr(p, q - p) + " but an <args> has only " +
++                                std::to_string(args.size()) + " arguments");
++    }
+     for(int i = static_cast<int>(args.size()) - 1 ; i >= 0 ; i--) {
+         string param = "%" + std::to_string(i);
+         ReplaceStringInPlace(toUnfold, param, args[i]->id);
+--- a/src/XMLParserTags.cc
++++ b/src/XMLParserTags.cc
+@@ -1493,6 +1493,12 @@
+ void XMLParser::ArgsTagAction::endTag() {
+     XConstraintGroup *group = ((GroupTagAction * )
+     this->parser->getParentTagAction())->group;
++    // The template's lists name parameters up to %max. Past the end of these
++    // arguments, unfoldVector read one out of bounds (a segfault), and began a
++    // %... past the end (an abort).
++    if(XParameterVariable::max >= 0 && this->parser->args.size() <= static_cast<size_t>(XParameterVariable::max))
++        throw runtime_error("group: the template uses %" + std::to_string(XParameterVariable::max) + " but an <args> has only " +
++                            std::to_string(this->parser->args.size()) + " arguments");
+     group->arguments.push_back(vector<XVariable *>(this->parser->args.begin(), this->parser->args.end()));
+ }
+ 

@@ -332,8 +332,8 @@ those too. `newConstraintElementMatrix` had the first-entry shape as well:
 there. A plain variable such as `y` reaches that check; an array cell such as
 `m[0][1]` does not. The parser takes any `[` in a `<matrix>`'s text to mean the
 compact form `m[][]`, reads everything before the `[` as the array's name, and
-refuses the matrix when no array has that name (`XMLParserTags.cc:1888-1898`).
-So an explicit matrix that names any array cell is refused, even an all-variable
+refuses the matrix when no array has that name (`XMLParserTags.cc:1894-1904`,
+with all five patches applied). So an explicit matrix that names any array cell is refused, even an all-variable
 one such as `(m[0][0],m[0][1])(m[1][0],m[1][1])`, which reports `Matrix variable
 (mdoes not exist` (sic). That refusal is loud, but it refuses a valid
 instance: write the matrix as `m[][]`, or with plain variables, to post it.
@@ -355,6 +355,42 @@ which it refuses. Three sites still ignore a failed integer read, unpatched:
 and `newConstraintFlow`. Each reaches a callback the binding does not support,
 so a variable there is reported unsupported, not misread; patch them if the
 binding ever supports one.
+
+A fifth, `xcsp/xcsp3_parser_group_args.patch`, refuses a `<group>` template that
+names a parameter past the end of an `<args>`, which upstream never checked
+(#1456). With two arguments, `%5` in a list such as `<list> %0 %5 </list>` was
+read out of bounds (a segfault); `%0 %3 %...` began the `%...` past the end (an
+abort, `std::length_error`); and `%5` in a condition or an intension was left
+in the string, so the binding reported "no mapping for variable '%5'". Each
+now reports `s UNSUPPORTED` with the parameter and the length of the `<args>`.
+There are two checks. A parameter in a list or a condition raises
+`XParameterVariable::max`, the template's largest parameter number, and is
+refused where an `<args>` ends. An intension is text, which does not, so it is
+refused in `unfoldString` before substituting; there `%12` with two arguments
+is refused as `%12` rather than having its `%1` replaced and its `2` left
+behind. The five `xcsp_group_param_*past_args` refusal lanes cover a list,
+`%...`, a condition, and an intension with `%5` and with `%12`.
+
+### Changing a parser patch
+
+The patch step runs again on every configure, and `apply_parser_patch.cmake`
+skips a patch that is already in place by checking that it reverses cleanly.
+A build tree that has an *older* version of a patch applied passes neither
+check, so its configure fails with "could not apply the XCSP3 parser patch";
+fresh trees are fine. The cure is to delete the fetched parser,
+`rm -rf <build>/_deps/xcsp3_cpp_parser-*`, and configure again. Every
+developer meets this the first time they pull a change to an existing patch,
+so prefer a new patch file for a new fix, which an existing tree applies
+without complaint, and say so in the PR when an existing patch has to change.
+
+A new patch must not change any line inside an earlier patch's hunks, context
+lines included. It applies, but on the next configure the earlier patch no
+longer reverses cleanly, so it is taken as not applied, fails to apply, and
+the configure fails, in every tree including fresh ones. That is why the fifth
+patch checks a `<group>`'s arguments where an `<args>` ends rather than in
+`unfoldVector`, which the fourth patch rewrote. To check a patch series, apply
+all of them in order to a clean checkout of the pinned parser, then
+`git apply --reverse --check` each one against the result: all must pass.
 
 ## Testing
 

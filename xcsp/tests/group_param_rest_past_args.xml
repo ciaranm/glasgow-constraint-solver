@@ -1,0 +1,11 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[3]"> 0..3 </array>
+  </variables>
+  <constraints>
+    <group>
+      <allDifferent> %0 %3 %... </allDifferent>
+      <args> x[0] x[1] </args>
+    </group>
+  </constraints>
+</instance>
