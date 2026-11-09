@@ -699,7 +699,10 @@ MiniZinc (`fzn_glasgow.cc:947`), the `.scp` reader (`scp_reader.cc:1174`) and
 tried at this size. An explicit stack of traversal frames removes the
 dependence, as #1440 does. With it, a fixed ring takes 0.19 s at 10,000
 nodes, 0.68 s at 20,000 and 2.77 s at 40,000: what grows quadratically there is
-the value consistent all-different and installation (#1309), not the walk.
+not the walk. Re-measured at `fffade10`, after #1442 made installation linear
+(#1309), the ring is unchanged (0.18 s, 0.69 s, 2.76 s, and 10.7 s at 80,000),
+and 98% of it is the value consistent all-different, which checks each
+newly fixed successor against every other one fixed in the same call (#1453).
 
 **Overflow.** Nothing to guard: every successor value and position in
 either encoding is at most `n` in magnitude, the wrap rows' coefficients are
@@ -734,9 +737,10 @@ for propagation, not for every proof: a successor declared wide makes
 2. **The reason side.** Every reason is `generic_reason` over the whole
    successor array (plus the size, for the tour-size rules), one literal per
    fixed variable and two bounds plus one per hole run otherwise, and found one
-   step per run (#935). `Circuit` `SCC` materialises it on every call,
-   **unguarded** by `want_reasons()` and with proofs off
-   (`circuit_scc.cc:1110`); everything else builds it at the inference site.
+   step per run (#935). `Circuit` `SCC` snapshots it at the top of each call,
+   only when a proof will read it (`circuit_scc.cc:1233`; until #1438 on every
+   call, unguarded by `want_reasons()` and with proofs off); everything else
+   builds it at the inference site.
    Not minimal anywhere: see the rules.
 3. **The proof side.** Per value. `Circuit`'s position at-least-ones and
    at-most-ones are over values `0..n-1`. `SubCircuit`'s pigeonhole names
