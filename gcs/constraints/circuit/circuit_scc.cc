@@ -292,8 +292,6 @@ namespace
                 am1_sum += -1_i * ctx.root_flag_data.shifted_pos_eq[node][val].flag;
             }
 
-            map<ProofGoal, Subproof> subproofs{};
-
             auto subproof = [&](ProofLogger & logger) {
                 auto geq_data = ctx.root_flag_data.shifted_pos_geq;
                 for (auto it = values.begin(); next(it) != values.end(); ++it) {
@@ -316,16 +314,12 @@ namespace
                 logger.emit_proof_line("rup >= 1;", ProofLevel::Temporary);
             };
 
-            subproofs.emplace("#1", subproof);
-
-            return ctx.logger.emit_red_proof_line(am1_sum >= -1_i, {}, ProofLevel::Top, subproofs);
+            return ctx.logger.emit_pbc_proof_line(am1_sum >= -1_i, ProofLevel::Top, subproof);
         }
         else {
             for (const auto & val : values) {
                 am1_sum += -1_i * (ctx.pos_var_data.at(node).var == Integer(val));
             }
-
-            map<ProofGoal, Subproof> subproofs{};
 
             auto subproof = [&](ProofLogger & logger) {
                 for (auto it = values.begin(); it != values.end(); ++it) {
@@ -335,9 +329,7 @@ namespace
                 logger.emit_proof_line("rup >= 1;", ProofLevel::Temporary);
             };
 
-            subproofs.emplace("#1", subproof);
-
-            return ctx.logger.emit_red_proof_line(am1_sum >= -1_i, {}, ProofLevel::Top, subproofs);
+            return ctx.logger.emit_pbc_proof_line(am1_sum >= -1_i, ProofLevel::Top, subproof);
         }
     }
 

@@ -88,7 +88,7 @@ sign-case-conditional bound as its raw pol line plus its case literals.
   negation pins the sign atom instead, or unit propagation closes
   through the sign clauses and the eq0 rows;
 - `conclude_by_sign_cases`: the fixed-shape replacement for case
-  resolution. One red-with-empty-witness derivation of
+  resolution. One proof by contradiction (`pbc`) of
   `reason => conclusion`; the subproof takes each case pattern's premise
   pol-added onto the negated goal (premises that are already refutation
   clauses — factor-bound clashes — are used directly: adding the negation

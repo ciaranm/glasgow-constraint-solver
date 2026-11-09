@@ -477,8 +477,7 @@ auto ComparatorNetwork::case_split(const WPBSumLE & goal, const vector<ProofLine
     // The goal holds under each polarity of a selector, so it holds. Each half
     // is the goal plus a guard: adding the negated goal cancels every record
     // term and leaves the guard alone, and the two guards then sum past one.
-    map<ProofGoal, Subproof> subproofs;
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+    auto subproof = [&](ProofLogger & sub_logger) {
         // The negated goal is the last line added when the subproof opens.
         auto negation = sub_logger.get_current_proof_line();
         vector<ProofLine> guards;
@@ -491,9 +490,9 @@ auto ComparatorNetwork::case_split(const WPBSumLE & goal, const vector<ProofLine
         for (const auto & guard : guards)
             builder.add(guard);
         builder.emit(sub_logger, ProofLevel::Temporary);
-    }});
+    };
 
-    return _logger.emit_red_proof_line(goal, {}, _level, subproofs);
+    return _logger.emit_pbc_proof_line(goal, _level, subproof);
 }
 
 auto ComparatorNetwork::derive_positivity(const ProofWire & out, const vector<pair<ProofLine, ProofWire>> & halves) -> void
@@ -668,8 +667,7 @@ auto ComparatorNetwork::derive_gap_allowing_zero(const Comparator & c) -> ProofL
     add_terms(goal, c.lo, -1_i);
     add_terms(goal, c.d_lo, -1_i);
 
-    map<ProofGoal, Subproof> subproofs;
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+    auto subproof = [&](ProofLogger & sub_logger) {
         auto negation = sub_logger.get_current_proof_line();
         // Each half against the negated goal leaves only its guard, a clause
         // over the selector and one separation flag once saturated. The strict
@@ -692,9 +690,9 @@ auto ComparatorNetwork::derive_gap_allowing_zero(const Comparator & c) -> ProofL
         PolBuilder builder;
         builder.add(not_a_first).add(not_b_first).add(separation.clause);
         builder.emit(sub_logger, ProofLevel::Temporary);
-    }});
+    };
 
-    return _logger.emit_red_proof_line(move(goal) >= 0_i, {}, _level, subproofs);
+    return _logger.emit_pbc_proof_line(move(goal) >= 0_i, _level, subproof);
 }
 
 auto ComparatorNetwork::derive_dominance(const Comparator & c) -> ProofLine
@@ -840,8 +838,7 @@ auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other,
         for (const auto & term : _guard.terms)
             goal += 1_i * term.variable;
 
-    map<ProofGoal, Subproof> subproofs;
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+    auto subproof = [&](ProofLogger & sub_logger) {
         // The negated goal, as case_split takes it: the last line in when the
         // subproof opens. Needed to discharge the guard at the end.
         auto negation = sub_logger.get_current_proof_line();
@@ -895,9 +892,9 @@ auto ComparatorNetwork::transfer(const ProofWire & out, const ProofWire & other,
         if (_clauses_guarded)
             both.saturate().add(negation);
         both.emit(sub_logger, ProofLevel::Temporary);
-    }});
+    };
 
-    auto clause = _logger.emit_red_proof_line(move(goal) >= 1_i, {}, _level, subproofs);
+    auto clause = _logger.emit_pbc_proof_line(move(goal) >= 1_i, _level, subproof);
     record_separation(out, flags.x_first_row, other, flags.y_first_row, clause);
 }
 

@@ -263,8 +263,8 @@ set of weakenings does better: asking for the whole raise at once forces
 spend, until #1242.
 
 A proof by contradiction does the whole raise in one rule step, whatever
-`kappa` is: `red` the goal `kappa·a_i + sum_k w_k·a_k <= kappa` with an empty
-witness, and in its subproof
+`kappa` is: `pbc` the goal `kappa·a_i + sum_k w_k·a_k <= kappa`, and in its
+subproof
 
 1. add the row `sum_k w_k·a_k <= kappa` to the negated goal and saturate, which
    leaves `a_i >= 1`;

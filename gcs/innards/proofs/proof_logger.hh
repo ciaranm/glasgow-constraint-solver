@@ -350,6 +350,17 @@ namespace gcs::innards
             const std::optional<std::map<ProofGoal, Subproof>> & subproofs = std::nullopt) -> ProofLine;
 
         /**
+         * Emit a proof by contradiction (`pbc`) of the specified expression.
+         * Opening the subproof adds the expression's negation, so inside the
+         * subproof `get_current_proof_line()` names it until something else is
+         * emitted. The subproof's last line must be a contradiction: the step
+         * names it (`qed : -1;`), so VeriPB will not close the subproof by RUP.
+         * The step then adds the expression itself. Use this rather than a RED
+         * step with an empty witness and a `proofgoal #1`.
+         */
+        auto emit_pbc_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const Subproof & subproof) -> ProofLine;
+
+        /**
          * Emit a RED proof step for flag => specified expresion, creating a half reification.
          */
         auto emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,

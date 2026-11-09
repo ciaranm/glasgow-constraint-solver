@@ -1815,7 +1815,7 @@ zero-duration wire sits at `window_hi`, so the tie is with a task
 ending there too and the gap holds anyway. Parking is carried through
 every comparator by the same case split positivity was, so the issue's
 expected extra muxed flag per output is not needed. The gap lemma is
-then four halves (selector polarity × separation direction) in one `red`
+then four halves (selector polarity × separation direction) in one `pbc`
 subproof. The pinned-duration mode is unchanged and byte-identical.
 
 Three things that went wrong on the way, so they are not rediscovered:

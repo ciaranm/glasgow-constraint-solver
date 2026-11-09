@@ -899,6 +899,36 @@ auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBool
     return record_proof_line(advance_proof_line_number(), level);
 }
 
+auto ProofLogger::emit_pbc_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level, const Subproof & subproof)
+    -> ProofLine
+{
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+
+    log_stacktrace();
+    write_indent();
+    _imp->proof << "pbc ";
+    emit_inequality_to(names_and_ids_tracker(), ineq, _imp->proof);
+    _imp->proof << " : subproof\n";
+
+    // The header adds the negated expression, once. (A RED step with a
+    // `proofgoal #1` adds it twice, once at the header and again when the goal
+    // opens.)
+    advance_proof_line_number();
+    _imp->current_indent += INDENT_WIDTH;
+    ++_imp->subproof_depth;
+    subproof(*this);
+    --_imp->subproof_depth;
+    _imp->current_indent -= INDENT_WIDTH;
+    write_indent();
+    // Name the subproof's last line as the contradiction. A bare `qed;` lets
+    // VeriPB close the subproof by RUP instead, so a body that stopped short of
+    // its contradiction would still verify, and mutation lanes that skip a
+    // closing step would lose their teeth.
+    _imp->proof << "qed : -1;\n";
+
+    return record_proof_line(advance_proof_line_number(), level);
+}
+
 auto ProofLogger::introduce_bits_of(
     const SumOf<Weighted<PseudoBooleanTerm>> & linear_form, SimpleOrProofOnlyIntegerVariableID target, ProofLevel level) -> pair<ProofLine, ProofLine>
 {

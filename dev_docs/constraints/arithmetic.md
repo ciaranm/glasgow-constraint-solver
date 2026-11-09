@@ -952,8 +952,8 @@ Facts that hold across the family:
   drag view bits into the cut.
 - **Vocabulary.** The product group uses two techniques this document adds to
   [Appendix A](TEMPLATE.md#appendix-a-proof-technique-vocabulary): `ia`
-  (VeriPB's implied-constraint step), and `proof by contradiction` (a `red`
-  with the empty witness and a subproof). The `ia` restatement of an operand
+  (VeriPB's implied-constraint step), and `proof by contradiction` (a `pbc`
+  step with a subproof). The `ia` restatement of an operand
   bound is load-bearing: citing the definition directly verifies or not
   depending on coefficient values (`arithmetic-proofs.md`, "the justification
   layer").
@@ -1673,7 +1673,7 @@ Facts that hold across the family:
   assume the excluded range with one `ia`, take the grid lower bound (JSP 7.1)
   against the cofactor's lower bound, add the chain for `w_hi` by `pol` with
   `saturate`, and conclude by `conclude_by_sign_cases`. With no sign
-  dimensions it still emits its `red` and subproof, using the clash directly.
+  dimensions it still emits its `pbc` and subproof, using the clash directly.
   When the cofactor's lower bound is 0, a RUP line `[o ≠ 0] ⇒ o ≥ 1`, the
   chain for `w_lo`, and a zero-refutation unit instead.
 - **Reason** — the literals of the side that set `w_hi`, and `o ≥ o_lo`. With a

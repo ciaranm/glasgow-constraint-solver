@@ -261,7 +261,7 @@ clique rows under the same ID; `opb/circuit_5.opb` against `circuit_gac_5.opb`).
 | `with_prune_root` | on | yes |
 | `with_prune_skip` | on | yes |
 | `with_fix_req` | on | yes |
-| `with_prove_am1_by_contradiction` | on | yes: at-most-ones by a `red` subproof, else by a clique of pairs |
+| `with_prove_am1_by_contradiction` | on | yes: at-most-ones by proof by contradiction (`pbc`), else by a clique of pairs |
 | `with_short_reasons` | on | yes: one reified flag stands for the reason |
 | `with_prune_within` | on | **no**: nothing in `circuit_scc.cc` reads it |
 | `with_prove_using_dominance` | off | **no** |
@@ -1034,8 +1034,8 @@ is the pigeonhole. Positions relative to `w ≠ 0` are the thesis's
 `dist(w, i)`, defined as flags `q[w][i]ge<k>` / `eq<k>` over precedence flags
 `d[w][i]`, each introduced by redundance with a subproof that two positions
 differ, which needs the `Θ(n³)` position all-different of
-[Proof-time state](#proof-time-state). At-most-ones are by a `red` subproof
-(the default) or a clique of pairs. Per firing: `O(n · Σ|dom|)` lines in the
+[Proof-time state](#proof-time-state). At-most-ones are by proof by contradiction
+(`pbc`, the default) or a clique of pairs. Per firing: `O(n · Σ|dom|)` lines in the
 worst case (a layer per reached node, a lemma per edge out of it), each
 carrying the reason or `sr`; on the 12-node enumeration, 857 firings wrote
 9,474 `Next implies` lemmas and 7,316 layer sums.

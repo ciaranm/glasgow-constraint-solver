@@ -295,17 +295,17 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
 
         auto rhs = power2(n_cols) - 1_i;
         auto desired = logger.reify(logger.reify(neg_row_sum + b_val * ProofBitVariable{bits_a, i, true} >= rhs, cases), reason);
-        std::map<ProofGoal, Subproof> subproofs{};
-        subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+        auto resolvent = logger.emit_pbc_proof_line(desired, ProofLevel::Temporary, [&](ProofLogger & sub_logger) {
+            // The negated goal is the last line added when the subproof opens.
+            auto negation = sub_logger.get_current_proof_line();
             PolBuilder first;
-            first.add(line_w_a).add(ProofLineNumber{-2}).saturate();
-            first.emit(sub_logger, ProofLevel::Temporary);
+            first.add(line_w_a).add(negation).saturate();
+            auto first_line = first.emit(sub_logger, ProofLevel::Temporary);
             PolBuilder second;
-            second.add(line_w_b).add(ProofLineNumber{-3}).saturate();
-            second.emit(sub_logger, ProofLevel::Temporary);
-            sub_logger.emit_proof_line("rup >= 1 : -1 -2;", ProofLevel::Temporary);
-        }});
-        auto resolvent = logger.emit_red_proof_line(desired, {}, ProofLevel::Temporary, subproofs);
+            second.add(line_w_b).add(negation).saturate();
+            auto second_line = second.emit(sub_logger, ProofLevel::Temporary);
+            sub_logger.emit(RUPProofRule{vector<ProofLine>{first_line, second_line}}, WPBSum{} >= 1_i, ProofLevel::Temporary);
+        });
         outer.add(resolvent, power2(i));
     }
     outer.add(a_ub.line, b_val);
@@ -415,8 +415,7 @@ auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger,
     }
 
     auto goal = logger.reify(conclusion, reason);
-    std::map<ProofGoal, Subproof> subproofs{};
-    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+    auto subproof = [&](ProofLogger & sub_logger) {
         // The negated goal is the last line added when the subproof opens.
         auto negation = sub_logger.get_current_proof_line();
         auto sub_hints = case_hints;
@@ -475,7 +474,7 @@ auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger,
             closing_hints.emplace_back(sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Temporary));
 
         sub_logger.emit(rup_rule(closing_hints), WPBSum{} >= 1_i, ProofLevel::Temporary);
-    }});
+    };
 
-    return logger.emit_red_proof_line(goal, {}, ProofLevel::Temporary, subproofs);
+    return logger.emit_pbc_proof_line(goal, ProofLevel::Temporary, subproof);
 }

@@ -267,6 +267,31 @@ Two corrections worth not relapsing into:
   records the one case where a suspected "bit-composition wall" turned out to
   have an ordinary cause.
 
+## Proof by contradiction is `pbc`
+
+To derive `C` by refuting `¬C`, use `ProofLogger::emit_pbc_proof_line`, which
+writes `pbc C : subproof ... qed;`. The tree used to spell this as a `red` with
+an empty witness and a single `proofgoal #1`. VeriPB accepts that too, but it is
+a worse spelling:
+
+- It adds `¬C` twice, once at the header and again when the goal opens. That
+  costs a constraint id per step, and a subproof that counted back past the
+  negation by relative id (`-2`, `-3`) was relying on the duplicate without
+  saying so. In a `pbc` subproof, `get_current_proof_line()` names `¬C` until
+  something else is emitted.
+- VeriPB's trimmer (`veripb trim`, on its `feature/trimmer-base` branch as of
+  November 2026) treats an empty-witness `red` as a `pbc` only in version 2
+  proofs. On the version 3 form it panics.
+
+One difference runs the other way. A `pbc` whose `qed;` names no ID is closed
+by RUP when its last line is not a contradiction, and an empty body is accepted
+if `¬C` refutes by propagation. A `proofgoal` has no such fallback. So
+`emit_pbc_proof_line` always writes `qed : -1;`, and the body's last line has to
+be the contradiction. Without that, `disjunctive_2d_relaxation_mutation_skip_presence_guard`
+verified: the step it skips was only needed to end the subproof syntactically.
+
+`red` is for steps that need a witness.
+
 ## Rows whose slack passes 2^63
 
 VeriPB before [MR 233](https://gitlab.com/MIAOresearch/software/VeriPB-dev/-/merge_requests/233)

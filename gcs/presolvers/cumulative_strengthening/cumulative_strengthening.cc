@@ -650,15 +650,14 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         raised += (raise_too_fast ? kappa + 1_i : kappa) * flag_for(task);
                         for (const auto & [other, weight] : running)
                             raised += weight * flag_for(other);
-                        map<ProofGoal, Subproof> subproofs;
-                        subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+                        auto subproof = [&](ProofLogger & sub_logger) {
                             // The negated goal is the last line added when the
                             // subproof opens.
                             auto negation = sub_logger.get_current_proof_line();
                             PolBuilder{}.add(negation).add(current).saturate().emit(sub_logger, ProofLevel::Temporary);
                             sub_logger.emit_rup_proof_line(WPBSum{} >= 1_i, ProofLevel::Temporary);
-                        }});
-                        row = recipe_logger.emit_red_proof_line(move(raised) <= kappa, {}, ProofLevel::Temporary, subproofs);
+                        };
+                        row = recipe_logger.emit_pbc_proof_line(move(raised) <= kappa, ProofLevel::Temporary, subproof);
                         ++stats->raise_lines_emitted;
                     }
 

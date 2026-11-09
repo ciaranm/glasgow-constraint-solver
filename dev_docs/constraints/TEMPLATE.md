@@ -735,7 +735,7 @@ paraphrase the proof.
 | `hinted RUP` | a RUP step carrying VeriPB's own antecedent list (`RUPProofRule::lines`): the checker propagates over the cited lines only, so a hinted step is cheaper to check and **fails** if the list misses part of the conflict path. See [`veripb-facts.md`](../veripb-facts.md) | as `RUP`, over the cited lines |
 | `pol` | a cutting-planes derivation: linear combination, with `saturate` / division as needed | the derivation itself, stated in the rule |
 | `ia` | VeriPB's implied-constraint step: the conclusion is checked to follow syntactically from one cited line (literal axioms, one saturation, literal axioms; see [`veripb-facts.md`](../veripb-facts.md)). Coefficient-exact, so a restatement by `ia` can be load-bearing for later syntactic checks | the cited line; no propagation |
-| `proof by contradiction` | a `red` step with the empty witness, whose subproof derives contradiction from the negated conclusion: the thesis's `pbc`. Say what the subproof does | the redundance rule: with the empty witness its obligation reduces to refuting the negated conclusion, which the subproof's own steps discharge |
+| `proof by contradiction` | a `pbc` step (`emit_pbc_proof_line`), whose subproof derives contradiction from the negated conclusion. Say what the subproof does | the proof-by-contradiction rule: the subproof's own steps refute the negated conclusion |
 | `extended reason` | a hypothetical literal pinned into the reason so the inference becomes RUP-derivable | Thm 2.6, plus whatever licenses the underlying step |
 | `redundance` | extension-variable introduction, i.e. defining a `ProofFlag` | Thm 2.4 (extension variables) |
 | `dominance` | a dominance-rule derivation | the dominance rule's own side conditions — state them |
