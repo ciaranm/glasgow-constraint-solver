@@ -3,15 +3,15 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1121 ·
-> **Open issues** filed by this audit: #1155 (every call walks the value
-> variable's domain while it is unfixed), #1156 (the `on_change` triggers
+> **Open issues** filed by this audit: #1156 (the `on_change` triggers
 > declare every variable's holes relevant), #1157 (every reason is the whole
 > scope), #1158 (the encoding is `Count`'s from before #354), #1159 (not
 > `bounds(Z)` on repeated or aliased variables). Already open and touching
 > this family: #833 (the large-domain policy, which names this family's walk
 > over the value variable), and #1128 (`SmartTable`'s per-call copies, which
 > `AtMostOneSmartTable` pays).
-> **Fixed since the audit**: #1121 (`AtMostOneSmartTable`'s child named no
+> **Fixed since the audit**: #1155 (every call walked the value variable's
+> domain while it was unfixed), by #1430; #1121 (`AtMostOneSmartTable`'s child named no
 > constraint in its hints), by #1182; see [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Tracked under #871.
 
@@ -49,12 +49,11 @@ Five things to know before touching it.
   means `x ≠ y`, but the propagator waits for `x` to be fixed, and on repeated
   variables a bound can be left without a support. The answers are right either
   way.
-- **It walks the value variable's whole domain on every call while that
-  variable is unfixed**, scanning the array for each value. A call costs about
-  `W · n` steps for a value variable of width `W`: 2.0 s to a first solution at
-  `W = 10⁷` with three variables. Only a value that two variables are fixed to
-  can ever be removed, so collecting the fixed values does the same job in
-  `O(n log n)`; a tested patch is in [Next steps](#next-steps).
+- **It is fine at any width.** Until #1155 every call walked the value
+  variable's whole domain while it was unfixed, scanning the array for each
+  value: 2.0 s to a first solution at `W = 10⁷` with three variables. Only a
+  value that two variables are fixed to can ever be removed, so a call now
+  collects the fixed values and sorts them, `O(n log n)`: under 0.1 ms there.
 - **Only the C++ API and the `.scp` reader reach it.** MiniZinc's `at_most(1,
   x, v)` and `count(x, y) ≤ 1`, and XCSP3's `atMost`, all post `Count` with a
   counter in `0..1`. On the same search tree (the same branching, the same
@@ -303,9 +302,10 @@ rule 2's scan and re-asserts its inferences, which are no-ops.
 
 ### Mutable state and incrementality
 
-`None.` Nothing persists between calls. Every call walks `val`'s domain (rule 1)
-and scans the array for each value; see [Interval
-efficiency](#interval-efficiency) for what that costs.
+`None.` Nothing persists between calls. Every call collects and sorts the
+positions' fixed values (rule 1), and scans the array once more if `val` is
+fixed (rule 2); see [Interval efficiency](#interval-efficiency). Until #1155
+rule 1 walked `val`'s domain instead.
 
 ### Interior values and optional pruning
 
@@ -378,9 +378,10 @@ two-term linear row.
 
 ### Interval efficiency
 
-**Not fine at width, on one site, and the fix is simple.**
+**Fine at any width since #1155.** Until then it was not, on one site, which
+the rest of this section describes as audited.
 
-1. **The propagation side.** Rule 1 is `for (v : each_value_immutable(val))`,
+1. **The propagation side.** Rule 1 was `for (v : each_value_immutable(val))`,
    and for each value a scan of the array, stopping at two matches. With `val`
    unfixed that is `Θ(|dom(val)| · n)` per call, whatever the positions look
    like; it is a per-value loop with no interval structure being exploited, and
@@ -403,6 +404,14 @@ two-term linear row.
    model posted as `Count` takes 3.66 s at 10⁷, and branching on `val` first
    takes the native class 0.27 s, since only the root call walks. Rule 2 is an
    `O(n)` scan, and nothing else walks a domain.
+
+   **After #1155**, rule 1 collects the positions' fixed values, sorts them,
+   and tests each value that occurs twice against `val`'s domain: `O(n log n)`
+   per call, the same inferences in the same order (every `at_most_one_test`
+   proof at `--seed=1` is byte-identical). The same benchmark on #1430,
+   fataepyc-09, `taskset -c 4`, 2026-11-08: `W = 10⁷` takes 85 µs to the
+   first solution with three positions (2.04 s before) and 126 µs with ten
+   (13.2 s before), with the same recursions and propagations.
 2. **The reason side.** Every inference's reason is `generic_reason` over the
    whole scope, materialised per run, not per value (#935), and only by a
    proof-logging tracker, so it costs nothing with proofs off. With proofs on it
@@ -418,9 +427,10 @@ two-term linear row.
    The native row's comment says an aliased `val` "is rejected at post time";
    neither class rejects one at post, and only `AtMostOneSmartTable` rejects
    it at all, from `solve_with` (corrected by #1396, open).
-   With the fix in [Next steps](#next-steps), on a guard build of `c9ceea25`,
-   the native row survives: it reports a mismatch against its `KnownTrip` pin,
-   the lane's only failure, and the SmartTable row still trips.
+   Since #1155 the native row is pinned `Clean`, and survives on a guard
+   build; the SmartTable row still trips. Sibling rows with `val` fixed and
+   with holes were suggested; neither reaches a width-proportional site now
+   that rule 1 reads only the positions, so none was added.
 
 ## Inference catalogue
 
@@ -488,9 +498,11 @@ subhint and no payload.
   of its 215 trace callbacks for seeds 1 to 5
   (`tmp/fd-codex-1005/small/probes/holes.cc`; a probe of the brancher, not a
   count inside the test).
-- **Algorithm** — a walk over `val`'s domain, and for each value an array scan
-  stopping at the second match: `Θ(|dom(val)| · n)` per call, **in values**.
-  See [Interval efficiency](#interval-efficiency).
+- **Algorithm** — collect the positions' fixed values, sort them, and test each
+  repeated one against `val`'s domain: `O(n log n)` per call, independent of
+  width. Until #1155 it walked `val`'s domain, with an array scan per value,
+  `Θ(|dom(val)| · n)` per call **in values**. See [Interval
+  efficiency](#interval-efficiency).
 - **Why it is true** — if `val = v` and two positions equal `v`, two positions
   equal `val`.
 - **Proof technique** — `RUP`. **No published procedure for this encoding**
@@ -718,9 +730,6 @@ with proofs on or off.
 
 ### Known limitations
 
-- **A wide value variable makes every call slow.** While `val` is unfixed each
-  call costs time proportional to its domain's width times the array's length:
-  about 0.4 s per call at `10⁷` values and three positions.
 - **A repeated variable, or `val` among the positions, is propagated late.**
   `AtMostOne{{x, x}, y}` does not remove `y`'s value from `x` until `x` is
   fixed, and fails then. The answers are right.
@@ -743,7 +752,8 @@ five pinned runs of the `n = d = 6` benchmark, as in [CPU
 performance](#cpu-performance), against an unpatched build of the same tree
 (0.767 s with `y` first, 0.886 s with `y` last).
 
-1. **Collect the fixed values instead of walking `val`'s domain** (patch A).
+1. *Done by #1430 (#1155), as below, and the audit row is pinned `Clean`.*
+   **Collect the fixed values instead of walking `val`'s domain** (patch A).
    Rule 1 can only remove a value two positions are fixed to, so gather the
    positions' fixed values, sort them, and test each repeated one against
    `val`'s domain: `O(n log n)` per call, independent of width, and the same
