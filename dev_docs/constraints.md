@@ -1132,6 +1132,17 @@ have the test binary write that proof and stop, and register it with
 `run_test_and_verify.bash` with the verdict inverted: it passes only when
 veripb rejects.
 
+It also has to reject for the right reason, and each lane says what that is
+with `--expect`, naming one of the `GCS_VERIPB_REJECTS_*` variables in the
+top-level `CMakeLists.txt` (a RUP step, a proofgoal, or an implication check
+against a hint). The harness further requires that veripb failed a *step* of
+the proof. Without that, a proof that is missing, truncated or does not parse
+is rejected too, and the lane passes having checked nothing; and a corruption
+that stops breaking the step it was aimed at, but happens to break a different
+one, would go unnoticed. When a lane fails on the reason, read the proof (the
+harness keeps it) before changing the `--expect`: the new failure may be real,
+or it may be the mutation no longer doing what its name says.
+
 Two things make the difference between a mutation lane that tests something
 and one that does not. Mutate on an instance whose margin is *one* — corrupt a
 proof of a conflict that had three units of slack and the contradiction

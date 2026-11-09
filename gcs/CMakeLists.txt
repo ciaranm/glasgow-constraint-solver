@@ -517,14 +517,14 @@ if(GCS_BUILD_TESTS)
     add_cumulative_test_with_recovery(cumulative_height ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_height_test>)
     foreach(mutation toofar emit_nothing drop)
         add_cumulative_test_with_recovery(cumulative_height_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_height_mutation_${mutation} $<TARGET_FILE:cumulative_height_test> --mutate=${mutation})
     endforeach()
     # Time-table run steps (#1237).
     add_cumulative_test_with_recovery(cumulative_run ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_run_test>)
     foreach(mutation toofar drop)
         add_cumulative_test_with_recovery(cumulative_run_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_run_mutation_${mutation} $<TARGET_FILE:cumulative_run_test> --mutate=${mutation})
     endforeach()
     add_cumulative_test_with_recovery(cumulative_edge_finding ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_edge_finding_test>)
@@ -533,7 +533,7 @@ if(GCS_BUILD_TESTS)
     # row from the window supply, which on that arm is a recovered row.
     foreach(mutation drop toofar capacity mirror_drop mirror_toofar)
         add_cumulative_test(cumulative_edge_finding_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_edge_finding_mutation_${mutation} $<TARGET_FILE:cumulative_edge_finding_test> --mutate=${mutation})
     endforeach()
     add_cumulative_test_with_recovery(cumulative_ttef ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_ttef_test>)
@@ -549,14 +549,14 @@ if(GCS_BUILD_TESTS)
     foreach(fixture cloutier_ex2 dp_path compulsory)
         foreach(mutation claim_one_better strengthen_one_fewer capacity)
             add_cumulative_test(cumulative_kaoc_mutation_${fixture}_${mutation}
-                ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                     --basename cumulative_kaoc_mutation_${fixture}_${mutation} $<TARGET_FILE:cumulative_kaoc_test>
                     --mutate=${mutation} --fixture=${fixture})
         endforeach()
     endforeach()
     foreach(mutation toofar drop roomy_toofar)
         add_cumulative_test(cumulative_nfnl_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_nfnl_test> --mutate=${mutation})
     endforeach()
     # The detection as published (#746), certified by contiguity rather than by
@@ -579,12 +579,12 @@ if(GCS_BUILD_TESTS)
     # time. `drop_pin` is the one aimed at what #746 added, and it survives.
     foreach(mutation emit_nothing drop_pin toofar roomy_toofar roomy_drop_pin)
         add_cumulative_test(cumulative_published_nfnl_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_published_nfnl_mutation_${mutation} $<TARGET_FILE:cumulative_published_nfnl_test> --mutate=${mutation})
     endforeach()
     foreach(mutation pins drop toofar mirror_pins mirror_toofar)
         add_cumulative_test(cumulative_ttef_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_ttef_mutation_${mutation} $<TARGET_FILE:cumulative_ttef_test> --mutate=${mutation})
     endforeach()
     # The energetic form (#755), which charges every task its guaranteed energy
@@ -600,7 +600,7 @@ if(GCS_BUILD_TESTS)
         ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_energetic_test> --random 17 --everything)
     foreach(mutation drop_energetic drop toofar capacity mirror_toofar)
         add_cumulative_test(cumulative_energetic_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_energetic_mutation_${mutation} $<TARGET_FILE:cumulative_energetic_test> --mutate=${mutation})
     endforeach()
     add_cumulative_test_with_recovery(derived_cumulative ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:derived_cumulative_test>)
@@ -618,7 +618,7 @@ if(GCS_BUILD_TESTS)
     # recovering arm would have no negative test over that path at all.
     foreach(mutation energy capacity window)
         add_cumulative_test_with_recovery(cumulative_overload_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
     endforeach()
     # #780: the corruption no `pol` failure catches. Recovering a capacity row
@@ -629,7 +629,7 @@ if(GCS_BUILD_TESTS)
     # recovery does not run and the proof comes out honest.
     add_cumulative_arm(cumulative_overload_mutation_recover_wrong checkpoint_recovering
         ${CMAKE_CURRENT_BINARY_DIR}/cumulative_recovering
-        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+        ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_HINT}"
             --basename cumulative_overload_mutation_recover_wrong $<TARGET_FILE:cumulative_overload_test>
             --mutate=recover_wrong_checkpoint)
     # #1254: the chain step's own ingredients. Without the previous row the
@@ -641,7 +641,7 @@ if(GCS_BUILD_TESTS)
     # its weakened pins closing against the very rows being recovered.
     foreach(mutation chain_drop_previous chain_started_by)
         add_test(NAME cumulative_overload_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
     endforeach()
 
@@ -759,7 +759,7 @@ if(GCS_BUILD_TESTS)
     # every one of the four there were then.
     foreach(mutation one_too_far)
         add_cumulative_test_with_recovery(cumulative_optional_mutation_${mutation}
-            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename cumulative_optional_mutation_${mutation} $<TARGET_FILE:cumulative_optional_test> --mutate=${mutation})
     endforeach()
     foreach(mode basic cycles views alias reified simplify incremental random random_reified)
@@ -779,7 +779,7 @@ if(GCS_BUILD_TESTS)
     # one has to break.
     foreach(mutation emit_nothing wrong_task one_too_far)
         add_test(NAME disjunctive_optional_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename disjunctive_optional_mutation_${mutation} $<TARGET_FILE:disjunctive_optional_test> --mutate=${mutation})
     endforeach()
     # The test writes several proofs under names of its own and checks each
@@ -788,7 +788,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME disjunctive_overload COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_overload_test>)
     foreach(mutation emit_nothing skip_fold skip_energy rup_bridge)
         add_test(NAME disjunctive_overload_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename disjunctive_overload_mutation_${mutation} $<TARGET_FILE:disjunctive_overload_test> --mutate=${mutation})
     endforeach()
     # Edge-finding, same shape: the test writes its own proofs and checks each
@@ -803,7 +803,7 @@ if(GCS_BUILD_TESTS)
     # lane here: see innards/disjunctive_mutations.hh for why it cannot bite.
     foreach(mutation emit_nothing skip_fold drop_contained one_too_far drop_pushed)
         add_test(NAME disjunctive_edge_finding_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename disjunctive_edge_finding_mutation_${mutation} $<TARGET_FILE:disjunctive_edge_finding_test> --mutate=${mutation})
     endforeach()
     # Not-first / not-last, over edge-finding's certificate. The mutation lanes
@@ -817,7 +817,7 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_nfnl_test> --search 28)
     foreach(mutation emit_nothing skip_fold drop_contained one_too_far drop_pushed)
         add_test(NAME disjunctive_nfnl_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename disjunctive_nfnl_mutation_${mutation} $<TARGET_FILE:disjunctive_nfnl_test> --mutate=${mutation})
     endforeach()
     # Vilim's set-based form, over #757's certificate mirrored. Its own
@@ -831,7 +831,7 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_set_precedences_test> --search 28)
     foreach(mutation emit_nothing skip_fold drop_energy drop_clause rup_clause one_too_far)
         add_test(NAME disjunctive_set_precedences_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename disjunctive_set_precedences_mutation_${mutation} $<TARGET_FILE:disjunctive_set_precedences_test> --mutate=${mutation})
     endforeach()
     # The rule as published, over the window the negated conclusion derives
@@ -846,7 +846,7 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_published_nfnl_test> --search 28)
     foreach(mutation emit_nothing skip_fold drop_energy drop_clause rup_clause one_too_far contained_emit_nothing)
         add_test(NAME disjunctive_published_nfnl_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename disjunctive_published_nfnl_mutation_${mutation} $<TARGET_FILE:disjunctive_published_nfnl_test> --mutate=${mutation})
     endforeach()
     add_test(NAME disjunctive_precedences COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_precedences_test>)
@@ -855,7 +855,7 @@ if(GCS_BUILD_TESTS)
     # basenames so the lanes do not race over one set of proof files.
     foreach(mutation emit_nothing skip_refutation skip_fold loose_bound one_too_far)
         add_test(NAME disjunctive_precedences_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename disjunctive_precedences_mutation_${mutation} $<TARGET_FILE:disjunctive_precedences_test> --mutate=${mutation})
     endforeach()
     foreach(mode strict nonstrict)
@@ -884,13 +884,25 @@ if(GCS_BUILD_TESTS)
     # its rules on, over both dense families in turn.
     add_test(NAME disjunctive_2d_projection_search
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_relaxation_test> --projection --search 16)
+    set(disjunctive_2d_proofgoal_mutations skip_refutation skip_guard_weakening skip_presence_guard skip_resource_floor
+        resource_skip_floor_escape_pins)
     foreach(mutation emit_nothing skip_refutation skip_guard_weakening skip_escape_pins overload_emit_nothing overload_skip_energy overload_skip_row
             edge_finding_one_too_far edge_finding_drop_pushed ttef_one_too_far ttef_drop_pushed projection_row_too_strong projection_skip_bridge
             projection_skip_refutations skip_presence_guard skip_presence_conjunct skip_size_floor
             projection_skip_size_floor skip_floor_escape_pins skip_resource_floor overload_skip_resource_floor
             projection_skip_resource_floor resource_skip_floor_escape_pins)
+        # Most of these break a RUP step. Skipping a step a proofgoal's subproof
+        # ends on breaks the proofgoal instead, and an over-strong projection row
+        # fails its implication check against the hinted row.
+        if(mutation IN_LIST disjunctive_2d_proofgoal_mutations)
+            set(reason ${GCS_VERIPB_REJECTS_PROOFGOAL})
+        elseif(mutation STREQUAL projection_row_too_strong)
+            set(reason ${GCS_VERIPB_REJECTS_HINT})
+        else()
+            set(reason ${GCS_VERIPB_REJECTS_RUP})
+        endif()
         add_test(NAME disjunctive_2d_relaxation_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${reason}"
                 --basename disjunctive_2d_relaxation_mutation_${mutation} $<TARGET_FILE:disjunctive_2d_relaxation_test> --mutate=${mutation})
     endforeach()
     # Fuzz-found shapes, each with a proof (see the file's header).
@@ -917,7 +929,7 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test> --mutate=control)
     foreach(mutation fixed_operand_reason bridge_lemmas no_overlap_stop no_overlap_lemmas no_overlap_selector)
         add_test(NAME equals_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename equals_mutation_${mutation} $<TARGET_FILE:equals_test> --mutate=${mutation})
     endforeach()
     foreach(linmode incremental stateless)
@@ -1106,7 +1118,7 @@ if(GCS_BUILD_TESTS)
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test> --mutate=control)
     foreach(mutation lemmas hole_lemmas window_holes)
         add_test(NAME plus_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename plus_mutation_${mutation} $<TARGET_FILE:plus_minus_test> --mutate=${mutation})
     endforeach()
     add_test(NAME path_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:path_test>)
@@ -1120,7 +1132,7 @@ if(GCS_BUILD_TESTS)
     # endpoint literal, so there are only two lanes.
     foreach(mutation path endpoint)
         add_test(NAME dag_mutation_${mutation}
-            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                 --basename dag_mutation_${mutation} $<TARGET_FILE:dag_test> --mutate=${mutation})
     endforeach()
     # The same fixture with nothing dropped, which is what makes those lanes
@@ -1136,7 +1148,7 @@ if(GCS_BUILD_TESTS)
     foreach(direction undirected directed)
         foreach(mutation border mandatory rootdomain)
             add_test(NAME reachable_mutation_${direction}_${mutation}
-                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash --expect "${GCS_VERIPB_REJECTS_RUP}"
                     --basename reachable_mutation_${direction}_${mutation} $<TARGET_FILE:reachable_test> --mutate=${mutation}
                     $<$<STREQUAL:${direction},directed>:--directed>)
         endforeach()
