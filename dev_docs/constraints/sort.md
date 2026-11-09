@@ -3,8 +3,9 @@
 > **Maturity** production ·
 > **Audited** 2026-09-29 at `c9ceea25` ·
 > **Open issues** filed by this audit: #1139 (`ArgSort`'s rank propagator
-> is up to cubic per call, and walks a domain for a proof-only threshold),
-> #1140 (`Sort` searches for its proof's Hall band with proofs off). Already
+> is up to cubic per call, and walks a domain for a proof-only threshold).
+> **Fixed since the audit**: #1140 (`Sort` searched for its proof's Hall band
+> with proofs off), by #1427, which also made the search `O(n²)`. Already
 > open and touching this family: #262 (a
 > dominance prelude for permutation auxiliaries, which would change how `pos`
 > is pinned), #833 (the large-domain policy), #868 (cross-solver comparisons;
@@ -27,14 +28,12 @@ Four things to know before touching it.
 - **`Sort` is `bounds(Z)` on both arrays, over distinct variables, and GAC is
   out of reach** (Rusu proves it NP-hard). `ArgSort` is not `bounds(Z)` on `x`
   or on `p`, which is known and recorded in `sortedness.md`.
-- **With proofs off, `Sort` can spend most of its time on proof-only work.**
-  Every Hall-case bound runs an `O(n³)` search for a Hall band whose only use is
-  the justification, and runs it with no proof being written. On a Hall-heavy
-  benchmark, skipping it takes the solve from 25.1 s to 0.77 s, on the same
-  tree. The share grows with `n`, since each search is `O(n³)`, and with how
-  often Hall cases fire: at `n = 20` the same benchmark calls it about as often
-  per node as at `n = 100`, but each call costs 7.2 µs against 1.35 ms, so it is
-  21% of the solve; the Gecode enumeration below never calls it.
+- **Its Hall cases look for a proof band only when a proof is written.** Every
+  Hall-case bound and matching failure has a Hall band on the rank line that
+  only the justification reads. Until #1140 it was found by an `O(n³)` search
+  with proofs off too, which took a Hall-heavy benchmark to 25.1 s where
+  skipping it gives 0.77 s on the same tree. Now the search runs only with a
+  logger, and is `O(n²)`.
 - **`ArgSort` is up to cubic per call, and one of its loops walks a domain.**
   Its rank propagator reads up to `Θ(n³)` bounds per call: 173 s where `Sort`
   alone takes 1.3 s at `n = 80`, on overlapping windows. And when ties leave a
@@ -313,10 +312,12 @@ the propagation path, for a value only the proof uses.**
 1. **The propagation side.**
    - *Sortedness:* two sorts, two priority-queue sweeps, a Tarjan SCC over the
      interval adjacency (`O(n²)`, not the thesis's linear version), and, for
-     each Hall-case bound and each matching failure, `find_band`, a search of
-     every rank interval `[a, b]` against every element: **`O(n³)` per call to
-     it, run with proofs off**, as an invariant check, though its result is
-     read only by the justification. No value walks.
+     each Hall-case bound and each matching failure, with proofs on only,
+     `find_band`, a search for the first rank interval `[a, b]` holding more
+     elements than ranks: `O(n²)` per call, a running count by `hi` for each
+     `a`. Until #1140 it was `O(n³)`, every interval against every element,
+     and ran with proofs off too, though only the justification reads it. No
+     value walks.
    - *`ArgSort`'s rank propagator:* for each element `k`, up to `O(n)`
      candidate values (not de-duplicated), each costing `O(n)` bounds reads:
      **up to `Θ(n³)` bounds reads per call**, re-reading the same `n` bounds
@@ -384,7 +385,8 @@ and four in `0..3`; 288 `arg_sort`, 218 `sort` and 76 `all_different` on an
 
 **The `find_band` invariant.** Whenever a Hall case fires, a band must exist;
 if `find_band` finds none it throws `UnexpectedException` rather than weaken the
-proof. That check runs with proofs off too, which is the cost measured below.
+proof. Since #1140 the search, and so the check, runs only with proofs on; with
+proofs off it was the cost measured below.
 
 ### Rule: y-window-infeasible
 
@@ -415,7 +417,8 @@ proof. That check runs with proofs off too, which is the cost measured below.
 - **Fires when** — Glover's greedy matching of `y` positions to `x` elements
   (down or up sweep) finds no element for some position.
 - **Strength** — part of `bounds(Z)`.
-- **Algorithm** — the sweeps, `O(n log n)`; then `find_band`, `O(n³)`.
+- **Algorithm** — the sweeps, `O(n log n)`; then, with proofs on,
+  `find_band`, `O(n²)` (`O(n³)` until #1140, and run with proofs off too).
 - **Why it is true** — a set `S` of elements can only take ranks in `[a, b]`,
   and there are more of them than ranks.
 - **Proof technique** — `RUP sequence` plus a `pol`, ours: the normalised
@@ -426,7 +429,7 @@ proof. That check runs with proofs off too, which is the cost measured below.
 - **Assertion** — `¬reason`.
 - **Hint** — `hints::Sort`.
 - **Offline reconstructibility** — `search`: the band is not in the hint, and
-  finding one is the `O(n³)` scan `find_band` does (or a matching algorithm);
+  finding one is the `O(n²)` scan `find_band` does (or a matching algorithm);
   it is in the baseline context, since it follows from the reason's bounds.
 - **Proof size** — `O(n)` window lemmas plus `O(|S|·n)` exclusions: `O(n²)`
   lines, most of them emitted under the `O(n)` reason. Not measured.
@@ -754,6 +757,24 @@ per call, 7.2 µs against 1.35 ms, 187 times, roughly as `O(n³)` predicts
 cases fire; the Gecode enumeration fires none. The invariant it checks is a
 proof invariant; with no proof there is nothing for it to protect.
 
+**After #1140.** *Release builds of `ebc98856` and of #1427 on it, the same
+benchmark (`tmp/round1108/1140`), fataepyc-09, `taskset -c 4`, fixed malloc
+thresholds, three runs each, 2026-11-08.* The search now runs only with a
+logger, so these rows are the A/B above made real:
+
+| n | R | w | Seed | Before | After | Ratio |
+|---|---|---|---|---|---|---|
+| 20 | 20 | 3 | 1 | 0.209–0.210 s | 0.160–0.161 s | 1.31 |
+| 100 | 100 | 5 | 1 | 9.46–9.53 s | 0.625–0.626 s | 15 |
+| 100 | 60 | 10 | 3 | 25.1–25.7 s | 0.767–0.769 s | 33 |
+
+Recursions, propagations and solutions are identical. With proofs on, the
+`O(n²)` search returns the same band as the old one (the first in `(a, b)`
+order, the same elements in the same order: checked against the old code on
+two million random interval sets), and the proofs are byte-identical: every
+preserved `sort_test` and `arg_sort_test` proof at `--seed=1`, and three
+`sort_bench2.cc` runs with proofs (`n = 20`, 30 and 40).
+
 **`ArgSort` against `Sort` on the same `x`.** `n` elements in `0..9`, branching
 on `x`, 20,000 nodes (`bench/argsort_bench.cc`), one run each:
 
@@ -839,8 +860,6 @@ Hall counts were asserted; they are all certified now.)
   tie-break is invisible to the reused sortedness propagator. No
   bounds-consistent algorithm for the stable form is known.
 - **A repeated variable** makes `Sort` weaker than bounds consistent.
-- **`Sort` is much slower than it need be with proofs off** when Hall reasoning
-  fires, because it searches for the proof's Hall band anyway.
 - **`ArgSort` is up to cubic per call,** and **stalls on a tie over a wide
   domain,** in proportion to the width.
 - **The proof of either costs `Θ(n³)` lines before search,** and `Θ(n²)` lines
@@ -848,12 +867,8 @@ Hall counts were asserted; they are all certified now.)
 
 ### Next steps
 
-1. **Skip `find_band` with proofs off.** Run the search only when a logger will
-   read the band; with none, the matching's own failure is the evidence. The
-   A/B above: up to 32 times, same tree. Small. Filed as #1140. With proofs on,
-   the band search itself can be `O(n²)` or better (a sweep over the sorted
-   interval endpoints, as López-Ortiz et al. do for `all_different`), which is
-   the second half of the same issue.
+1. *Done by #1427 (#1140):* `find_band` runs only with proofs on, and is
+   `O(n²)`.
 2. **Make `ArgSort`'s rank propagator `O(n² log n)` or better, and remove its
    walk.** Read the bounds once per call; compute each element's reachable set
    from the sorted breakpoints of the others' bounds; find `U` from those

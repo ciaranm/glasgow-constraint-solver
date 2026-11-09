@@ -364,7 +364,9 @@ the closing RUP discharges it. The whole `sort_test` suite, the n=20 probe, and
 a 200-seed random sweep verify `s VERIFIED` with **no assertions**; the
 Mehlhorn–Thiel propagator is fully VeriPB-certified. `find_band` returning a
 violator is an invariant whenever an inference fired, so a miss throws
-`UnexpectedException` rather than weakening the proof.
+`UnexpectedException` rather than weakening the proof. Only the justification
+reads the band, so since #1140 it is looked for (in `O(n²)`), and the
+invariant checked, only when a proof is being written.
 
 ## References
 
