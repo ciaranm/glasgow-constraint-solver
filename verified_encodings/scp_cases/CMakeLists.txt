@@ -272,6 +272,14 @@ add_scp_chain_test(in_fixed_var_sat   strict)
 # constant; in_unsat forces the domain empty (Y in {5} with Y in 0..3).
 add_scp_chain_test(in_var_sat    none)
 add_scp_chain_test(in_unsat      none)
+# A constant var, the shape XCSP3's index-free element posts for an integer
+# value (#1164, #1434), over variable candidates and over a list with a
+# constant in it. They chain-verify, but strict fails on rows that are
+# equivalent and not identical: the flags' reification rows carry a different
+# big-M from cake's, and cake writes trivial rows for a constant candidate's
+# own literals where we drop or fold them (dev_docs/constraints/in.md).
+add_scp_chain_test(in_const_var_sat        none)
+add_scp_chain_test(in_const_var_mixed_sat  none)
 
 # none (chain-only): circuit. The solver's writer already emits cake's shape
 # (id circuit (succ...)); its embedded all_different sub-encoding even matches

@@ -276,7 +276,8 @@ posted.
 (`cencode_count_aux`, which is also what `Count` was conformed to in #354),
 then the `al1` row. (The comment at `in.cc:123–124` calls it literally the
 count helper, which overstates it: the count helper is only the middle part.)
-Our flags were conformed to it in c347b153. The seven chain cases:
+Our flags were conformed to it in c347b153. The seven chain cases from the
+audit (two more, for a constant `var`, are below):
 - `in_const_sat`, `in_two_vars_sat`, `in_two_vars_unsat`, `in_mixed_sat` and
   `in_fixed_var_sat` are `strict`.
 - `in_var_sat` and `in_unsat` are `none`, for the #358 boundary-literal
@@ -308,8 +309,11 @@ Checked beyond the suite, on 120 random models (`tmp/fd-small/in/chain/rnd/`,
   (`@n[2][ge9][f]` and the like), where we drop literally false constants and
   fold literally true ones into the degree. All of these
   are equivalent row for row (the fact-check checked them exhaustively over
-  0/1 assignments), and the chains verify. No suite case posts a constant
-  `var`.
+  0/1 assignments), and the chains verify. Since #1451 two chain cases post a
+  constant `var`, `in_const_var_sat` (the shape above, over `1..4`) and
+  `in_const_var_mixed_sat` (`(in (A 3 C) 2)`), both `none`: each passes the
+  full chain, and `strict` fails on 6 and on 5 differing rows plus 6 only in
+  cake's OPB.
 - **A view anywhere in the model can't go through the chain yet.** The `.scp`
   writer spells a view as a list, `(_1 + -1)`. The solver's own reader used to
   accept only atoms there, so the solver rejected its own `.scp` at step 1,
@@ -996,7 +1000,9 @@ under rule 2.
   the Θ(K²) carve, step 1's quadratic union and the per-wake cost never show.
 - **A constant `var`**, which XCSP3's index-free `element` posts for an
   integer value: covered by `xcsp_element_member_int` and
-  `xcsp_element_member_int_list`, but no row and no chain case.
+  `xcsp_element_member_int_list`, and since #1451 by the chain cases
+  `in_const_var_sat` and `in_const_var_mixed_sat` (`none`: see above), but
+  no row in `in_test`.
 - **Duplicate constants in the chain**, the one `al1` divergence from cake.
 - **Constants at the ends of `S` with proofs.** Out-of-range constants are
   refused and tested, but no lane solves an `In` whose constants sit at the
@@ -1211,8 +1217,9 @@ reached: since #1215 such a constant is refused at construction
      needs a wide-domain audit row, the same as #1144.
    - *Status.* Not tried. Filed as #1163.
 5. *Done by #1434 (#1164), including the three further shapes below, with a
-   parser patch for the first and for a mixed list read as integers; the
-   chain case for a constant `var` is still to do.* **Map XCSP3's index-free
+   parser patch for the first and for a mixed list read as integers. The
+   chain cases for a constant `var`, `in_const_var_sat` and
+   `in_const_var_mixed_sat`, came with #1451, at `none`.* **Map XCSP3's index-free
    `element` onto `In`.**
    - Override the two `buildConstraintElement(id, list, value)` callbacks:
      `In{value, list}` and `In{constant, list}`.
