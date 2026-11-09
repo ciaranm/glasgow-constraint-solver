@@ -352,7 +352,7 @@ namespace
                     // anything: that the candidate edge and the path
                     // really do form a cycle, and that it really does
                     // weigh less than zero. The arithmetic is O(cycle),
-                    // and the condition deduplication sharing its loop
+                    // and the condition deduplication sharing its loop is
                     // O(k log k) for k conditional edges (#1384; it was a
                     // linear search per edge). It turns a bug in the shortest-path pass
                     // into an exception here rather than a VeriPB failure
@@ -634,7 +634,7 @@ namespace
         // Before saying anything, verify the extracted cycle
         // arithmetically: that each edge meets the next, that it closes,
         // and that the total weight really is negative. That is O(cycle),
-        // and the condition deduplication sharing its loop O(k log k) for k
+        // and the condition deduplication sharing its loop is O(k log k) for k
         // conditional edges (#1384; it was a linear search per edge). It turns a predecessor-walk bug into
         // an exception at the right place rather than a VeriPB failure
         // hundreds of lines later (survey section 2.9.4).
