@@ -4,9 +4,9 @@
 > **Audited** 2026-10-09 at `86caad24` ·
 > **Open issues** filed by this audit: #1303 (MiniZinc's `dag` over an empty
 > node set is reported unsatisfiable; fix open as #1363), #1310 (the
-> propagator rebuilds all of its working state on every call), #1309
-> (`Propagators::install_returning_id` is quadratic in a propagator's trigger
-> count, an engine issue). Already open
+> propagator rebuilds all of its working state on every call). **Fixed
+> since the audit**: #1309 (`Propagators::install_returning_id` was quadratic
+> in a propagator's trigger count, an engine issue), by #1442. Already open
 > and touching this family: #868 (cross-solver comparisons; this document gives
 > one by hand), #1006 (MiniZinc differential tests over the shapes front ends
 > get wrong), #920 (the large-domain audit binary's header; the issue also
@@ -345,15 +345,17 @@ one run here at 10,000 and 20,000 that agrees (`pairs/pairs.cc`). The
 propagator does not use the components; see
 [Mutable state and incrementality](#mutable-state-and-incrementality).
 
-The root cost that does show is not this family's code. Installing the one
-propagator, with `nodes + edges` triggers, is quadratic in that count in
-`Propagators::install_returning_id` (#1309), through two loops: the linear
-`contains` test that builds the propagator's scope (`propagators.cc:724–748`)
-and the same test again when that scope is merged into the constraint's
-(`:765–769`). Fixing the first alone leaves the install quadratic. A 100,000-node
-directed path takes about 11 s inside `solve_with` to reach its first search
-node (12 s for the whole process), proofs off, and about two thirds of a
-30,000-node run is that function (`probes/scale.cc`, `perf record`).
+The root cost that did show was not this family's code. Until #1309 (fixed by
+#1442), installing the one propagator, with `nodes + edges` triggers, was
+quadratic in that count in `Propagators::install_returning_id`, through two
+loops: the linear `contains` test that built the propagator's scope
+(`propagators.cc:724–748`) and the same test again when that scope was merged
+into the constraint's (`:765–769`). A 100,000-node directed path took about
+11 s inside `solve_with` to reach its first search node (12 s for the whole
+process), proofs off, and about two thirds of a 30,000-node run was that
+function (`probes/scale.cc`, `perf record`). With both loops linear, the same
+path takes 1.9 s (3.0 s for the process), most of it this family's own root
+call.
 
 ### Propagator inventory
 
@@ -964,9 +966,8 @@ holds in every solution.
    maximum-acyclic-subgraph runs. Also size `define_proof_model`'s
    per-component vectors by the component, or index them by position in it,
    rather than by the whole graph's node count.
-3. **Make `install_returning_id`'s scope linear.** An engine change, not this
-   family's, and it affects every large-scope propagator. Both `contains`
-   loops have to go, the scope's and the constraint scope's. #1309.
+3. **Done** (#1309, by #1442): `install_returning_id` deduplicates the scope
+   and the constraint scope in linear time.
 4. **Claim idempotence, and disable once every edge is fixed.** Both look safe
    on distinct variables, and the claim checker found no counterexample. The
    engine already drops the claim when positions alias. Small,

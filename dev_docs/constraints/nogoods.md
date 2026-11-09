@@ -21,8 +21,8 @@
 > proofs on), #1210 (the generic `Links`-level solution-line rejection for
 > range-declared variables, which restart proofs meet too), #1085 (deep search
 > overflows the stack in `solve_with_state`, the recursion the restart loop
-> drives), #1309 (`install_returning_id` is quadratic in a propagator's trigger
-> count; the scan path subscribes to every variable) and #868 (cross-solver
+> drives), #1309 (`install_returning_id` was quadratic in a propagator's trigger
+> count, until #1442; the scan path subscribes to every variable) and #868 (cross-solver
 > comparison). Tracked under #871.
 
 ## What this is, and what it is not

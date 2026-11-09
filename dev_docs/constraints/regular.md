@@ -859,8 +859,8 @@ the OPB, in the root's proof and in the regex front end.
    three-state `0ⁿ`/`1ⁿ` automaton under `PerCall`, proofs off, measures
    4.14·10⁹ to 1.12·10⁹ instructions at 10,000 and 14.78·10⁹ to 2.75·10⁹ at
    20,000, with byte-identical proofs. The hottest function left in `Upfront`'s profile there, 24% of
-   the samples at 20,000, is model installation, which is quadratic in the
-   arity (#1309).
+   the samples at 20,000, is model installation, which was quadratic in the
+   arity until #1309 (#1442).
 3. **The proof side.** One line per pruned value, never a range: at the root a
    width-`W` domain gets `W − |Σ|` lines per variable for its out-of-alphabet
    values, where one `x_i ∉ …` range line per gap would do. `Upfront`'s backward
