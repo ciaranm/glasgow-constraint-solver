@@ -29,9 +29,9 @@
 > from a presolver (an `AutoTable`'s throwaway root search makes the
 > incremental route's first call below a guess, so the default incremental
 > mode throws `UnexpectedException`); and, from the review of this document,
-> #1384 (a negative cycle's or a root witness's reason deduplicates its
+> #1384 (a negative cycle's or a root witness's reason deduplicated its
 > conditions by linear search, `k(k−1)/2` comparisons for `k` distinct
-> conditions, proofs on or off) and #1385 (root simplification counts
+> conditions, proofs on or off; fixed by #1448) and #1385 (root simplification counts
 > isolated nodes as removed, but the propagator still seeds, scans and wakes
 > on them). Tracked under #871.
 
@@ -732,7 +732,10 @@ exception that is not this family's: the bounds crawl through holes.**
    witness path alike, is a linear `find` per conditional edge
    (`difference_graph.cc:572`, `:313`): `O(k·c)` comparisons for `k`
    conditional edges and `c` distinct conditions, exactly `k(k−1)/2` when
-   each has its own (#1384). In a ring of `k` such edges closed by a
+   each has its own (#1384; since #1448 a linear search up to 16 distinct
+   conditions and a set beside the list after that, `O(k log k)`, keeping
+   the order of first appearance, and the figures that follow are the
+   audit's). In a ring of `k` such edges closed by a
    `−1`, proofs off, that block took 0.030 s at `k = 8,000` and 0.136 s at
    `16,000` (an instrumented copy, median of three); the whole solves take
    0.24 s and 0.73 s, and at `16,000` installation is the larger share (54%
@@ -990,9 +993,9 @@ basis.
   Dijkstra over the violated region with a binary heap and lazy deletion,
   `O((n + m) log(n + m))` per repair, incremental, then one `O(n·m)` pass once
   per refuted branch), then the cycle extraction, `O(n)`, and the reason's
-  deduplication, `O(k·c)` comparisons for `k` conditional edges and `c`
-  distinct conditions (#1384; [Interval efficiency](#interval-efficiency)
-  measures both). Cotton and Maler
+  deduplication, `O(k log k)` for `k` conditional edges since #1384 (#1448;
+  `O(k·c)` comparisons for `c` distinct conditions before;
+  [Interval efficiency](#interval-efficiency) measures both). Cotton and Maler
   (SAT 2006) for `IncSat`, which the paper notes is the algorithm of
   Ramalingam, Song, Joskowicz and Miller (*Algorithmica* 23, 1999).
 - **Why it is true** — summing `x_i − x_{i+1} ≤ d_i` around a cycle cancels
@@ -1212,8 +1215,8 @@ basis.
   coefficient reaches the degree, and the RUP derives the clause either way.
   No published procedure.
 - **Reason** — the path's distinct conditions, all true at the root,
-  deduplicated by the same linear search as rule 3's, `p(p−1)/2` comparisons
-  for a path of `p` distinct conditions (#1384). **Not
+  deduplicated as rule 3's are, `O(p log p)` for a path of `p` conditional
+  edges since #1384 (#1448; `p(p−1)/2` comparisons before). **Not
   load-bearing in the proof** (they are root facts, so unit propagation
   recovers them), and kept because the reason is also what the state and the
   nogood machinery see.
@@ -1619,9 +1622,8 @@ Ranked by value for cost.
    issue says.
 8. **#594**, zero-weight-cycle unification. The counters say it would fire on
    tight RCPSP/max; the model-side cost is recorded there.
-9. **#1384 and #1385**, both small and both cost only. A membership mark per
-   condition (or a sort, where order does not matter) for the two
-   deduplication loops; and for the nodes simplification leaves isolated,
+9. **#1385**, small and cost only (#1384, the two deduplication loops, is done
+   by #1448). For the nodes simplification leaves isolated,
    either compacting them out, which also drops their `on_bounds` triggers
    (`difference_graph.cc:1165-1166`), or skipping them in the seeding and the
    `Vl` scan, which leaves the triggers and their wakes; either way keeping

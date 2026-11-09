@@ -21,7 +21,7 @@
 > its default incremental mode, it throws `UnexpectedException` whenever it
 > installs a propagator. Also filed since, in the installed machinery and
 > owned by `difference.md`: #1384 (a negative cycle's or root witness's reason
-> deduplicates its conditions quadratically) and #1385 (root simplification
+> deduplicated its conditions quadratically; fixed by #1448) and #1385 (root simplification
 > counts isolated nodes as removed, but the propagator still seeds, scans and
 > wakes on them). Tracked under #871.
 
