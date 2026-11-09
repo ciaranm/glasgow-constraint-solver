@@ -290,8 +290,8 @@ auto run_all_holes_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // Step 1's union over more pieces than it erases one at a time (16), so the
     // rest are gathered, sorted, coalesced and taken out by one merge (#1162).
     // The sources' singletons are out of order across them and overlap, and the
-    // constants' pieces come first, so a merge that dropped, misordered or failed
-    // to coalesce a piece would keep or remove the wrong values.
+    // constants' pieces come first, so a merge that dropped or misordered a piece
+    // would keep or remove the wrong values.
     auto every = [](int lo, int hi, int step) {
         vector<int> result;
         for (int v = lo; v <= hi; v += step)
@@ -301,11 +301,18 @@ auto run_all_holes_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_in_holes_test(proofs, view_cfg, "many_pieces", contiguous(0, 30), {every(18, 30, 2), every(0, 16, 2), every(9, 15, 3)});
     run_in_holes_test(proofs, view_cfg, "many_pieces_with_constants", contiguous(0, 30), {every(20, 30, 2), every(1, 9, 4)}, every(0, 21, 3));
     // The first source's sixteen pieces are all erased one at a time, so every
-    // piece after them is gathered, and there a wide piece covers later ones,
-    // which the coalescing has to absorb.
+    // piece after them is gathered, and there a wide piece covers later ones. The
+    // erases leave unsupported as singletons, so this row passes without the
+    // coalescing too.
     auto wide_then_points = contiguous(3, 9);
     wide_then_points.insert(wide_then_points.end(), {25, 27});
     run_in_holes_test(proofs, view_cfg, "many_pieces_nested", contiguous(0, 31), {every(0, 30, 2), wide_then_points, {5, 7, 11, 29}});
+    // The row that needs the coalescing. The first source's sixteen erases sit at
+    // 20 and above, so unsupported keeps the run [0, 19], and inside it a wide
+    // gathered piece, [3, 9], covers a later one, {5}. each_interval_minus does
+    // not tolerate that overlap within a run: without the coalescing the merge
+    // loses solutions such as x = 6 with the second source at 6.
+    run_in_holes_test(proofs, view_cfg, "nested_in_run", contiguous(0, 40), {every(20, 50, 2), contiguous(3, 9), {5}});
 }
 
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
