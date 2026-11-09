@@ -3,8 +3,7 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1215 and #1208 ·
-> **Open issues** filed by this audit: #1160 (carving `K` listed values
-> costs Θ(K²) in the state layer's interval scans), #1161 (the constants-only
+> **Open issues** filed by this audit: #1161 (the constants-only
 > `In` stays live after its only useful call, and declares holes it does not
 > read), #1162 (step 1's union is quadratic in interval counts), #1163
 > (repeated or aliased candidates lose `bounds(Z)`). **Fixed since the
@@ -64,8 +63,9 @@ Four things to know before touching it.
   has any. That covers the C++ API and XCSP3's listed domains; Python's
   `post_in` posts the same constants-only `In` directly. This has three
   consequences:
-  - Carving `K` holes costs Θ(K²) at the root, in the state layer's linear
-    interval scans: 12.1 s for 10⁵ values.
+  - Carving `K` holes cost Θ(K²) at the root, in the state layer's linear
+    interval scans, until #1160 started those scans at a binary search:
+    12.1 s for 10⁵ values then, 21 ms now.
   - After its first call the posted `In` can never infer anything again, but
     it stays live at `O(K)` per wake. On an enumeration of the variable that is
     half the solve time.
@@ -530,7 +530,8 @@ instead is the number of **intervals**, and there two things are not linear.
        in `erase_range`, which here is that shift (`indrop.cc`).
 
      Copying the candidates' domains, and applying the removals through the
-     state layer's own front-to-back scan (#1160), come on top.
+     state layer, come on top (the state layer's scan starts at a binary
+     search on a set of eight or more intervals since #1160).
    - *Step 1 stops early*: it stops copying candidates once nothing is left
      unsupported (`in.cc:232–233`).
    - *Step 2* uses `State::domains_intersect` per candidate
@@ -585,15 +586,21 @@ single runs unless marked as medians.
 | `vars`: three such variables, `In{x, {y, z}}` | 4.9 ms | 0.437 s | 3.98 s | — |
 | `varsvals`: two, `In{x, {y}, the K values}` | 3.5 ms | 0.318 s | 2.84 s | — |
 
-- **`carve` is the state layer, not `In`'s own code.** Profiled, 99% of it is
-  `State::change_state_for_not_in_range`. `contains_any_of` and `erase_range`
-  each scan the domain's intervals from the front (`state.cc:259–261`), once
-  per gap, so `K` gaps cost Θ(K²). `In`'s own merge is linear.
-  - With both scans starting at a binary search, `carve` takes 2.1 ms, 6.1 ms
-    and 21 ms at 10⁴, 3·10⁴ and 10⁵ (medians of 3). The patch is
-    `probes/interval_set_bsearch.patch`.
-  - Every other constraint's `not_in_range` on a many-interval domain pays
-    the same per-call scan.
+- **`carve` was the state layer, not `In`'s own code.** Profiled, 99% of it
+  was `State::change_state_for_not_in_range`. `contains_any_of` and
+  `erase_range` each scanned the domain's intervals from the front
+  (`state.cc:259–261`), once per gap, so `K` gaps cost Θ(K²). `In`'s own merge
+  is linear.
+  - Since #1160 both scans, and `erase`'s, start at a binary search on the
+    intervals' upper ends once a set has eight or more intervals (a shorter
+    one, nearly every domain, is scanned from the front as before). On #1435,
+    fataepyc-09, `carve` takes 2.1 ms at 10⁴ (0.101 s on `ebc98856`), 6.2 ms
+    at 3·10⁴ (0.895 s) and 21 ms at 10⁵ (9.92 s).
+  - Every other constraint's `not_in_range` on a many-interval domain gets the
+    same saving. On few-interval workloads the change costs at most 0.4% of
+    instructions (`langford 10`; `mqueens` 2014 `n11` +0.03%, the `AtMostOne`
+    enumeration +0.04%, `SeqPrecedeChain` and `Sort` benchmarks unchanged),
+    and no measurable time.
 - **`vars` and `varsvals` are then `In`'s own step 1.** With the binary search
   in place they still take 0.074 s and 0.653 s (`vars`) and 0.073 s and
   0.642 s (`varsvals`) at 10⁴ and 3·10⁴, for the whole root, which runs the
@@ -1141,8 +1148,10 @@ reached: since #1215 such a constant is refused at construction
 
 ### Next steps
 
-1. **Binary-search the interval scans in `State::change_state_for_not_in_range`
-   (`IntervalSet::erase_range` and `contains_any_of`).**
+1. *Done by #1435 (#1160), with `erase` too, and a linear scan kept below
+   eight intervals.* **Binary-search the interval scans in
+   `State::change_state_for_not_in_range` (`IntervalSet::erase_range` and
+   `contains_any_of`).**
    - *What it buys.* Carving 10⁵ values goes from 12.1 s to 0.021 s, and every
      range removal on a many-interval domain gets cheaper.
    - *What was tried.* A `lower_bound` start in both

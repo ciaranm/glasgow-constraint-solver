@@ -8,6 +8,7 @@
 
 #include <gch/small_vector.hpp>
 
+#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
@@ -48,6 +49,33 @@ namespace gcs
         static constexpr std::size_t inline_intervals = 2;
         using Intervals = gch::small_vector<std::pair<Int_, Int_>, inline_intervals>;
         Intervals intervals;
+
+        // Where a scan for anything touching `value` or above can start: no
+        // stored interval before the returned one reaches `value`. Over a set of
+        // many intervals that is the first one that does, found by binary search,
+        // so an operation near the top of the set does not pay for every interval
+        // below it (#1160). A short set, which is nearly every domain, starts at
+        // the front, as before: its scan skips the low intervals itself, and is
+        // cheaper there than the search.
+        static constexpr std::size_t binary_search_from = 8;
+
+        template <typename Iter_>
+        [[nodiscard]] static auto first_interval_not_below(Iter_ begin, Iter_ end, Int_ value) -> Iter_
+        {
+            if (static_cast<std::size_t>(end - begin) < binary_search_from)
+                return begin;
+            return std::lower_bound(begin, end, value, [](const auto & iv, const Int_ & v) { return iv.second < v; });
+        }
+
+        [[nodiscard]] auto first_interval_not_below(Int_ value) const -> typename Intervals::const_iterator
+        {
+            return first_interval_not_below(intervals.begin(), intervals.end(), value);
+        }
+
+        [[nodiscard]] auto first_interval_not_below(Int_ value) -> typename Intervals::iterator
+        {
+            return first_interval_not_below(intervals.begin(), intervals.end(), value);
+        }
 
     public:
         /**
@@ -198,7 +226,9 @@ namespace gcs
          */
         [[nodiscard]] auto contains_any_of(const IntervalSet & other) const -> bool
         {
-            auto i = intervals.begin();
+            // Nothing below other's first value can overlap it, so the merge
+            // may start at the first interval reaching that far (#1160).
+            auto i = other.intervals.empty() ? intervals.begin() : first_interval_not_below(other.intervals.front().first);
             auto j = other.intervals.begin();
 
             while (i != intervals.end() && j != other.intervals.end()) {
@@ -272,7 +302,7 @@ namespace gcs
          */
         auto erase(Int_ value) -> void
         {
-            for (auto iter = intervals.begin(), iter_end = intervals.end(); iter != iter_end; ++iter) {
+            for (auto iter = first_interval_not_below(value), iter_end = intervals.end(); iter != iter_end; ++iter) {
                 if (value >= iter->first && value <= iter->second) {
                     if (iter->first == iter->second) {
                         intervals.erase(iter);
@@ -316,7 +346,9 @@ namespace gcs
             if (lo > hi)
                 return;
 
-            for (auto iter = intervals.begin(); iter != intervals.end();) {
+            // Every interval wholly below lo is skipped by a binary search
+            // rather than walked (#1160).
+            for (auto iter = first_interval_not_below(lo); iter != intervals.end();) {
                 if (iter->second < lo) {
                     // Entirely below the range; nothing to remove here.
                     ++iter;

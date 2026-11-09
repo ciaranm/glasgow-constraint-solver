@@ -3,6 +3,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <random>
+#include <set>
 
 using namespace gcs;
 
@@ -1192,4 +1194,53 @@ TEST_CASE("for_each_interval over a set no walk of values could cross")
     vector<pair<long long, long long>> runs;
     holey.for_each_interval([&](long long l, long long u) { runs.emplace_back(l, u); });
     CHECK(runs == vector<pair<long long, long long>>{{0, 4}, {6, 1000000000LL}});
+}
+
+TEST_CASE("erase, erase_range and contains_any_of agree with a std::set on many-interval sets")
+{
+    // The three start their scans at a binary search rather than at the first
+    // interval (#1160), so check them against the obvious set semantics on sets
+    // with many intervals, removals at either end and in the middle, and probes
+    // below, inside, between and above the stored intervals.
+    std::mt19937 rng(1160);
+    for (int trial = 0; trial < 2000; ++trial) {
+        IntervalSet<int> set(0, 60);
+        std::set<int> model;
+        for (int v = 0; v <= 60; ++v)
+            model.insert(v);
+
+        auto agrees = [&]() {
+            vector<int> values;
+            set.for_each([&](int v) { values.push_back(v); });
+            return values == vector<int>(model.begin(), model.end());
+        };
+
+        for (int step = 0; step < 30; ++step) {
+            if (std::uniform_int_distribution(0, 1)(rng)) {
+                int v = std::uniform_int_distribution(-3, 63)(rng);
+                set.erase(v);
+                model.erase(v);
+            }
+            else {
+                int lo = std::uniform_int_distribution(-3, 63)(rng);
+                int hi = lo + std::uniform_int_distribution(-1, 6)(rng);
+                set.erase_range(lo, hi);
+                for (int v = lo; v <= hi; ++v)
+                    model.erase(v);
+            }
+            REQUIRE(agrees());
+
+            IntervalSet<int> probe;
+            int at = std::uniform_int_distribution(-5, 60)(rng);
+            for (int k = 0, n = std::uniform_int_distribution(0, 3)(rng); k < n; ++k) {
+                int lo = at + std::uniform_int_distribution(0, 4)(rng);
+                int hi = lo + std::uniform_int_distribution(0, 3)(rng);
+                probe.insert_at_end(lo, hi);
+                at = hi + 2;
+            }
+            bool expected = false;
+            probe.for_each([&](int v) { expected = expected || model.contains(v); });
+            REQUIRE(set.contains_any_of(probe) == expected);
+        }
+    }
 }
