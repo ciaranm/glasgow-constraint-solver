@@ -127,12 +127,13 @@ the two classes is the caller's.
 
 Plain variables, constants and views of either sign are accepted in every
 position and as `val`, by both classes. The native propagator reads only
-`optional_single_value()` and `each_value_immutable(val)`, which see through
+`optional_single_value()` and `in_domain(val, v)`, which see through
 views, and infers `≠` literals, which a view translates. The proof model's
 flags are defined over the positions as written, so a view's offset lands in
-the flag's defining row, not in a new auxiliary. Checked: the random sweep
-below includes `x + c`, `c − x` and constants in every position and as `val`,
-and the `views` probe (`{x0, x1 + 1, 3 − x2, x3}` against `y − 1`) enumerates
+the flag's defining row, not in a new auxiliary. Checked: the view lanes put
+`x + c`, `c − x` and constants in every position; the val-kind runs (see
+[Tests](#tests)) put a view, a negated view and a constant as `val`, and, for
+the native class, a term over a position's own variable; and the `views` probe (`{x0, x1 + 1, 3 − x2, x3}` against `y − 1`) enumerates
 850 solutions with a verifying proof.
 
 `AtMostOneSmartTable` gets views from `SmartTable`, whose view handling #238
@@ -476,8 +477,8 @@ subhint and no payload.
 
 - **Infers** — `val ≠ v`, for each `v` in `val`'s domain that two or more
   positions are fixed to.
-- **Fires when** — any variable's domain changes; first in each call of the
-  propagator.
+- **Fires when** — any position or `val` is instantiated (since #1156; until
+  then any domain change); first in each call of the propagator.
 - **Strength** — `GAC` on distinct variables, together with rule 2. A value
   `w` of `val` has a support unless two positions are fixed to `w` (each
   unfixed position can move off `w`), which is exactly this rule. A value `a`
@@ -526,8 +527,8 @@ subhint and no payload.
   variables' bounds.
 - **Hint** — `hints::AtMostOne`: `originator`, the `ConstraintID`.
 - **Offline reconstructibility** — `offline`.
-- **Proof size** — one line per inference, whatever the width; the line has
-  `O(n + runs)` literals.
+- **Proof size** — one line per inference, whatever the width; since #1432 the
+  line is the three-literal clause (`O(n + runs)` literals until then).
 - **Gaps** — `None.`
 - **Tightness** — `Shown`, by hand, no lane: since #1157, dropping either of
   the two fixed positions from the reason is rejected on `at_most_one_test`
@@ -537,8 +538,8 @@ subhint and no payload.
 
 - **Infers** — `vars[j] ≠ v` for every position `j` other than the one fixed to
   `v`, when `val` is fixed to `v` and exactly one position is fixed to `v`.
-- **Fires when** — any variable's domain changes; after rule 1, in the same
-  call, so it sees a `val` that rule 1 has just fixed.
+- **Fires when** — any position or `val` is instantiated (since #1156); after
+  rule 1, in the same call, so it sees a `val` that rule 1 has just fixed.
 - **Strength** — `GAC` on distinct variables, with rule 1; see there.
 - **Algorithm** — one scan to count and locate the fixed positions, then one
   `infer` per other position: `O(n)` per call. It re-infers on every call once
@@ -585,6 +586,16 @@ subhint and no payload.
 - **Duplicate-variable runs**, both classes, bare lanes only: `{x, x}`,
   `{x, x, y}` and `{x, y, x}` over `1..3`, under plain `solve_for_tests`, so
   solutions and the proof but no consistency check.
+- **Val-kind runs** (`run_val_kind_tests`), bare lanes only, since #1451:
+  `val` as `d + 1`, `−d + 2` and the constant 1 against plain and mixed
+  (`a + 1, b, −c`) positions, under `solve_for_tests_checking_gac`; and, native
+  only since `AtMostOneSmartTable` refuses `val` among the positions, `val` as
+  `a`, `−a`, `a + 1`, `a − 1` and `c` against positions over the same
+  variables, under plain `solve_for_tests`. Each enumerates completely under
+  the default caps.
+- **`hole_wakes_test`**, since #1451: a hole in a position does not wake the
+  propagator and an instantiation does, counted in propagator calls. Proofs are
+  byte-identical either way, so this is what pins the triggers (#1156).
 - **`smart_table_dup`** (`smart_table_dup_test`), since #1182: posts
   `AtMostOneSmartTable` as a problem's only constraint, solves it at
   `AssertionLevel::Inferences`, and requires `smart_table` hints that name
@@ -612,10 +623,10 @@ of each rule is load-bearing; see the rules.
   Strength), and the per-node sweep above starts from holey domains. No test
   posts another constraint that makes holes during search; since no hole
   affects this family's propagation, that matters only for wake counts (see
-  "The triggers overstate the holes" under [Propagator
-  inventory](#propagator-inventory)).
-- **A wide `val`**, which is the family's one width hazard; only the audit
-  lane's root probe reaches it.
+  "The triggers are exact since #1156" under [Propagator
+  inventory](#propagator-inventory)), which `hole_wakes_test` pins.
+- **A wide `val`**: only the audit lane's root probe reaches it. It has not
+  been a width hazard since #1155.
 - **The consistency of the repeated shapes**, deliberately: the duplicate runs
   check no level, and they never put `val` among the positions.
 - **Real instances:** none; no front end posts the family.
@@ -791,13 +802,14 @@ performance](#cpu-performance), against an unpatched build of the same tree
    (`tmp/fd-small/at_most_one/alloc/`). Its cause was not isolated. Guarded,
    the benchmark is unchanged (0.762 s and 0.880 s, against 0.767 s and
    0.881 s in the same batch). With proofs on, the `n = d = 5` enumeration's
-   3,516 family assertions shrink from 584,580 bytes to 305,892 at
-   `Inferences`, and its `Off` proof from 10.86 MB to 10.58 MB,
+   3,516 family assertions (with `y` last) shrink from 584,580 bytes to
+   305,892 at `Inferences`, and its `Off` proof from 10.86 MB to 10.58 MB,
    verifying in about the same time. Small. Filed as #1157. *Done by
    #1432*: on the same tree with proofs off the benchmark is unchanged
    (0.730–0.737 s in both orders, against 0.730–0.755 s), the `n = d = 5`
    enumeration's family assertions at `Inferences` halve (204,264 bytes to
-   101,268 over 1,164), and its `Off` proof goes from 10.36 MB to 10.26 MB,
+   101,268 over 1,164; those are with `y` first, the 3,516 above with `y`
+   last, and both re-measured at `fffade10`), and its `Off` proof goes from 10.36 MB to 10.26 MB,
    verifying.
 4. **Conform the encoding to `cake_pb_cp`'s** (patch D). Write `Count`'s three
    flags, `ge`, `le` and `eq`, named by position under the constraint ID, and
