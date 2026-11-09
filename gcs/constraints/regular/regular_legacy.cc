@@ -288,7 +288,9 @@ namespace
         ProofLogger * const logger, const bool short_reasons, const ConstraintID & owner) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
-        auto gen_reason = eager_reason(generic_reason(vars), state);
+        // Read by the dead-state lines (only with a logger) and by the inferences
+        // below (only when the tracker wants reasons), so built only then (#1353).
+        auto gen_reason = (logger || inference.want_reasons()) ? eager_reason(generic_reason(vars), state) : ReasonLiterals{};
 
         // Degenerate empty sequence (issue #254): with no variables there is
         // nothing to propagate over, but the empty word is accepted only if the
@@ -326,7 +328,7 @@ namespace
             reason = eager_reason(singleton_reason(reason_short), state);
         }
         else {
-            reason = gen_reason;
+            reason = std::move(gen_reason);
         }
 
         if (! graph.initialised)
@@ -367,11 +369,16 @@ namespace
             }
         }
 
+        // One Reason for every pruning: infer_not_equal takes a const Reason &, and
+        // passing the ReasonLiterals itself converted it, copying the whole literal
+        // vector once per removed value, Theta(n^2) over a call with proofs off or
+        // short reasons off (#1353). Nothing reads the literals after this.
+        const Reason inference_reason{std::move(reason)};
         for (size_t i = 0; i < graph.states_supporting.size(); i++) {
             for (auto val : state.each_value_mutable(vars[i])) {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty())
-                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{hints::RegularLegacy{owner}}, reason);
+                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{hints::RegularLegacy{owner}}, inference_reason);
             }
         }
 

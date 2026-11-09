@@ -28,9 +28,9 @@
 > recurses once per layer, so a long sequence exhausts the native stack;
 > shared with `MDD`) and #1352 (`Upfront` and `PerCall` rescan a state's
 > targets for every edge removed, so deleting many edges out of one state is
-> quadratic). #1353 (each pruning copies the whole reason) is filed for
-> `MDD`; `PerCall` has the same copy, with proofs off (or with short
-> reasons off). Filed while fixing #1331: #1368 (`Bacchus`'s scaffold also
+> quadratic). #1353 (each pruning copied the whole reason), filed for
+> `MDD`, was fixed for `PerCall` too by #1445 (with proofs off, or with short
+> reasons off, it had the same copy). Filed while fixing #1331: #1368 (`Bacchus`'s scaffold also
 > leaves out the published variable-support unit `x_i ≠ v` for a symbol no
 > state reads; no proof is known to need it).
 > Already open and touching this family: #841 (the OPB alphabet includes every
@@ -849,9 +849,11 @@ the OPB, in the root's proof and in the regex front end.
    fataepyc-09, 2026-10-16; scratch worktree `src-reasoncopy`, not
    committed). With proofs on the two differ by under 0.1% (1.2216·10⁹
    against 1.2211·10⁹ at `n = 4,000`) and write byte-identical proofs (`pon.txt`).
-   `MDD` has
-   the same conversion, filed as #1353; `Regular`'s is not filed
-   separately. The hottest function left in `Upfront`'s profile there, 24% of
+   `MDD` had
+   the same conversion, filed as #1353; #1445 fixes both, and on the
+   three-state `0ⁿ`/`1ⁿ` automaton under `PerCall`, proofs off, measures
+   4.14·10⁹ to 1.12·10⁹ instructions at 10,000 and 14.78·10⁹ to 2.75·10⁹ at
+   20,000, with byte-identical proofs. The hottest function left in `Upfront`'s profile there, 24% of
    the samples at 20,000, is model installation, which is quadratic in the
    arity (#1309).
 3. **The proof side.** One line per pruned value, never a range: at the root a
@@ -1081,10 +1083,10 @@ row and the exactly-one.
     and VeriPB rejects the backtrack line, with one final state as well as
     several (#1331).
 - **Reason** — the generic reason over the scope, per run; at the root, the
-  root domains. Not minimal. Assembled every call, unguarded, and under
-  `PerCall` with proofs off copied again at every pruning (#1353's
-  conversion; see [Interval efficiency](#interval-efficiency)); with proofs
-  on, the copy is (by default) of the one short-reason flag. `PerCall` states
+  root domains. Not minimal. Under `PerCall`, assembled every call when a
+  logger or the tracker will read it, and converted to one `Reason` per call
+  (until #1353, #1445, assembled unguarded and, with proofs off, copied again at
+  every pruning; see [Interval efficiency](#interval-efficiency)). `PerCall` states
   every line under one flag reifying it; `Bacchus` uses `NoReason`.
 - **Assertion** — `x_i ≠ v ∨ ¬R` per pruned value; in the conflict form, the
   attempted literal and the reason both appear, with no deduplication. Measured
@@ -1433,10 +1435,6 @@ here.
 - **Deleting many edges out of one state is quadratic** under `Upfront` and
   `PerCall`, which rescan the state's live targets per removed edge; `Bacchus`
   does not (#1352).
-- **`PerCall` copies the whole reason at every pruning** with proofs off (or
-  with short reasons off), so such a call pruning `p` values over `n`
-  positions costs `O(p · n)` (#1353's conversion, filed for `MDD`); with
-  proofs on, the default short reasons make the copied reason one flag.
 - **The canonical run grows as a layer's live width times the edge choices
   into it**, through its pairwise at-most-one: at least quadratic in the
   width, cubic for a dense layer; linear in `n` only for a fixed automaton (see
@@ -1496,10 +1494,8 @@ here.
    edges, and replace `still_supports` by a live-edge count per
    `(layer, state, value)`, or skip it for a deterministic automaton, where it
    always fails. Small; it wants an instruction count on rule 2's fixture,
-   and solution sequences and node counts unchanged. With it, build the
-   `Reason` once per call in `PerCall` (#1353's fix, applied to
-   `regular_legacy.cc:374`; the scratch control under [Interval
-   efficiency](#interval-efficiency) did exactly that).
+   and solution sequences and node counts unchanged. (Building the `Reason`
+   once per call in `PerCall`, #1353's fix, is done by #1445.)
 6. **Validate the automaton** (#1333) in each constructor and the `.scp`
    reader. Small.
 7. **Read non-deterministic automata from `.scp`** (#1335) and add an NFA
