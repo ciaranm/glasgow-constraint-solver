@@ -14,7 +14,14 @@ include(FetchContent)
 # Upstream tags such a group FLOW, so every row went through the flow unfolder,
 # which casts the knapsack to a flow and dereferences the null result; and the
 # knapsack unfolder never copied the profit condition from the template, so each
-# row arrived with an empty one. Each patch is applied by its own COMMAND, and
+# row arrived with an empty one.
+#
+# The third patch is for <element> with no <index>, "the value is in the list"
+# (#1164). Upstream threw "Not yet supported" for it over a list of integers;
+# it now passes the value on as the condition (eq, value), which the binding
+# handles. And it decided whether a list was all integers from its first entry
+# alone, so a mixed list such as "7 x[0]" was read as integers, repeating 7 for
+# x[0]; it now checks every entry. Each patch is applied by its own COMMAND, and
 # each is skipped if already in place.
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
@@ -22,6 +29,8 @@ FetchContent_Declare(xcsp3_cpp_parser
     PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_integer_overflow.patch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_knapsack_group.patch
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
+    COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_element_member.patch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(xcsp3_cpp_parser)
@@ -152,6 +161,30 @@ add_xcsp_test(disjunctive)
 add_xcsp_test(no_overlap_var)
 add_xcsp_test(no_overlap_2d)
 add_xcsp_test(no_overlap_2d_var)
+# <element> with no <index>: the value is in the list, posted as In (#1164).
+# Over variables, an integer value, a mixed list either way round, a list of
+# integers, and the (eq, value) condition form over both kinds of list. The
+# integer-list shapes and the mixed list that starts with an integer reach the
+# binding through the third parser patch. ACE 2.6 does not read an index-free
+# element as membership (its solutions put y outside x), so each cache came
+# from ACE on the twin with the same variables and an <intension> or of
+# equalities instead.
+add_xcsp_test(element_member_var)
+add_xcsp_test(element_member_int)
+add_xcsp_test(element_member_mixed)
+add_xcsp_test(element_member_mixed_int_first)
+add_xcsp_test(element_member_int_list)
+add_xcsp_test(element_member_condition)
+add_xcsp_test(element_member_int_list_condition)
+# Indexed elements over "7 x[0] x[1]". The parser decided from the first entry
+# that the list was all integers and read it as 7 7 7: with a variable value
+# that gave wrong answers (y = 7 whatever x[0] was), and with an integer value
+# the binding refused it. The third parser patch checks every entry, so the
+# list now arrives as a mixed one, and the binding accepts integer entries in
+# an element list and now handles a variable list with a variable value. Caches
+# from ACE on the <intension> twins.
+add_xcsp_test(element_index_mixed)
+add_xcsp_test(element_index_mixed_var)
 # Overlapping supports: wildcard rows covering each other, and an exact
 # duplicate, through the shared-tuples path a group uses. Solutions that two
 # rows match used to make the proof's solution lines fail (issue #1115).
@@ -221,6 +254,9 @@ add_xcsp_refusal_test(range_tuple_past_int32 "an integer does not fit in an int"
 add_xcsp_refusal_test(range_tuple_int_max "cannot be told apart from the wildcard")
 # The parser's own std::stoi refusing a condition value, which used to abort.
 add_xcsp_refusal_test(range_condition_past_int32 "stoi")
+# An index-free element whose condition is not (eq, value): not membership, so
+# not In, and still refused (#1164).
+add_xcsp_refusal_test(element_member_condition_lt "only an \\(eq, value\\) condition is supported")
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to

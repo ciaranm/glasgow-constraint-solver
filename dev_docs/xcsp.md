@@ -308,6 +308,12 @@ arrived with an empty one. Both bugs are still in upstream master as of
 2026-10-16. `xcsp_knapsack_group` checks the group against its written-out form,
 `xcsp_knapsack`.
 
+A third, `xcsp/xcsp3_parser_element_member.patch`, is applied after those two
+(#1164): an index-free `<element>` over a list of integers reaches the binding
+as the condition `(eq, value)` instead of throwing, and a list counts as all
+integers only if every entry is one; see [Element with no
+index](#element-with-no-index).
+
 ## Testing
 
 Each ctest is a small `.xml` instance run by `xcsp/run_xcsp_test.bash`:
@@ -480,5 +486,20 @@ binding posts an extra index-shift `WeightedSum` to translate.
 `Element2D` does support a pair-form constructor with explicit
 offsets, so we use that directly for matrix-form element. If the 1-D
 `Element` is ever extended to support an offset, drop the shift.
+
+### Element with no index
+
+An `<element>` with a `<list>` and a `<value>` (or a `<condition>`) but no
+`<index>` says the value is in the list, and the binding posts it as `In`
+(#1164). The list may mix variables and integers, and so may an indexed
+element's list. Two shapes need the third parser patch,
+`xcsp3_parser_element_member.patch`: upstream threw for an index-free element
+over a list of integers, and now passes the value on as the condition
+`(eq, value)`; and it decided a list was all integers from its first entry, so
+`7 x[0]` was read as `7 7`, which also gave wrong answers for an indexed
+element with a variable value. A condition other than `(eq, value)`, or one
+with an index, is still reported unsupported. ACE 2.6 does not read an
+index-free element as membership, and fails on mixed lists, so the
+`xcsp_element_*` caches come from ACE on `<intension>` twins.
 
 <!-- vim: set tw=100 spell spelllang=en : -->

@@ -934,12 +934,68 @@ namespace
             post_intension_top_level(tree->root);
         }
 
+        // <element> with no <index> says the value is in the list, which is
+        // exactly In (#1164). The list may mix variables and integers.
+        auto buildConstraintElement(string, vector<XVariable *> & x_vars, int value) -> void override
+        {
+            _problem.post(In{constant_variable(Integer{value}), need_variables_or_constants(x_vars)});
+        }
+
+        auto buildConstraintElement(string, vector<XVariable *> & x_vars, XVariable * value) -> void override
+        {
+            _problem.post(In{need_variable(value->id), need_variables_or_constants(x_vars)});
+        }
+
+        // The <condition> form. With no index and the condition (eq, value) it
+        // is In again; the patched parser also sends an index-free <value>
+        // over a list of integers here, as that condition. Anything else, an
+        // index or another operator, is still unsupported.
+        auto buildConstraintElement(string, vector<int> & vals, XVariable * index, int, XCondition & cond) -> void override
+        {
+            vector<Integer> values;
+            values.reserve(vals.size());
+            for (auto v : vals)
+                values.emplace_back(Integer{v});
+            _problem.post(In{element_member_value(index, cond, "element with a list of integers and a condition"), values});
+        }
+
+        auto buildConstraintElement(string, vector<XVariable *> & x_vars, XVariable * index, int, XCondition & cond) -> void override
+        {
+            _problem.post(In{element_member_value(index, cond, "element with a condition"), need_variables_or_constants(x_vars)});
+        }
+
+        // The value an index-free <element> condition says is in the list.
+        auto element_member_value(XVariable * index, XCondition & cond, const string & ctx) -> IntegerVariableID
+        {
+            if (index)
+                report_unsupported(ctx, "only the form with no index, the value is in the list, is supported");
+            if (cond.op != OrderType::EQ)
+                report_unsupported(ctx, "only an (eq, value) condition is supported");
+            switch (cond.operandType) {
+                using enum OperandType;
+            case VARIABLE: return need_variable(cond.var);
+            case INTEGER: return constant_variable(Integer{cond.val});
+            case INTERVAL:
+            case SET: break;
+            }
+            report_unsupported(ctx, "only an (eq, value) condition is supported");
+        }
+
         auto buildConstraintElement(string, vector<XVariable *> & x_vars, int startIndex, XVariable * index, RankType rank, int value)
             -> void override
         {
             check_element_rank(rank);
             auto idx = zero_based_index(index, startIndex);
             _problem.post(Element{constant_variable(Integer{value}), idx, allocate_element_array(x_vars)});
+        }
+
+        auto buildConstraintElement(string, vector<XVariable *> & x_vars, int startIndex, XVariable * index, RankType rank, XVariable * value)
+            -> void override
+        {
+            check_element_rank(rank);
+            auto idx = zero_based_index(index, startIndex);
+            auto val = need_variable(value->id);
+            _problem.post(Element{val, idx, allocate_element_array(x_vars)});
         }
 
         auto buildConstraintElement(string, vector<int> & vals, int startIndex, XVariable * index, RankType rank, XVariable * value) -> void override
@@ -1122,12 +1178,25 @@ namespace
             return result;
         }
 
+        // Like need_variables, but an entry may be an integer, as in a mixed
+        // list such as "x[0] 7 x[1]", which becomes a constant.
+        auto need_variables_or_constants(const vector<XVariable *> & x_vars) -> vector<IntegerVariableID>
+        {
+            vector<IntegerVariableID> result;
+            result.reserve(x_vars.size());
+            for (auto & v : x_vars) {
+                int value;
+                if (XCSP3Core::isInteger(v, value))
+                    result.emplace_back(constant_variable(Integer{value}));
+                else
+                    result.emplace_back(need_variable(v->id));
+            }
+            return result;
+        }
+
         auto allocate_element_array(vector<XVariable *> & x_vars) -> vector<IntegerVariableID> *
         {
-            auto vars = std::make_unique<vector<IntegerVariableID>>();
-            vars->reserve(x_vars.size());
-            for (auto & v : x_vars)
-                vars->emplace_back(need_variable(v->id));
+            auto vars = std::make_unique<vector<IntegerVariableID>>(need_variables_or_constants(x_vars));
             auto * raw = vars.get();
             _element_arrays.push_back(std::move(vars));
             return raw;
