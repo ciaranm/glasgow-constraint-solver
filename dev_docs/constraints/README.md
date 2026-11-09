@@ -412,8 +412,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   failures, under different branching, GCS takes 3.3 to 3.7 times its time.
   Every listed domain from C++ and XCSP3 is an `In`, and so
   is Python's `post_in`, which is where the findings are: carving `K` values
-  costs Θ(K²) in the state layer's interval scans (12.1 s at 10⁵; 0.021 s with
-  a binary search); and, until #1161 (fixed by #1443), the posted `In`
+  cost Θ(K²) in the state layer's interval scans until #1160 (fixed by #1435,
+  a binary search: 12.1 s at 10⁵ before, 0.021 s after); and, until #1161 (fixed by #1443), the posted `In`
   stayed live after its only useful call, idle on real instances (262,179
   calls on XCSP3's `Dubois-015`, 1.6 million on the `all_equal` benchmark,
   whose time falls 27% with the fix), and its trigger marked the variable's
@@ -421,7 +421,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   on. Also: repeated or aliased
   candidates lose `bounds(Z)` and can take W/2 calls to fail; step 1 was
   quadratic in interval counts (#1162, fixed by #1444); and XCSP3's
-  index-free `element` was unsupported until #1164 mapped it onto `In`. Since #1215 a constant outside the solver's integer range is
+  index-free `element` was unsupported until #1434 mapped it onto `In`
+  (#1164). Since #1215 a constant outside the solver's integer range is
   refused at construction, so the 64-bit overflow the audit found with proofs
   on can no longer be reached.
 - [`min_max.md`](min_max.md) — `ArrayMin`, `ArrayMax`, `Min` and `Max`: one
