@@ -57,10 +57,9 @@ namespace gcs
         /// Whether the table that was installed is large enough for the
         /// compact-table algorithm, which since #809 this presolver's tables can
         /// use. It follows from `tuples` --- the threshold is
-        /// innards::ExtensionalCompactTable::min_tuples --- except that a run
-        /// finding no tuple returns before setting it, so a reused block can
-        /// say no tuples beside a compact table from its previous run (#1387).
-        /// The threshold is an innards constant, so a caller holding this block
+        /// innards::ExtensionalCompactTable::min_tuples, and a run that finds
+        /// no tuple says false (until #1387 it left a reused block's previous
+        /// answer in place). The threshold is an innards constant, so a caller holding this block
         /// cannot work it out. Whether the propagator then goes on to *use* the
         /// algorithm is a separate question, decided during search and by
         /// measurement; this is only whether it was offered the choice.

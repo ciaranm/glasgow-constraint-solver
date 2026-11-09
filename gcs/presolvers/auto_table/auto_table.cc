@@ -114,6 +114,10 @@ auto AutoTable::run(Problem & problem, Propagators & propagators, State & initia
     propagators.add_component_stats(_stats);
     _stats->ran = true;
     _stats->variables = _vars.size();
+    // Reset here, since a run that finds no tuple returns before deciding it,
+    // and a reused block would otherwise keep its previous run's answer beside
+    // this run's zero tuples (#1387). tuples and search_nodes are always set.
+    _stats->compact_table = false;
 
     SimpleTuples tuples;
 
