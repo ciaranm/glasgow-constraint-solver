@@ -328,16 +328,22 @@ an integer without checking. Where XCSP3 allows only integers (an `<allDifferent
 `<knapsack>`'s `<weights>` and `<profits>`), upstream ignored a failed integer
 read, so a variable there was read as the entry before it; the patch refuses
 those too. `newConstraintElementMatrix` had the first-entry shape as well:
-`(1,y)(2,3)` was read with `y` as `1`. A matrix entry such as `x[0]` sends the
-parser down a compact-form branch that refuses a mix, but a plain variable
-reaches it, so the patch refuses a mixed matrix there.
+`(1,y)(2,3)` was read with `y` as `1`, so the patch refuses a mixed matrix
+there. A plain variable such as `y` reaches that check; an array cell such as
+`m[0][1]` does not. The parser takes any `[` in a `<matrix>`'s text to mean the
+compact form `m[][]`, reads everything before the `[` as the array's name, and
+refuses the matrix when no array has that name (`XMLParserTags.cc:1888-1898`).
+So an explicit matrix that names any array cell is refused, even an all-variable
+one such as `(m[0][0],m[0][1])(m[1][0],m[1][1])`, which reports `Matrix variable
+(mdoes not exist` (sic). That refusal is loud, but it refuses a valid
+instance: write the matrix as `m[][]`, or with plain variables, to post it.
 
 The same first-entry test was in `XConstraintGroup::unfoldVector`, which
 substitutes a group's arguments into each list of its template. A template that
 mixes parameters with integers or variables, such as `<coeffs> 1 %0 </coeffs>`
 or `<list> %0 x[0] </list>`, is valid XCSP3, but one whose first entry was not
-a parameter kept its parameters unsubstituted, and one whose first entry was
-dereferenced a null for each later non-parameter (a segfault). The patch
+a parameter kept its parameters unsubstituted, and one whose first entry was a
+parameter dereferenced a null for each later non-parameter (a segfault). The patch
 substitutes entry by entry, so those templates now post. ACE 2.6 cannot read
 them either, so the `xcsp_group_*_param` caches come from ACE on the
 written-out twins.

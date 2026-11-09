@@ -20,7 +20,8 @@
 > been seen to reach it), #1070 (every proof line restates the 0/1 items'
 > always-true bounds; the corpus does post Knapsack). Filed since the audit
 > and reproduced for this document: #1354 (a `<knapsack>` inside an XCSP3
-> `<group>` crashes the parser before the solver sees it; fix open as #1357).
+> `<group>` crashed the parser before the solver saw it; fixed by #1357, a
+> parser patch).
 > Also open: #497
 > (hint the dead-state RUPs), #200 (one generic layered-DAG propagator
 > framework for the diagram constraints), #833 (the large-domain policy), #868
@@ -146,7 +147,7 @@ profit})`.
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `Knapsack`, `proof_strategy::PerCall` | ✓ `fzn_knapsack`[^mzn] | ✓ `knapsack`[^xcsp] | ?[^cpmpy] | ✓ `knapsack` | `k` rows from C++ and the `.scp` reader; MiniZinc and XCSP3 post two; an XCSP3 `<group>` of knapsacks crashes (#1354) |
+| `Knapsack`, `proof_strategy::PerCall` | ✓ `fzn_knapsack`[^mzn] | ✓ `knapsack`[^xcsp] | ?[^cpmpy] | ✓ `knapsack` | `k` rows from C++ and the `.scp` reader; MiniZinc and XCSP3 post two; an XCSP3 `<group>` of knapsacks works through a parser patch (#1354) |
 | `Knapsack`, `proof_strategy::Upfront` | — | — | — | written as `knapsack`[^sexpr] | C++ only; `knapsack_bench --upfront` |
 | `knapsack_reif` | `decompose`[^reif] | n/a | — | — | |
 
@@ -172,10 +173,14 @@ profit})`.
     since #1447). A negative item value throws from `Knapsack::prepare()`,
     inside `solve_with`, where the binary catches only `IntegerOverflow`, so the
     process aborts (exit 134; #1337). **A
-    `<knapsack>` inside a `<group>` crashes the parser** (#1354), with
-    proofs off or on, before the knapsack reaches the solver (the front end
-    posts each constraint from its callback as it is parsed, `:842`, so
-    constraints ahead of the group are already posted): the parser's
+    `<knapsack>` inside a `<group>` crashed the parser** (#1354) until #1357
+    added `xcsp/xcsp3_parser_knapsack_group.patch`, which makes both changes
+    described at the end of this note; `xcsp_knapsack_group` checks a group
+    against its written-out form. The rest of this note is the diagnosis as
+    made against the unpatched pin. The crash came with proofs off or on,
+    before the knapsack reached the solver (the front end posts each
+    constraint from its callback as it is parsed, `:842`, so constraints
+    ahead of the group were already posted): the parser's
     `KnapsackTagAction::beginTag` tags the group `FLOW`
     (`XMLParserTags.cc:1287`), so `newConstraintGroup` unfolds each row as an
     `XConstraintFlow` (`XCSP3Manager.cc:1483–1484` in the patched file the
@@ -242,8 +247,8 @@ status and solution set together.
   (`knapsack.cc:79-82`), so a negative weight or profit is now `s UNSUPPORTED`
   (exit 1) and a negative domain value still aborts, each checked on a
   two-item probe at `fffade10`; the sweep was not re-run. Every instance posts plain `<knapsack>`
-  elements; none is inside a `<group>`, which crashes (#1354, in the footnote
-  above).
+  elements; none is inside a `<group>`, which crashed the parser when this
+  sweep ran (#1354, fixed since; see the footnote above).
 - **`.scp`:** `knapsack_sat` and `knapsack_unsat` chain-verify; see [Cake
   conformity](#cake-conformity).
 
@@ -1118,7 +1123,8 @@ sense that it must verify uncorrupted; nothing corrupts a derivation.
   how it stayed hidden from MiniZinc's fixed capacities.
 - **Negative values from a front end**, and any XCSP3 knapsack at all,
   including a `<group>` of knapsacks against the same rows written out as
-  plain `<knapsack>` constraints, which would have caught #1354.
+  plain `<knapsack>` constraints, which would have caught #1354. (#1357 has
+  since added both XCSP3 lanes, `xcsp_knapsack` and `xcsp_knapsack_group`.)
 - **Wide domains**, beyond the one `KnownTrip` row; and **any instance large
   enough to show the pseudo-polynomial cost**. The largest test has 210
   solutions.
@@ -1330,10 +1336,6 @@ derivation:
   non-negative (negative weights and profits are refused by MiniZinc's wrapper
   for every solver). **XCSP3 aborts** on a negative item value, and reports a
   negative weight or profit as `s UNSUPPORTED` (since #1447). #1337.
-- **XCSP3 crashes on a `<knapsack>` inside a `<group>`** (`SIGSEGV` in the
-  parser, proofs off or on); the same rows written as separate `<knapsack>`
-  constraints work. The bug is in the pinned parser, not in Glasgow's
-  front end. #1354.
 - **Large partial-sum ranges make every call slow**, and a two-row knapsack
   whose second row has a large range (a profit) can stall the root: the
   `multi-knapsack` models spend their whole time limit in it. #1341.
@@ -1361,15 +1363,13 @@ derivation:
    around the solve so a refusal of a negative item value is `UNSUPPORTED`
    rather than an abort (a negative weight or profit already is, since #1447,
    because the constructor refuses it while the model is built). Small.
-3. **Fix the parser's grouped knapsack** (#1354): tag the group `KNAPSACK`
-   in `KnapsackTagAction::beginTag` and copy the template's profit condition
-   in `XConstraintKnapsack::unfoldParameters` before unfolding it; both are
-   needed, and with both Glasgow's own binary solves grouped knapsacks
-   (including a parameterised profit condition) with verifying proofs (see
-   the XCSP3 footnote). Whether the fix goes into the repository's parser
-   patch or upstream is not settled here. Then add an XCSP3 test that
-   solves a `<group>` of knapsacks and the same rows written out, and
-   compares them. Small.
+3. **Done: the parser's grouped knapsack** (#1354). #1357 made both changes
+   this step proposed, retagging the group `KNAPSACK` and copying the
+   template's profit condition before unfolding it, as a repository parser
+   patch (`xcsp/xcsp3_parser_knapsack_group.patch`), and added
+   `xcsp_knapsack_group`, which checks a `<group>` of knapsacks against the
+   same rows written out. The step keeps its number because other documents
+   cite the later ones by theirs.
 4. **Make the interior-value pass per terminal state** (#1340): collect each
    row's reachable sums once, then remove the gaps from the total's domain by
    intervals. Small; removes the quadratic case and the audit lane's trip at
