@@ -37,6 +37,7 @@ using std::erase_if;
 using std::make_unique;
 using std::move;
 using std::optional;
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -143,6 +144,28 @@ auto In::define_proof_model(ProofModel & model, const State &) -> void
     model.add_labelled_constraint(_constraint_id, "al1", sum >= 1_i);
 }
 
+namespace
+{
+    // Step 1's union, for the pieces past the first few (#1162): sorted and coalesced
+    // into one set, which unsupported is then reduced by in a single merge. Out of
+    // line, so that the usual call, which never gets here, stays as small as it was.
+    [[gnu::noinline]] auto take_out_by_merge(IntervalSet<Integer> & unsupported, vector<pair<Integer, Integer>> & gathered) -> void
+    {
+        std::sort(gathered.begin(), gathered.end());
+        IntervalSet<Integer> held;
+        for (std::size_t g = 0; g < gathered.size();) {
+            auto [lo, hi] = gathered[g];
+            for (++g; g < gathered.size() && gathered[g].first <= hi + 1_i; ++g)
+                hi = std::max(hi, gathered[g].second);
+            held.insert_at_end(lo, hi);
+        }
+        auto remaining = std::move(unsupported);
+        unsupported = IntervalSet<Integer>{};
+        for (auto [lo, hi] : remaining.each_interval_minus(held))
+            unsupported.insert_at_end(lo, hi);
+    }
+}
+
 auto In::install_propagators(Propagators & propagators) -> void
 {
     if (_has_no_values) {
@@ -234,20 +257,49 @@ auto In::install_propagators(Propagators & propagators) -> void
                 // O(|D(var)|) even when every value was supported and nothing
                 // came out.
                 //
-                // Copies, and named ones, for two reasons: each_interval() hands
-                // out a generator borrowing the set, which must outlive it (see
-                // IntervalSet's class documentation), and the inferences below
-                // modify the domains as they go.
+                // The domains are copied because the inferences below modify them
+                // as they go; unsupported is a named copy because each_interval()
+                // below hands out a generator borrowing it, which must outlive it
+                // (see IntervalSet's class documentation). The pieces are walked
+                // with for_each_interval(), which needs no coroutine frame: the
+                // each_interval() loops it replaced cost about 15% of the
+                // instructions of an enumeration with this as its only constraint.
+                //
+                // The first few pieces are erased from the copy one at a time,
+                // which is cheapest for the usual handful, and stops copying
+                // sources as soon as nothing is left unsupported. But those
+                // erases rescan the copy and split it as they go, so pieces with
+                // K separated values made K erases over a copy growing to K
+                // intervals, Theta(K^2) (#1162). So once the pieces seen would
+                // pass merge_from_pieces, that set and every later one are only
+                // gathered, and taken out by a merge: sorted and coalesced into
+                // their union, which the copy is then reduced by in one pass,
+                // O(E log E + I) for E pieces and I intervals left in the copy.
+                // The test is per set, not per piece, so the usual handful takes
+                // only the first branch. Either way it is the same set of
+                // values, so the same runs are removed, in the same order.
+                // ArrayMin and ArrayMax's result-in-union rule does the same
+                // (#1190).
+                static constexpr std::size_t merge_from_pieces = 16;
                 auto unsupported = state.copy_of_values(var);
-                for (auto [lo, hi] : val_vals_set.each_interval())
-                    unsupported.erase_range(lo, hi);
+                vector<pair<Integer, Integer>> gathered;
+                std::size_t pieces = 0;
+                auto take_out = [&](const IntervalSet<Integer> & set) {
+                    pieces += set.num_intervals();
+                    if (pieces <= merge_from_pieces)
+                        set.for_each_interval([&](Integer lo, Integer hi) { unsupported.erase_range(lo, hi); });
+                    else
+                        set.for_each_interval([&](Integer lo, Integer hi) { gathered.emplace_back(lo, hi); });
+                };
+                take_out(val_vals_set);
                 for (const auto & V : var_vals) {
                     if (unsupported.empty())
                         break;
-                    auto v_values = state.copy_of_values(V);
-                    for (auto [lo, hi] : v_values.each_interval())
-                        unsupported.erase_range(lo, hi);
+                    take_out(state.copy_of_values(V));
                 }
+
+                if (! gathered.empty())
+                    take_out_by_merge(unsupported, gathered);
 
                 for (auto [run_lo, run_hi] : unsupported.each_interval()) {
                     if (run_lo < run_hi) {
@@ -331,12 +383,13 @@ auto In::install_propagators(Propagators & propagators) -> void
                 }
             }
 
-            // Does any constant in val_vals lie in dom(var)?
-            bool const_supports = any_of(val_vals, [&](Integer c) { return state.in_domain(var, c); });
+            // Does any constant in val_vals lie in dom(var)? Asked only when step 3
+            // could use the answer, after the cheaper test of the candidates (#1162).
+            auto const_supports = [&]() { return any_of(val_vals, [&](Integer c) { return state.in_domain(var, c); }); };
 
             // Step 3: if no constant supports and exactly one V_i supports, that V_i must
             // equal var, so prune V_i to dom(var).
-            if (! const_supports && support_1 && ! support_2) {
+            if (support_1 && ! support_2 && ! const_supports()) {
                 size_t i = *support_1;
                 const auto & V = var_vals[i];
 

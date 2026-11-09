@@ -3,15 +3,15 @@
 > **Maturity** production ·
 > **Audited** 2026-09-30 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1215 and #1208 ·
-> **Open issues** filed by this audit: #1162 (step 1's union is quadratic in
-> interval counts), #1163 (repeated or aliased candidates lose `bounds(Z)`).
-> Already open and touching this
+> **Open issues** filed by this audit: #1163 (repeated or aliased candidates
+> lose `bounds(Z)`). Already open and touching this
 > family: #833 (the large-domain policy), #868 (cross-solver comparisons;
 > this document gives a whole-solve comparison by hand, not the
 > identical-tree one #868 asks for).
 > **Fixed since the audit**: #1160 (carving `K` listed values cost Θ(K²) in
 > the state layer's interval scans), by #1435; #1161 (the constants-only `In` stayed live after
-> its only useful call, and declared holes it does not read), by #1443; #1164
+> its only useful call, and declared holes it does not read), by #1443; #1162
+> (step 1's union was quadratic in interval counts), by #1444; #1164
 > (XCSP3's index-free `element` was unsupported), by #1434; the
 > extreme-constant overflow with proofs on,
 > which had no issue of its own, by #1215 (which closed `Table`'s #1117); see
@@ -505,9 +505,18 @@ instead is the number of **intervals**, and there two things are not linear.
    - *Constants-only step 1* (`in.cc:208–210`): `each_interval_minus` of
      `dom(var)` against the permitted set, a merge, `O(intervals(var) +
      |vals|)`.
-   - *Variable step 1* (`in.cc:228–237`) builds the union by erasing each
-     permitted interval and each candidate's intervals from a copy of
-     `dom(var)`. `erase_range` scans from the front, and dropping a covered
+   - *Variable step 1* erases the first 16 pieces (the permitted set's
+     intervals, then each candidate's) from a copy of `dom(var)` one at a time,
+     and once a set would take the count past 16, gathers that set's pieces
+     and every later one, sorts and coalesces them, and takes their union out
+     of the copy in one `each_interval_minus`: `O(E log E + I₀ + E)` for `E`
+     pieces (#1162, by #1444). It walks each set with `for_each_interval`,
+     not an `each_interval` coroutine, which takes 14 to 16% of the
+     instructions off an enumeration of a small `In{x, {y₁..y₆}, {c₁, c₂}}`.
+     What follows is the audit's account of the erase-only union, which is
+     still what runs for 16 pieces or fewer. Until #1162 it built the whole
+     union by erasing each permitted interval and each candidate's intervals
+     from a copy of `dom(var)`. `erase_range` scans from the front, and dropping a covered
      interval shifts the vector (`interval_set.hh:314–352`). The copy is not
      fixed in size: an erase inside an interval splits it, inserting into the
      vector, so the copy can gain an interval per erase, and later erases
@@ -542,8 +551,10 @@ instead is the number of **intervals**, and there two things are not linear.
      (`in.cc:310–319`), a merge that stops at the first common value. But
      `const_supports` (`in.cc:322`) is an `any_of` over every constant calling
      `in_domain`, whose `contains` scans `dom(var)`'s intervals from the front:
-     `O(|vals| · intervals(var))` per call at worst. It runs in the
-     constants-only branch too, where nothing uses it.
+     `O(|vals| · intervals(var))` per call at worst. Since #1162 it is asked
+     only when exactly one candidate supports, which is when step 3 needs it;
+     until #1161 it also ran in the constants-only branch, where nothing used
+     it.
    - *Step 3* (`in.cc:403`) is `each_interval_minus` of the candidate against
      `dom(var)`.
    - There is no `each_value`, `for_each_value` or value loop anywhere in
@@ -610,7 +621,10 @@ single runs unless marked as medians.
   0.642 s (`varsvals`) at 10⁴ and 3·10⁴, for the whole root, which runs the
   variable-candidate `In` twice. The fact-check timed the calls: about
   0.32 s each at 3·10⁴. Profiled, that is `erase_range`'s vector shifts
-  inside step 1's union. A merge would make it linear.
+  inside step 1's union. A merge would make it linear. Since #1444 it does:
+  with #1160's binary search applied on both sides, `vars` takes 0.012 s and
+  0.027 s at 10⁴ and 3·10⁴ (0.074 s and 0.643 s without #1444), and
+  `varsvals` 0.007 s and 0.022 s.
 - **Per call, in search.** Enumerating one variable over the `K` odd values
   (`enumodd`) takes 0.428 s at 10⁴ and 3.83 s at 3·10⁴ (median of 3). The
   same enumeration over the interval `1..K` takes 0.017 s at 3·10⁴.
@@ -652,7 +666,8 @@ How much this matters in the corpora in hand:
   recorded for it.) At those sizes the Θ(K²) carve is negligible, but the idle
   `In` and its hole declaration are on every one.
 
-So the carve and step 1's union are next steps, not emergencies, though a
+So the carve and step 1's union were next steps, not emergencies (step 1's
+union is fixed by #1444), though a
 model that lists 10⁵ values takes 12 s before search starts. The idle `In` is
 cheap to fix and costs something on real instances today.
 
@@ -1171,14 +1186,9 @@ reached: since #1215 such a constant is refused at construction
    and the `all_equal` benchmark from 2,087,886 to 467,871 propagations (6.68 G
    to 4.79 G instructions), with the same solutions; proofs on `in_test` and
    the families that declare value-list variables are byte-identical.
-3. **Build step 1's union by merging, not by repeated `erase_range`.**
-   - *The change.* A k-way merge of `vals` and the candidates' intervals,
-     followed by one `each_interval_minus`, makes the call linear in interval
-     counts.
-   - *Separately,* compute `const_supports` only when step 3 could use it, by
-     a merge, not an `any_of` over every constant.
-   - *Cost.* Small. It buys about 0.32 s per call at 3·10⁴ intervals, on a
-     shape no model in hand has. Filed as #1162.
+3. **Done** (#1162, by #1444): step 1 merges its union past the first 16
+   pieces, walks the pieces without coroutines, and asks `const_supports` only
+   when step 3 could use it.
 4. **Handle repeated and aliased candidates.**
    - *De-duplicating identical candidates* in the propagator would restore
      `bounds(Z)` and GAC on the plain-repeat shape.

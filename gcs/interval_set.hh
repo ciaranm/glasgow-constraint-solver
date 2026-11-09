@@ -135,6 +135,16 @@ namespace gcs
         }
 
         /**
+         * \brief Returns the number of maximal intervals representing the set.
+         *
+         * Constant time. Zero for the empty set.
+         */
+        [[nodiscard]] auto num_intervals() const -> std::size_t
+        {
+            return intervals.size();
+        }
+
+        /**
          * \brief Returns the smallest value in the set.
          *
          * \note The set must not be empty.

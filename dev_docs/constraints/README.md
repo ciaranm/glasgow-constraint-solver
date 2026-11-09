@@ -418,9 +418,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   whose time falls 27% with the fix), and its trigger marked the variable's
   holes as observed, which kept other constraints' optional interior pruning
   on. Also: repeated or aliased
-  candidates lose `bounds(Z)` and can take W/2 calls to fail; step 1 is
-  quadratic in interval counts; and XCSP3's index-free `element` was
-  unsupported until #1164 mapped it onto `In`. Since #1215 a constant outside the solver's integer range is
+  candidates lose `bounds(Z)` and can take W/2 calls to fail; step 1 was
+  quadratic in interval counts (#1162, fixed by #1444); and XCSP3's
+  index-free `element` was unsupported until #1164 mapped it onto `In`. Since #1215 a constant outside the solver's integer range is
   refused at construction, so the 64-bit overflow the audit found with proofs
   on can no longer be reached.
 - [`min_max.md`](min_max.md) — `ArrayMin`, `ArrayMax`, `Min` and `Max`: one
