@@ -28,6 +28,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <version>
@@ -284,7 +285,7 @@ namespace
         return counts;
     }
 
-    auto expect_rejected(const Instance & inst, const Setup & setup, const string & what) -> void
+    auto expect_rejected(const Instance & inst, const Setup & setup, const string & what, std::string_view reason) -> void
     {
         const string name = "disjunctive_2d_presolver_mutation";
         Problem p;
@@ -293,8 +294,8 @@ namespace
         if (0 == counts().posted)
             fail(what + ": nothing was posted, so the mutation had nothing to corrupt");
         if (can_run_veripb()) {
-            if (run_veripb(name + ".opb", name + ".pbp"))
-                fail("veripb accepted the " + what + " mutation, so the certificate over the projection has slack in it");
+            if (auto problem = veripb_verdict_differs(name, VeripbRejects{reason}))
+                fail("the " + what + " mutation of the certificate over the projection: " + *problem);
             println(cerr, "veripb rejected the {} mutation, as expected", what);
         }
         dispose_of_proof_files(name);
@@ -376,11 +377,11 @@ auto main(int argc, char * argv[]) -> int
 
     // Mutations: each presolver's own, over the projection's rows.
     expect_rejected(strip, Setup{.which = Which::Disjunctive, .disjunctive_mutation = inferred_disjunctive_mutation::ClaimRhsZero{}},
-        "inferred disjunctive rhs zero");
+        "inferred disjunctive rhs zero", GCS_VERIPB_REJECTS_HINT);
     expect_rejected(strip, Setup{.which = Which::Cumulative, .cumulative_mutation = inferred_cumulative_mutation::ClaimTighterCapacity{}},
-        "inferred cumulative tighter capacity");
+        "inferred cumulative tighter capacity", GCS_VERIPB_REJECTS_HINT);
     expect_rejected(bars, Setup{.which = Which::Strengthening, .strengthening_mutation = cumulative_strengthening_mutation::ClaimOneBetter{}},
-        "strengthening one better");
+        "strengthening one better", GCS_VERIPB_REJECTS_RUP);
 
     return EXIT_SUCCESS;
 }

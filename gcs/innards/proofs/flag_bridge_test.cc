@@ -63,7 +63,7 @@ namespace
      * positive shift makes the target weaker (and the implication true) and a
      * negative one makes it stronger (and the implication false).
      */
-    auto check_same_condition(const string & name, Integer t, Integer shift, bool expect_veripb_to_accept) -> void
+    auto check_same_condition(const string & name, Integer t, Integer shift, const VeripbVerdict & expected) -> void
     {
         auto proof_name = "flag_bridge_same_" + name;
         ProofOptions proof_options{proof_name};
@@ -90,9 +90,8 @@ namespace
         logger.conclude_none();
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_veripb_to_accept)
-            fail("same-condition bridge (" + name + "): veripb " + (accepted ? "accepted" : "rejected") + " it, expecting the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail("same-condition bridge (" + name + "): " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
@@ -100,7 +99,7 @@ namespace
      * same start variable as two posted constraints would, and bridged. This is
      * the one an inferred constraint over several resources actually needs.
      */
-    auto check_conjunction(const string & name, Integer length, Integer other_length, bool expect_veripb_to_accept) -> void
+    auto check_conjunction(const string & name, Integer length, Integer other_length, const VeripbVerdict & expected) -> void
     {
         auto proof_name = "flag_bridge_conj_" + name;
         ProofOptions proof_options{proof_name};
@@ -134,9 +133,8 @@ namespace
         logger.conclude_none();
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_veripb_to_accept)
-            fail("conjunction bridge (" + name + "): veripb " + (accepted ? "accepted" : "rejected") + " it, expecting the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail("conjunction bridge (" + name + "): " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
@@ -152,7 +150,7 @@ namespace
         ClaimTighter       ///< pin a capacity one below the row's
     };
 
-    auto check_bridged_row(const string & name, BridgedRowCorruption corruption, bool expect_veripb_to_accept) -> void
+    auto check_bridged_row(const string & name, BridgedRowCorruption corruption, const VeripbVerdict & expected) -> void
     {
         auto proof_name = "flag_bridge_row_" + name;
         ProofOptions proof_options{proof_name};
@@ -198,9 +196,8 @@ namespace
         logger.conclude_none();
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_veripb_to_accept)
-            fail("bridged row (" + name + "): veripb " + (accepted ? "accepted" : "rejected") + " it, expecting the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail("bridged row (" + name + "): " + *problem);
         dispose_of_proof_files(proof_name);
     }
 }
@@ -214,35 +211,35 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    check_same_condition("identical", 4_i, 0_i, true);
+    check_same_condition("identical", 4_i, 0_i, VeripbAccepts{});
     // A `to` reified one unit *weaker* bridges too, and should: `start <= 4`
     // really does imply `start <= 5`. Worth pinning down, because it says the
     // routine is not doing a syntactic equality check on the conditions --- it
     // is doing the arithmetic, and the arithmetic is what decides.
-    check_same_condition("weaker_target", 4_i, 1_i, true);
+    check_same_condition("weaker_target", 4_i, 1_i, VeripbAccepts{});
     // One unit *stronger* is a false implication, and the cancellation leaves
     // nothing to saturate into a clause. This is the direction a caller can get
     // wrong, and nothing but running it says so.
-    check_same_condition("stronger_target", 4_i, -1_i, false);
+    check_same_condition("stronger_target", 4_i, -1_i, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "flag bridges: derived where the implication holds, refused where it does not");
 
-    check_conjunction("identical", 3_i, 3_i, true);
+    check_conjunction("identical", 3_i, 3_i, VeripbAccepts{});
     // Two resources cannot disagree about a task's duration, but if the caller
     // ever pairs up the wrong tasks that is what it looks like from here: `to`'s
     // `after` is then the stronger condition and the conjunct bridge fails.
-    check_conjunction("shorter_target", 3_i, 2_i, false);
+    check_conjunction("shorter_target", 3_i, 2_i, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "conjunction bridges: derived for matching conjuncts, refused for mismatched ones");
 
-    check_bridged_row("identical", BridgedRowCorruption::None, true);
+    check_bridged_row("identical", BridgedRowCorruption::None, VeripbAccepts{});
     // The direction is the thing to get wrong, and it is invisible from the
     // types: both bridges exist and only one of them lets the row's left-hand
     // side grow. Backwards, nothing cancels and the pin has nothing to work on.
-    check_bridged_row("backwards", BridgedRowCorruption::BridgeBackwards, false);
+    check_bridged_row("backwards", BridgedRowCorruption::BridgeBackwards, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     // A coefficient that is not the row's leaves that flag behind with the
     // wrong sign, so the row that comes out is not over the flags claimed.
-    check_bridged_row("coefficient_too_big", BridgedRowCorruption::CoefficientTooBig, false);
+    check_bridged_row("coefficient_too_big", BridgedRowCorruption::CoefficientTooBig, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     // And the capacity does not move in the crossing.
-    check_bridged_row("claim_tighter", BridgedRowCorruption::ClaimTighter, false);
+    check_bridged_row("claim_tighter", BridgedRowCorruption::ClaimTighter, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "a capacity row crosses onto another constraint's flags, and does not cross wrongly");
 
     return EXIT_SUCCESS;

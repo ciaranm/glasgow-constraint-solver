@@ -30,9 +30,11 @@
 #include <random>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 #include <version>
 
@@ -375,6 +377,127 @@ namespace gcs::test_innards
         if (! verify_proof_and_dispose(proof_name))
             throw UnexpectedException{"veripb verification failed"};
     }
+
+    /**
+     * \name Expecting veripb to reject a proof
+     *
+     * A test that corrupts a derivation on purpose (see dev_docs/constraints.md,
+     * "Mutation testing") must check more than veripb's exit status. A proof
+     * that is missing, truncated or does not parse, or a veripb that is not
+     * there or crashes, fails just as a caught corruption does; and a corruption
+     * that stops breaking the step it was aimed at, but happens to break another
+     * one, fails too. So a rejection counts only when veripb failed a step of
+     * this proof, and said why in words containing the expected reason. This is
+     * the in-process twin of run_test_and_expect_verify_failure.bash, and makes
+     * the same two checks.
+     *
+     * The reasons are the GCS_VERIPB_REJECTS_* strings in the top-level
+     * CMakeLists.txt. A test target that expects a rejection is passed them as
+     * compile definitions of the same names by gcs_expect_veripb_rejections(),
+     * so a test says `VeripbRejects{GCS_VERIPB_REJECTS_RUP}`, and there is one
+     * place to change when veripb rewords a message.
+     */
+    ///@{
+
+    /// The proof must verify.
+    struct VeripbAccepts
+    {
+    };
+
+    /// veripb must fail a step of the proof, saying something containing
+    /// `reason`, which must not be empty: veripb_verdict_differs() refuses that.
+    struct VeripbRejects
+    {
+        std::string_view reason;
+    };
+
+    using VeripbVerdict = std::variant<VeripbAccepts, VeripbRejects>;
+
+    /**
+     * Run veripb (with --force-checked-deletion, as everywhere else) on
+     * `proof_name`.opb and .pbp, echoing its output to stderr. Returns nullopt if
+     * it reached the expected verdict, and otherwise a description of what it
+     * did instead, for the caller to fail with. Disposes of nothing: a caller
+     * that is satisfied calls dispose_of_proof_files() itself.
+     */
+    [[nodiscard]] inline auto veripb_verdict_differs(const std::string & proof_name, const VeripbVerdict & expected) -> std::optional<std::string>
+    {
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+        using std::print;
+        using std::println;
+#else
+        using fmt::print;
+        using fmt::println;
+#endif
+        // Every output contains an empty string, so an empty reason would make
+        // the reason check vacuous; the harness refuses an empty --expect too.
+        if (auto rejects = std::get_if<VeripbRejects>(&expected); rejects && rejects->reason.empty())
+            return "the expected rejection reason is empty, so any rejection would match it: name one of the GCS_VERIPB_REJECTS_* "
+                   "reasons";
+
+        auto pbp = proof_name + ".pbp";
+        std::string cmd = std::string{"veripb "} + veripb_checked_deletion_flag + " " + proof_name + ".opb " + pbp;
+        println(std::cerr, "$ {}", cmd);
+
+        // veripb writes its verdict and its errors to different streams, and
+        // both are needed, so take them together.
+        cmd += " 2>&1";
+        std::string output;
+#ifdef _WIN32
+        FILE * p = ::_popen(cmd.c_str(), "r");
+#else
+        FILE * p = ::popen(cmd.c_str(), "r");
+#endif
+        if (! p)
+            return "veripb could not be run at all";
+        char buf[8192];
+        size_t n;
+        while ((n = std::fread(buf, 1, sizeof buf, p)) > 0)
+            output.append(buf, n);
+#ifdef _WIN32
+        auto status = ::_pclose(p);
+#else
+        auto status = ::pclose(p);
+#endif
+        print(std::cerr, "{}", output);
+        bool accepted = (EXIT_SUCCESS == status);
+
+        if (std::holds_alternative<VeripbAccepts>(expected))
+            return accepted ? std::nullopt : std::optional<std::string>{"veripb rejected " + pbp + ", which should have verified"};
+
+        if (accepted)
+            return "veripb accepted " + pbp +
+                ", but this proof was deliberately corrupted, so the honest derivation it was made from has slack in it";
+
+        // VeriPB's main branch says "Checking error at NAME.pbp:LINE", and its
+        // 3.0.2 release "Verification error at", so match the common tail; 3.0.2
+        // also says "Parsing error at" for a proof that does not parse, which is
+        // not a failed step.
+        auto failed_a_step = false;
+        auto step_marker = "error at " + pbp + ":";
+        for (std::string::size_type line_start = 0; line_start < output.size();) {
+            auto line_end = output.find('\n', line_start);
+            if (line_end == std::string::npos)
+                line_end = output.size();
+            std::string_view line{output.data() + line_start, line_end - line_start};
+            if (line.find(step_marker) != std::string_view::npos && line.find("Parsing error at") == std::string_view::npos)
+                failed_a_step = true;
+            line_start = line_end + 1;
+        }
+        if (! failed_a_step)
+            return "veripb rejected " + pbp +
+                " without failing a step of it, so the corruption was never actually checked. Either the proof is missing, malformed or "
+                "unreadable, or veripb is missing, crashed, or has changed the wording of its error header (see its output above)";
+
+        auto reason = std::get<VeripbRejects>(expected).reason;
+        if (output.find(reason) == std::string::npos)
+            return "veripb rejected " + pbp + ", but not for the expected reason: wanted output containing \"" + std::string{reason} + "\"";
+
+        println(std::cerr, "veripb rejected {} for the expected reason", pbp);
+        return std::nullopt;
+    }
+
+    ///@}
 
     /**
      * \name Runtime caps for pathological random test cases

@@ -42,6 +42,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -1438,28 +1439,29 @@ auto main(int argc, char * argv[]) -> int
     // is a perfectly sound proof step --- it lands on a line that is not the one
     // the derived constraint was told it had, and only the `ia` step pinning
     // each row's content notices that.
-    for (const auto & [what, inst, mutation] :
-        {std::tuple<string, Instance, CumulativeStrengtheningMutation>{"one better", pack, cumulative_strengthening_mutation::ClaimOneBetter{}},
-            std::tuple<string, Instance, CumulativeStrengtheningMutation>{"bogus divisor", pack, cumulative_strengthening_mutation::BogusDivisor{}},
-            // The pairwise conflict test is the only thing standing between the
-            // heights rule and an unsound constraint, and this is what says so.
-            // Run on the control fixture, where the tallest task misses the
-            // test by exactly one: raising it anyway claims that a task of
-            // height four cannot run beside one of height two under a capacity
-            // of six, which it plainly can.
-            std::tuple<string, Instance, CumulativeStrengtheningMutation>{
-                "unentitled raise", r1_control, cumulative_strengthening_mutation::RaiseUnentitled{}},
-            // And the raise itself, claimed one coefficient too high: the
-            // proof by contradiction's closing RUP then has nothing to refute,
-            // because with the raised task on and every other task off the
-            // negated claim still holds.
-            std::tuple<string, Instance, CumulativeStrengtheningMutation>{
-                "raise too fast", knapsack_raise, cumulative_strengthening_mutation::RaiseTooFast{}}}) {
+    for (const auto & [what, inst, mutation, reason] : {std::tuple<string, Instance, CumulativeStrengtheningMutation, std::string_view>{"one better",
+                                                            pack, cumulative_strengthening_mutation::ClaimOneBetter{}, GCS_VERIPB_REJECTS_RUP},
+             std::tuple<string, Instance, CumulativeStrengtheningMutation, std::string_view>{
+                 "bogus divisor", pack, cumulative_strengthening_mutation::BogusDivisor{}, GCS_VERIPB_REJECTS_HINT},
+             // The pairwise conflict test is the only thing standing between the
+             // heights rule and an unsound constraint, and this is what says so.
+             // Run on the control fixture, where the tallest task misses the
+             // test by exactly one: raising it anyway claims that a task of
+             // height four cannot run beside one of height two under a capacity
+             // of six, which it plainly can.
+             std::tuple<string, Instance, CumulativeStrengtheningMutation, std::string_view>{
+                 "unentitled raise", r1_control, cumulative_strengthening_mutation::RaiseUnentitled{}, GCS_VERIPB_REJECTS_HINT},
+             // And the raise itself, claimed one coefficient too high: the
+             // proof by contradiction's closing RUP then has nothing to refute,
+             // because with the raised task on and every other task off the
+             // negated claim still holds.
+             std::tuple<string, Instance, CumulativeStrengtheningMutation, std::string_view>{
+                 "raise too fast", knapsack_raise, cumulative_strengthening_mutation::RaiseTooFast{}, GCS_VERIPB_REJECTS_RUP}}) {
         const string name = "cumulative_strengthening_mutation";
         solve_it(inst, Setup{.mutation = mutation}, make_optional(name), false);
 
-        if (run_veripb(name + ".opb", name + ".pbp"))
-            fail("veripb accepted the " + what + " mutation");
+        if (auto problem = veripb_verdict_differs(name, VeripbRejects{reason}))
+            fail("the " + what + " mutation: " + *problem);
         println(cerr, "veripb rejected the {} mutation, as expected", what);
         dispose_of_proof_files(name);
     }

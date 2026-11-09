@@ -175,8 +175,8 @@ namespace
         return pol.emit(logger, ProofLevel::Temporary);
     }
 
-    auto check_route_b(
-        const vector<Rect> & rects, int t, int x_hi, int y_hi, const string & tag, bool expect_accepted, bool guarded_separations = true) -> void
+    auto check_route_b(const vector<Rect> & rects, int t, int x_hi, int y_hi, const string & tag, const VeripbVerdict & expected,
+        bool guarded_separations = true) -> void
     {
         auto proof_name = "route_b_probe_" + tag;
         ProofOptions proof_options{proof_name};
@@ -261,9 +261,8 @@ namespace
         logger.conclude_none();
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_accepted)
-            fail(tag + ": veripb " + (accepted ? "accepted" : "rejected") + " where it should have done the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail(tag + ": " + *problem);
         dispose_of_proof_files(proof_name);
     }
 }
@@ -282,16 +281,16 @@ auto main(int, char *[]) -> int
     for (const auto & r : rects)
         total += r.h;
 
-    check_route_b(rects, 4, 12, total - 1, "tight", true);
+    check_route_b(rects, 4, 12, total - 1, "tight", VeripbAccepts{});
     // The control that says the tight run means something: one unit of slack
     // and the rectangles fit, so the node's bounds are consistent and the
     // conclusion cannot be drawn.
-    check_route_b(rects, 4, 12, total + 1, "slack", false);
+    check_route_b(rects, 4, 12, total + 1, "slack", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
     // And the control that says the new mode is load-bearing: the same
     // instance driven through plain `assume`, which guards the bounds but not
     // the clauses, is rejected --- the gap lemma's case split is left holding
     // the guard it has no goal term to cancel against.
-    check_route_b(rects, 4, 12, total - 1, "unguarded_clauses", false, false);
+    check_route_b(rects, 4, 12, total - 1, "unguarded_clauses", VeripbRejects{GCS_VERIPB_REJECTS_PBC}, false);
 
     println(cerr, "route B probe: the per-firing guarded certificate carries");
     return EXIT_SUCCESS;

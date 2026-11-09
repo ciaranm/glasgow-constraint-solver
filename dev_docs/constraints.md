@@ -1143,6 +1143,15 @@ one, would go unnoticed. When a lane fails on the reason, read the proof (the
 harness keeps it) before changing the `--expect`: the new failure may be real,
 or it may be the mutation no longer doing what its name says.
 
+A test binary that writes a corrupted proof and checks the rejection itself,
+rather than through the harness, makes the same two checks with
+`veripb_verdict_differs()` in `constraints_test_utils.hh`: it takes
+`VeripbRejects{GCS_VERIPB_REJECTS_RUP}` (or another reason), or `VeripbAccepts{}`
+for the honest twin, and returns what went wrong, if anything. Its target needs
+`gcs_expect_veripb_rejections()` in CMake for the reason names to compile.
+Testing only `run_veripb`'s exit status is the weakness the harness check was
+added to remove.
+
 Two things make the difference between a mutation lane that tests something
 and one that does not. Mutate on an instance whose margin is *one* — corrupt a
 proof of a conflict that had three units of slack and the contradiction

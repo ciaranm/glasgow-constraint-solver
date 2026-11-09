@@ -80,7 +80,7 @@ namespace
     /// routine is told the first member has, leaving the row and the claim
     /// alone.
     auto check(const string & name, const vector<Integer> & demands, Integer capacity, const set<size_t> & members, Integer expected_at_most,
-        Integer claim, Integer demand_offset, bool expect_veripb_to_accept) -> void
+        Integer claim, Integer demand_offset, const VeripbVerdict & expected) -> void
     {
         auto proof_name = "am1_from_row_" + name;
         ProofOptions proof_options{proof_name};
@@ -122,9 +122,8 @@ namespace
         logger.conclude_none();
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_veripb_to_accept)
-            fail(name + ": veripb " + (accepted ? "accepted" : "rejected") + " it, expecting the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail(name + ": " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
@@ -187,9 +186,9 @@ auto main(int argc, char * argv[]) -> int
     // another one. The divisor works out to the margin `c_u + c_v - C` on its
     // own, because that margin is at most the larger demand exactly when the
     // smaller one fits under the capacity.
-    check("pair_plain", {6_i, 7_i, 3_i, 2_i}, 10_i, {0, 1}, 1_i, 1_i, 0_i, true);
+    check("pair_plain", {6_i, 7_i, 3_i, 2_i}, 10_i, {0, 1}, 1_i, 1_i, 0_i, VeripbAccepts{});
     // Margin of exactly one, with nothing else in the row to hide behind.
-    check("pair_margin_one", {6_i, 5_i}, 10_i, {0, 1}, 1_i, 1_i, 0_i, true);
+    check("pair_margin_one", {6_i, 5_i}, 10_i, {0, 1}, 1_i, 1_i, 0_i, VeripbAccepts{});
     // A demand *above* the capacity. The task can never run at all, so the
     // at-most-one is a weak thing to say about it --- but the arithmetic does
     // not care, because saturation caps both coefficients at the margin and the
@@ -197,26 +196,26 @@ auto main(int argc, char * argv[]) -> int
     // need a `c_j <= C` side condition for, and it does not: the condition
     // belongs to clique *discovery*, where a task that can never run would
     // otherwise pad every clique it touches.
-    check("pair_over_capacity", {1_i, 12_i, 4_i}, 10_i, {1, 2}, 1_i, 1_i, 0_i, true);
-    check("pair_both_full", {10_i, 10_i, 1_i}, 10_i, {0, 1}, 1_i, 1_i, 0_i, true);
+    check("pair_over_capacity", {1_i, 12_i, 4_i}, 10_i, {1, 2}, 1_i, 1_i, 0_i, VeripbAccepts{});
+    check("pair_both_full", {10_i, 10_i, 1_i}, 10_i, {0, 1}, 1_i, 1_i, 0_i, VeripbAccepts{});
     println(cerr, "two members give the at-most-one, including over the capacity");
 
     // Three and more, in one step. Where the members share a row this is what
     // to use instead of recovering every pair and folding them: one `pol`
     // rather than `k(k-1)/2` of them plus an induction over them.
-    check("four_sixes", {6_i, 6_i, 6_i, 6_i}, 10_i, {0, 1, 2, 3}, 1_i, 1_i, 0_i, true);
-    check("two_sixes_a_nine", {6_i, 6_i, 9_i}, 10_i, {0, 1, 2}, 1_i, 1_i, 0_i, true);
+    check("four_sixes", {6_i, 6_i, 6_i, 6_i}, 10_i, {0, 1, 2, 3}, 1_i, 1_i, 0_i, VeripbAccepts{});
+    check("two_sixes_a_nine", {6_i, 6_i, 9_i}, 10_i, {0, 1, 2}, 1_i, 1_i, 0_i, VeripbAccepts{});
     // Unbalanced demands push the divisor up until the clique condition fails:
     // `Delta = 17` is not more than `d(|K| - 2) = 18`, so this lands on `<= 2`
     // and an at-most-one has to be reached the long way round. A caller that
     // assumed the bound rather than reading it would claim one here and be
     // wrong, which is what the second of these says.
-    check("unbalanced", {9_i, 6_i, 6_i, 6_i}, 10_i, {0, 1, 2, 3}, 2_i, 2_i, 0_i, true);
-    check("unbalanced_overclaimed", {9_i, 6_i, 6_i, 6_i}, 10_i, {0, 1, 2, 3}, 2_i, 1_i, 0_i, false);
+    check("unbalanced", {9_i, 6_i, 6_i, 6_i}, 10_i, {0, 1, 2, 3}, 2_i, 2_i, 0_i, VeripbAccepts{});
+    check("unbalanced_overclaimed", {9_i, 6_i, 6_i, 6_i}, 10_i, {0, 1, 2, 3}, 2_i, 1_i, 0_i, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     // And with no conflicting pair at all --- 4 + 4 fits under 10 --- the same
     // chain still yields a cardinality cut, which nothing built out of pairwise
     // at-most-ones could ever produce.
-    check("no_conflicting_pair", {4_i, 4_i, 4_i}, 10_i, {0, 1, 2}, 2_i, 2_i, 0_i, true);
+    check("no_conflicting_pair", {4_i, 4_i, 4_i}, 10_i, {0, 1, 2}, 2_i, 2_i, 0_i, VeripbAccepts{});
     println(cerr, "three and more give the clique inequality where the demands allow, and a cardinality cut otherwise");
 
     // The slack, recorded because a caller needs to know it is there. A demand
@@ -227,8 +226,8 @@ auto main(int argc, char * argv[]) -> int
     // no mutation of this arithmetic is a test of it, and a caller that wants
     // its own conclusion checked has to pin that conclusion rather than
     // trusting these lines to be what they look like.
-    check("demand_too_large", {6_i, 7_i, 3_i}, 10_i, {0, 1}, 1_i, 1_i, 1_i, true);
-    check("demand_too_small", {6_i, 7_i, 3_i}, 10_i, {0, 1}, 1_i, 1_i, -1_i, true);
+    check("demand_too_large", {6_i, 7_i, 3_i}, 10_i, {0, 1}, 1_i, 1_i, 1_i, VeripbAccepts{});
+    check("demand_too_small", {6_i, 7_i, 3_i}, 10_i, {0, 1}, 1_i, 1_i, -1_i, VeripbAccepts{});
     println(cerr, "a demand off by one either way still pins, so the pin is about the claim and not the route");
 
     return EXIT_SUCCESS;
