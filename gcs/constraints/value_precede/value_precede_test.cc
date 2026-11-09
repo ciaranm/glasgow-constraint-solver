@@ -128,6 +128,17 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // helper line, on searches that ruled t out of an earlier position by a
     // decision (#1145; see dev_docs/constraints/value_precede.md, rule 1).
     run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{1, 3}, pair{1, 3}, pair{1, 3}, pair{1, 3}, pair{1, 3}});
+    // Whether a search reaches that shape depends on the random branching, so
+    // the fixture alone, under the run's seed, catches a proof without the
+    // helper on removals only for about one seed in ten (seeds 10, 19, 28 and
+    // 33 of 1 to 40). So run it again with the branching seed pinned to 10,
+    // which does reach it, and put the run's own seed back afterwards.
+    {
+        auto run_seed = seed_storage();
+        seed_storage() = 10;
+        run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{1, 3}, pair{1, 3}, pair{1, 3}, pair{1, 3}, pair{1, 3}});
+        seed_storage() = run_seed;
+    }
 
     // Length-2 with the first position forced to t (unsat).
     run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{2, 2}, pair{1, 2}});

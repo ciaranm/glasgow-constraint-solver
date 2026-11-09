@@ -468,7 +468,11 @@ decision's own scan.
   literal of the reason is rejected on all three. Dropping the helper is
   accepted on all three, and is rejected on 4 of seeds 10 to 49, all at a
   removal from the last of five positions, as above. So a fixture that does not
-  vary the search will not show the helper is needed.
+  vary the search will not show the helper is needed. Since #1451 the
+  five-position fixture also runs with its branching seed pinned to 10, so
+  dropping the helper from removals alone is rejected on every seed (40 of
+  seeds 1 to 40, against 4 of 40 without the pinned run): a lane for the
+  helper, though not a registered mutation lane.
 
 ### Rule: s-forced-before-fixed-t
 
