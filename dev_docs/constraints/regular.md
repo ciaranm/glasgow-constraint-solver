@@ -23,7 +23,8 @@
 > linear in the declared width; shared with `MDD`). Commented on by this
 > audit: #1227 (the regex form also builds its alphabet one value at a time),
 > #364 (`regular` is not the incrementality gold standard; #1338, #1339) and
-> #1120 (`PerCall`'s per-call short-reason flag, the same pattern).
+> #1120 (`PerCall`'s per-call short-reason flag, the same pattern; fixed for
+> `PerCall` too by #1446).
 > Filed since, from review of this document: #1351 (the degree cascade
 > recurses once per layer, so a long sequence exhausts the native stack;
 > shared with `MDD`) and #1352 (`Upfront` and `PerCall` rescan a state's
@@ -463,12 +464,16 @@ unit propagation can recover the sequence variables' bounds, and is rejected
 at `Inferences` and `Backtracking` otherwise (#1330).
 
 **`PerCall`, during search** (every call, `regular_legacy.cc:285-384`): with
-`short_reasons` on, a fresh flag `f ⇔ R` defined by two `red` lines at
-**`ProofLevel::Top`, on every call, whether or not anything is inferred, at
-every assertion level, and never deleted** (the deletion is commented out,
+`short_reasons` on, a flag `f ⇔ R` defined by two `red` lines at
+`ProofLevel::Top`, never deleted (the deletion is commented out,
 `regular_legacy.cc:378-383`); then McIlree's per-edge lemmas, each stated
-under `f` at `Current`. So `PerCall` grows the permanent database by two lines
-per call. [`smart_table.md`](smart_table.md) (#1120) records the same
+under `f` at `Current`. Since #1120 (#1446) `f` is defined only the first time a
+call's lemma or pruning cites it; until then it was defined **on every call,
+whether or not anything was inferred, at every assertion level**, so
+`PerCall` grew the permanent database by two lines per call. On `rdfa 12 6 3
+1`, against main's library, #1446 takes the proof from 134,272 to 127,572
+lines and VeriPB from 11.81 s to 5.13 s at `Off`, and from 32,076 to 24,394
+lines and 4.52 s to 1.42 s at `Inferences`, on the same tree. [`smart_table.md`](smart_table.md) (#1120) records the same
 pattern. #1317 (`Circuit`) records a flag defined on every call too, but at
 `ProofLevel::Current`, so deleted on backtrack. This audit commented on #1120
 with `Regular`'s case.
@@ -1506,10 +1511,9 @@ here.
    when `.` or `[^…]` needs it. Moderate; #841 lists what VeriPB has to accept
    first. The regex alphabet was not filed separately: it is this audit's
    comment on #1227.
-9. **`PerCall`'s short-reason flag on every call**: define it only when
-   something is inferred, or delete it after the call. Small, and the same
-   change `smart_table` (#1120, which this audit commented on) and `Circuit`
-   (#1317) want; not filed separately. Separately, its in-degree
+9. **`PerCall`'s short-reason flag on every call: done** by #1446 (#1120), which
+   defines it on first use; deleting it after the call is still open.
+   Separately, its in-degree
    lemmas' per-value lines name the wrong variable and are dead weight (rule
    2); worth a mutation check before dropping them. Not filed.
 10. **A test lane at the assertion levels**, for every strategy, with views

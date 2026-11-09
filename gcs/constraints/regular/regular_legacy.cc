@@ -100,8 +100,62 @@ namespace
         }
     };
 
+    // The reason every line of a call cites: the whole-scope reason, snapshotted at
+    // the top of the call. With short reasons on, the lines cite a flag defined as
+    // equivalent to it instead, and the flag is defined the first time a line or an
+    // inference asks for it, so a call that justifies nothing writes no definition
+    // (#1120; defined on every call, the flags were most of an enumeration's
+    // checking time). Nothing is inferred before the final pruning loop, so a late
+    // definition reifies the same literals an early one would have.
+    class CallReason
+    {
+    private:
+        const State & _state;
+        ProofLogger * const _logger;
+        ReasonLiterals _full;
+        const bool _short;
+        optional<ReasonLiterals> _short_form;
+
+    public:
+        CallReason(const State & state, ProofLogger * const logger, ReasonLiterals full, bool short_reasons) :
+            _state(state), _logger(logger), _full(std::move(full)), _short(logger && short_reasons)
+        {
+        }
+
+        CallReason(const CallReason &) = delete;
+        auto operator=(const CallReason &) -> CallReason & = delete;
+
+        [[nodiscard]] auto get() -> const ReasonLiterals &
+        {
+            if (! _short)
+                return _full;
+            if (! _short_form) {
+                auto reason_sum = WPBSum{};
+                for (const auto & lit : _full)
+                    reason_sum += 1_i * std::get<ProofLiteral>(lit);
+                // At ProofLevel::Top, and never deleted: see the commented-out
+                // deletion at the end of propagate_regular().
+                auto [reason_short, _line1, _line2] =
+                    _logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "", ProofLevel::Top);
+                _short_form = eager_reason(singleton_reason(reason_short), _state);
+            }
+            return *_short_form;
+        }
+
+        // The reason for the final pruning loop, as one Reason built once (#1353),
+        // moved out of the snapshot (or its flag) since nothing reads it after.
+        [[nodiscard]] auto take_as_reason() -> Reason
+        {
+            if (_short) {
+                (void)get();
+                return Reason{std::move(*_short_form)};
+            }
+            return Reason{std::move(_full)};
+        }
+    };
+
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, const State &,
-        const ReasonLiterals & reason, string comment = "") -> void
+        CallReason & reason, string comment = "") -> void
     {
         if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
             // Trying to cut down on repeated code
@@ -113,13 +167,13 @@ namespace
                 terms += 1_i * lit;
             for (const auto & flag : proof_flags)
                 terms += 1_i * flag;
-            logger->emit_rup_proof_line_under_reason(reason, terms >= 1_i, ProofLevel::Current);
+            logger->emit_rup_proof_line_under_reason(reason.get(), terms >= 1_i, ProofLevel::Current);
         }
     }
 
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars, const long num_states,
         const vector<unordered_map<Integer, set<long>>> & transitions, const vector<long> & final_states,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonLiterals & reason, ProofLogger * const logger)
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, CallReason & reason, ProofLogger * const logger)
     {
         auto num_vars = vars.size();
 
@@ -221,7 +275,7 @@ namespace
     }
 
     auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonLiterals & reason, ProofLogger * const logger) -> void
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, CallReason & reason, ProofLogger * const logger) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
@@ -248,7 +302,7 @@ namespace
     }
 
     auto decrement_indeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonLiterals & reason, ProofLogger * const logger) -> void
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, CallReason & reason, ProofLogger * const logger) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
@@ -311,25 +365,7 @@ namespace
             return;
         }
 
-        ReasonLiterals reason;
-        ProofLine reason_definition_1, reason_definition_2;
-
-        if (logger && short_reasons) {
-            auto reason_sum = WPBSum{};
-            for (const auto & lit : gen_reason) {
-                reason_sum += 1_i * get<ProofLiteral>(lit);
-            }
-            // We will manually delete this later.
-            auto [_reason_short, _line1, _line2] =
-                logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "", ProofLevel::Top);
-            ProofFlag reason_short = _reason_short;
-            reason_definition_1 = _line1;
-            reason_definition_2 = _line2;
-            reason = eager_reason(singleton_reason(reason_short), state);
-        }
-        else {
-            reason = std::move(gen_reason);
-        }
+        CallReason reason{state, logger, std::move(gen_reason), short_reasons};
 
         if (! graph.initialised)
             initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state, reason, logger);
@@ -372,13 +408,17 @@ namespace
         // One Reason for every pruning: infer_not_equal takes a const Reason &, and
         // passing the ReasonLiterals itself converted it, copying the whole literal
         // vector once per removed value, Theta(n^2) over a call with proofs off or
-        // short reasons off (#1353). Nothing reads the literals after this.
-        const Reason inference_reason{std::move(reason)};
+        // short reasons off (#1353). Built at the first pruning, so that a call that
+        // prunes nothing defines no short-reason flag for it (#1120).
+        optional<Reason> inference_reason;
         for (size_t i = 0; i < graph.states_supporting.size(); i++) {
             for (auto val : state.each_value_mutable(vars[i])) {
                 // Clean up domains
-                if (graph.states_supporting[i][val].empty())
-                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{hints::RegularLegacy{owner}}, inference_reason);
+                if (graph.states_supporting[i][val].empty()) {
+                    if (! inference_reason)
+                        inference_reason.emplace(reason.take_as_reason());
+                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{hints::RegularLegacy{owner}}, *inference_reason);
+                }
             }
         }
 

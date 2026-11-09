@@ -288,9 +288,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   mode: at the `Definitions`, `Links` and `Inferences` levels every removal is
   asserted as a bare unit clause with no reason, and on one enumeration 184 of
   194 are contradicted by later solutions in the same proof. `Circuit` has the
-  same defect from the same change. Also: the default short reasons
-  define a flag on every call, taking one enumeration's checking time from
-  0.8 s to 15.9 s. At equal recursion and solution counts it is 8–23 times
+  same defect from the same change. Also: until #1120 (fixed by #1446), the
+  default short reasons defined a flag on every call, taking one
+  enumeration's checking time from 0.8 s to 15.9 s (1.1 s with the flag
+  made only when needed). At equal recursion and solution counts it is 8–23 times
   slower than the native
   `Lex` and `AtMostOne`, about half of it in allocation, hash lookups and map
   helpers. Not merged with
