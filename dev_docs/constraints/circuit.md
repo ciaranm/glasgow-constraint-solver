@@ -508,19 +508,38 @@ boundary atoms and the `pos_suc_i_0_le` rows whenever `n` is a power of two.
 And a `{0,1}` successor's equality atoms are its bit here and `eq0`/`eq1`
 there (#1193). Label by label, opbdiff finds nothing else.
 
-Changing the rows' contents needed no change to a justification. Prevent's
-cycle sums, and every `SCC` step between two nodes other than 0, read the same
-rows either way. Edges out of node 0 now have the shape `pos[j] − pos[i] = 1`
-that the general shifted step assumes, where the old rows lacked `pos[0]`. The
-one step that sums a row into node 0 under a shifted root is the
-`next_node == 0` case of `prove_pos_and_node_implies_next_node`. Its two `pol`
-lines were written for the procedure's `pos[0] − pos[i] = 1 − n`, and over
-`pos[i] = n − 1` they no longer telescope. The RUP after them closes by unit
-propagation alone, since `succ[i] = 0` pins `pos[i]` exactly and `pos0eq0`
-pins `pos[0]`. That was already the case under the old rows: with both `pol`
-lines removed, the proofs that take this step verify under either form. Whether to
-rebuild the telescope (old `_ge` = new `_le` + `pos[0] ≥ 0`; old `_le` is
-implied by new `_ge` + `pos0eq0`) or drop the two lines is left open.
+Changing the rows' contents changed one justification. Prevent's cycle sums,
+and every `SCC` step between two nodes other than 0, read the same rows
+either way. Edges out of node 0 now have the shape `pos[j] − pos[i] = 1` that
+the general shifted step assumes, where the old rows lacked `pos[0]`. The one
+step that sums a row into node 0 under a shifted root `r` is the
+`next_node == 0` case of `prove_pos_and_node_implies_next_node`. It used to
+emit two `pol` lines, written for the procedure's `pos[0] − pos[i] = 1 − n`,
+which over `pos[i] = n − 1` no longer telescoped. #1459 dropped them, since
+the step is unit propagation from the database. It keeps the two RUP lines
+that settle the precedence flags, `succ[i] = 0 ⇒ ¬d[r][i]` and
+`succ[i] = 0 ⇒ d[r][0]`. The target `q[r][i] = k − 1 ∧ succ[i] = 0 ⇒
+q[r][0] = k` then propagates as follows:
+
+- `pos0eq0` fixes `pos[0] = 0`;
+- `pos_suc_i_0_ge` and `pos<i>lt<n>` fix `pos[i] = n − 1`;
+- `q[r][i]`'s two `ge` definitions, with `d[r][i]` false, fix
+  `pos[r] = n − k`;
+- with every term of `q[r][0]`'s sum fixed, its definitions force `eq<k>`.
+
+Every "fix" here is a bit-sum held between equal bounds. Unit propagation
+fixes all its bits at any width, from the top bit down: whichever bound has
+less slack than the top bit's coefficient forces it, and both bounds then
+reduce to the same problem one bit narrower. By the same descent, bounds
+`≥ v` and `≤ v − 1` always conflict, which is how the first RUP line refutes
+`pos[r] ≥ n` against `pos<r>lt<n>`. So nothing here depends on `n` being
+small. A consultant's exact propagation simulator agreed over every `(r, i, k)`
+for `n` = 3 to 35, and at sampled `r, i, k` around powers of two up to 1,025;
+VeriPB checked hand-built instances up to `n` = 65,537. Two rows are
+load-bearing: `pos0eq0` for the target, and `pos<r>lt<n>` for the first RUP
+line whenever `n` is not a power of two. A hint for this step must cite both.
+(The old rows needed no `pol` here either. Removing the two lines left every
+proof that took the step verifying.)
 
 `n = 1` also chain-verifies with its one solution. Its position is the empty sum,
 as in cake.

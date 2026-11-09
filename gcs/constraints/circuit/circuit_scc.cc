@@ -563,39 +563,44 @@ namespace
             // Need to document that this always works
             // --- Update 2026, now finally documented in my thesis :-)
             if (next_node != ctx.root) {
-                PolBuilder p_line;
-                // aaaa so many edge cases
                 if (next_node != 0) {
+                    PolBuilder p_line;
                     p_line.add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line)
                         .add(root_greater_than.at(node).forwards_reif_line)
                         .add(root_greater_than.at(next_node).backwards_reif_line)
-                        .divide_by(Integer{2 * n});
+                        .divide_by(Integer{2 * n})
+                        .multiply_by(Integer{n})
+                        .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line)
+                        .add(shifted_pos_geq.at(node).at(count - 1).forwards_reif_line)
+                        .add(shifted_pos_geq.at(next_node).at(count).backwards_reif_line)
+                        .emit(ctx.logger, ProofLevel::Temporary);
+
+                    PolBuilder{}
+                        .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line)
+                        .add(root_greater_than.at(node).backwards_reif_line)
+                        .add(root_greater_than.at(next_node).forwards_reif_line)
+                        .divide_by(Integer{2 * n})
+                        .multiply_by(Integer{n})
+                        .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line)
+                        .add(shifted_pos_geq.at(node).at(count).backwards_reif_line)
+                        .add(shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line)
+                        .emit(ctx.logger, ProofLevel::Temporary);
                 }
                 else {
-                    p_line.add(ctx.logger.emit_rup_proof_line(
+                    // The edge into node 0: succ[node] = 0 pins pos[node] = n - 1
+                    // (pos_suc_node_0_ge with pos<node>lt<n>), pos0eq0 pins pos[0] = 0,
+                    // and these two lines settle the precedence flags, so the
+                    // shifted-position bounds pin pos[r] and then q[r][0] outright.
+                    // Unit propagation fixes every bit of a bit-sum held between
+                    // equal bounds, at any width, so the RUP below needs no pol
+                    // (#1459; dev_docs/constraints/circuit.md, Cake conformity).
+                    ctx.logger.emit_rup_proof_line(
                         WPBSum{} + 1_i * ! (ctx.succ[node] == Integer{next_node}) + 1_i * ! root_greater_than.at(node).flag >= 1_i,
-                        ProofLevel::Temporary));
-                    p_line.add(ctx.logger.emit_rup_proof_line(
+                        ProofLevel::Temporary);
+                    ctx.logger.emit_rup_proof_line(
                         WPBSum{} + 1_i * ! (ctx.succ[node] == Integer{next_node}) + 1_i * root_greater_than.at(next_node).flag >= 1_i,
-                        ProofLevel::Temporary));
+                        ProofLevel::Temporary);
                 }
-
-                p_line.multiply_by(Integer{n})
-                    .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line)
-                    .add(shifted_pos_geq.at(node).at(count - 1).forwards_reif_line)
-                    .add(shifted_pos_geq.at(next_node).at(count).backwards_reif_line)
-                    .emit(ctx.logger, ProofLevel::Temporary);
-
-                PolBuilder{}
-                    .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line)
-                    .add(root_greater_than.at(node).backwards_reif_line)
-                    .add(root_greater_than.at(next_node).forwards_reif_line)
-                    .divide_by(Integer{2 * n})
-                    .multiply_by(Integer{n})
-                    .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line)
-                    .add(shifted_pos_geq.at(node).at(count).backwards_reif_line)
-                    .add(shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line)
-                    .emit(ctx.logger, ProofLevel::Temporary);
 
                 ctx.logger.emit_proof_comment(format("Next implies: succ[{}] = {} and {} = {} => {} = {}", node, next_node,
                     shifted_pos_eq[node][count - 1].comment_name, count - 1, shifted_pos_eq[next_node][count].comment_name, count));
