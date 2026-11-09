@@ -743,9 +743,9 @@ Facts that hold for every rule:
   and the conclusion can be `z ≤ t*`, as it now is. The derivation is unchanged but for the
   guard literal: each cross-site clause's pair has `D[a,b] < t`, hence `D[a,b]
   ≤ t*`, and the same-site clauses give `z ≤ 0 ≤ t*`.
-  [`min-distance-proofs.md`](../min-distance-proofs.md) argues that `z ≤ t*`
-  is not RUP from `z ≤ t − 1`, which is true, but it never needs to be derived
-  from it.
+  [`min-distance-proofs.md`](../min-distance-proofs.md) now derives `z ≤ t*`
+  directly, and keeps as history the old argument that `z ≤ t*` is not RUP
+  from `z ≤ t − 1`: true, but it never needs to be derived from it.
 
   An experiment build of `c9ceea25` with the guard at `t*`, switched by an
   environment variable, measured it
@@ -762,7 +762,7 @@ Facts that hold for every rule:
   and eight cutting 54 to 57% at 30 sites (seeds 2–4). The pigeonhole shape
   under [Robustness](#robustness-and-limits) fails at the root instead of
   stopping at `z ∈ 1..3`, and the matching test's prototype gets `z ≤ 3` where
-  the test pins `4` (39 recursions to 26). Grids do not change: rounded grid
+  the test then pinned `4` (39 recursions to 26). Grids do not change: rounded grid
   distances are consecutive integers, so `t* = t − 1`. Every proof the
   experiment wrote verified: the instances above, and 2,400 random enumerations
   under both `…Match` modes, plain, with a repeated variable and with a negated
@@ -881,7 +881,7 @@ Facts that hold for every rule:
   VeriPB runs on every proof: 135 per run. Seeded.
 - **`min_distance_matching_test`** (`min_distance_matching`): the directed
   prototype (five sites, `D = 5` but `D[0,1] = D[2,3] = 3`, `p = 4`), where only
-  the matching can lower `z`: it checks the root bound drops to 4 under both
+  the matching can lower `z`: it checks the root bound drops to 3 under both
   `…Match` modes and stays at 5 under the other two, that `z = 5` fails at the
   root, and verifies four proofs (`s VERIFIED BOUNDS -3 <= obj <= -3` and the
   infeasible pair).
@@ -1072,7 +1072,6 @@ the same with proofs on or off.
 - **Generalised arc consistency on `x` is out of reach** (independent set).
   `PairSupport` gives pairwise arc consistency only, and treats a repeated
   variable as two.
-- **The matching bound stops short of what it proves** (rule 8).
 - **The matching bound's proof can be rejected** over positions declared
   wider than 100 values (#1224; rule 8). The answers are right.
 - **With proofs, building the model is quadratic in the site pairs** when
@@ -1094,7 +1093,8 @@ the same with proofs on or off.
    and the experiment are under rule 8 (26 to 52% off the tree on 20-site
    random instances with six positions, 5 to 58% with eight, under 8% with
    four, none on grids). The matching test's expected root bound goes
-   from 4 to 3, and `min-distance-proofs.md`'s paragraph on `z ≤ t − 1` goes.
+   from 4 to 3, and `min-distance-proofs.md`'s paragraph on `z ≤ t − 1` is
+   rewritten to explain why `z ≤ t*` need not be derived from it.
    Filed as #1170.
 3. **Stop the ladder at the first level above `z_hi`**, writing that level's
    clause as `m_k ≥ 1` and nothing above it: every higher clause is implied.
