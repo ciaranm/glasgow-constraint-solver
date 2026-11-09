@@ -91,7 +91,7 @@ namespace gcs::innards
         //
         // Called only from the ConstraintID-taking add_labelled_constraint
         // overloads, so it covers the c[id][role] namespace and nothing else. The
-        // variable-encoding namespaces (@i[name][...], @po[index][...]) are out of
+        // variable-encoding namespaces (@i[name][...], @w[X][c][...], @po[index][...]) are out of
         // scope on purpose: those rows may be deleted and re-emitted to keep the
         // proof database small.
         auto claim_labels(const std::vector<std::string> & labels) -> void;
@@ -320,9 +320,12 @@ namespace gcs::innards
          * but the model asserts nothing about them; the caller introduces the
          * variable's meaning inside the proof (see ProofLogger::introduce_bits_of).
          * The bits analogue of NamesAndIDsTracker::create_literals_for_introduced_variable_value.
+         * With a `pb_base`, the variable's bits, atoms and atom labels are named
+         * after it rather than its index (NamesAndIDsTracker::track_variable_pb_base).
          */
-        [[nodiscard]] auto create_proof_only_integer_variable_in_proof(
-            Integer, Integer, const std::string &, InProofBounds = InProofBounds::WhenTheOwnerNeedsThem) -> ProofOnlySimpleIntegerVariableID;
+        [[nodiscard]] auto create_proof_only_integer_variable_in_proof(Integer, Integer, const std::string &,
+            InProofBounds = InProofBounds::WhenTheOwnerNeedsThem, const std::optional<std::string> & pb_base = std::nullopt)
+            -> ProofOnlySimpleIntegerVariableID;
 
         /**
          * Register a bits encoding for an already-state-allocated integer variable

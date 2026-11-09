@@ -376,8 +376,8 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
     return id;
 }
 
-auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Integer upper, const string & name, InProofBounds bounds)
-    -> ProofOnlySimpleIntegerVariableID
+auto ProofModel::create_proof_only_integer_variable_in_proof(
+    Integer lower, Integer upper, const string & name, InProofBounds bounds, const optional<string> & pb_base) -> ProofOnlySimpleIntegerVariableID
 {
     // A bits-encoded proof-only variable whose encoding is NOT emitted to the OPB:
     // the bits are registered (named, referenceable) but the model asserts nothing
@@ -387,6 +387,8 @@ auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Inte
     // what makes it chain-portable against cake_pb_cp's OPB. This mirrors the
     // direct-encoding create_literals_for_introduced_variable_value, in bits.
     ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variable_nr++};
+    if (pb_base)
+        names_and_ids_tracker().track_variable_pb_base(id, *pb_base);
     register_bits_variable_encoding(id, lower, upper, name);
     // No OPB rows means the [lo, hi] bounds are not a trivial consequence of the
     // model at the point a need_gevar boundary pin would want them: the pin is a

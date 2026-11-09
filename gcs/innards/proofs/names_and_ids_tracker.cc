@@ -457,6 +457,8 @@ struct NamesAndIDsTracker::Imp
     unordered_map<ProofFlag, XLiteral, HashProofFlag> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
+    // PB name bases given by track_variable_pb_base; see pb_base_of.
+    map<SimpleOrProofOnlyIntegerVariableID, string> pb_bases;
     // The PB-file rendering of every allocated XLiteral, indexed 2 * id +
     // negated (ids are allocated sequentially from 1), so rendering a
     // literal is an index, not a lookup.
@@ -1269,9 +1271,21 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
 
 auto NamesAndIDsTracker::definitional_label_base(const SimpleOrProofOnlyIntegerVariableID & id) const -> string
 {
+    if (auto it = _imp->pb_bases.find(id); it != _imp->pb_bases.end())
+        return it->second;
     return visit(overloaded{                                                                              //
                      [&](const SimpleIntegerVariableID &) -> string { return "i[" + name_of(id) + "]"; }, //
                      [&](const ProofOnlySimpleIntegerVariableID & pid) -> string { return "po[" + to_string(pid.index) + "]"; }},
+        id);
+}
+
+auto NamesAndIDsTracker::pb_base_of(const SimpleOrProofOnlyIntegerVariableID & id) const -> string
+{
+    if (auto it = _imp->pb_bases.find(id); it != _imp->pb_bases.end())
+        return it->second;
+    return visit(overloaded{                                                                                  //
+                     [&](const SimpleIntegerVariableID &) -> string { return format("i[{}]", name_of(id)); }, //
+                     [&](const ProofOnlySimpleIntegerVariableID & pid) -> string { return format("p[{}_{}]", pid.index, name_of(id)); }},
         id);
 }
 
@@ -1978,21 +1992,28 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     if (view.then_add != 0_i)
         name += "_plus_" + to_string(view.then_add.raw_value);
 
+    // In the PB files a view is named after the term it stands for, `w[X][c]` for
+    // X + c and `w[-X][c]` for -X + c, whatever the offset: never after the order
+    // in which proof-only variables happened to be created, which cake_pb_cp
+    // cannot know. Views are registered once each, so this is unique. ('+' is
+    // not legal in a VeriPB name, hence the sign on X.)
+    string pb_base = format("w[{}{}][{}]", view.negate_first ? "-" : "", name_of(view.actual_variable), view.then_add.to_string());
+
     // Bnd(W) is not written to the OPB: it is a consequence of two rows that are
     // (the view link below and the underlying's own bound rows), so as a model
     // axiom it would be an OPB row cake_pb_cp has no reason to reproduce --- the
     // objection create_proof_only_integer_variable_in_proof's comment already
     // makes for a bit-sum introduced inside the proof. Derived by pol at the top
     // of the proof instead, below.
-    auto v_id = _imp->model->create_proof_only_integer_variable_in_proof(v_lo, v_hi, name, ProofModel::InProofBounds::BeforeTheFirstAtom);
+    auto v_id = _imp->model->create_proof_only_integer_variable_in_proof(v_lo, v_hi, name, ProofModel::InProofBounds::BeforeTheFirstAtom, pb_base);
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
 
-    // Views must be defined properly in the model. Cake has no view variables, so
-    // there is no cake label to match: invent one named after the view, referenced
-    // by label rather than line number.
+    // Views must be defined properly in the model, by a link pair labelled after
+    // the view, @w[X][c][le] and @w[X][c][ge], and referenced by label rather
+    // than line number.
     auto [link_le, link_ge] = _imp->model->add_labelled_constraint(
-        "c[" + name + "][viewle]", "c[" + name + "][viewge]", WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
+        pb_base + "[le]", pb_base + "[ge]", WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
 
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
@@ -2573,17 +2594,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     // VeriPB variable names and @labels (VeriPB-dev #191).
     string value_name = value.to_string();
 
-    overloaded{
-        [&](const SimpleIntegerVariableID & id) -> void {
-            string name = format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
-            store_xlit_names(result, name);
-        }, //
-        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-            string name = format("p[{}_{}][{}{}]", id.index, name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
-            store_xlit_names(result, name);
-        } //
-    }
-        .visit(id);
+    store_xlit_names(result, format("{}[{}{}]", pb_base_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name));
 
     if (_imp->variables_map_file) {
         try {
@@ -2623,17 +2634,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     // VeriPB variable names and @labels (VeriPB-dev #191).
     auto value_name = [](Integer v) { return v.to_string(); };
 
-    overloaded{
-        [&](const SimpleIntegerVariableID & id) -> void {
-            string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
-            store_xlit_names(result, name);
-        }, //
-        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-            string name = format("p[{}_{}][in{}_{}]", id.index, name_of(id), value_name(lo), value_name(hi));
-            store_xlit_names(result, name);
-        } //
-    }
-        .visit(id);
+    store_xlit_names(result, format("{}[in{}_{}]", pb_base_of(id), value_name(lo), value_name(hi)));
 
     if (_imp->variables_map_file) {
         try {
@@ -2698,12 +2699,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
-    string name = name_override
-        ? *name_override
-        : visit(overloaded{                                                                                 //
-                    [&](const SimpleIntegerVariableID & id) { return format("i[{}][sign]", name_of(id)); }, //
-                    [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][sign]", id.index, name_of(id)); }},
-              id);
+    string name = name_override ? *name_override : format("{}[sign]", pb_base_of(id));
     store_xlit_names(result, name);
 
     if (_imp->variables_map_file) {
@@ -2742,12 +2738,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(
     // name_override lets a proof-only variable's bits be named in a caller-chosen
     // scheme (cake_pb_cp's value flags) rather than the default p[index_name][b];
     // the literal is still the variable's bit, only named.
-    string name = name_override
-        ? *name_override
-        : visit(overloaded{                                                                                       //
-                    [&](const SimpleIntegerVariableID & id) { return format("i[{}][b{}]", name_of(id), power); }, //
-                    [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][b{}]", id.index, name_of(id), power); }},
-              id);
+    string name = name_override ? *name_override : format("{}[b{}]", pb_base_of(id), power);
     store_xlit_names(result, name);
 
     if (_imp->variables_map_file) {
@@ -2782,6 +2773,11 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(
 auto NamesAndIDsTracker::track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const string & name) -> void
 {
     _imp->id_names.emplace(id, name);
+}
+
+auto NamesAndIDsTracker::track_variable_pb_base(SimpleOrProofOnlyIntegerVariableID id, const string & base) -> void
+{
+    _imp->pb_bases.emplace(id, base);
 }
 
 auto NamesAndIDsTracker::track_variable_name(ProofFlag id, const string & name) -> void

@@ -94,10 +94,18 @@ namespace gcs::innards
         // The @label base for a variable's encoding definitions (bounds, ge/eq
         // atom reifications): `i[name]` for a real variable (matching cake_pb_cp,
         // including vector names like `i[scene[0]]` -- veripb's @label parser
-        // accepts the nested brackets), `po[index]` for a proof-only variable
-        // (which cake never sees, so the invented index-keyed base just has to be
-        // unique -- proof-only names are not). Callers append `[role]`.
+        // accepts the nested brackets), the variable's own PB base for one given
+        // track_variable_pb_base (a view's `w[X][c]`), and `po[index]` for any
+        // other proof-only variable (which cake never sees, so the invented
+        // index-keyed base just has to be unique -- proof-only names are not).
+        // Callers append `[role]`.
         [[nodiscard]] auto definitional_label_base(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::string;
+
+        // What a variable's bits and atoms are named after in the PB files:
+        // `i[name]` for a real variable, `p[index_name]` for a proof-only one,
+        // unless track_variable_pb_base gave it a base of its own. Callers
+        // append `[b0]`, `[ge5]` and so on.
+        [[nodiscard]] auto pb_base_of(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::string;
 
         // Emit containment edges between a newly-introduced literal [lo, hi] and its
         // immediate neighbours in the containment order among the existing range and eq
@@ -1101,6 +1109,16 @@ namespace gcs::innards
          * Track a human-readable name for a variable.
          */
         auto track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const std::string &) -> void;
+
+        /**
+         * Name a variable's bits, atoms and atom labels after `base` rather than
+         * the default `p[index_name]` and `po[index]`. A view variable is named
+         * this way, as `w[X][c]`, so that its names depend only on the view and
+         * not on the order in which proof-only variables were created: cake_pb_cp
+         * has to be able to write the same names from the `.scp` alone. Must be
+         * called before any of the variable's bits or atoms is named.
+         */
+        auto track_variable_pb_base(SimpleOrProofOnlyIntegerVariableID id, const std::string & base) -> void;
 
         /**
          * Track a human-readable name for a variable.
