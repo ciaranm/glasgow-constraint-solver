@@ -476,7 +476,10 @@ against the solver's own OPB.
   `pos[i] = j`, at `ProofLevel::Top`.
 - **Kept for the rest of the proof** (`ProofLevel::Top`, cached so as never to
   be re-derived): `Circuit`'s precedence flags `d[r][i]` ("`pos[r] > pos[i]`",
-  defined by redundance with a subproof that the two positions differ), its
+  defined by redundance with a subproof that the two positions differ; until
+  #1388 the name took its first index from whichever walk root was in use
+  when the flag was first created, not from `r`, so a name could misstate the
+  comparison), its
   shifted-position flags `q[r][i]ge<k>` and `q[r][i]eq<k>` (the thesis's
   `dist(r, i)`), the "not both" pairs and the at-most-ones over them;
   `SubCircuit`'s per-value at-most-ones and at-least-ones, and its
