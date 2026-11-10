@@ -1292,6 +1292,12 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(eqvar_polarity_test PRIVATE glasgow_constraint_solver)
     add_test(NAME eqvar_polarity_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:eqvar_polarity_test>)
 
+    add_executable(abbreviate_reason_test innards/proofs/abbreviate_reason_test.cc)
+    target_link_libraries(abbreviate_reason_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME abbreviate_reason_test COMMAND $<TARGET_FILE:abbreviate_reason_test>)
+
     add_executable(flag_bridge_test innards/proofs/flag_bridge_test.cc)
     target_link_libraries(flag_bridge_test PRIVATE glasgow_constraint_solver)
     # Verifies (and deliberately fails to verify) its own proofs internally, so
@@ -1345,7 +1351,7 @@ if(GCS_BUILD_TESTS)
     # may be told to expect (gcs_expect_veripb_rejections, top-level
     # CMakeLists.txt).
     foreach(target
-            am1_from_pairs_test am1_from_row_test comparator_network_test cumulative_strengthening_presolver_test
+            abbreviate_reason_test am1_from_pairs_test am1_from_row_test comparator_network_test cumulative_strengthening_presolver_test
             derived_cumulative_test disjunctive_2d_presolver_test flag_bridge_test inferred_cumulative_presolver_test
             inferred_disjunctive_presolver_test kd_relaxation_probe_test lifted_cover_cut_test route_a_probe_test
             route_b_probe_test subset_sum_strengthening_test)
