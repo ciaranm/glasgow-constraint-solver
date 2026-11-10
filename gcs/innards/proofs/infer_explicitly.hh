@@ -77,6 +77,19 @@ namespace gcs::innards
     }
 
     /**
+     * \brief Run the wrapped emit with the reason abbreviated.
+     *
+     * \ingroup Innards
+     * \sa WithAbbreviatedReason
+     */
+    template <typename Emit_>
+    auto emit_justification(ProofLogger & logger, const WithAbbreviatedReason<Emit_> & wrapped, const ReasonLiterals & reason) -> void
+    {
+        ProofLogger::AbbreviateReason abbreviate{logger, reason};
+        emit_explicit_steps(logger, wrapped.emit, reason);
+    }
+
+    /**
      * \brief The mode-dispatched back end for a JustifyExplicitly inference.
      *
      * The explicit-steps counterpart to ProofLogger::infer's plain arms, taking the

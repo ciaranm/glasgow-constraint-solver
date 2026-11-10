@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <gcs/exception.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/power.hh>
@@ -16,6 +17,7 @@
 #include <gcs/interval_set.hh>
 #include <gcs/proof.hh>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
@@ -220,6 +222,63 @@ struct ProofLogger::Imp
     // one-term sum per logged inference. Safe to reuse because nothing
     // reachable from an emission re-enters infer().
     WPBSumLE unit_buffer{{}, -1_i};
+
+    // What assume_current_bounds recorded about one variable: its bounds at
+    // the time, and which of `x >= lower`, `x < upper + 1` and `x = lower`
+    // (when fixed) a reason may leave out. A side that had moved off its
+    // declared bound is one the search derived, and gets a unit line of its
+    // own the first time a reason leaves it out. A side still at its declared
+    // bound may be left out once order_literal_holds_at_top says so, and its
+    // unit, if any, is the boundary pin. That answer can change from no to
+    // yes, because the pin is written when the bound's atom is first created,
+    // which is often the first time a reason names it. So a declared side
+    // whose atom does not exist yet stays a candidate (lower_maybe) and is
+    // asked again when a reason names it; once its atom exists without a pin
+    // the answer is final. Deciding as much as possible up front keeps the
+    // check per reason literal to a compare, which matters: it runs for every
+    // literal of every reason.
+    struct AssumedBounds
+    {
+        Integer lower = 0_i, upper = -1_i;
+        bool lower_ok = false, upper_ok = false, equal_ok = false;
+        bool lower_maybe = false, upper_maybe = false;
+        bool lower_moved = false, upper_moved = false;
+        optional<ProofLine> lower_unit, upper_unit, equal_unit;
+    };
+
+    // One assume_current_bounds call, indexed by SimpleIntegerVariableID. It
+    // lasts until its proof level is forgotten, since the units it writes and
+    // the lines they are derived from live at that level.
+    struct AssumptionFrame
+    {
+        int level;
+        vector<AssumedBounds> by_variable;
+        vector<ReasonLiteralFilter::Candidates> candidates;
+    };
+
+    vector<AssumptionFrame> assumption_frames;
+
+    // How many KeepAssumedReasonLiterals are alive.
+    int keep_assumed_reason_literals = 0;
+
+    // One per live AbbreviateReason, innermost last.
+    struct AbbreviatedReason
+    {
+        // The temporary level the guarded lines go to, and so the level the
+        // flag's definition is written at.
+        int level;
+        // The guard's caller owns it, and outlives the guard.
+        const ReasonLiterals * reason;
+        // Whether the definition has been written, or the reason found too
+        // small to be worth one. Both are undone if the level is forgotten.
+        bool decided = false;
+        ReasonLiterals as_flag{};
+        std::optional<ProofLine> forward{};
+        // Unit lines for root-fixed literals left out of the definition, which
+        // a hinted RUP needs before the definition's own line.
+        vector<ProofLine> units{};
+    };
+    vector<AbbreviatedReason> abbreviated_reasons;
 
     [[nodiscard]] auto unit_holds(const Literal & lit) -> const WPBSumLE &
     {
@@ -645,10 +704,297 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     return line;
 }
 
+// Leaves out of a reason the literals assume_current_bounds made units of.
+// With hinted set, the line is a hinted RUP, which propagates only over its
+// hints, so a literal is left out only if there is a unit line to add to them.
+class ProofLogger::AssumedReasonLiteralFilter : public ReasonLiteralFilter
+{
+private:
+    ProofLogger & _logger;
+    Imp::AssumptionFrame & _frame;
+    bool _hinted;
+
+    // may_write: the bound was moved by the search, so its unit is ours to
+    // write. Otherwise it is a declared bound, whose unit is the boundary pin
+    // if there is one; unit propagation needs no line for it, but a hinted RUP
+    // needs a line to cite.
+    auto use(optional<ProofLine> & unit, bool may_write, const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool
+    {
+        if (! unit) {
+            if (! may_write)
+                return ! _hinted;
+            // A line derived inside a subproof does not outlive its `qed`.
+            if (_logger._imp->subproof_depth > 0)
+                return false;
+            unit = _logger.emit_assumed_unit(cond, _frame.level);
+        }
+        if (_hinted)
+            extra_hints.push_back(*unit);
+        return true;
+    }
+
+    // A declared side not yet known to be omittable: ask the tracker again.
+    // Once the bound's atom exists without a pin it never will be, so stop
+    // offering it as a candidate.
+    auto confirm(
+        bool & ok, bool & maybe, optional<ProofLine> & unit, const VariableConditionFrom<SimpleIntegerVariableID> & cond, Integer & candidate) -> bool
+    {
+        if (! maybe)
+            return false;
+        auto & tracker = _logger.names_and_ids_tracker();
+        if (tracker.order_literal_holds_at_top(cond.var, cond.op, cond.value)) {
+            ok = true;
+            maybe = false;
+            // The pin is keyed by the ge cut, which for `x < ub + 1` is ub + 1:
+            // the condition's value either way.
+            unit = tracker.boundary_pin_line(cond.var, cond.value);
+            return true;
+        }
+        if (tracker.find_xliteral_for(cond)) {
+            maybe = false;
+            candidate = no_value;
+        }
+        return false;
+    }
+
+public:
+    vector<ProofLine> extra_hints;
+
+    AssumedReasonLiteralFilter(ProofLogger & logger, Imp::AssumptionFrame & frame, bool hinted) :
+        ReasonLiteralFilter(frame.candidates), _logger(logger), _frame(frame), _hinted(hinted)
+    {
+    }
+
+    [[nodiscard]] auto omit(const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool override
+    {
+        if (cond.var.index >= _frame.by_variable.size())
+            return false;
+        auto & b = _frame.by_variable[cond.var.index];
+
+        switch (cond.op) {
+            using enum VariableConditionOperator;
+        case GreaterEqual:
+            if (cond.value != b.lower)
+                return false;
+            if (! b.lower_ok && ! confirm(b.lower_ok, b.lower_maybe, b.lower_unit, cond, _frame.candidates[cond.var.index].ge))
+                return false;
+            return use(b.lower_unit, b.lower_moved, cond);
+        case Less:
+            if (cond.value != b.upper + 1_i)
+                return false;
+            if (! b.upper_ok && ! confirm(b.upper_ok, b.upper_maybe, b.upper_unit, cond, _frame.candidates[cond.var.index].lt))
+                return false;
+            return use(b.upper_unit, b.upper_moved, cond);
+        case Equal:
+            if (! b.equal_ok || cond.value != b.lower)
+                return false;
+            return use(b.equal_unit, true, cond);
+        default: return false;
+        }
+    }
+};
+
+auto ProofLogger::emit_assumed_unit(const VariableConditionFrom<SimpleIntegerVariableID> & cond, int level) -> ProofLine
+{
+    LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
+    auto & unit_line = lease.buffer();
+    unit_line += "rup ";
+    emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * static_cast<IntegerVariableCondition>(cond) >= 1_i, unit_line, EnsureNames::Yes);
+    unit_line += ";";
+    write_indent();
+    _imp->proof << unit_line << '\n';
+    auto line = advance_proof_line_number();
+    _imp->proof_lines_by_level.at(level).insert_at_end(line.number);
+    return line;
+}
+
+auto ProofLogger::assume_current_bounds(const State & state) -> void
+{
+    if (_imp->assertion_level != AssertionLevel::Off)
+        return;
+
+    for ([[maybe_unused]] const auto & guess : state.guesses())
+        throw UnexpectedException{"assume_current_bounds called with a guess in force"};
+
+    auto level = _imp->active_proof_level;
+
+    // Calling again at the same level (the root of the next restart pass)
+    // replaces the frame, but a unit for a bound that has not moved since is
+    // still there to be cited.
+    optional<Imp::AssumptionFrame> previous;
+    while (! _imp->assumption_frames.empty() && _imp->assumption_frames.back().level >= level) {
+        if (_imp->assumption_frames.back().level == level)
+            previous = std::move(_imp->assumption_frames.back());
+        _imp->assumption_frames.pop_back();
+    }
+
+    Imp::AssumptionFrame frame{level, {}, {}};
+    auto n = state.what_variable_id_will_be_created_next().index;
+    frame.by_variable.resize(n);
+    frame.candidates.resize(n, {ReasonLiteralFilter::no_value, ReasonLiteralFilter::no_value, ReasonLiteralFilter::no_value});
+    for (decltype(n) i = 0; i < n; ++i) {
+        SimpleIntegerVariableID var{i};
+        auto declared = names_and_ids_tracker().declared_bounds_if_tracked(var);
+        if (! declared)
+            continue;
+        auto [lower, upper] = state.bounds(var);
+        auto & b = frame.by_variable[i];
+        auto & tracker = names_and_ids_tracker();
+        b.lower = lower;
+        b.upper = upper;
+        b.lower_moved = lower > declared->first;
+        b.upper_moved = upper < declared->second;
+        if (b.lower_moved)
+            b.lower_ok = true;
+        else if (tracker.order_literal_holds_at_top(var, VariableConditionOperator::GreaterEqual, lower)) {
+            b.lower_ok = true;
+            b.lower_unit = tracker.boundary_pin_line(var, lower);
+        }
+        else
+            b.lower_maybe = ! tracker.find_xliteral_for(var >= lower);
+        if (b.upper_moved)
+            b.upper_ok = true;
+        else if (tracker.order_literal_holds_at_top(var, VariableConditionOperator::Less, upper + 1_i)) {
+            b.upper_ok = true;
+            // The pin is keyed by the ge cut, which for `x < ub + 1` is ub + 1.
+            b.upper_unit = tracker.boundary_pin_line(var, upper + 1_i);
+        }
+        else
+            b.upper_maybe = ! tracker.find_xliteral_for(var < upper + 1_i);
+        // A variable declared fixed has nothing for the search to derive.
+        b.equal_ok = lower == upper && (b.lower_moved || b.upper_moved);
+
+        auto & c = frame.candidates[i];
+        if (b.lower_ok || b.lower_maybe)
+            c.ge = lower;
+        if (b.upper_ok || b.upper_maybe)
+            c.lt = upper + 1_i;
+        if (b.equal_ok)
+            c.eq = lower;
+
+        if (previous && i < previous->by_variable.size()) {
+            auto & p = previous->by_variable[i];
+            if (b.lower_moved && p.lower_moved && p.lower == lower)
+                b.lower_unit = p.lower_unit;
+            if (b.upper_moved && p.upper_moved && p.upper == upper)
+                b.upper_unit = p.upper_unit;
+            if (b.equal_ok && p.equal_ok && p.lower == lower)
+                b.equal_unit = p.equal_unit;
+        }
+    }
+
+    _imp->assumption_frames.push_back(std::move(frame));
+}
+
+ProofLogger::KeepAssumedReasonLiterals::KeepAssumedReasonLiterals(ProofLogger & logger) : _logger(logger)
+{
+    ++_logger._imp->keep_assumed_reason_literals;
+}
+
+ProofLogger::KeepAssumedReasonLiterals::~KeepAssumedReasonLiterals()
+{
+    --_logger._imp->keep_assumed_reason_literals;
+}
+
+namespace
+{
+    // Below this many literals, once the root-fixed ones are left out, the
+    // two definition lines cost about as much as the lines they shorten save.
+    constexpr std::size_t min_abbreviated_reason_size = 4;
+}
+
+ProofLogger::AbbreviateReason::AbbreviateReason(ProofLogger & logger, const ReasonLiterals & reason) :
+    _logger(logger), _active(logger._imp->assertion_level == AssertionLevel::Off && reason.size() >= min_abbreviated_reason_size)
+{
+    if (_active)
+        _logger._imp->abbreviated_reasons.push_back(Imp::AbbreviatedReason{.level = _logger.temporary_proof_level(), .reason = &reason});
+}
+
+ProofLogger::AbbreviateReason::~AbbreviateReason()
+{
+    if (_active)
+        _logger._imp->abbreviated_reasons.pop_back();
+}
+
+// Write the innermost abbreviated reason's definition, over only the literals
+// the root filter would keep: the rest hold at the root, so the flag stands for
+// the whole reason all the same.
+auto ProofLogger::define_abbreviated_reason() -> void
+{
+    auto & abbreviated = _imp->abbreviated_reasons.back();
+    abbreviated.decided = true;
+
+    // Hinted, so that a declared bound is left out only if it has a line to
+    // cite: some of the lines that name the flag will be hinted RUPs.
+    optional<AssumedReasonLiteralFilter> filter;
+    if (! _imp->assumption_frames.empty())
+        filter.emplace(*this, _imp->assumption_frames.back(), true);
+
+    WPBSum all;
+    Integer size = 0_i;
+    for (const auto & r : *abbreviated.reason) {
+        bool keep = true;
+        if (const auto * lit = std::get_if<ProofLiteral>(&r))
+            overloaded{
+                [&](const TrueLiteral &) { keep = false; }, //
+                [&](const FalseLiteral &) {},               //
+                [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                    if constexpr (std::is_same_v<T_, SimpleIntegerVariableID>)
+                        if (filter && filter->is_candidate(cond) && filter->omit(cond))
+                            keep = false;
+                } //
+            }
+                .visit(simplify_literal(names_and_ids_tracker(), *lit));
+        if (keep) {
+            overloaded{
+                [&](const ProofLiteral & l) { all += 1_i * l; },    //
+                [&](const ProofFlag & f) { all += 1_i * f; },       //
+                [&](const ProofBitVariable & b) { all += 1_i * b; } //
+            }
+                .visit(r);
+            ++size;
+        }
+    }
+
+    if (size < Integer(min_abbreviated_reason_size))
+        return;
+
+    auto [flag, forward, reverse] = create_proof_flag_reifying(all >= size, "r", ProofLevel::Temporary);
+    abbreviated.as_flag.push_back(flag);
+    abbreviated.forward = forward;
+    if (filter)
+        abbreviated.units = std::move(filter->extra_hints);
+}
+
 auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     log_stacktrace();
+
+    // Under an AbbreviateReason, a temporary line under exactly its reason
+    // names the flag instead. Only at the guard's own temporary level, which
+    // is where the definition goes, so that the definition outlives every line
+    // naming the flag. Not while KeepAssumedReasonLiterals is alive, whose
+    // lines are combined with lines from outside. Not for an `ia`, which is
+    // checked term for term against the one line it cites, and that line is
+    // usually a definition or a model row, which has no flag to match. A
+    // definition is not written inside a subproof, where it would not survive
+    // the `qed`.
+    const ReasonLiterals * use_reason = &reason;
+    Imp::AbbreviatedReason * abbreviated = nullptr;
+    if (! _imp->abbreviated_reasons.empty() && ProofLevel::Temporary == level && 0 == _imp->keep_assumed_reason_literals &&
+        ! std::holds_alternative<ImpliesProofRule>(rule)) {
+        auto & innermost = _imp->abbreviated_reasons.back();
+        if (innermost.level == temporary_proof_level() && (innermost.reason == &reason || std::ranges::equal(*innermost.reason, reason)) &&
+            (innermost.decided || 0 == _imp->subproof_depth)) {
+            if (! innermost.decided)
+                define_abbreviated_reason();
+            if (! innermost.as_flag.empty()) {
+                abbreviated = &innermost;
+                use_reason = &innermost.as_flag;
+            }
+        }
+    }
 
     LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
     auto & rule_line = lease.buffer();
@@ -660,9 +1006,23 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     }
         .visit(rule);
 
-    // EnsureNames::Yes: see emit() above.
-    if (! reason.empty()) {
-        emit_reified_inequality_to(names_and_ids_tracker(), ineq, reason, rule_line, EnsureNames::Yes);
+    // Leaving out an assumed reason literal is sound for a line VeriPB checks
+    // by unit propagation, which finds the literal's unit for itself, or by
+    // propagation over hints, to which the filter adds the unit. Not for an
+    // `ia`, which is checked against the one line it cites, term for term. An
+    // abbreviated reason has had its definition filtered already.
+    optional<AssumedReasonLiteralFilter> filter;
+    if (! abbreviated && ! reason.empty() && ! _imp->assumption_frames.empty() && 0 == _imp->keep_assumed_reason_literals &&
+        ! std::holds_alternative<ImpliesProofRule>(rule)) {
+        auto hinted = std::holds_alternative<RUPProofRule>(rule) && std::get<RUPProofRule>(rule).lines.has_value();
+        filter.emplace(*this, _imp->assumption_frames.back(), hinted);
+    }
+
+    // EnsureNames::Yes: see emit() above. A unit the filter writes goes out to
+    // the stream ahead of this line, as a definition does, and before any hint
+    // below is turned into a relative ID.
+    if (! use_reason->empty()) {
+        emit_reified_inequality_to(names_and_ids_tracker(), ineq, *use_reason, rule_line, EnsureNames::Yes, filter ? &*filter : nullptr);
     }
     else {
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
@@ -672,6 +1032,25 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
         [&](const RUPProofRule & rule) {
             if (rule.lines) {
                 rule_line += ": ";
+                // An abbreviated reason's units, then its definition, so that
+                // propagating the flag sets every literal of the reason before
+                // the line's own hints are reached.
+                if (abbreviated) {
+                    for (const auto & line : abbreviated->units) {
+                        rule_line += relative_proof_line(line, _imp->proof_line.number);
+                        rule_line += ' ';
+                    }
+                    rule_line += relative_proof_line(*abbreviated->forward, _imp->proof_line.number);
+                    rule_line += ' ';
+                }
+                // The units go first: VeriPB takes the hints in the order given,
+                // and the hints after them were written expecting the omitted
+                // literals to be set already.
+                if (filter)
+                    for (const auto & line : filter->extra_hints) {
+                        rule_line += relative_proof_line(line, _imp->proof_line.number);
+                        rule_line += ' ';
+                    }
                 for (const auto & line : *rule.lines) {
                     rule_line += relative_proof_line(line, _imp->proof_line.number);
                     rule_line += ' ';
@@ -746,6 +1125,21 @@ auto ProofLogger::enter_proof_level(int depth) -> void
 
 auto ProofLogger::forget_proof_level(int depth) -> void
 {
+    // An assumption made at this level or deeper relied on lines that are
+    // about to go.
+    while (! _imp->assumption_frames.empty() && _imp->assumption_frames.back().level >= depth)
+        _imp->assumption_frames.pop_back();
+
+    // A flag whose definition is about to go must be defined afresh, under a
+    // new name, if a guard that is still alive uses it again.
+    for (auto & abbreviated : _imp->abbreviated_reasons)
+        if (abbreviated.level == depth) {
+            abbreviated.decided = false;
+            abbreviated.as_flag.clear();
+            abbreviated.forward.reset();
+            abbreviated.units.clear();
+        }
+
     auto & lines = _imp->proof_lines_by_level.at(depth);
     // Emit deletions as *relative* (negative) ids so a constraint-count
     // difference between the solver's OPB and cake_pb_cp's re-derived OPB
