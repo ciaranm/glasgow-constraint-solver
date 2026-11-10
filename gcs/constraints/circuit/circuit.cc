@@ -41,7 +41,6 @@ using std::make_unique;
 using std::map;
 using std::optional;
 using std::size_t;
-using std::tie;
 using std::unique_ptr;
 using std::vector;
 
@@ -182,50 +181,38 @@ auto Circuit::define_proof_model(ProofModel & model, const State &) -> void
     if (_succ.empty())
         return;
 
-    // Define encoding to eliminate sub-cycles
+    // Define encoding to eliminate sub-cycles. This is cake_pb_cp's encoding, names,
+    // labels and row contents alike, so that a proof which reasons about a position
+    // checks against cake's OPB as well as ours (#1459).
     auto & pos_var_data = _pos_var_data;
 
     auto n = static_cast<long long>(_succ.size());
-    // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
-    // WLOG start at node 0, so pos[0] = 0
-    pos_var_data.emplace(0,
-        PosVarData{"p[0]", model.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
-            map<long, PosVarLineData>{}});
-    model.add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
-    // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-    // cake_pb_cp labels these position relations @c[id][pos_suc_<i>_<j>_le/ge].
-    auto [leq_line, geq_line] = model.add_labelled_constraint(
-        _constraint_id, "pos_suc_0_0_le", "pos_suc_0_0_ge", WPBSum{} == Integer{n - 1}, HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
-
-    pos_var_data.at(0).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
-
-    for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
+    // pos[i] = k means "node i is the kth visited, starting from node 0". Each is a
+    // free bit-sum over 0..n-1 whose bits are named as cake's x[id][i_b][bin], with no
+    // bound rows of its own: the labelled rows below are its bounds, as in cake.
+    for (unsigned int idx = 0; idx < _succ.size(); ++idx)
         pos_var_data.emplace(idx,
             PosVarData{format("p[{}]", idx),
-                model.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
+                model.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + std::to_string(idx), IntegerVariableProofRepresentation::Bits,
+                    CakeBitNaming{_constraint_id, {static_cast<long long>(idx)}, "bin", std::nullopt, true}),
                 map<long, PosVarLineData>{}});
-    }
 
-    for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-        // (succ[0] = i) -> pos[i] - pos[0] = 1
-        tie(leq_line, geq_line) =
-            model.add_labelled_constraint(_constraint_id, "pos_suc_0_" + std::to_string(idx) + "_le", "pos_suc_0_" + std::to_string(idx) + "_ge",
-                WPBSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i, HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
-        pos_var_data.at(0).plus_one_lines.emplace(idx, PosVarLineData{leq_line, geq_line});
+    // WLOG start at node 0, so pos[0] = 0, and every pos[i] <= n - 1.
+    model.add_labelled_constraint(_constraint_id, "pos0eq0", WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
+    for (unsigned int idx = 0; idx < _succ.size(); ++idx)
+        model.add_labelled_constraint(_constraint_id, format("pos{}lt{}", idx, n), WPBSum{} + 1_i * pos_var_data.at(idx).var <= Integer{n - 1});
 
-        // (succ[i] = 0) -> pos[0] - pos[i] = 1-n
-        tie(leq_line, geq_line) = model.add_labelled_constraint(_constraint_id, "pos_suc_" + std::to_string(idx) + "_0_le",
-            "pos_suc_" + std::to_string(idx) + "_0_ge", WPBSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
-            HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
-        pos_var_data.at(idx).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
-
-        // (succ[i] = j) -> pos[j] = pos[i] + 1
-        for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-            tie(leq_line, geq_line) =
-                model.add_labelled_constraint(_constraint_id, "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_le",
-                    "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_ge",
-                    WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
-                    HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
+    // cake_pb_cp labels these position relations @c[id][pos_suc_<i>_<j>_le/ge]:
+    //   succ[i] = 0 -> pos[i] = n - 1          (the edge that closes the tour)
+    //   succ[i] = j -> pos[j] - pos[i] = 1     (j != 0, including i = 0 and i = j)
+    // so succ[0] = 0 is possible only when n = 1, and succ[i] = i (i != 0) never.
+    for (unsigned int idx = 0; idx < _succ.size(); ++idx) {
+        for (unsigned int jdx = 0; jdx < _succ.size(); ++jdx) {
+            auto sum = (0 == jdx) ? WPBSum{} + 1_i * pos_var_data.at(idx).var == Integer{n - 1}
+                                  : WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i;
+            auto cell = std::to_string(idx) + "_" + std::to_string(jdx);
+            auto [leq_line, geq_line] = model.add_labelled_constraint(_constraint_id, "pos_suc_" + cell + "_le", "pos_suc_" + cell + "_ge",
+                std::move(sum), HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
             pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line, geq_line});
         }
     }

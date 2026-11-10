@@ -338,30 +338,41 @@ under a wrong word.
 
 ### OPB encoding
 
-**`Circuit`**, Encoding Procedure 6.1 of McIlree's thesis, after Zhou. With
-`pos[i]` a proof-only variable over `0..n-1` written in bits (`p[<k>_pos0]` in
-the proof, every node's carrying the suffix `pos0`), and `c` the constraint's
-ID:
+**`Circuit`**, `cake_pb_cp`'s encoding, row for row and name for name (#1459).
+It is Encoding Procedure 6.1 of McIlree's thesis, after Zhou, with
+`pos[0] = 0` substituted into the rows into node 0, as the thesis's prose
+states them, and with bound rows of cake's in place of the procedure's
+`pos[i] ≥ 1`. With `pos[i]` a proof-only variable over `0..n-1`, a free sum of
+`⌈log₂ n⌉` bits named `x[c][i_<b>][bin]` (`CakeBitNaming`) with no bound rows
+of its own, and `c` the constraint's ID:
 
 ```
 define_clique_not_equals_encoding(succ)       n(n-1)/2 selector flags x[c][i_j],
                                               two rows each: succ[i] ≠ succ[j]
-pos[0] ≤ 0
-succ[0] = 0  ⇒ 0 = n - 1                      @c[c][pos_suc_0_0_le/ge]
-succ[0] = j  ⇒ pos[j] = 1          (j ≥ 1)    @c[c][pos_suc_0_j_le/ge]
-succ[i] = 0  ⇒ pos[0] - pos[i] = 1 - n (i ≥ 1) @c[c][pos_suc_i_0_le/ge]
-succ[i] = j  ⇒ pos[j] - pos[i] = 1  (i, j ≥ 1) @c[c][pos_suc_i_j_le/ge]
+pos[0] ≤ 0                                    @c[c][pos0eq0]
+pos[i] ≤ n - 1                    (every i)   @c[c][pos<i>lt<n>]
+succ[i] = 0  ⇒ pos[i] = n - 1     (every i)   @c[c][pos_suc_i_0_le/ge]
+succ[i] = j  ⇒ pos[j] - pos[i] = 1 (j ≥ 1)    @c[c][pos_suc_i_j_le/ge]
 ```
 
 each equality as a `≤` and a `≥` row half-reified on the edge literal. The
 `i = j` rows say `succ[i] ≠ i`, and are written with `pos[i]` twice in one row
-rather than simplified. **Definitional**: on a full assignment, unit
+rather than simplified; for node 0 the same is said by `pos_suc_0_0` against
+`pos0eq0`, unless `n = 1`. Until #1459 the solver wrote the procedure the other
+way round, with `pos[0] = 0` substituted into the rows out of node 0
+(`succ[0] = j ⇒ pos[j] = 1`) and not into those into it
+(`succ[i] = 0 ⇒ pos[0] − pos[i] = 1 − n`), under cake's labels, and named the
+bits `p[<k>_pos0][b<b>]` by creation index. All three forms agree once
+`pos[0] = 0`, but a proof that reasoned about a position could not be checked
+against cake's OPB, where it found its position bits unconstrained.
+**Definitional**: on a full assignment, unit
 propagation from `pos[0] = 0` fixes every `pos` along the cycle through 0, and
 fails exactly when that cycle is short, which is the thesis's argument for
 checking (§6.3). **Size**: the row count is fixed by `n`, but not every
 row's term count is. The `n²` position row pairs carry one or two position
 variables of `⌈log₂ n⌉` bits and one edge literal, at most `2⌈log₂ n⌉ + 1`
-terms, whatever the successors' declared domains. The rest grows with the
+terms, whatever the successors' declared domains, and the `n + 1` bound rows
+one position each. The rest grows with the
 logarithm of the **declared** width, because `prepare()`'s `define_bound` to
 `0..n-1` narrows each successor's domain but not its bit encoding, which keeps
 the `b` bits of the declared range: the clique is `n(n−1)` rows of `2b + 1`
@@ -371,31 +382,36 @@ name are defined in the `.opb` through about `2n(n+1)` greater-or-equal rows of
 wider than `0..n-1` gets a clamp row of `b` terms per side it exceeds; and
 each successor's own two declaration rows, which every model has, are over
 the same `b` bits. In all,
-`O(n²)` rows and `O(n²(log n + b))` terms. Measured at `86caad24` (2026-10-09,
-fataepyc-10; `tmp/fd-graph/codex/circuit/opbwidth/`, stopped at the root, so
-that the `.opb` is the model alone; it is the same size under both
-algorithms), on five successors declared `0..4`, `0..99`, `0..9999`,
-`0..999999999` and `0..2⁶⁰−1`:
+`O(n²)` rows and `O(n²(log n + b))` terms. Measured with #1459's encoding
+(2026-11-09, fataepyc-08; the `.scp` files of
+`tmp/fd-graph/codex/circuit/opbwidth/` re-solved by `glasgow_scp_solver
+--prove` without `--all`, the `.opb` being the model alone whenever the solve
+stops; it is the same size under both algorithms), on five successors declared
+`0..4`, `0..99`, `0..9999`, `0..999999999` and `0..2⁶⁰−1`:
 
 | Declared range | `.opb` bytes | Clique row | Literal definition row | Clamp rows |
 |---|---:|---:|---:|---:|
-| `0..4` | 17,474 | 7 terms | 4 terms | 0 |
-| `0..99` | 24,114 | 15 | 8 | 5 |
-| `0..9999` | 37,204 | 29 | 15 | 5 |
-| `0..999999999` | 74,279 | 61 | 31 | 5 |
-| `0..2⁶⁰−1` | 167,584 | 121 | 61 | 5 |
+| `0..4` | 17,961 | 7 terms | 4 terms | 0 |
+| `0..99` | 24,601 | 15 | 8 | 5 |
+| `0..9999` | 37,691 | 29 | 15 | 5 |
+| `0..999999999` | 74,766 | 61 | 31 | 5 |
+| `0..2⁶⁰−1` | 168,071 | 121 | 61 | 5 |
 
-The family's 70 rows (20 clique, 50 position) are the same rows in all five,
-and every position row has the same terms in all five. At 12 nodes the `.opb` is
-116,898 bytes at `0..11` and 903,726 at `0..2⁶⁰−1`. Every root proof verified
-(VeriPB 3.0.2, `--force-checked-deletion`). This is the model. The proof
+The family's 76 rows (20 clique, 50 position, 6 position bounds) are the same
+rows in all five, and every position row has the same terms in all five. At 12
+nodes the `.opb` is 120,911 bytes at `0..11` and 907,739 at `0..2⁶⁰−1`. Every
+root proof verified (VeriPB 3.0.2, `--force-checked-deletion`). The encoding
+before #1459 measured 487 bytes less at five nodes and 4,013 less at twelve,
+at every width (its position bits had shorter names, and it wrote 11
+unlabelled bound rows where this writes 6 labelled ones), reproducing the
+figures first measured at `86caad24` exactly. This is the model. The proof
 written during search is a separate question, and `Circuit`'s does not grow
-with the declared width: enumerating six nodes (120 solutions, 206
-recursions) writes 2,280 proof lines under `Prevent` declared `0..5` and
-2,334 declared `0..99`, `0..9999` or `0..999999999` alike, and 3,104 and
-3,158 under `SCC`, all verifying; the 54 extra lines are the fixed cost of a
-declaration wider than the node range (the clamp), not growth with the width
-(`tmp/fd-graph/codex/circuit/searchwidth/`, same revision, date and machine).
+with the declared width: at `86caad24` (2026-10-09, fataepyc-10), enumerating
+six nodes (120 solutions, 206 recursions) wrote 2,280 proof lines under
+`Prevent` declared `0..5` and 2,334 declared `0..99`, `0..9999` or
+`0..999999999` alike, and 3,104 and 3,158 under `SCC`, all verifying; the 54
+extra lines are the fixed cost of a declaration wider than the node range (the
+clamp), not growth with the width (`tmp/fd-graph/codex/circuit/searchwidth/`).
 `SubCircuit`'s does ([Interval efficiency](#interval-efficiency), point 3;
 #1326).
 
@@ -447,10 +463,16 @@ search, while the `.opb` grows only as above.
 ### Labels
 
 - **`pos_suc_i_j_le` / `_ge`**: `Circuit`'s position rows. The justifications
-  cite them by line number (`PosVarData::plus_one_lines`), not by label; the
-  labels are `cake_pb_cp`'s names, and the chain checks against them. Every
-  rule that sums a cycle (rules 4 and 6) and every reachability argument
-  (rules 7 to 13) uses these rows.
+  cite them by label, through `PosVarData::plus_one_lines`, which keeps what
+  `add_labelled_constraint` returned; the labels are `cake_pb_cp`'s names, so
+  a proof checked against cake's OPB sums cake's rows, which is why their
+  contents have to be cake's as well as their names. Every rule that sums a
+  cycle (rules 4 and 6) and every reachability argument (rules 7 to 13) uses
+  these rows.
+- **`pos0eq0`, `pos<i>lt<n>`**: `pos[0] ≤ 0` and each `pos[i] ≤ n − 1`, cake's
+  labels. Nothing cites them; unit propagation reaches them, and
+  `pos0eq0` is what pins node 0's position whenever a derivation needs
+  `pos[0] = 0` (#1459).
 - **`pos_step_*`, `pos_wrap_*`, `anchor_pos`, `off_pos_i`, `first_pos_i`,
   `tour_size_le/ge`**: `SubCircuit`'s. Rules 14 and 15 cite the step and wrap
   rows by line number (`EdgePosLines`); `first_is_zero` is recorded and never
@@ -464,14 +486,63 @@ search, while the `.opb` grows only as above.
 
 ### Cake conformity
 
-**`Circuit`**: three chain cases, all `none` and all passing at `86caad24`:
-`circuit_sat` (the two 3-node cycles), `circuit_unsat` (successors confined
-to `{0, 1}`), and `circuit_aliased_unsat` (a repeated variable, #1047). They
-chain-verify because the solver's writer emits cake's `(id circuit (succ...))`
-and the row labels match cake's `pos_suc_*`; they stay `none` because the
-successors' `=` and `≥` literal encodings still diverge (#358) and the position
-variables are named differently. An extra case run by hand, `n = 1`, also
-chain-verifies with its one solution.
+**`Circuit`**: the position encoding is cake's, names, labels and row contents
+(#1459), and the clique is cake's too (the #355 `x[id][i_j]` conform). Five
+chain cases, all `none`: `circuit_sat` (the two 3-node cycles),
+`circuit_unsat` (successors confined to `{0, 1}`), `circuit_aliased_unsat`
+(a repeated variable, #1047), `circuit_empty_sat` (#1307), and
+`circuit_position_sat`, four nodes over narrowed intervals whose `SCC` proof
+derives `pos[0] = 0` and reasons from it. That last one is the case that pins
+the conform: before #1459 its proof was rejected against cake's OPB at
+`rup 1 p[0_pos0][eq0] >= 1`, because cake's OPB has no `p[…_pos0]` bits, so
+they were fresh and unconstrained. The first four pass either way, since none
+of their proofs depends on a position. Before the change, the opt-in
+`GCS_TEST_CAKE` probe failed in the same way on some of `circuit_test`'s `SCC`
+instances, which ones depending on the seed.
+
+They stay `none` for reasons outside this family. Cake writes a tautological
+half-reified row with a zero coefficient on its literal, as in
+`@i[A][ge0][r] … 0 ~i[A][ge0] >= 0`, where the solver writes an equivalent
+tautology with the literal at coefficient 1. That covers the successors'
+boundary atoms and the `pos_suc_i_0_le` rows whenever `n` is a power of two.
+And a `{0,1}` successor's equality atoms are its bit here and `eq0`/`eq1`
+there (#1193). Label by label, opbdiff finds nothing else.
+
+Changing the rows' contents changed one justification. Prevent's cycle sums,
+and every `SCC` step between two nodes other than 0, read the same rows
+either way. Edges out of node 0 now have the shape `pos[j] − pos[i] = 1` that
+the general shifted step assumes, where the old rows lacked `pos[0]`. The one
+step that sums a row into node 0 under a shifted root `r` is the
+`next_node == 0` case of `prove_pos_and_node_implies_next_node`. It used to
+emit two `pol` lines, written for the procedure's `pos[0] − pos[i] = 1 − n`,
+which over `pos[i] = n − 1` no longer telescoped. #1459 dropped them, since
+the step is unit propagation from the database. It keeps the two RUP lines
+that settle the precedence flags, `succ[i] = 0 ⇒ ¬d[r][i]` and
+`succ[i] = 0 ⇒ d[r][0]`. The target `q[r][i] = k − 1 ∧ succ[i] = 0 ⇒
+q[r][0] = k` then propagates as follows:
+
+- `pos0eq0` fixes `pos[0] = 0`;
+- `pos_suc_i_0_ge` and `pos<i>lt<n>` fix `pos[i] = n − 1`;
+- `q[r][i]`'s two `ge` definitions, with `d[r][i]` false, fix
+  `pos[r] = n − k`;
+- with every term of `q[r][0]`'s sum fixed, its definitions force `eq<k>`.
+
+Every "fix" here is a bit-sum held between equal bounds. Unit propagation
+fixes all its bits at any width, from the top bit down: whichever bound has
+less slack than the top bit's coefficient forces it, and both bounds then
+reduce to the same problem one bit narrower. By the same descent, bounds
+`≥ v` and `≤ v − 1` always conflict, which is how the first RUP line refutes
+`pos[r] ≥ n` against `pos<r>lt<n>`. So nothing here depends on `n` being
+small. A consultant's exact propagation simulator agreed over every `(r, i, k)`
+for `n` = 3 to 35, and at sampled `r, i, k` around powers of two up to 1,025;
+VeriPB checked hand-built instances up to `n` = 65,537. Two rows are
+load-bearing: `pos0eq0` for the target, and `pos<r>lt<n>` for the first RUP
+line whenever `n` is not a power of two. A hint for this step must cite both.
+(The old rows needed no `pol` here either. Removing the two lines left every
+proof that took the step verifying.)
+
+`n = 1` also chain-verifies with its one solution. Its position is the empty sum,
+as in cake.
 
 **`SubCircuit`**: no chain case. `cake_pb_cp` rejects the keyword
 ("unsupported constraint: subcircuit"), so its certification ends at VeriPB
@@ -500,9 +571,12 @@ against the solver's own OPB.
   not), its ordering flags `ord1` and `ord2` for
   *prune skip*, and each layer's lemmas, which have to survive the layer that
   follows. Temporaries inside a derivation are at `ProofLevel::Temporary`.
-- **Naming:** the flags above by their prefixes, the position variables by
-  `pos0` / `subpos`, the first flags as `x[c][i][first]`. An external tool
-  finds the position rows by label.
+- **Naming:** the flags above by their prefixes; `Circuit`'s position bits as
+  cake's `x[c][i_<b>][bin]`, and the `[ge…]`/`[eq…]` atoms over them, which
+  are defined in the proof on first use, by creation index as
+  `p[<k>_pos<i>][eq3]`; `SubCircuit`'s positions by creation index,
+  `p[<k>_subpos]`; the first flags as `x[c][i][first]`. An external tool finds
+  the position rows by label.
 - **Proof-only auxiliaries determined on a solution:** yes. `Circuit`'s
   `pos` by unit propagation from `pos[0] = 0` along the tour; `SubCircuit`'s
   `pos` from the anchor or the fully reified `first` flag, with off-tour nodes
@@ -912,7 +986,7 @@ written; they are cited per rule as history, not as lanes.
   is a tour only when `n = 1`.
 - **Proof technique** — `RUP` against the node's own position rows: for
   `i ≥ 1`, `succ[i] = i ⇒ pos[i] − pos[i] = 1` has an infeasible consequent;
-  for `i = 0`, `succ[0] = 0 ⇒ 0 = n − 1`. Theorem 2.6.
+  for `i = 0`, `succ[0] = 0 ⇒ pos[0] = n − 1`, against `pos0eq0`. Theorem 2.6.
 - **Reason** — the whole-scope reason, though the conclusion needs none.
 - **Assertion** — `a 1 ~i[s[0]][eq0] 1 ~i[s[0]][ge0] 1 i[s[0]][ge3] 1
   ~i[s[1]][ge0] 1 i[s[1]][ge3] 1 ~i[s[2]][ge0] 1 i[s[2]][ge3] >= 1
@@ -941,7 +1015,11 @@ written; they are cited per rule as history, not as lanes.
 - **Proof technique** — `pol` then `RUP`: JP 6.1 (McIlree, McCreesh and
   Nordström; thesis §6.3). The `≥` halves of the chain's position rows and the
   closing edge's are summed (`output_cycle_to_proof`); the positions telescope
-  to `0 ≥ k` under the edge literals, which then RUPs the conclusion. JP 6.1's
+  to `0 ≥ k` under the edge literals, which then RUPs the conclusion. That is
+  for a cycle that avoids node 0. Through node 0 the sum is no contradiction,
+  whatever form the rows take, because the row into node 0 is the one that
+  lets a whole tour close. The RUP does the work there, propagating positions
+  from `pos[0] = 0` along the chain to a clash with `n − 1`. JP 6.1's
   precondition is a cycle of at least two edges in the current domains, which
   the chain and the candidate edge are.
 - **Reason** — the whole-scope reason; the chain's fixed edges are what it
@@ -1546,7 +1624,9 @@ solver's, and their soundness is argued in **Why it is true** and in the note.
   `Circuit` observes its successors' holes.
 - **`scp_reader_test`**: both keywords enumerate; `subcircuit` with a size
   survives a write–read–write round trip and still constrains.
-- **Chain**: `scp_chain_circuit_sat`, `_unsat`, `_aliased_unsat`.
+- **Chain**: `scp_chain_circuit_sat`, `_unsat`, `_aliased_unsat`,
+  `_empty_sat`, and `_position_sat`, the one whose proof reasons about a
+  position ([Cake conformity](#cake-conformity)).
 - **MiniZinc**: `minizinc-circuit` (0-based), `-subcircuit` (0-based),
   `-subcircuit-evidence` (1-based, a pinned node), `-circuit-aliased`,
   `-subcircuit-aliased`; each with `--fzn-pattern` on the builtin, without
