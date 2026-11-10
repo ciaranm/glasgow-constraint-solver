@@ -95,6 +95,8 @@ namespace gcs::innards
 
         auto emit_assumed_unit(const VariableConditionFrom<SimpleIntegerVariableID> &, int level) -> ProofLine;
 
+        auto define_abbreviated_reason() -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -328,6 +330,36 @@ namespace gcs::innards
 
             KeepAssumedReasonLiterals(const KeepAssumedReasonLiterals &) = delete;
             auto operator=(const KeepAssumedReasonLiterals &) -> KeepAssumedReasonLiterals & = delete;
+        };
+
+        /**
+         * \brief While one of these is alive, a temporary line written under
+         * exactly this reason names one extension variable in its place.
+         *
+         * The variable is defined, on first use, as the conjunction of the
+         * reason's literals, at the temporary level the lines go to. It is
+         * therefore deleted together with every line that names it. The line
+         * the justification finally infers is at the current level, so it
+         * keeps the whole reason.
+         *
+         * This is opt-in, per justification. A smaller proof is not always a
+         * faster check, so only hold one where measurement says it pays; see
+         * dev_docs/abbreviated-reasons.md. A justification that combines its
+         * lines with lines written outside the guard under the same reason
+         * must not hold one, because the terms would no longer cancel.
+         */
+        class AbbreviateReason
+        {
+        private:
+            ProofLogger & _logger;
+            bool _active;
+
+        public:
+            AbbreviateReason(ProofLogger &, const ReasonLiterals &);
+            ~AbbreviateReason();
+
+            AbbreviateReason(const AbbreviateReason &) = delete;
+            auto operator=(const AbbreviateReason &) -> AbbreviateReason & = delete;
         };
 
         /**

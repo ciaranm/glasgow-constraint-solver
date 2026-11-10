@@ -2385,7 +2385,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
             };
 
             ++cumulative_counters[rule_time_table_overflow].contradictions;
-            inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+            inference.contradiction(
+                logger, JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             return PropagatorState::DisableUntilBacktrack;
         }
 
@@ -2794,7 +2795,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                 if (not_first) {
                                     auto justify = published_nfnl_justification(set_est, set_lct, theta, j.task, s_lo, s_hi, set_ect, true);
                                     inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? set_ect + 1_i : set_ect,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                 }
                                 else {
                                     // Back out of the reflection: the window is
@@ -2802,7 +2804,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                     auto lst = -set_ect;
                                     auto justify = published_nfnl_justification(-set_lct, -set_est, theta, j.task, s_lo, s_hi, lst, false);
                                     inference.infer_less_than(logger, starts[j.task], one_too_far ? lst - j.length : lst - j.length + 1_i,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                 }
                                 pushed_in_sweep = true;
                             }
@@ -3028,12 +3031,14 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                 starts_inside ? GuardToDischarge::Low : GuardToDischarge::High, energetic_contributors);
                             if (starts_inside) {
                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                    reason_with_presence());
                                 pushed_in_sweep = true;
                             }
                             else {
                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                    reason_with_presence());
                                 pushed_in_sweep = true;
                             }
                         }
@@ -3092,7 +3097,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                     auto justify = edge_finding_justification(
                                         a, b, inside_tasks, j.task, low_guard, min_ect, GuardToDischarge::Low, energetic_contributors);
                                     inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                     pushed_in_sweep = true;
                                 }
                             }
@@ -3113,7 +3119,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                     auto justify = edge_finding_justification(
                                         a, b, inside_tasks, j.task, low_guard, s_hi + 1_i, GuardToDischarge::High, energetic_contributors);
                                     inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                     pushed_in_sweep = true;
                                 }
                             }
@@ -3408,8 +3415,9 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                 // Which rung it was, as the proof comment says: (KAOC)
                                 // exactly when the knapsack cap was needed somewhere.
                                 ++cumulative_counters[strengthen.empty() ? rule_overload_elastic : rule_overload_knapsack].contradictions;
-                                inference.contradiction(
-                                    logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
+                                inference.contradiction(logger,
+                                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::CumulativeOverload{owner}},
+                                    reason_with_presence());
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             throw UnexpectedException{
@@ -3528,8 +3536,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                     };
 
                     ++cumulative_counters[rule_overload].contradictions;
-                    inference.contradiction(
-                        logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
+                    inference.contradiction(logger, JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::CumulativeOverload{owner}},
+                        reason_with_presence());
                     return PropagatorState::DisableUntilBacktrack;
                 }
             }
@@ -3972,8 +3980,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                         };
 
                         ++cumulative_counters[rule_time_table_height].firings;
-                        inference.infer_less_than(logger, heights_var[j], counted, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                            reason_with_presence());
+                        inference.infer_less_than(logger, heights_var[j], counted,
+                            JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
                     }
                 }
             }
@@ -4041,8 +4049,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                 };
 
                 ++cumulative_counters[rule_presence].firings;
-                inference.infer_equal(
-                    logger, *presence[j], 0_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                inference.infer_equal(logger, *presence[j], 0_i,
+                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
                 continue;
             }
 
@@ -4072,8 +4080,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                 };
 
                 ++cumulative_counters[rule_time_table_lb].firings;
-                inference.infer_greater_than_or_equal(
-                    logger, starts[j], pushed, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                inference.infer_greater_than_or_equal(logger, starts[j], pushed,
+                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             }
 
             // ub-push: mirror image. The scan walks down from the top of the
@@ -4131,8 +4139,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                 };
 
                 ++cumulative_counters[rule_time_table_ub].firings;
-                inference.infer_less_than(
-                    logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                inference.infer_less_than(logger, starts[j], new_ub + 1_i,
+                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             }
         }
 
