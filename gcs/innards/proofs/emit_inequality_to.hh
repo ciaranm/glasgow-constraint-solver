@@ -12,6 +12,7 @@
 #include <iosfwd>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace gcs::innards
 {
@@ -87,8 +88,51 @@ namespace gcs::innards
     class ReasonLiteralFilter
     {
     public:
+        /**
+         * For one variable, the value of each kind of literal that the filter
+         * might leave out: `x >= ge`, `x < lt`, `x = eq`. A kind it never
+         * leaves out holds no_value.
+         */
+        struct Candidates
+        {
+            Integer ge, lt, eq;
+        };
+
+        static constexpr Integer no_value = Integer{std::numeric_limits<long long>::min()};
+
+        /**
+         * Indexed by SimpleIntegerVariableID. Checked inline, so that the
+         * renderer pays only a compare for the literals the filter cannot
+         * leave out, which is most of them: this runs for every literal of
+         * every reason, so it is kept to a pointer and a length.
+         */
+        const Candidates * candidates;
+        std::size_t number_of_candidates;
+
+        explicit ReasonLiteralFilter(const std::vector<Candidates> & c) : candidates(c.data()), number_of_candidates(c.size())
+        {
+        }
+
         virtual ~ReasonLiteralFilter() = default;
 
+        [[nodiscard]] auto is_candidate(const VariableConditionFrom<SimpleIntegerVariableID> & cond) const -> bool
+        {
+            if (cond.var.index >= number_of_candidates)
+                return false;
+            const auto & c = candidates[cond.var.index];
+            switch (cond.op) {
+                using enum VariableConditionOperator;
+            case GreaterEqual: return cond.value == c.ge;
+            case Less: return cond.value == c.lt;
+            case Equal: return cond.value == c.eq;
+            default: return false;
+            }
+        }
+
+        /**
+         * Asked only for a candidate: leave it out? May write the unit the
+         * omission relies on.
+         */
         [[nodiscard]] virtual auto omit(const VariableConditionFrom<SimpleIntegerVariableID> &) -> bool = 0;
     };
 

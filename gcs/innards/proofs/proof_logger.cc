@@ -222,15 +222,20 @@ struct ProofLogger::Imp
     // reachable from an emission re-enters infer().
     WPBSumLE unit_buffer{{}, -1_i};
 
-    // What assume_current_bounds recorded about one variable. lower and upper
-    // are its bounds at the time; a side that had moved off its declared bound
-    // is one the search derived, and gets a unit line of its own the first
-    // time a reason leaves it out. A side still at its declared bound is the
-    // tracker's to vouch for (order_literal_holds_at_top).
+    // What assume_current_bounds recorded about one variable: its bounds at
+    // the time, and which of `x >= lower`, `x < upper + 1` and `x = lower`
+    // (when fixed) a reason may leave out. A side that had moved off its
+    // declared bound is one the search derived, and gets a unit line of its
+    // own the first time a reason leaves it out. A side still at its declared
+    // bound may be left out only if order_literal_holds_at_top said so when
+    // the snapshot was taken, and its unit, if any, is the boundary pin.
+    // Deciding all this up front keeps the check per reason literal to a
+    // compare, which matters: it runs for every literal of every reason.
     struct AssumedBounds
     {
         Integer lower = 0_i, upper = -1_i;
-        bool valid = false, lower_moved = false, upper_moved = false;
+        bool lower_ok = false, upper_ok = false, equal_ok = false;
+        bool lower_moved = false, upper_moved = false;
         optional<ProofLine> lower_unit, upper_unit, equal_unit;
     };
 
@@ -241,6 +246,7 @@ struct ProofLogger::Imp
     {
         int level;
         vector<AssumedBounds> by_variable;
+        vector<ReasonLiteralFilter::Candidates> candidates;
     };
 
     vector<AssumptionFrame> assumption_frames;
@@ -682,9 +688,15 @@ private:
     Imp::AssumptionFrame & _frame;
     bool _hinted;
 
-    auto use_unit(optional<ProofLine> & unit, const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool
+    // may_write: the bound was moved by the search, so its unit is ours to
+    // write. Otherwise it is a declared bound, whose unit is the boundary pin
+    // if there is one; unit propagation needs no line for it, but a hinted RUP
+    // needs a line to cite.
+    auto use(optional<ProofLine> & unit, bool may_write, const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool
     {
         if (! unit) {
+            if (! may_write)
+                return ! _hinted;
             // A line derived inside a subproof does not outlive its `qed`.
             if (_logger._imp->subproof_depth > 0)
                 return false;
@@ -695,25 +707,11 @@ private:
         return true;
     }
 
-    auto use_declared(const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool
-    {
-        auto & tracker = _logger.names_and_ids_tracker();
-        if (! tracker.order_literal_holds_at_top(cond.var, cond.op, cond.value))
-            return false;
-        if (_hinted) {
-            // The pin is keyed by the ge cut, which for `x < ub + 1` is ub + 1.
-            auto pin = tracker.boundary_pin_line(cond.var, cond.value);
-            if (! pin)
-                return false;
-            extra_hints.push_back(*pin);
-        }
-        return true;
-    }
-
 public:
     vector<ProofLine> extra_hints;
 
-    AssumedReasonLiteralFilter(ProofLogger & logger, Imp::AssumptionFrame & frame, bool hinted) : _logger(logger), _frame(frame), _hinted(hinted)
+    AssumedReasonLiteralFilter(ProofLogger & logger, Imp::AssumptionFrame & frame, bool hinted) :
+        ReasonLiteralFilter(frame.candidates), _logger(logger), _frame(frame), _hinted(hinted)
     {
     }
 
@@ -722,24 +720,21 @@ public:
         if (cond.var.index >= _frame.by_variable.size())
             return false;
         auto & b = _frame.by_variable[cond.var.index];
-        if (! b.valid)
-            return false;
 
         switch (cond.op) {
             using enum VariableConditionOperator;
         case GreaterEqual:
-            if (cond.value != b.lower)
+            if (! b.lower_ok || cond.value != b.lower)
                 return false;
-            return b.lower_moved ? use_unit(b.lower_unit, cond) : use_declared(cond);
+            return use(b.lower_unit, b.lower_moved, cond);
         case Less:
-            if (cond.value != b.upper + 1_i)
+            if (! b.upper_ok || cond.value != b.upper + 1_i)
                 return false;
-            return b.upper_moved ? use_unit(b.upper_unit, cond) : use_declared(cond);
+            return use(b.upper_unit, b.upper_moved, cond);
         case Equal:
-            // A variable declared fixed has nothing for the search to derive.
-            if (b.lower != b.upper || cond.value != b.lower || ! (b.lower_moved || b.upper_moved))
+            if (! b.equal_ok || cond.value != b.lower)
                 return false;
-            return use_unit(b.equal_unit, cond);
+            return use(b.equal_unit, true, cond);
         default: return false;
         }
     }
@@ -782,6 +777,7 @@ auto ProofLogger::assume_current_bounds(const State & state) -> void
     Imp::AssumptionFrame frame{level, {}};
     auto n = state.what_variable_id_will_be_created_next().index;
     frame.by_variable.resize(n);
+    frame.candidates.resize(n, {ReasonLiteralFilter::no_value, ReasonLiteralFilter::no_value, ReasonLiteralFilter::no_value});
     for (decltype(n) i = 0; i < n; ++i) {
         SimpleIntegerVariableID var{i};
         auto declared = names_and_ids_tracker().declared_bounds_if_tracked(var);
@@ -789,18 +785,42 @@ auto ProofLogger::assume_current_bounds(const State & state) -> void
             continue;
         auto [lower, upper] = state.bounds(var);
         auto & b = frame.by_variable[i];
-        b.valid = true;
+        auto & tracker = names_and_ids_tracker();
         b.lower = lower;
         b.upper = upper;
         b.lower_moved = lower > declared->first;
         b.upper_moved = upper < declared->second;
-        if (previous && i < previous->by_variable.size() && previous->by_variable[i].valid) {
+        if (b.lower_moved)
+            b.lower_ok = true;
+        else if (tracker.order_literal_holds_at_top(var, VariableConditionOperator::GreaterEqual, lower)) {
+            b.lower_ok = true;
+            b.lower_unit = tracker.boundary_pin_line(var, lower);
+        }
+        if (b.upper_moved)
+            b.upper_ok = true;
+        else if (tracker.order_literal_holds_at_top(var, VariableConditionOperator::Less, upper + 1_i)) {
+            b.upper_ok = true;
+            // The pin is keyed by the ge cut, which for `x < ub + 1` is ub + 1.
+            b.upper_unit = tracker.boundary_pin_line(var, upper + 1_i);
+        }
+        // A variable declared fixed has nothing for the search to derive.
+        b.equal_ok = lower == upper && (b.lower_moved || b.upper_moved);
+
+        auto & c = frame.candidates[i];
+        if (b.lower_ok)
+            c.ge = lower;
+        if (b.upper_ok)
+            c.lt = upper + 1_i;
+        if (b.equal_ok)
+            c.eq = lower;
+
+        if (previous && i < previous->by_variable.size()) {
             auto & p = previous->by_variable[i];
-            if (p.lower == lower)
+            if (b.lower_moved && p.lower_moved && p.lower == lower)
                 b.lower_unit = p.lower_unit;
-            if (p.upper == upper)
+            if (b.upper_moved && p.upper_moved && p.upper == upper)
                 b.upper_unit = p.upper_unit;
-            if (p.lower == lower && p.upper == upper)
+            if (b.equal_ok && p.equal_ok && p.lower == lower)
                 b.equal_unit = p.equal_unit;
         }
     }

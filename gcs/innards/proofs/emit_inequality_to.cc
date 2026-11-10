@@ -163,7 +163,7 @@ auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids
                         [&](const FalseLiteral &) { rhs += w; },                         //
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                             if constexpr (std::is_same_v<T_, SimpleIntegerVariableID>)
-                                if (filter && filter->omit(cond))
+                                if (filter && filter->is_candidate(cond) && filter->omit(cond))
                                     return;
                             auto xlit = EnsureNames::Yes == ensure_names ? names_and_ids_tracker.xliteral_for_ensuring(cond)
                                                                          : names_and_ids_tracker.xliteral_for(cond);
