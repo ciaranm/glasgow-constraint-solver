@@ -48,6 +48,7 @@ using std::any_of;
 using std::fstream;
 using std::function;
 using std::generator;
+using std::get_if;
 using std::ios;
 using std::ios_base;
 using std::list;
@@ -759,6 +760,52 @@ auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariabl
     if (pin == atoms->ge_pins.end())
         return nullopt;
     return pin->second;
+}
+
+auto NamesAndIDsTracker::existing_defining_line(const IntegerVariableCondition & cond) const -> optional<ProofLine>
+{
+    // Above Definitions the atoms have placeholder lines (need_gevar), and
+    // nothing is checked that could cite them.
+    if (_imp->assertion_level > AssertionLevel::Definitions)
+        return nullopt;
+    const auto * var = get_if<SimpleIntegerVariableID>(&cond.var);
+    if (! var)
+        return nullopt;
+    auto atoms = _imp->find_atoms(*var);
+    if (! atoms)
+        return nullopt;
+
+    auto line_of = [](const variant<ProofLine, XLiteral> & def) -> optional<ProofLine> {
+        if (const auto * line = get_if<ProofLine>(&def))
+            return *line;
+        return nullopt;
+    };
+
+    switch (cond.op) {
+        using enum VariableConditionOperator;
+    case GreaterEqual:
+    case Less: {
+        auto defs = atoms->ge_defs.find(cond.value.raw_value);
+        if (defs == atoms->ge_defs.end())
+            return nullopt;
+        return line_of(GreaterEqual == cond.op ? defs->second.first : defs->second.second);
+    }
+    case Equal: {
+        // need_eqvar's compact form, at a declared bound, says only the one
+        // order atom that is not trivial there.
+        if (_imp->use_compact_boolean_encoding) {
+            auto bounds = _imp->integer_variable_definition_bounds.find(*var);
+            if (bounds != _imp->integer_variable_definition_bounds.end() &&
+                (bounds->second.first == cond.value || bounds->second.second == cond.value))
+                return nullopt;
+        }
+        auto defs = atoms->eq_defs.find(cond.value.raw_value);
+        if (defs == atoms->eq_defs.end())
+            return nullopt;
+        return line_of(defs->second.first);
+    }
+    default: return nullopt;
+    }
 }
 
 auto NamesAndIDsTracker::bit_sum_implies(const SimpleOrProofOnlyIntegerVariableID & id, VariableConditionOperator op, Integer v) const -> bool
