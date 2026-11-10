@@ -21,5 +21,10 @@ execute_process(
     COMMAND ${GIT_EXECUTABLE} apply ${PATCH_FILE}
     RESULT_VARIABLE result)
 if(NOT result EQUAL 0)
-    message(FATAL_ERROR "could not apply the XCSP3 parser patch ${PATCH_FILE}")
+    # Most often an existing build tree holding an older version of this
+    # patch, which neither the reverse check above nor a fresh apply accepts.
+    message(FATAL_ERROR "could not apply the XCSP3 parser patch ${PATCH_FILE}. "
+        "If this build tree has an older version of it applied, delete the "
+        "fetched parser (_deps/xcsp3_cpp_parser-*) and configure again; see "
+        "dev_docs/xcsp.md, \"Changing a parser patch\".")
 endif()

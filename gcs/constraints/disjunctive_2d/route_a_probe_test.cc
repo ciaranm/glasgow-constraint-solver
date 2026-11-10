@@ -161,7 +161,7 @@ namespace
 
     struct Outcome
     {
-        bool accepted;
+        string proof_name;
         long long proof_bytes;
     };
 
@@ -262,14 +262,13 @@ namespace
 
         std::error_code ec;
         auto bytes = static_cast<long long>(std::filesystem::file_size(proof_name + ".pbp", ec));
-        auto accepted = run_veripb("--force-checked-deletion", proof_name + ".opb", proof_name + ".pbp");
-        return Outcome{accepted, bytes};
+        return Outcome{proof_name, bytes};
     }
 
-    auto expect(const Outcome & outcome, bool accepted, const string & tag) -> void
+    auto expect(const Outcome & outcome, const VeripbVerdict & expected, const string & tag) -> void
     {
-        if (outcome.accepted != accepted)
-            fail(tag + ": veripb " + (outcome.accepted ? "accepted" : "rejected") + " where it should have done the opposite");
+        if (auto problem = veripb_verdict_differs(outcome.proof_name, expected))
+            fail(tag + ": " + *problem);
         dispose_of_proof_files("route_a_probe_" + tag);
     }
 }
@@ -288,35 +287,38 @@ auto main(int argc, char * argv[]) -> int
     vector<Rect> four{{3, 3}, {4, 2}, {3, 4}, {2, 3}};
     auto row = check_route_a(four, 4, 12, 9, "row", 0, false);
     println(cerr, "route A probe: flagged row over four rectangles, {} proof bytes", row.proof_bytes);
-    expect(row, true, "row");
-    expect(check_route_a(four, 4, 12, 9, "row_too_strong", 1, false), false, "row_too_strong");
-    expect(check_route_a(four, 4, 12, 9, "row_no_network", 0, false, comparator_network_mutation::None{}, true), false, "row_no_network");
+    expect(row, VeripbAccepts{}, "row");
+    expect(check_route_a(four, 4, 12, 9, "row_too_strong", 1, false), VeripbRejects{GCS_VERIPB_REJECTS_HINT}, "row_too_strong");
+    expect(check_route_a(four, 4, 12, 9, "row_no_network", 0, false, comparator_network_mutation::None{}, true),
+        VeripbRejects{GCS_VERIPB_REJECTS_RUP}, "row_no_network");
     // The same over a window [3, 12): parking's coefficient is the window's
     // width, and the endgame's bottom bound is load-bearing.
-    expect(check_route_a(four, 4, 12, 12, "row_offset", 0, false, comparator_network_mutation::None{}, false, 3), true, "row_offset");
-    expect(check_route_a(four, 4, 12, 12, "row_offset_too_strong", 1, false, comparator_network_mutation::None{}, false, 3), false,
-        "row_offset_too_strong");
+    expect(check_route_a(four, 4, 12, 12, "row_offset", 0, false, comparator_network_mutation::None{}, false, 3), VeripbAccepts{}, "row_offset");
+    expect(check_route_a(four, 4, 12, 12, "row_offset_too_strong", 1, false, comparator_network_mutation::None{}, false, 3),
+        VeripbRejects{GCS_VERIPB_REJECTS_HINT}, "row_offset_too_strong");
     // Parking is what carries a zero duration through the gap lemma.
-    expect(check_route_a(four, 4, 12, 9, "drop_parking", 0, false, comparator_network_mutation::DropParking{}), false, "drop_parking");
+    expect(check_route_a(four, 4, 12, 9, "drop_parking", 0, false, comparator_network_mutation::DropParking{}), VeripbRejects{GCS_VERIPB_REJECTS_PBC},
+        "drop_parking");
 
     // A height equal to the wires' span: window [0, 7) is three bits, and a
     // rectangle of height 7 pinned at y = 0. Its upper-bound half degenerates
     // and its both-active clause loses ~active; both must still close.
     vector<Rect> full_span{{2, 7, 0, 0}, {3, 2}, {2, 3}};
-    expect(check_route_a(full_span, 4, 12, 7, "full_span", 0, false), true, "full_span");
-    expect(check_route_a(full_span, 4, 12, 7, "full_span_too_strong", 1, false), false, "full_span_too_strong");
+    expect(check_route_a(full_span, 4, 12, 7, "full_span", 0, false), VeripbAccepts{}, "full_span");
+    expect(check_route_a(full_span, 4, 12, 7, "full_span_too_strong", 1, false), VeripbRejects{GCS_VERIPB_REJECTS_HINT}, "full_span_too_strong");
 
     // y domains strictly inside the window, so the start bounds are RUPs
     // through the bit encoding's bound rows rather than those rows themselves.
     vector<Rect> inside{{3, 3, 2, 3}, {4, 2, 1, 5}, {3, 4, 0, 4}, {2, 3, 3, 6}};
-    expect(check_route_a(inside, 4, 12, 9, "inside", 0, false), true, "inside");
+    expect(check_route_a(inside, 4, 12, 9, "inside", 0, false), VeripbAccepts{}, "inside");
 
     // First use: three rectangles of total height 9 in H = 8 cannot all
     // cover t, which is the node route B refutes.
     vector<Rect> three{{3, 3}, {4, 2}, {3, 4}};
-    expect(check_route_a(three, 4, 12, 8, "refutes", 0, true), true, "refutes");
-    expect(check_route_a(three, 4, 12, 9, "refutes_slack", 0, true), false, "refutes_slack");
-    expect(check_route_a(three, 4, 12, 8, "refutes_no_network", 0, true, comparator_network_mutation::None{}, true), false, "refutes_no_network");
+    expect(check_route_a(three, 4, 12, 8, "refutes", 0, true), VeripbAccepts{}, "refutes");
+    expect(check_route_a(three, 4, 12, 9, "refutes_slack", 0, true), VeripbRejects{GCS_VERIPB_REJECTS_RUP}, "refutes_slack");
+    expect(check_route_a(three, 4, 12, 8, "refutes_no_network", 0, true, comparator_network_mutation::None{}, true),
+        VeripbRejects{GCS_VERIPB_REJECTS_RUP}, "refutes_no_network");
 
     // Random shapes: the row must verify for every one. Where it says
     // something (total height over H) the same claim without the network is
@@ -344,11 +346,11 @@ auto main(int argc, char * argv[]) -> int
         auto tag = "random" + to_string(k);
         auto outcome = check_route_a(rects, t, 12, y_hi, tag, 0, false, comparator_network_mutation::None{}, false, y_lo);
         println(cerr, "route A probe: {} n={} window=[{},{}) total={} t={}: {} bytes", tag, n, y_lo, y_hi, total, t, outcome.proof_bytes);
-        expect(outcome, true, tag);
+        expect(outcome, VeripbAccepts{}, tag);
         if (total > height) {
             ++nontrivial;
             auto control = check_route_a(rects, t, 12, y_hi, tag + "_no_network", 0, false, comparator_network_mutation::None{}, true, y_lo);
-            if (! control.accepted)
+            if (! run_veripb(veripb_checked_deletion_flag, control.proof_name + ".opb", control.proof_name + ".pbp"))
                 ++needed_network;
             dispose_of_proof_files("route_a_probe_" + tag + "_no_network");
         }

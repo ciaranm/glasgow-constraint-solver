@@ -91,7 +91,8 @@ namespace
         Present
     };
 
-    auto check(size_t k, Am1FromPairsMutation mutation, Model model_kind, Guard guard_kind, const string & tag, bool expect_veripb_to_accept) -> void
+    auto check(size_t k, Am1FromPairsMutation mutation, Model model_kind, Guard guard_kind, const string & tag, const VeripbVerdict & expected)
+        -> void
     {
         auto proof_name = "am1_from_pairs_" + to_string(k) + "_" + tag;
         ProofOptions proof_options{proof_name};
@@ -167,14 +168,8 @@ namespace
 
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_veripb_to_accept) {
-            if (accepted)
-                fail("k=" + to_string(k) + " (" + tag +
-                    "): veripb accepted a proof built from a deliberately corrupted derivation, so the honest one has slack in it");
-            else
-                fail("k=" + to_string(k) + " (" + tag + "): veripb rejected an honest proof");
-        }
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail("k=" + to_string(k) + " (" + tag + "): " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
@@ -193,12 +188,12 @@ auto main(int argc, char * argv[]) -> int
     // is where #548 expects to stop caring: the merge is O(k^2) additions per
     // time point, so a clique is not something to be casual about.
     for (size_t k = 2; k <= 12; ++k)
-        check(k, am1_from_pairs_mutation::None{}, Model::Plain, Guard::None, "honest", true);
+        check(k, am1_from_pairs_mutation::None{}, Model::Plain, Guard::None, "honest", VeripbAccepts{});
     println(cerr, "cliques of 2 to 12 members: derived and verified");
 
     // And it means what it says: two members active contradicts it.
     for (size_t k : {2, 3, 5, 8})
-        check(k, am1_from_pairs_mutation::None{}, Model::WithTwoActive, Guard::None, "contradiction", true);
+        check(k, am1_from_pairs_mutation::None{}, Model::WithTwoActive, Guard::None, "contradiction", VeripbAccepts{});
     println(cerr, "the clique inequality contradicts two active members");
 
     // Dropping an input from the last merge. Worth being clear about what this
@@ -206,12 +201,12 @@ auto main(int argc, char * argv[]) -> int
     // VeriPB would be right to accept. It is the `ia` pin that rejects, which
     // is the only reason this mutation is a test at all.
     for (size_t k : {3, 4, 7})
-        check(k, am1_from_pairs_mutation::DropAnAtMostOne{}, Model::Plain, Guard::None, "dropped", false);
+        check(k, am1_from_pairs_mutation::DropAnAtMostOne{}, Model::Plain, Guard::None, "dropped", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "veripb rejected a merge missing an at-most-one, as expected");
 
     // Claiming no member may be active at all.
     for (size_t k : {2, 3, 6})
-        check(k, am1_from_pairs_mutation::ClaimOneMore{}, Model::Plain, Guard::None, "onemore", false);
+        check(k, am1_from_pairs_mutation::ClaimOneMore{}, Model::Plain, Guard::None, "onemore", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "veripb rejected the one-stronger claim, as expected");
 
     // The induction is necessary, and here is where. Summing every at-most-one
@@ -220,9 +215,9 @@ auto main(int argc, char * argv[]) -> int
     // and rejected from four on --- if this boundary ever moves, the argument
     // for the induction has changed and the comment explaining it is wrong.
     for (size_t k : {2, 3})
-        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::None, "naive", true);
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::None, "naive", VeripbAccepts{});
     for (size_t k : {4, 5, 9})
-        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::None, "naive", false);
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::None, "naive", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "the one-shot merge works to three members and fails from four, as the induction's premise says");
 
     // Leaving the division off the last merge gives a line that is *stronger*
@@ -232,7 +227,7 @@ auto main(int argc, char * argv[]) -> int
     // it says the final division is load-bearing for the pin and not only for
     // the induction.
     for (size_t k : {3, 5})
-        check(k, am1_from_pairs_mutation::SkipFinalDivision{}, Model::Plain, Guard::None, "nodivide", false);
+        check(k, am1_from_pairs_mutation::SkipFinalDivision{}, Model::Plain, Guard::None, "nodivide", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "veripb rejected an undivided --- and strictly stronger --- last merge, as expected");
 
     // And the same again with a guard riding through the induction, which is
@@ -243,24 +238,24 @@ auto main(int argc, char * argv[]) -> int
     // rejection, which is why the contradiction model is the interesting one
     // here rather than an extra.
     for (size_t k = 2; k <= 12; ++k)
-        check(k, am1_from_pairs_mutation::None{}, Model::Plain, Guard::Present, "ghonest", true);
+        check(k, am1_from_pairs_mutation::None{}, Model::Plain, Guard::Present, "ghonest", VeripbAccepts{});
     for (size_t k : {2, 3, 5, 8})
-        check(k, am1_from_pairs_mutation::None{}, Model::WithTwoActive, Guard::Present, "gcontradiction", true);
+        check(k, am1_from_pairs_mutation::None{}, Model::WithTwoActive, Guard::Present, "gcontradiction", VeripbAccepts{});
     println(cerr, "the guarded fold derives, and carries the guard at k-1 exactly");
 
     // A guard does not soften the pin: every mutation is still caught, and the
     // one-shot merge still turns from right to wrong between three members and
     // four.
     for (size_t k : {3, 4, 7})
-        check(k, am1_from_pairs_mutation::DropAnAtMostOne{}, Model::Plain, Guard::Present, "gdropped", false);
+        check(k, am1_from_pairs_mutation::DropAnAtMostOne{}, Model::Plain, Guard::Present, "gdropped", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     for (size_t k : {2, 3, 6})
-        check(k, am1_from_pairs_mutation::ClaimOneMore{}, Model::Plain, Guard::Present, "gonemore", false);
+        check(k, am1_from_pairs_mutation::ClaimOneMore{}, Model::Plain, Guard::Present, "gonemore", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     for (size_t k : {2, 3})
-        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::Present, "gnaive", true);
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::Present, "gnaive", VeripbAccepts{});
     for (size_t k : {4, 5, 9})
-        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::Present, "gnaive", false);
+        check(k, am1_from_pairs_mutation::NaiveOneShot{}, Model::Plain, Guard::Present, "gnaive", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     for (size_t k : {3, 5})
-        check(k, am1_from_pairs_mutation::SkipFinalDivision{}, Model::Plain, Guard::Present, "gnodivide", false);
+        check(k, am1_from_pairs_mutation::SkipFinalDivision{}, Model::Plain, Guard::Present, "gnodivide", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
     println(cerr, "the guarded fold rejects every mutation the plain one does");
 
     return EXIT_SUCCESS;

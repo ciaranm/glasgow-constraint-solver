@@ -32,8 +32,15 @@ include(FetchContent)
 # instantiation's or a precedence's values, a knapsack's weights or profits.
 # It refuses a mixed element matrix too, and substitutes a group's arguments
 # into a template's lists entry by entry, where upstream again decided from the
-# first entry whether a list held parameters. Each patch is applied by its own
-# COMMAND, and each is skipped if already in place.
+# first entry whether a list held parameters.
+#
+# The fifth patch refuses a <group> template that names a parameter past the
+# end of an <args>: %5 with two arguments was read out of bounds in a list (a
+# segfault), began a %... past the end (an abort), and in a condition or an
+# intension was left unsubstituted. Each patch is applied by its own COMMAND,
+# and each is skipped if already in place. Editing a patch that is already
+# applied in an existing build tree makes that tree's configure fail; see
+# dev_docs/xcsp.md, "Changing a parser patch", for the cure.
 FetchContent_Declare(xcsp3_cpp_parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
     GIT_TAG 179670dd97cd2b87cdeb93aa7268b57bba719490
@@ -44,6 +51,8 @@ FetchContent_Declare(xcsp3_cpp_parser
     COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_element_member.patch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_mixed_lists.patch
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
+    COMMAND ${CMAKE_COMMAND} -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/xcsp3_parser_group_args.patch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/apply_parser_patch.cmake
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(xcsp3_cpp_parser)
@@ -306,6 +315,18 @@ add_xcsp_refusal_test(element_matrix_mixed "element with both integers and varia
 add_xcsp_test(group_coeffs_param)
 add_xcsp_test(group_list_param)
 add_xcsp_test(group_list_param_first)
+# A group template naming a parameter past the end of its <args> (#1456): with
+# two arguments, %5 in a list segfaulted, %0 %3 %... aborted, and %5 in a
+# condition or an intension was left unsubstituted. The fifth parser patch
+# refuses each. A list's or a condition's parameter raises the template's
+# largest parameter number, so the first three lanes are refused where an
+# <args> ends; an intension is text, so the last two are refused when it is
+# substituted, %12 included, which would otherwise have had its %1 replaced.
+add_xcsp_refusal_test(group_param_past_args "group: the template uses %5 but an <args> has only 2 arguments")
+add_xcsp_refusal_test(group_param_rest_past_args "group: the template uses %3 but an <args> has only 2 arguments")
+add_xcsp_refusal_test(group_param_condition_past_args "group: the template uses %5 but an <args> has only 2 arguments")
+add_xcsp_refusal_test(group_param_intension_past_args "group: the template uses %5 but an <args> has only 2 arguments")
+add_xcsp_refusal_test(group_param_intension_digits_past_args "group: the template uses %12 but an <args> has only 2 arguments")
 add_xcsp_test(slide)
 add_xcsp_test(sum_not_equals)
 # <sum> with ne against a nonzero constant and against a variable. Both used to

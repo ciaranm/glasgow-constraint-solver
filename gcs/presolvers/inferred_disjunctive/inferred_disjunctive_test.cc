@@ -304,8 +304,8 @@ auto main(int argc, char * argv[]) -> int
             const string name = "inferred_disjunctive_makespan_mutation";
             solve_family(3, 2, 8, Setup{.mutation = inferred_disjunctive_mutation::ClaimHigherMakespanBound{}, .minimise_makespan = true},
                 make_optional(name), false);
-            if (run_veripb(name + ".opb", name + ".pbp"))
-                fail("veripb accepted a makespan bound one above what the clique carries");
+            if (auto problem = veripb_verdict_differs(name, VeripbRejects{GCS_VERIPB_REJECTS_RUP}))
+                fail("a makespan bound one above what the clique carries: " + *problem);
             dispose_of_proof_files(name);
             println(cerr, "veripb rejected the higher-makespan mutation, as expected");
         }
@@ -512,8 +512,8 @@ auto main(int argc, char * argv[]) -> int
         if (proofs) {
             const string name = "inferred_disjunctive_optional_mutation";
             run(3, 2, 5, false, Setup{.mutation = inferred_disjunctive_mutation::ForgetPresence{}}, make_optional(name));
-            if (run_veripb(name + ".opb", name + ".pbp"))
-                fail("veripb accepted a clique of optional tasks posted as mandatory");
+            if (auto problem = veripb_verdict_differs(name, VeripbRejects{GCS_VERIPB_REJECTS_RUP}))
+                fail("a clique of optional tasks posted as mandatory: " + *problem);
             println(cerr, "veripb rejected the forgotten presence, as expected");
             dispose_of_proof_files(name);
         }
@@ -1273,8 +1273,8 @@ auto main(int argc, char * argv[]) -> int
             solve_with(
                 p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
 
-            if (run_veripb(name + ".opb", name + ".pbp"))
-                fail("veripb accepted the " + what + " mutation, so the honest certificate has slack in it");
+            if (auto problem = veripb_verdict_differs(name, VeripbRejects{GCS_VERIPB_REJECTS_HINT}))
+                fail("the " + what + " mutation: " + *problem);
             println(cerr, "veripb rejected the {} mutation, as expected", what);
             dispose_of_proof_files(name);
         }

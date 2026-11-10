@@ -101,7 +101,8 @@ namespace
     // a sound step can land somewhere weaker. So each proof also pins the
     // line's content with an `ia` step, whose implication check is syntactic:
     // a weaker line does not imply the claimed one and veripb says so.
-    auto check_proof(const Fixture & fixture, SubsetSumMutation mutation, Model model_kind, const string & tag, bool expect_veripb_to_accept) -> void
+    auto check_proof(const Fixture & fixture, SubsetSumMutation mutation, Model model_kind, const string & tag, const VeripbVerdict & expected)
+        -> void
     {
         auto proof_name = "subset_sum_strengthening_" + fixture.name + "_" + tag;
         ProofOptions proof_options{proof_name};
@@ -159,14 +160,8 @@ namespace
 
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_veripb_to_accept) {
-            if (accepted)
-                fail(fixture.name + " (" + tag +
-                    "): veripb accepted a proof built from a deliberately corrupted derivation, so the honest one has slack in it");
-            else
-                fail(fixture.name + " (" + tag + "): veripb rejected an honest proof");
-        }
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail(fixture.name + " (" + tag + "): " + *problem);
         dispose_of_proof_files(proof_name);
     }
 }
@@ -263,8 +258,8 @@ auto main(int argc, char * argv[]) -> int
         // there is no proof to check; every fixture here is chosen otherwise.
         println(cerr, "subset sum strengthening {}: weights {} bound {} to {}", fixture.name, fixture.weights, fixture.bound.raw_value,
             fixture.expected.raw_value);
-        check_proof(fixture, subset_sum_mutation::None{}, Model::SourceOnly, "honest", true);
-        check_proof(fixture, subset_sum_mutation::None{}, Model::WithContradiction, "usable", true);
+        check_proof(fixture, subset_sum_mutation::None{}, Model::SourceOnly, "honest", VeripbAccepts{});
+        check_proof(fixture, subset_sum_mutation::None{}, Model::WithContradiction, "usable", VeripbAccepts{});
     }
 
     // Mutations. Each must be rejected: if one is not, the honest derivation
@@ -275,13 +270,13 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "subset sum strengthening {}: mutations", fixture.name);
         // Claiming one better makes a step of the derivation unsupported, so
         // it is the satisfiable model that sees it.
-        check_proof(fixture, subset_sum_mutation::ClaimOneBetter{}, Model::SourceOnly, "onebetter", false);
+        check_proof(fixture, subset_sum_mutation::ClaimOneBetter{}, Model::SourceOnly, "onebetter", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
         // A divisor that does not divide everything still divides soundly ---
         // the step verifies. What it does not do is establish the claimed
         // bound, and that only shows up where the line gets used.
-        check_proof(fixture, subset_sum_mutation::BogusDivisor{}, Model::WithContradiction, "bogusdivisor", false);
+        check_proof(fixture, subset_sum_mutation::BogusDivisor{}, Model::WithContradiction, "bogusdivisor", VeripbRejects{GCS_VERIPB_REJECTS_HINT});
         if (! fixture.expect_division && fixture.weights.size() > 2)
-            check_proof(fixture, subset_sum_mutation::SkipALayer{}, Model::SourceOnly, "skiplayer", false);
+            check_proof(fixture, subset_sum_mutation::SkipALayer{}, Model::SourceOnly, "skiplayer", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
     }
 
     return EXIT_SUCCESS;

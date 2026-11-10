@@ -602,11 +602,12 @@ offset is refused outside the same range (#1214).
    instructions shipped, 5.12·10⁹ converting once per call, 4.28·10⁹ with
    proofs off, and the same 655,916-byte proof either way (fataepyc-09,
    2026-10-16). `Regular`'s default `Upfront` passes its declarative reason
-   to the same call (`regular.cc:348`) and has no such copy; its `PerCall`
-   passes a materialised `ReasonLiterals` (`regular_legacy.cc:374`) and has
-   the same copy, which costs only with proofs off, since with proofs on its
-   default short reason is one flag ([`regular.md`](regular.md), the reason
-   side).
+   to the same call (`regular.cc:346`) and has no such copy. Its `PerCall`
+   passed a materialised `ReasonLiterals` and had the same copy, which cost
+   only with proofs off, since with proofs on its default short reason is one
+   flag; #1445 ended that copy too, converting the reason to one `Reason` at
+   the call's first pruning (`regular_legacy.cc:428-429`; see
+   [`regular.md`](regular.md), the reason side).
 3. **The proof side.** Per value throughout, with no width gate: one RUP per
    removed value; one backward chain per node and value; and in the OPB one row
    per node and declared value (#842), plus the atoms each names. The per-value

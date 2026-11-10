@@ -208,11 +208,12 @@ namespace
         return pol.emit(logger, ProofLevel::Top);
     }
 
-    /* One instance, one run. `expect_accepted` is false for the control, where
-     * the window is wide enough to hold the boxes and the concluding RUP has
-     * nothing to close on.
+    /* One instance, one run. `expected` is a RUP rejection for the control,
+     * where the window is wide enough to hold the boxes and the concluding RUP
+     * has nothing to close on.
      */
-    auto check_relaxation(const vector<Box> & boxes, const vector<int> & slice_at, int window, const string & tag, bool expect_accepted) -> void
+    auto check_relaxation(const vector<Box> & boxes, const vector<int> & slice_at, int window, const string & tag, const VeripbVerdict & expected)
+        -> void
     {
         auto axes = boxes.front().size();
         auto proof_name = "kd_relaxation_probe_" + to_string(axes) + "d_" + tag;
@@ -260,9 +261,8 @@ namespace
         logger.conclude_unsatisfiable(false);
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_accepted)
-            fail(to_string(axes) + "-D " + tag + ": veripb " + (accepted ? "accepted" : "rejected") + " where it should have done the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail(to_string(axes) + "-D " + tag + ": " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
@@ -306,11 +306,11 @@ auto main(int, char *[]) -> int
             auto [boxes, total] = overfull(n, axes);
             // One unit too little room on the last axis: unsatisfiable, and the
             // relaxation is the only argument that says so.
-            check_relaxation(boxes, slice_at, total - 1, "n" + to_string(n) + "_tight", true);
+            check_relaxation(boxes, slice_at, total - 1, "n" + to_string(n) + "_tight", VeripbAccepts{});
             // The control: one unit of slack, so the boxes fit and the endgame
             // has nothing to refute. Without it a bug that made the derivation
             // vacuously contradictory would pass the test above.
-            check_relaxation(boxes, slice_at, total + 1, "n" + to_string(n) + "_slack", false);
+            check_relaxation(boxes, slice_at, total + 1, "n" + to_string(n) + "_slack", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
         }
     }
 

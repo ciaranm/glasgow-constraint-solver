@@ -1134,14 +1134,23 @@ veripb rejects.
 
 It also has to reject for the right reason, and each lane says what that is
 with `--expect`, naming one of the `GCS_VERIPB_REJECTS_*` variables in the
-top-level `CMakeLists.txt` (a RUP step, a proofgoal, or an implication check
-against a hint). The harness further requires that veripb failed a *step* of
+top-level `CMakeLists.txt` (a RUP step, a proof by contradiction, or an implication
+check against a hint). The harness further requires that veripb failed a *step* of
 the proof. Without that, a proof that is missing, truncated or does not parse
 is rejected too, and the lane passes having checked nothing; and a corruption
 that stops breaking the step it was aimed at, but happens to break a different
 one, would go unnoticed. When a lane fails on the reason, read the proof (the
 harness keeps it) before changing the `--expect`: the new failure may be real,
 or it may be the mutation no longer doing what its name says.
+
+A test binary that writes a corrupted proof and checks the rejection itself,
+rather than through the harness, makes the same two checks with
+`veripb_verdict_differs()` in `constraints_test_utils.hh`: it takes
+`VeripbRejects{GCS_VERIPB_REJECTS_RUP}` (or another reason), or `VeripbAccepts{}`
+for the honest twin, and returns what went wrong, if anything. Its target needs
+`gcs_expect_veripb_rejections()` in CMake for the reason names to compile.
+Testing only `run_veripb`'s exit status is the weakness the harness check was
+added to remove.
 
 Two things make the difference between a mutation lane that tests something
 and one that does not. Mutate on an instance whose margin is *one* — corrupt a

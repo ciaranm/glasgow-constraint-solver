@@ -88,7 +88,7 @@ namespace
         TheTruth
     };
 
-    auto check_comparator(int a_value, int b_value, Claim claim, const string & tag, bool expect_accepted) -> void
+    auto check_comparator(int a_value, int b_value, Claim claim, const string & tag, const VeripbVerdict & expected) -> void
     {
         auto proof_name = "comparator_network_" + to_string(a_value) + "_" + to_string(b_value) + "_" + tag;
         ProofOptions proof_options{proof_name};
@@ -147,10 +147,8 @@ namespace
         logger.conclude_none();
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_accepted)
-            fail("a=" + to_string(a_value) + " b=" + to_string(b_value) + " (" + tag + "): veripb " + (accepted ? "accepted" : "rejected") +
-                " where it should have done the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail("a=" + to_string(a_value) + " b=" + to_string(b_value) + " (" + tag + "): " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
@@ -218,7 +216,7 @@ namespace
     }
 
     auto check_refutation(const vector<int> & durations, int window_lo, int window_hi, ComparatorNetworkMutation mutation, const string & tag,
-        bool expect_accepted) -> void
+        const VeripbVerdict & expected) -> void
     {
         auto proof_name = "comparator_network_refute_" + to_string(durations.size()) + "_" + tag;
         ProofOptions proof_options{proof_name};
@@ -269,10 +267,9 @@ namespace
         logger.conclude_unsatisfiable(false);
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_accepted)
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
             fail("refutation of " + to_string(durations.size()) + " tasks in [" + to_string(window_lo) + ", " + to_string(window_hi) + ") (" + tag +
-                "): veripb " + (accepted ? "accepted" : "rejected") + " where it should have done the opposite");
+                "): " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
@@ -315,14 +312,14 @@ auto main(int, char *[]) -> int
 
     for (auto a = 0; a < 6; ++a)
         for (auto b = 0; b < 6; ++b) {
-            check_comparator(a, b, Claim::Nothing, "plain", true);
-            check_comparator(a, b, Claim::TheTruth, "truth", true);
+            check_comparator(a, b, Claim::Nothing, "plain", VeripbAccepts{});
+            check_comparator(a, b, Claim::TheTruth, "truth", VeripbAccepts{});
             // The two that say the rows have content: claiming the low output
             // is not the smaller input, or the high one not the larger, has to
             // fail --- and does so by the RUP not going through, which is what
             // a false claim against sound rows looks like.
-            check_comparator(a, b, Claim::LoIsNotTheSmaller, "lo_wrong", false);
-            check_comparator(a, b, Claim::HiIsNotTheLarger, "hi_wrong", false);
+            check_comparator(a, b, Claim::LoIsNotTheSmaller, "lo_wrong", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
+            check_comparator(a, b, Claim::HiIsNotTheLarger, "hi_wrong", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
         }
 
     // A window that starts where the time line does, and one slid along it.
@@ -332,28 +329,31 @@ auto main(int, char *[]) -> int
     const auto offset = 7;
     for (size_t tasks = 3; tasks <= 8; ++tasks) {
         auto [durations, work] = tight_instance(tasks);
-        check_refutation(durations, 0, work - 1, comparator_network_mutation::None{}, "honest", true);
-        check_refutation(durations, offset, offset + work - 1, comparator_network_mutation::None{}, "offset", true);
+        check_refutation(durations, 0, work - 1, comparator_network_mutation::None{}, "honest", VeripbAccepts{});
+        check_refutation(durations, offset, offset + work - 1, comparator_network_mutation::None{}, "offset", VeripbAccepts{});
         // The same tasks with one more unit of window: they fit, and the
         // endgame must not close. This is the control that says the refutation
         // is about the instance rather than about the scaffolding.
-        check_refutation(durations, 0, work, comparator_network_mutation::None{}, "roomy", false);
-        check_refutation(durations, offset, offset + work, comparator_network_mutation::None{}, "offset_roomy", false);
+        check_refutation(durations, 0, work, comparator_network_mutation::None{}, "roomy", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
+        check_refutation(
+            durations, offset, offset + work, comparator_network_mutation::None{}, "offset_roomy", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
     }
 
     {
         auto [durations, work] = tight_instance(4);
         auto lo = offset, hi = offset + work - 1;
-        check_refutation(durations, lo, hi, comparator_network_mutation::DropPositivity{}, "drop_positivity", false);
-        check_refutation(durations, lo, hi, comparator_network_mutation::SwapDurations{}, "swap_durations", false);
-        check_refutation(durations, lo, hi, comparator_network_mutation::RupGap{}, "rup_gap", false);
+        check_refutation(durations, lo, hi, comparator_network_mutation::DropPositivity{}, "drop_positivity", VeripbRejects{GCS_VERIPB_REJECTS_PBC});
+        check_refutation(durations, lo, hi, comparator_network_mutation::SwapDurations{}, "swap_durations", VeripbRejects{GCS_VERIPB_REJECTS_PBC});
+        check_refutation(durations, lo, hi, comparator_network_mutation::RupGap{}, "rup_gap", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
         // Accepted, and expected to be: with every duration pinned, propagation
         // reaches a muxed duration's positivity without the case split. Asserted
         // so that it is on the record, and so that it starts failing the day
         // durations stop being constants.
-        check_refutation(durations, lo, hi, comparator_network_mutation::RupPositivity{}, "rup_positivity", true);
-        check_refutation(durations, lo, hi, comparator_network_mutation::RupPreservation{}, "rup_preservation", false);
-        check_refutation(durations, lo, hi, comparator_network_mutation::DropPreservation{}, "drop_preservation", false);
+        check_refutation(durations, lo, hi, comparator_network_mutation::RupPositivity{}, "rup_positivity", VeripbAccepts{});
+        check_refutation(
+            durations, lo, hi, comparator_network_mutation::RupPreservation{}, "rup_preservation", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
+        check_refutation(
+            durations, lo, hi, comparator_network_mutation::DropPreservation{}, "drop_preservation", VeripbRejects{GCS_VERIPB_REJECTS_RUP});
     }
 
     return EXIT_SUCCESS;

@@ -397,6 +397,21 @@ if(GCS_BUILD_TESTS)
     set(GCS_VERIPB_REJECTS_RUP "not implied by reverse unit propagation")
     set(GCS_VERIPB_REJECTS_PBC "is not contradicting, as specified by the hint")
     set(GCS_VERIPB_REJECTS_HINT "not syntactically implied by the constraint at the hint")
+    # A test binary that checks a rejection itself, rather than through the
+    # harness, names the same reasons: this gives its target each of them as a
+    # compile definition of the same name, for veripb_verdict_differs() in
+    # gcs/constraints/innards/constraints_test_utils.hh. An unset variable
+    # expands to "", which every output contains, so a renamed or misspelt
+    # reason is refused here rather than passed on to match anything.
+    set(GCS_VERIPB_REJECTION_REASONS GCS_VERIPB_REJECTS_RUP GCS_VERIPB_REJECTS_PBC GCS_VERIPB_REJECTS_HINT)
+    function(gcs_expect_veripb_rejections target)
+        foreach(reason IN LISTS GCS_VERIPB_REJECTION_REASONS)
+            if("${${reason}}" STREQUAL "")
+                message(FATAL_ERROR "${reason} is empty or unset, so a check for it would match any veripb output")
+            endif()
+            target_compile_definitions(${target} PRIVATE "${reason}=\"${${reason}}\"")
+        endforeach()
+    endfunction()
 endif()
 
 # FetchContent dependencies declared before the subdirectories that consume them.

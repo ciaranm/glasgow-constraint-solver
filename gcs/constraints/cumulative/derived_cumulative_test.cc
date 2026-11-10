@@ -1168,8 +1168,8 @@ auto main(int argc, char * argv[]) -> int
         solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }},
             make_optional<ProofOptions>(ProofFileNames{"derived_cumulative_one_lower"}));
 
-        if (run_veripb("derived_cumulative_one_lower.opb", "derived_cumulative_one_lower.pbp"))
-            fail("veripb accepted a derived capacity one lower than the derivation supports");
+        if (auto problem = veripb_verdict_differs("derived_cumulative_one_lower", VeripbRejects{GCS_VERIPB_REJECTS_RUP}))
+            fail("a derived capacity one lower than the derivation supports: " + *problem);
         println(cerr, "veripb rejected the one-lower capacity, as expected");
         dispose_of_proof_files("derived_cumulative_one_lower");
     }
@@ -1190,8 +1190,8 @@ auto main(int argc, char * argv[]) -> int
         post(p, instance, make_optional(demo));
         solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
 
-        if (run_veripb(name + ".opb", name + ".pbp"))
-            fail(string{"veripb accepted "} + what);
+        if (auto problem = veripb_verdict_differs(name, VeripbRejects{GCS_VERIPB_REJECTS_RUP}))
+            fail(string{what} + ": " + *problem);
         println(cerr, "veripb rejected {}, as expected", what);
         dispose_of_proof_files(name);
     }

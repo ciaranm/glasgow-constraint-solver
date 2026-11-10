@@ -1,0 +1,15 @@
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[3]"> 0..3 </array>
+  </variables>
+  <constraints>
+    <group>
+      <sum>
+        <list> %0 %1 </list>
+        <condition> (eq,%5) </condition>
+      </sum>
+      <args> x[0] x[1] </args>
+      <args> x[1] x[2] </args>
+    </group>
+  </constraints>
+</instance>

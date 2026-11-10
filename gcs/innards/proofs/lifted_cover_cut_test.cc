@@ -180,7 +180,7 @@ namespace
     /// veripb agreed. Each row carries one task the cut says nothing about, so
     /// the weakening sweep is exercised in every case rather than assumed.
     auto check(const string & name, const vector<vector<Integer>> & demands, const vector<Integer> & capacities, const vector<Integer> & coefficients,
-        Integer rhs, const vector<Integer> & claimed_coefficients, Integer claimed_rhs, bool expect_veripb_to_accept, bool expect_valid = true)
+        Integer rhs, const vector<Integer> & claimed_coefficients, Integer claimed_rhs, const VeripbVerdict & expected, bool expect_valid = true)
         -> void
     {
         auto validity = validate_lifted_cover_cut(demands, coefficients, capacities, rhs, generous);
@@ -236,19 +236,18 @@ namespace
         logger.conclude_none();
         tracker.finalise();
 
-        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
-        if (accepted != expect_veripb_to_accept)
-            fail(name + ": veripb " + (accepted ? "accepted" : "rejected") + " it, expecting the opposite");
+        if (auto problem = veripb_verdict_differs(proof_name, expected))
+            fail(name + ": " + *problem);
         dispose_of_proof_files(proof_name);
     }
 
     /// The single-row case, which is most of them and reads better without the
     /// extra braces.
     auto check(const string & name, const vector<Integer> & demands, Integer capacity, const vector<Integer> & coefficients, Integer rhs,
-        const vector<Integer> & claimed_coefficients, Integer claimed_rhs, bool expect_veripb_to_accept, bool expect_valid = true) -> void
+        const vector<Integer> & claimed_coefficients, Integer claimed_rhs, const VeripbVerdict & expected, bool expect_valid = true) -> void
     {
-        check(name, vector<vector<Integer>>{demands}, vector<Integer>{capacity}, coefficients, rhs, claimed_coefficients, claimed_rhs,
-            expect_veripb_to_accept, expect_valid);
+        check(name, vector<vector<Integer>>{demands}, vector<Integer>{capacity}, coefficients, rhs, claimed_coefficients, claimed_rhs, expected,
+            expect_valid);
     }
 
     /// The honest cut, and then the two "one better" claims over it. Every
@@ -258,12 +257,12 @@ namespace
     auto check_and_claim_one_better(const string & name, const vector<vector<Integer>> & demands, const vector<Integer> & capacities,
         const vector<Integer> & coefficients, Integer rhs) -> void
     {
-        check(name, demands, capacities, coefficients, rhs, coefficients, rhs, true);
-        check(name + "_tighter_rhs", demands, capacities, coefficients, rhs, coefficients, rhs - 1_i, false);
+        check(name, demands, capacities, coefficients, rhs, coefficients, rhs, VeripbAccepts{});
+        check(name + "_tighter_rhs", demands, capacities, coefficients, rhs, coefficients, rhs - 1_i, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
         for (size_t i = 0; i < coefficients.size(); ++i) {
             auto raised = coefficients;
             raised[i] += 1_i;
-            check(name + "_raised_" + to_string(i), demands, capacities, coefficients, rhs, raised, rhs, false);
+            check(name + "_raised_" + to_string(i), demands, capacities, coefficients, rhs, raised, rhs, VeripbRejects{GCS_VERIPB_REJECTS_HINT});
         }
     }
 
@@ -548,12 +547,12 @@ auto main(int argc, char * argv[]) -> int
     // a Cumulative has one height per task --- so the cut is simply restricted,
     // and the degenerate end of that is a cut no 0/1 point can miss, which is
     // one RUP and no dynamic programme at all.
-    check("restricted", {5_i, 3_i, 3_i}, 8_i, {1_i, 1_i, 1_i}, 2_i, {1_i, 1_i, 1_i}, 2_i, true);
-    check("restricted_trivial", {5_i, 3_i}, 8_i, {1_i, 1_i}, 2_i, {1_i, 1_i}, 2_i, true);
+    check("restricted", {5_i, 3_i, 3_i}, 8_i, {1_i, 1_i, 1_i}, 2_i, {1_i, 1_i, 1_i}, 2_i, VeripbAccepts{});
+    check("restricted_trivial", {5_i, 3_i}, 8_i, {1_i, 1_i}, 2_i, {1_i, 1_i}, 2_i, VeripbAccepts{});
     println(cerr, "a cut restricted to fewer tasks still derives, or is trivial");
 
     // A cut that is not valid has no programme to build and no proof to emit.
-    check("invalid_rhs", {6_i, 6_i, 6_i}, 10_i, {1_i, 1_i, 1_i}, 0_i, {1_i, 1_i, 1_i}, 0_i, false, false);
+    check("invalid_rhs", {6_i, 6_i, 6_i}, 10_i, {1_i, 1_i, 1_i}, 0_i, {1_i, 1_i, 1_i}, 0_i, VeripbRejects{GCS_VERIPB_REJECTS_HINT}, false);
     println(cerr, "an invalid cut is refused rather than derived");
 
     // Several rows, which is what Sidorov's Equation 4 lifts over and where a
@@ -565,8 +564,10 @@ auto main(int argc, char * argv[]) -> int
     // watching: it is a constraint no single row implies, and the only thing
     // that changed is that the programme carries a weight per row.
     check_and_claim_one_better("two_rows", {{5_i, 2_i, 2_i, 2_i}, {2_i, 2_i, 2_i, 5_i}}, {5_i, 5_i}, {2_i, 1_i, 1_i, 2_i}, 2_i);
-    check("two_rows_one_alone", {5_i, 2_i, 2_i, 2_i}, 5_i, {2_i, 1_i, 1_i, 2_i}, 2_i, {2_i, 1_i, 1_i, 2_i}, 2_i, false, false);
-    check("two_rows_other_alone", {2_i, 2_i, 2_i, 5_i}, 5_i, {2_i, 1_i, 1_i, 2_i}, 2_i, {2_i, 1_i, 1_i, 2_i}, 2_i, false, false);
+    check("two_rows_one_alone", {5_i, 2_i, 2_i, 2_i}, 5_i, {2_i, 1_i, 1_i, 2_i}, 2_i, {2_i, 1_i, 1_i, 2_i}, 2_i,
+        VeripbRejects{GCS_VERIPB_REJECTS_HINT}, false);
+    check("two_rows_other_alone", {2_i, 2_i, 2_i, 5_i}, 5_i, {2_i, 1_i, 1_i, 2_i}, 2_i, {2_i, 1_i, 1_i, 2_i}, 2_i,
+        VeripbRejects{GCS_VERIPB_REJECTS_HINT}, false);
     println(cerr, "a cut needing two rows derives, and neither row derives it alone");
 
     // Three of them, each ruling out one pair, which is the shape a cut lifted

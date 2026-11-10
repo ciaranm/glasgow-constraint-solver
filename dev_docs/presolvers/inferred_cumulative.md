@@ -1091,8 +1091,10 @@ proof (the marker comment; the `markers` lane asserts it).
   - **Two lanes skip that flag.** The capacity-top lane and the markers lane
     check through `run_veripb`, without it. This audit re-ran the twelve
     capacity-top `InferredCumulative` cases with the flag: all twelve verify.
-  - The mutation lanes also use `run_veripb`, which is the safe direction for
-    a rejection.
+  - The mutation lanes check through `veripb_verdict_differs()`, which passes
+    the flag and also requires veripb to fail a step of the proof for the
+    expected reason (#1456); until then they used `run_veripb` and looked only
+    at its exit status.
 
 **What the tests do not cover.**
 - **Assertion levels.** No lane runs a derived `Cumulative` above

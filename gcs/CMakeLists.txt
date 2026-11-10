@@ -1340,6 +1340,18 @@ if(GCS_BUILD_TESTS)
     # it needs no wrapper.
     add_test(NAME subset_sum_strengthening_test COMMAND $<TARGET_FILE:subset_sum_strengthening_test>)
 
+    # The test binaries that check a deliberately corrupted proof's rejection
+    # themselves, through veripb_verdict_differs(), which needs the reasons it
+    # may be told to expect (gcs_expect_veripb_rejections, top-level
+    # CMakeLists.txt).
+    foreach(target
+            am1_from_pairs_test am1_from_row_test comparator_network_test cumulative_strengthening_presolver_test
+            derived_cumulative_test disjunctive_2d_presolver_test flag_bridge_test inferred_cumulative_presolver_test
+            inferred_disjunctive_presolver_test kd_relaxation_probe_test lifted_cover_cut_test route_a_probe_test
+            route_b_probe_test subset_sum_strengthening_test)
+        gcs_expect_veripb_rejections(${target})
+    endforeach()
+
     add_executable(introduce_bits_test innards/proofs/introduce_bits_test.cc)
     target_link_libraries(introduce_bits_test PRIVATE glasgow_constraint_solver)
     add_test(NAME introduce_bits_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:introduce_bits_test>)

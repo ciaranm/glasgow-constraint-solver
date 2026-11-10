@@ -270,7 +270,7 @@ Two corrections worth not relapsing into:
 ## Proof by contradiction is `pbc`
 
 To derive `C` by refuting `¬C`, use `ProofLogger::emit_pbc_proof_line`, which
-writes `pbc C : subproof ... qed;`. The tree used to spell this as a `red` with
+writes `pbc C : subproof ... qed : -1;`. The tree used to spell this as a `red` with
 an empty witness and a single `proofgoal #1`. VeriPB accepts that too, but it is
 a worse spelling:
 

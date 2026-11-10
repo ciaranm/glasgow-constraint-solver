@@ -60,6 +60,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -1064,8 +1065,8 @@ auto main(int argc, char * argv[]) -> int
         if (proofs) {
             const string name = "inferred_cumulative_optional_mutation";
             run(lifted_instance(9), false, Setup{.mutation = inferred_cumulative_mutation::ForgetPresence{}}, make_optional(name));
-            if (run_veripb(name + ".opb", name + ".pbp"))
-                fail("veripb accepted a cut over optional tasks posted as mandatory");
+            if (auto problem = veripb_verdict_differs(name, VeripbRejects{GCS_VERIPB_REJECTS_RUP}))
+                fail("a cut over optional tasks posted as mandatory: " + *problem);
             println(cerr, "veripb rejected the forgotten presence, as expected");
             dispose_of_proof_files(name);
         }
@@ -1478,18 +1479,20 @@ auto main(int argc, char * argv[]) -> int
                 " cuts with a coefficient above one, so the mutants are not corrupting the cut this file is about");
         println(cerr, "the honest certificate over the spare-task fixture verifies");
 
-        for (const auto & [what, mutation] :
-            {std::pair<string, InferredCumulativeMutation>{"one less capacity", inferred_cumulative_mutation::ClaimTighterCapacity{}},
-                std::pair<string, InferredCumulativeMutation>{"one more height", inferred_cumulative_mutation::ClaimTallerTask{}},
-                std::pair<string, InferredCumulativeMutation>{"a tighter row", inferred_cumulative_mutation::ClaimTighterRow{}}}) {
+        for (const auto & [what, mutation, reason] : {std::tuple<string, InferredCumulativeMutation, std::string_view>{"one less capacity",
+                                                          inferred_cumulative_mutation::ClaimTighterCapacity{}, GCS_VERIPB_REJECTS_HINT},
+                 std::tuple<string, InferredCumulativeMutation, std::string_view>{
+                     "one more height", inferred_cumulative_mutation::ClaimTallerTask{}, GCS_VERIPB_REJECTS_HINT},
+                 std::tuple<string, InferredCumulativeMutation, std::string_view>{
+                     "a tighter row", inferred_cumulative_mutation::ClaimTighterRow{}, GCS_VERIPB_REJECTS_RUP}}) {
             const string name = "inferred_cumulative_mutation";
             Problem p;
             post(p, lifted_instance_with_spare(13), Setup{.mutation = mutation});
             solve_with(
                 p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
 
-            if (run_veripb(name + ".opb", name + ".pbp"))
-                fail("veripb accepted the " + what + " mutation, so the honest certificate has slack in it");
+            if (auto problem = veripb_verdict_differs(name, VeripbRejects{reason}))
+                fail("the " + what + " mutation: " + *problem);
             println(cerr, "veripb rejected the {} mutation, as expected", what);
             dispose_of_proof_files(name);
         }
@@ -1545,19 +1548,22 @@ auto main(int argc, char * argv[]) -> int
     // that can only exist here, where a row is carried onto the wrong member's
     // flags. With a single donor there is no crossing for it to corrupt.
     if (proofs) {
-        for (const auto & [what, mutation] :
-            {std::pair<string, InferredCumulativeMutation>{"one less capacity", inferred_cumulative_mutation::ClaimTighterCapacity{}},
-                std::pair<string, InferredCumulativeMutation>{"one more height", inferred_cumulative_mutation::ClaimTallerTask{}},
-                std::pair<string, InferredCumulativeMutation>{"a tighter row", inferred_cumulative_mutation::ClaimTighterRow{}},
-                std::pair<string, InferredCumulativeMutation>{"the wrong task bridged", inferred_cumulative_mutation::BridgeWrongTask{}}}) {
+        for (const auto & [what, mutation, reason] : {std::tuple<string, InferredCumulativeMutation, std::string_view>{"one less capacity",
+                                                          inferred_cumulative_mutation::ClaimTighterCapacity{}, GCS_VERIPB_REJECTS_HINT},
+                 std::tuple<string, InferredCumulativeMutation, std::string_view>{
+                     "one more height", inferred_cumulative_mutation::ClaimTallerTask{}, GCS_VERIPB_REJECTS_HINT},
+                 std::tuple<string, InferredCumulativeMutation, std::string_view>{
+                     "a tighter row", inferred_cumulative_mutation::ClaimTighterRow{}, GCS_VERIPB_REJECTS_RUP},
+                 std::tuple<string, InferredCumulativeMutation, std::string_view>{
+                     "the wrong task bridged", inferred_cumulative_mutation::BridgeWrongTask{}, GCS_VERIPB_REJECTS_HINT}}) {
             const string name = "inferred_cumulative_two_resource_mutation";
             Problem p;
             post(p, two_resource_instance(8), Setup{.mutation = mutation});
             solve_with(
                 p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
 
-            if (run_veripb(name + ".opb", name + ".pbp"))
-                fail("veripb accepted the " + what + " mutation over two resources, so that certificate has slack in it");
+            if (auto problem = veripb_verdict_differs(name, VeripbRejects{reason}))
+                fail("the " + what + " mutation over two resources: " + *problem);
             println(cerr, "veripb rejected the {} mutation over two resources, as expected", what);
             dispose_of_proof_files(name);
         }

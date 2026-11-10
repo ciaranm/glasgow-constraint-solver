@@ -17,14 +17,18 @@
 # A rejection only counts if it is the one the lane was written for. Two checks
 # stand behind that:
 #
-#  - veripb must have reported a failed step in *this* proof ("Checking error
-#    at NAME.pbp:"). A proof file that is missing, empty, truncated, or that does
+#  - veripb must have reported a failed step in *this* proof ("error at
+#    NAME.pbp:"). A proof file that is missing, empty, truncated, or that does
 #    not parse is rejected too, but that is a broken test, not a caught mutation,
-#    and on its own the exit code cannot tell the two apart.
+#    and on its own the exit code cannot tell the two apart. VeriPB's main
+#    branch says "Checking error at" and its 3.0.2 release "Verification error
+#    at", so only the common tail is matched, and a rewording of the first word
+#    does not turn every mutation lane red at once. 3.0.2 also says "Parsing
+#    error at" for a proof that does not parse, so that line does not count.
 #  - veripb's output must contain REASON. Pass the GCS_VERIPB_REJECTS_* variable
 #    from the top-level CMakeLists.txt that names the rule the corruption is
 #    meant to break, so that a mutation which starts failing somewhere else (a
-#    RUP step where a proofgoal was meant to fail, say) is noticed rather than
+#    RUP step where a `pbc` was meant to fail, say) is noticed rather than
 #    silently counted as caught.
 #
 # PROGRAM must still exit successfully: this checks the proof, not the program,
@@ -88,9 +92,11 @@ if [[ $status -eq 0 ]] ; then
     exit 1
 fi
 
-if ! grep -qF -- "Checking error at ${proofname}.pbp:" <<< "$output" ; then
-    echo "veripb rejected ${proofname}.pbp without failing a step of it: the proof is" >&2
-    echo "missing, malformed or unreadable, so the mutation was never actually checked." >&2
+if ! grep -F -- "error at ${proofname}.pbp:" <<< "$output" | grep -qvF -- "Parsing error at" ; then
+    echo "veripb rejected ${proofname}.pbp without failing a step of it, so the mutation" >&2
+    echo "was never actually checked. Either the proof is missing, malformed or" >&2
+    echo "unreadable, or veripb is missing, crashed, or has changed the wording of its" >&2
+    echo "error header (see its output above)." >&2
     exit 1
 fi
 
