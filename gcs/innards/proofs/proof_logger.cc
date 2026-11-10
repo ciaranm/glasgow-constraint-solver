@@ -975,11 +975,15 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     // names the flag instead. Only at the guard's own temporary level, which
     // is where the definition goes, so that the definition outlives every line
     // naming the flag. Not while KeepAssumedReasonLiterals is alive, whose
-    // lines are combined with lines from outside. A definition is not written
-    // inside a subproof, where it would not survive the `qed`.
+    // lines are combined with lines from outside. Not for an `ia`, which is
+    // checked term for term against the one line it cites, and that line is
+    // usually a definition or a model row, which has no flag to match. A
+    // definition is not written inside a subproof, where it would not survive
+    // the `qed`.
     const ReasonLiterals * use_reason = &reason;
     Imp::AbbreviatedReason * abbreviated = nullptr;
-    if (! _imp->abbreviated_reasons.empty() && ProofLevel::Temporary == level && 0 == _imp->keep_assumed_reason_literals) {
+    if (! _imp->abbreviated_reasons.empty() && ProofLevel::Temporary == level && 0 == _imp->keep_assumed_reason_literals &&
+        ! std::holds_alternative<ImpliesProofRule>(rule)) {
         auto & innermost = _imp->abbreviated_reasons.back();
         if (innermost.level == temporary_proof_level() && (innermost.reason == &reason || std::ranges::equal(*innermost.reason, reason)) &&
             (innermost.decided || 0 == _imp->subproof_depth)) {

@@ -340,7 +340,8 @@ namespace gcs::innards
          * reason's literals, at the temporary level the lines go to. It is
          * therefore deleted together with every line that names it. The line
          * the justification finally infers is at the current level, so it
-         * keeps the whole reason.
+         * keeps the whole reason, as does an `ia`, which has to match the line
+         * it cites term for term.
          *
          * This is opt-in, per justification. A smaller proof is not always a
          * faster check, so only hold one where measurement says it pays; see

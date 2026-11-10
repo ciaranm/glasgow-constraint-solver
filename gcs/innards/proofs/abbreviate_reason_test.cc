@@ -6,9 +6,9 @@
  * cases that the constraints which opt in do not reach: a hinted RUP whose hint
  * needs the reason's literals set, which works only because the definition is
  * cited ahead of it; a level forgotten while the guard is still alive, after
- * which the flag has to be defined afresh; the size below which nothing is
- * abbreviated; and a claim that is false, which must still be refused once it
- * is abbreviated.
+ * which the flag has to be defined afresh; an `ia`, which has to keep the
+ * whole reason; the size below which nothing is abbreviated; and a claim that
+ * is false, which must still be refused once it is abbreviated.
  */
 
 #include <gcs/constraints/innards/constraints_test_utils.hh>
@@ -61,6 +61,7 @@ namespace
     {
         Once,          ///< one guarded line, then the inference at the current level
         AfterForget,   ///< the temporary level is forgotten mid-guard, then used again
+        Implies,       ///< an `ia` under the reason, citing the row, which has no flag
         TooSmall,      ///< a reason too short to be worth a definition
         ClaimTooStrong ///< the row needs one more literal than the reason gives
     };
@@ -115,6 +116,10 @@ namespace
                 logger.emit_under_reason(RUPProofRule{vector<ProofLine>{row}}, WPBSum{} + 1_i * z >= 1_i, ProofLevel::Temporary, reason);
             };
             guarded();
+            // The row is exactly the line under the full reason, so an `ia`
+            // citing it holds only if the reason is left spelled out.
+            if (shape == Shape::Implies)
+                logger.emit_under_reason(ImpliesProofRule{row}, WPBSum{} + 1_i * z >= 1_i, ProofLevel::Temporary, reason);
             if (shape == Shape::AfterForget) {
                 logger.forget_proof_level(t);
                 guarded();
@@ -151,6 +156,9 @@ auto main(int argc, char * argv[]) -> int
     // Forgetting the level deletes the definition, so the next guarded line
     // needs a second one, under a new name.
     check("after_forget", Shape::AfterForget, 5, 5, 4, VeripbAccepts{});
+
+    // An `ia` keeps the whole reason, since what it cites has no flag in it.
+    check("implies", Shape::Implies, 5, 5, 2, VeripbAccepts{});
 
     // Below the size floor nothing is defined, and the line is written in full.
     check("too_small", Shape::TooSmall, 3, 3, 0, VeripbAccepts{});
