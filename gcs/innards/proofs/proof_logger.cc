@@ -227,14 +227,20 @@ struct ProofLogger::Imp
     // (when fixed) a reason may leave out. A side that had moved off its
     // declared bound is one the search derived, and gets a unit line of its
     // own the first time a reason leaves it out. A side still at its declared
-    // bound may be left out only if order_literal_holds_at_top said so when
-    // the snapshot was taken, and its unit, if any, is the boundary pin.
-    // Deciding all this up front keeps the check per reason literal to a
-    // compare, which matters: it runs for every literal of every reason.
+    // bound may be left out once order_literal_holds_at_top says so, and its
+    // unit, if any, is the boundary pin. That answer can change from no to
+    // yes, because the pin is written when the bound's atom is first created,
+    // which is often the first time a reason names it. So a declared side
+    // whose atom does not exist yet stays a candidate (lower_maybe) and is
+    // asked again when a reason names it; once its atom exists without a pin
+    // the answer is final. Deciding as much as possible up front keeps the
+    // check per reason literal to a compare, which matters: it runs for every
+    // literal of every reason.
     struct AssumedBounds
     {
         Integer lower = 0_i, upper = -1_i;
         bool lower_ok = false, upper_ok = false, equal_ok = false;
+        bool lower_maybe = false, upper_maybe = false;
         bool lower_moved = false, upper_moved = false;
         optional<ProofLine> lower_unit, upper_unit, equal_unit;
     };
@@ -707,6 +713,30 @@ private:
         return true;
     }
 
+    // A declared side not yet known to be omittable: ask the tracker again.
+    // Once the bound's atom exists without a pin it never will be, so stop
+    // offering it as a candidate.
+    auto confirm(
+        bool & ok, bool & maybe, optional<ProofLine> & unit, const VariableConditionFrom<SimpleIntegerVariableID> & cond, Integer & candidate) -> bool
+    {
+        if (! maybe)
+            return false;
+        auto & tracker = _logger.names_and_ids_tracker();
+        if (tracker.order_literal_holds_at_top(cond.var, cond.op, cond.value)) {
+            ok = true;
+            maybe = false;
+            // The pin is keyed by the ge cut, which for `x < ub + 1` is ub + 1:
+            // the condition's value either way.
+            unit = tracker.boundary_pin_line(cond.var, cond.value);
+            return true;
+        }
+        if (tracker.find_xliteral_for(cond)) {
+            maybe = false;
+            candidate = no_value;
+        }
+        return false;
+    }
+
 public:
     vector<ProofLine> extra_hints;
 
@@ -724,11 +754,15 @@ public:
         switch (cond.op) {
             using enum VariableConditionOperator;
         case GreaterEqual:
-            if (! b.lower_ok || cond.value != b.lower)
+            if (cond.value != b.lower)
+                return false;
+            if (! b.lower_ok && ! confirm(b.lower_ok, b.lower_maybe, b.lower_unit, cond, _frame.candidates[cond.var.index].ge))
                 return false;
             return use(b.lower_unit, b.lower_moved, cond);
         case Less:
-            if (! b.upper_ok || cond.value != b.upper + 1_i)
+            if (cond.value != b.upper + 1_i)
+                return false;
+            if (! b.upper_ok && ! confirm(b.upper_ok, b.upper_maybe, b.upper_unit, cond, _frame.candidates[cond.var.index].lt))
                 return false;
             return use(b.upper_unit, b.upper_moved, cond);
         case Equal:
@@ -796,6 +830,8 @@ auto ProofLogger::assume_current_bounds(const State & state) -> void
             b.lower_ok = true;
             b.lower_unit = tracker.boundary_pin_line(var, lower);
         }
+        else
+            b.lower_maybe = ! tracker.find_xliteral_for(var >= lower);
         if (b.upper_moved)
             b.upper_ok = true;
         else if (tracker.order_literal_holds_at_top(var, VariableConditionOperator::Less, upper + 1_i)) {
@@ -803,13 +839,15 @@ auto ProofLogger::assume_current_bounds(const State & state) -> void
             // The pin is keyed by the ge cut, which for `x < ub + 1` is ub + 1.
             b.upper_unit = tracker.boundary_pin_line(var, upper + 1_i);
         }
+        else
+            b.upper_maybe = ! tracker.find_xliteral_for(var < upper + 1_i);
         // A variable declared fixed has nothing for the search to derive.
         b.equal_ok = lower == upper && (b.lower_moved || b.upper_moved);
 
         auto & c = frame.candidates[i];
-        if (b.lower_ok)
+        if (b.lower_ok || b.lower_maybe)
             c.ge = lower;
-        if (b.upper_ok)
+        if (b.upper_ok || b.upper_maybe)
             c.lt = upper + 1_i;
         if (b.equal_ok)
             c.eq = lower;
