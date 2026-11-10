@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
+#include <gcs/variable_condition.hh>
 
 #include <charconv>
 #include <iosfwd>
@@ -70,6 +71,28 @@ namespace gcs::innards
         NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, std::string & out, EnsureNames ensure_names) -> void;
 
     /**
+     * \brief Decides whether a reifying literal on a model variable may be
+     * left out of a line rendered by emit_reified_inequality_to.
+     *
+     * Leaving a literal out is what rendering a TrueLiteral does, and it is
+     * only sound when the proof already has the literal as a unit. The
+     * ProofLogger's implementation answers from the bounds it was told to
+     * assume (see ProofLogger::assume_current_bounds), and writes down the
+     * unit it relies on if the proof does not have one yet.
+     *
+     * Only used inside proof innards.
+     *
+     * \ingroup Innards
+     */
+    class ReasonLiteralFilter
+    {
+    public:
+        virtual ~ReasonLiteralFilter() = default;
+
+        [[nodiscard]] virtual auto omit(const VariableConditionFrom<SimpleIntegerVariableID> &) -> bool = 0;
+    };
+
+    /**
      * \brief Append the half-reified form of an inequality, rendered as proof
      * text, to a string: byte-for-byte what emit_inequality_to produces for
      * reify(ineq, half_reif), but without materialising the reified sum.
@@ -77,12 +100,15 @@ namespace gcs::innards
      * measurable, uses this; anything that wants the reified sum as a value
      * still goes through NamesAndIDsTracker::reify.
      *
+     * With a filter, a reifying literal on a model variable that the filter
+     * says to omit is left out, exactly as a TrueLiteral would be.
+     *
      * Only used inside proof innards.
      *
      * \ingroup Innards
      */
     auto emit_reified_inequality_to(NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-        const HalfReifyOnConjunctionOf & half_reif, std::string & out, EnsureNames ensure_names) -> void;
+        const HalfReifyOnConjunctionOf & half_reif, std::string & out, EnsureNames ensure_names, ReasonLiteralFilter * filter = nullptr) -> void;
 
     /**
      * \brief Write an inequality out to an ostream.

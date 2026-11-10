@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <gcs/exception.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/power.hh>
@@ -220,6 +221,32 @@ struct ProofLogger::Imp
     // one-term sum per logged inference. Safe to reuse because nothing
     // reachable from an emission re-enters infer().
     WPBSumLE unit_buffer{{}, -1_i};
+
+    // What assume_current_bounds recorded about one variable. lower and upper
+    // are its bounds at the time; a side that had moved off its declared bound
+    // is one the search derived, and gets a unit line of its own the first
+    // time a reason leaves it out. A side still at its declared bound is the
+    // tracker's to vouch for (order_literal_holds_at_top).
+    struct AssumedBounds
+    {
+        Integer lower = 0_i, upper = -1_i;
+        bool valid = false, lower_moved = false, upper_moved = false;
+        optional<ProofLine> lower_unit, upper_unit, equal_unit;
+    };
+
+    // One assume_current_bounds call, indexed by SimpleIntegerVariableID. It
+    // lasts until its proof level is forgotten, since the units it writes and
+    // the lines they are derived from live at that level.
+    struct AssumptionFrame
+    {
+        int level;
+        vector<AssumedBounds> by_variable;
+    };
+
+    vector<AssumptionFrame> assumption_frames;
+
+    // How many KeepAssumedReasonLiterals are alive.
+    int keep_assumed_reason_literals = 0;
 
     [[nodiscard]] auto unit_holds(const Literal & lit) -> const WPBSumLE &
     {
@@ -645,6 +672,152 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     return line;
 }
 
+// Leaves out of a reason the literals assume_current_bounds made units of.
+// With hinted set, the line is a hinted RUP, which propagates only over its
+// hints, so a literal is left out only if there is a unit line to add to them.
+class ProofLogger::AssumedReasonLiteralFilter : public ReasonLiteralFilter
+{
+private:
+    ProofLogger & _logger;
+    Imp::AssumptionFrame & _frame;
+    bool _hinted;
+
+    auto use_unit(optional<ProofLine> & unit, const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool
+    {
+        if (! unit) {
+            // A line derived inside a subproof does not outlive its `qed`.
+            if (_logger._imp->subproof_depth > 0)
+                return false;
+            unit = _logger.emit_assumed_unit(cond, _frame.level);
+        }
+        if (_hinted)
+            extra_hints.push_back(*unit);
+        return true;
+    }
+
+    auto use_declared(const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool
+    {
+        auto & tracker = _logger.names_and_ids_tracker();
+        if (! tracker.order_literal_holds_at_top(cond.var, cond.op, cond.value))
+            return false;
+        if (_hinted) {
+            // The pin is keyed by the ge cut, which for `x < ub + 1` is ub + 1.
+            auto pin = tracker.boundary_pin_line(cond.var, cond.value);
+            if (! pin)
+                return false;
+            extra_hints.push_back(*pin);
+        }
+        return true;
+    }
+
+public:
+    vector<ProofLine> extra_hints;
+
+    AssumedReasonLiteralFilter(ProofLogger & logger, Imp::AssumptionFrame & frame, bool hinted) : _logger(logger), _frame(frame), _hinted(hinted)
+    {
+    }
+
+    [[nodiscard]] auto omit(const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> bool override
+    {
+        if (cond.var.index >= _frame.by_variable.size())
+            return false;
+        auto & b = _frame.by_variable[cond.var.index];
+        if (! b.valid)
+            return false;
+
+        switch (cond.op) {
+            using enum VariableConditionOperator;
+        case GreaterEqual:
+            if (cond.value != b.lower)
+                return false;
+            return b.lower_moved ? use_unit(b.lower_unit, cond) : use_declared(cond);
+        case Less:
+            if (cond.value != b.upper + 1_i)
+                return false;
+            return b.upper_moved ? use_unit(b.upper_unit, cond) : use_declared(cond);
+        case Equal:
+            // A variable declared fixed has nothing for the search to derive.
+            if (b.lower != b.upper || cond.value != b.lower || ! (b.lower_moved || b.upper_moved))
+                return false;
+            return use_unit(b.equal_unit, cond);
+        default: return false;
+        }
+    }
+};
+
+auto ProofLogger::emit_assumed_unit(const VariableConditionFrom<SimpleIntegerVariableID> & cond, int level) -> ProofLine
+{
+    LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
+    auto & unit_line = lease.buffer();
+    unit_line += "rup ";
+    emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * static_cast<IntegerVariableCondition>(cond) >= 1_i, unit_line, EnsureNames::Yes);
+    unit_line += ";";
+    write_indent();
+    _imp->proof << unit_line << '\n';
+    auto line = advance_proof_line_number();
+    _imp->proof_lines_by_level.at(level).insert_at_end(line.number);
+    return line;
+}
+
+auto ProofLogger::assume_current_bounds(const State & state) -> void
+{
+    if (_imp->assertion_level != AssertionLevel::Off)
+        return;
+
+    for ([[maybe_unused]] const auto & guess : state.guesses())
+        throw UnexpectedException{"assume_current_bounds called with a guess in force"};
+
+    auto level = _imp->active_proof_level;
+
+    // Calling again at the same level (the root of the next restart pass)
+    // replaces the frame, but a unit for a bound that has not moved since is
+    // still there to be cited.
+    optional<Imp::AssumptionFrame> previous;
+    while (! _imp->assumption_frames.empty() && _imp->assumption_frames.back().level >= level) {
+        if (_imp->assumption_frames.back().level == level)
+            previous = std::move(_imp->assumption_frames.back());
+        _imp->assumption_frames.pop_back();
+    }
+
+    Imp::AssumptionFrame frame{level, {}};
+    auto n = state.what_variable_id_will_be_created_next().index;
+    frame.by_variable.resize(n);
+    for (decltype(n) i = 0; i < n; ++i) {
+        SimpleIntegerVariableID var{i};
+        auto declared = names_and_ids_tracker().declared_bounds_if_tracked(var);
+        if (! declared)
+            continue;
+        auto [lower, upper] = state.bounds(var);
+        auto & b = frame.by_variable[i];
+        b.valid = true;
+        b.lower = lower;
+        b.upper = upper;
+        b.lower_moved = lower > declared->first;
+        b.upper_moved = upper < declared->second;
+        if (previous && i < previous->by_variable.size() && previous->by_variable[i].valid) {
+            auto & p = previous->by_variable[i];
+            if (p.lower == lower)
+                b.lower_unit = p.lower_unit;
+            if (p.upper == upper)
+                b.upper_unit = p.upper_unit;
+            if (p.lower == lower && p.upper == upper)
+                b.equal_unit = p.equal_unit;
+        }
+    }
+
+    _imp->assumption_frames.push_back(std::move(frame));
+}
+
+ProofLogger::KeepAssumedReasonLiterals::KeepAssumedReasonLiterals(ProofLogger & logger) : _logger(logger)
+{
+    ++_logger._imp->keep_assumed_reason_literals;
+}
+
+ProofLogger::KeepAssumedReasonLiterals::~KeepAssumedReasonLiterals()
+{
+    --_logger._imp->keep_assumed_reason_literals;
+}
+
 auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
@@ -660,9 +833,22 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     }
         .visit(rule);
 
-    // EnsureNames::Yes: see emit() above.
+    // Leaving out an assumed reason literal is sound for a line VeriPB checks
+    // by unit propagation, which finds the literal's unit for itself, or by
+    // propagation over hints, to which the filter adds the unit. Not for an
+    // `ia`, which is checked against the one line it cites, term for term.
+    optional<AssumedReasonLiteralFilter> filter;
+    if (! reason.empty() && ! _imp->assumption_frames.empty() && 0 == _imp->keep_assumed_reason_literals &&
+        ! std::holds_alternative<ImpliesProofRule>(rule)) {
+        auto hinted = std::holds_alternative<RUPProofRule>(rule) && std::get<RUPProofRule>(rule).lines.has_value();
+        filter.emplace(*this, _imp->assumption_frames.back(), hinted);
+    }
+
+    // EnsureNames::Yes: see emit() above. A unit the filter writes goes out to
+    // the stream ahead of this line, as a definition does, and before any hint
+    // below is turned into a relative ID.
     if (! reason.empty()) {
-        emit_reified_inequality_to(names_and_ids_tracker(), ineq, reason, rule_line, EnsureNames::Yes);
+        emit_reified_inequality_to(names_and_ids_tracker(), ineq, reason, rule_line, EnsureNames::Yes, filter ? &*filter : nullptr);
     }
     else {
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
@@ -672,6 +858,14 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
         [&](const RUPProofRule & rule) {
             if (rule.lines) {
                 rule_line += ": ";
+                // The units go first: VeriPB takes the hints in the order given,
+                // and the hints after them were written expecting the omitted
+                // literals to be set already.
+                if (filter)
+                    for (const auto & line : filter->extra_hints) {
+                        rule_line += relative_proof_line(line, _imp->proof_line.number);
+                        rule_line += ' ';
+                    }
                 for (const auto & line : *rule.lines) {
                     rule_line += relative_proof_line(line, _imp->proof_line.number);
                     rule_line += ' ';
@@ -746,6 +940,11 @@ auto ProofLogger::enter_proof_level(int depth) -> void
 
 auto ProofLogger::forget_proof_level(int depth) -> void
 {
+    // An assumption made at this level or deeper relied on lines that are
+    // about to go.
+    while (! _imp->assumption_frames.empty() && _imp->assumption_frames.back().level >= depth)
+        _imp->assumption_frames.pop_back();
+
     auto & lines = _imp->proof_lines_by_level.at(depth);
     // Emit deletions as *relative* (negative) ids so a constraint-count
     // difference between the solver's OPB and cake_pb_cp's re-derived OPB

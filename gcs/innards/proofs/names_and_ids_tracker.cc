@@ -822,6 +822,14 @@ auto NamesAndIDsTracker::order_literal_holds_at_top(const SimpleOrProofOnlyInteg
     return _imp->assertion_level > AssertionLevel::Links && ! _imp->bounds_not_trivially_derivable.contains(id);
 }
 
+auto NamesAndIDsTracker::declared_bounds_if_tracked(const SimpleIntegerVariableID & id) const -> optional<pair<Integer, Integer>>
+{
+    auto atoms = _imp->find_atoms(id);
+    if (! atoms)
+        return nullopt;
+    return atoms->declared_bounds;
+}
+
 auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
 {
     return overloaded{
