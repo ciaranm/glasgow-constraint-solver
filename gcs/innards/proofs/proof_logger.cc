@@ -620,6 +620,24 @@ auto ProofLogger::infer(
         .visit(why);
 }
 
+auto ProofLogger::infer_using_hinted_rup(const Literal & lit, const RUPProofRule & rule, const ReasonLiterals & reason) -> void
+{
+    // Everything but the hinted line itself is infer()'s: a range conclusion
+    // that has to be split per value, and every assertion level, go there with
+    // a plain RUP. The hints were written for the one literal as stated, so a
+    // split, whose per-value lines they were not written for, does not get them.
+    auto split = false;
+    if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
+        split = cond->op == VariableConditionOperator::NotInRange && ! names_and_ids_tracker().can_represent_range_literal_for(cond->var);
+    if (! rule.lines || split || _imp->assertion_level != AssertionLevel::Off) {
+        infer(lit, JustifyUsingRUP{}, reason);
+        return;
+    }
+
+    if (! is_literally_true(lit))
+        emit_under_reason(rule, _imp->unit_holds(lit), ProofLevel::Current, reason);
+}
+
 auto ProofLogger::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
 {
     return names_and_ids_tracker().reify(ineq, half_reif);

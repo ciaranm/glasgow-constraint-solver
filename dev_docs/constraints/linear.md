@@ -834,16 +834,28 @@ the same instances, the same verified proofs.
   above. The row, plus `|cᵢ|` times each other term's bound literal
   (`add_for_literal`), skipping a bound the term's bits imply; no division
   since #1055, and no `pol` at all when nothing was added, because the RUP can
-  use the row as it stands (`justify.cc:14-63`). Precondition: every bound the
-  `pol` adds is the one the minimum sum used.
+  use the row as it stands (`justify.cc`). Precondition: every bound the
+  `pol` adds is the one the minimum sum used. **The RUP is hinted** for an
+  unreified row: the boundary pin of every term whose bound the reason leaves
+  out, the `pol` line, and the half of the conclusion atom's definition that
+  its negation fires. That pair is two opposite bounds on the changing
+  variable's bits, which unit propagation refutes over those lines alone (see
+  [`veripb-facts.md`](../veripb-facts.md#what-a-rup-step-costs)). It stays
+  unhinted when no `pol` was written, and for a gated row (a reified
+  constraint, or an arithmetic stage), whose gate is a reason literal but
+  whose row may be half-reified on a different literal the gate implies: the
+  stages cite cake's channel rows, gated on `[y ≥ 0]` under a gate saying
+  `[y ≥ 1]`. On job shop, where every start's bits sit in thousands of
+  time-indexed rows, the unhinted RUPs were 48% of checking time.
 - **Reason** — every other term's contributing bound, and the reification
   condition for a reified form, except that a term still at its declared bound
   is left out when its bits imply the bound or its boundary pin is already a
   unit (#1055); above `AssertionLevel::Links`, where no pins are written, also
-  when it would have been pinned (`names_and_ids_tracker.cc:791-830`). That is
-  safe only because this RUP lists no antecedent lines and nothing cites its
-  line
-  (`propagate.cc:74-82`). Before #1055 every term went in
+  when it would have been pinned (`names_and_ids_tracker.cc`,
+  `order_literal_holds_at_top`). That is safe because nothing cites this
+  line, and because its RUP either propagates over everything (unhinted) or
+  cites the pins itself (hinted); a term the bits imply needs no line either
+  way (`linear_bounds_reason` in `propagate.cc`). Before #1055 every term went in
   (#1035). **Still not minimal**: a term whose bound has moved goes in
   whether or not the push needs it. At most one literal per term. Guarded on
   `want_reasons()`.

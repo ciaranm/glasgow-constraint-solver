@@ -95,6 +95,12 @@ namespace gcs::innards
      *   - \c then_rup picks the proof shape: ThenRUP::Yes emits the steps at a
      *     temporary level then RUPs the inferred literal under the reason; ThenRUP::No
      *     lets the steps conclude the inference themselves.
+     *   - The \c emit may return a RUPProofRule instead of nothing. Under
+     *     ThenRUP::Yes the closing RUP then cites its lines, so VeriPB propagates
+     *     over those alone rather than over everything live, and a rule without
+     *     lines keeps the plain RUP. The lines must suffice for the literal as
+     *     inferred, taking the reason as given: the logger adds what its own
+     *     reason handling needs. Only for a single literal; infer_all refuses it.
      *   - \c hint is the assertion-mode annotation (NoHint by default), resolved by
      *     hint_annotation exactly as for JustifyUsingRUP. In Off mode it is ignored,
      *     so the hint never changes the emitted proof.

@@ -155,6 +155,21 @@ Two symmetric traps follow from it:
   value-keyed cache that pushed ~45k lines to `Top` made a modulus proof check
   **9× slower** while being 7× smaller.
 
+**Two opposite bounds over one bit sum are a complete hint pair.** If one
+cited line says `X ≥ a` and another says `X ≤ b` with `b < a`, over the same
+variable's bits (sign bit included), unit propagation over just those two
+reaches the conflict, fixing one bit at a time from the top: at each step one
+of the two forces the highest unassigned bit. Neither needs dividing or
+saturating first, and big-M guard terms do not matter once their literals are
+set. This is what makes the common "derive a bound on `x`'s bits, then claim
+an order atom on `x`" step cheap to hint: cite the line, and the half of the
+claimed atom's definition that the negated claim fires. Every other literal
+the lines mention has to be set by the hints too. A guard that the reason
+does not state literally (a row half-reified on `[y ≥ 0]` under a reason
+saying `[y ≥ 1]`) leaves its term free to absorb the slack, and the RUP fails
+where the unhinted one found the bridge for itself. Linear's bound push and
+Cumulative's per-time flag lemmas both rest on this.
+
 **How much hinting is worth is set by what is standing, not by what you are
 emitting.** Hinting the lifted cover cut replay against a bare model — one
 capacity row per time point, all scaffolding deleted — bought 25% of checking
