@@ -139,10 +139,10 @@ namespace
                 auto reason_sum = WPBSum{};
                 for (const auto & lit : _full)
                     reason_sum += 1_i * std::get<ProofLiteral>(lit);
-                // At ProofLevel::Top, and never deleted: see the commented-out
-                // deletion at the end of propagate_regular().
+                // At ProofLevel::Current, the level of every line that names the
+                // flag, so the definition is deleted with them on backtrack.
                 auto [reason_short, _line1, _line2] =
-                    _logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "", ProofLevel::Top);
+                    _logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "", ProofLevel::Current);
                 _short_form = eager_reason(singleton_reason(reason_short), _state);
             }
             return *_short_form;
@@ -431,13 +431,6 @@ namespace
                 }
             }
         }
-
-        // Need to check later whether this is safe to do now we have enumeration proofs
-        // if (logger && short_reasons) {
-        //     if (short_reasons) {
-        //         logger->delete_range(reason_definition_1, reason_definition_2 + 1);
-        //     }
-        // }
     }
 }
 
