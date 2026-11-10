@@ -148,16 +148,25 @@ The other 23 produce byte-identical proofs.
 A floor of 2 measured the same as 4. A floor of 8 lost most of the saving on p04
 (0.65 of the size rather than 0.46).
 
-**Measured, but not opted in.** These figures come from the experiment, which
-applied the mechanism to every `JustifyExplicitly` with a floor of 8:
+**Measured, but not opted in.** Element and MinMax were opted in on top of
+Cumulative, at a floor of 4, and measured against Cumulative alone on the
+MiniZinc corpus, with the search identical either side and every proof
+verified. Check times are paired VeriPB runs; valve-network and depot-placement
+were checked twice.
 
-| constraint | instances | size | check time |
-|---|---|--:|---|
-| Element | `2017_crosswords` | 0.36 | within 2.5% |
-| Element | `2011_depot-placement` | 0.68 | within 2.5% |
-| MinMax | `2013_league` | 0.55 | within 2.5% |
-| MinMax | `2025_EchoSched` | 0.76 | within 2.5% |
-| Reachable | hitori | 0.10 | slower, see above |
-| Disjunctive | p11 | 0.92 | slower, see above |
+| constraint | instance | proof size | check time before → after |
+|---|---|--:|--:|
+| Element | `2017_crosswords` | 0.35 | 2856 s → 2885 s |
+| Element | `2011_depot-placement` | 0.64 | 561 s → 584 s, 520 s → 525 s |
+| Element | `2023_valve-network` | 1.00 | 768 s → 857 s, 857 s → 929 s |
+| MinMax | `2013_league` | 0.55 | 65.2 s → 64.4 s |
+| MinMax | `2025_EchoSched` | 0.76 | 77.7 s → 77.4 s |
 
-Element and MinMax are candidates if proof size alone is worth having.
+Six more instances change (cyclic-rcpsp, table-layout, rel2onto,
+diameterc-mst, kidney-exchange, aircraft-disassembly), with check times
+between 0.98 and 1.04 of before. On the three Element instances in the
+table, the check is never faster. Valve-network is slower on every run: it
+writes about three abbreviated lines per definition, so its proof does not
+shrink. MinMax makes proofs smaller and leaves the check where it was.
+
+Reachable (hitori) and Disjunctive (p11) check slower; see above.
