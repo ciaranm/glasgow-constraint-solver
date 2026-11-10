@@ -6,11 +6,13 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
+#include <gcs/variable_condition.hh>
 
 #include <charconv>
 #include <iosfwd>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace gcs::innards
 {
@@ -70,6 +72,71 @@ namespace gcs::innards
         NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, std::string & out, EnsureNames ensure_names) -> void;
 
     /**
+     * \brief Decides whether a reifying literal on a model variable may be
+     * left out of a line rendered by emit_reified_inequality_to.
+     *
+     * Leaving a literal out is what rendering a TrueLiteral does, and it is
+     * only sound when the proof already has the literal as a unit. The
+     * ProofLogger's implementation answers from the bounds it was told to
+     * assume (see ProofLogger::assume_current_bounds), and writes down the
+     * unit it relies on if the proof does not have one yet.
+     *
+     * Only used inside proof innards.
+     *
+     * \ingroup Innards
+     */
+    class ReasonLiteralFilter
+    {
+    public:
+        /**
+         * For one variable, the value of each kind of literal that the filter
+         * might leave out: `x >= ge`, `x < lt`, `x = eq`. A kind it never
+         * leaves out holds no_value.
+         */
+        struct Candidates
+        {
+            Integer ge, lt, eq;
+        };
+
+        static constexpr Integer no_value = Integer{std::numeric_limits<long long>::min()};
+
+        /**
+         * Indexed by SimpleIntegerVariableID. Checked inline, so that the
+         * renderer pays only a compare for the literals the filter cannot
+         * leave out, which is most of them: this runs for every literal of
+         * every reason, so it is kept to a pointer and a length.
+         */
+        const Candidates * candidates;
+        std::size_t number_of_candidates;
+
+        explicit ReasonLiteralFilter(const std::vector<Candidates> & c) : candidates(c.data()), number_of_candidates(c.size())
+        {
+        }
+
+        virtual ~ReasonLiteralFilter() = default;
+
+        [[nodiscard]] auto is_candidate(const VariableConditionFrom<SimpleIntegerVariableID> & cond) const -> bool
+        {
+            if (cond.var.index >= number_of_candidates)
+                return false;
+            const auto & c = candidates[cond.var.index];
+            switch (cond.op) {
+                using enum VariableConditionOperator;
+            case GreaterEqual: return cond.value == c.ge;
+            case Less: return cond.value == c.lt;
+            case Equal: return cond.value == c.eq;
+            default: return false;
+            }
+        }
+
+        /**
+         * Asked only for a candidate: leave it out? May write the unit the
+         * omission relies on.
+         */
+        [[nodiscard]] virtual auto omit(const VariableConditionFrom<SimpleIntegerVariableID> &) -> bool = 0;
+    };
+
+    /**
      * \brief Append the half-reified form of an inequality, rendered as proof
      * text, to a string: byte-for-byte what emit_inequality_to produces for
      * reify(ineq, half_reif), but without materialising the reified sum.
@@ -77,12 +144,15 @@ namespace gcs::innards
      * measurable, uses this; anything that wants the reified sum as a value
      * still goes through NamesAndIDsTracker::reify.
      *
+     * With a filter, a reifying literal on a model variable that the filter
+     * says to omit is left out, exactly as a TrueLiteral would be.
+     *
      * Only used inside proof innards.
      *
      * \ingroup Innards
      */
     auto emit_reified_inequality_to(NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-        const HalfReifyOnConjunctionOf & half_reif, std::string & out, EnsureNames ensure_names) -> void;
+        const HalfReifyOnConjunctionOf & half_reif, std::string & out, EnsureNames ensure_names, ReasonLiteralFilter * filter = nullptr) -> void;
 
     /**
      * \brief Write an inequality out to an ostream.
