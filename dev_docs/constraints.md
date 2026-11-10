@@ -561,6 +561,12 @@ If a later step combines those lines and expects a reason term to cancel (a
 `pol`, `pbc` or `ia` over them), hold a
 `ProofLogger::KeepAssumedReasonLiterals` while writing them.
 
+A justification that writes many temporary lines under one long reason can wrap
+its emit in `WithAbbreviatedReason`, which has those lines name one extension
+variable in place of the reason. This is opt-in, because a smaller proof is not
+always a faster check: measure before taking it. See
+[`abbreviated-reasons.md`](abbreviated-reasons.md).
+
 **A `JustifyExplicitly` handed to `infer_all` justifies the whole batch,
 once.** The `emit` is never told which literal it is justifying, so it runs
 exactly once per `infer_all` call, before any of the literals are applied,
