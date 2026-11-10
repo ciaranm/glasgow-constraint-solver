@@ -708,6 +708,9 @@ namespace gcs::innards
                     if (! any_will_fire)
                         return;
 
+                    // One list of hints cannot serve a batch: each literal's RUP
+                    // needs its own (its own atom's definition, at least).
+                    static_assert(! emit_returns_rup_hints<Emit_>, "infer_all cannot use an emit that returns hints for one closing RUP");
                     auto snapshotted = snapshot_reason(logger, reason, _state);
                     ReasonLiterals scratch;
                     auto t = logger->temporary_proof_level();

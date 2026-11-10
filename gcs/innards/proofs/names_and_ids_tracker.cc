@@ -48,6 +48,7 @@ using std::any_of;
 using std::fstream;
 using std::function;
 using std::generator;
+using std::get_if;
 using std::ios;
 using std::ios_base;
 using std::list;
@@ -761,6 +762,52 @@ auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariabl
     return pin->second;
 }
 
+auto NamesAndIDsTracker::existing_defining_line(const IntegerVariableCondition & cond) const -> optional<ProofLine>
+{
+    // Above Definitions the atoms have placeholder lines (need_gevar), and
+    // nothing is checked that could cite them.
+    if (_imp->assertion_level > AssertionLevel::Definitions)
+        return nullopt;
+    const auto * var = get_if<SimpleIntegerVariableID>(&cond.var);
+    if (! var)
+        return nullopt;
+    auto atoms = _imp->find_atoms(*var);
+    if (! atoms)
+        return nullopt;
+
+    auto line_of = [](const variant<ProofLine, XLiteral> & def) -> optional<ProofLine> {
+        if (const auto * line = get_if<ProofLine>(&def))
+            return *line;
+        return nullopt;
+    };
+
+    switch (cond.op) {
+        using enum VariableConditionOperator;
+    case GreaterEqual:
+    case Less: {
+        auto defs = atoms->ge_defs.find(cond.value.raw_value);
+        if (defs == atoms->ge_defs.end())
+            return nullopt;
+        return line_of(GreaterEqual == cond.op ? defs->second.first : defs->second.second);
+    }
+    case Equal: {
+        // need_eqvar's compact form, at a declared bound, says only the one
+        // order atom that is not trivial there.
+        if (_imp->use_compact_boolean_encoding) {
+            auto bounds = _imp->integer_variable_definition_bounds.find(*var);
+            if (bounds != _imp->integer_variable_definition_bounds.end() &&
+                (bounds->second.first == cond.value || bounds->second.second == cond.value))
+                return nullopt;
+        }
+        auto defs = atoms->eq_defs.find(cond.value.raw_value);
+        if (defs == atoms->eq_defs.end())
+            return nullopt;
+        return line_of(defs->second.first);
+    }
+    default: return nullopt;
+    }
+}
+
 auto NamesAndIDsTracker::bit_sum_implies(const SimpleOrProofOnlyIntegerVariableID & id, VariableConditionOperator op, Integer v) const -> bool
 {
     auto atoms = _imp->find_atoms(id);
@@ -820,6 +867,14 @@ auto NamesAndIDsTracker::order_literal_holds_at_top(const SimpleOrProofOnlyInteg
     if (atoms->ge_pins.contains(v.raw_value))
         return true;
     return _imp->assertion_level > AssertionLevel::Links && ! _imp->bounds_not_trivially_derivable.contains(id);
+}
+
+auto NamesAndIDsTracker::declared_bounds_if_tracked(const SimpleIntegerVariableID & id) const -> optional<pair<Integer, Integer>>
+{
+    auto atoms = _imp->find_atoms(id);
+    if (! atoms)
+        return nullopt;
+    return atoms->declared_bounds;
 }
 
 auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>

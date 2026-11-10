@@ -7,6 +7,7 @@
 #include <util/overloaded.hh>
 
 #include <ostream>
+#include <type_traits>
 
 using std::ostream;
 using std::string;
@@ -130,7 +131,7 @@ auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker
 }
 
 auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const HalfReifyOnConjunctionOf & half_reif, string & out, EnsureNames ensure_names) -> void
+    const HalfReifyOnConjunctionOf & half_reif, string & out, EnsureNames ensure_names, ReasonLiteralFilter * filter) -> void
 {
     // Renders exactly what emit_inequality_to would produce for
     // reify(ineq, half_reif), without materialising the reified sum: the
@@ -161,6 +162,9 @@ auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids
                         [&](const TrueLiteral &) { /* negated: contributes nothing */ }, //
                         [&](const FalseLiteral &) { rhs += w; },                         //
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                            if constexpr (std::is_same_v<T_, SimpleIntegerVariableID>)
+                                if (filter && filter->is_candidate(cond) && filter->omit(cond))
+                                    return;
                             auto xlit = EnsureNames::Yes == ensure_names ? names_and_ids_tracker.xliteral_for_ensuring(cond)
                                                                          : names_and_ids_tracker.xliteral_for(cond);
                             append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(! xlit));

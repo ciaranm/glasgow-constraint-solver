@@ -555,6 +555,34 @@ proof lines via `logger->emit_rup_proof_line_under_reason`,
 `logger->emit(RUPProofRule{}, ..., ProofLevel::Temporary)`, and similar.
 See `among/among.cc` and `lex/lex.cc` for examples of varying complexity.
 
+Lines written under the reason may leave out a reason literal that states a
+bound the root already has; see [`assumed-root-bounds.md`](assumed-root-bounds.md).
+If a later step combines those lines and expects a reason term to cancel (a
+`pol`, `pbc` or `ia` over them), hold a
+`ProofLogger::KeepAssumedReasonLiterals` while writing them.
+
+An `emit` under `ThenRUP::Yes` may return a `RUPProofRule` instead of nothing,
+naming the lines the closing RUP needs. VeriPB then propagates over those lines
+alone rather than over everything live, which on a model with a big encoding
+is most of the checking time: see
+[`veripb-facts.md`](veripb-facts.md#what-a-rup-step-costs). The lines must be
+enough on their own, taking the reason as given. The logger adds whatever its
+own reason handling needs (the units for root-true literals it leaves out, an
+abbreviated reason's definition), so `emit` names only what the inference
+needs. A rule without lines keeps the plain RUP, which is the fallback for a
+case the hints do not cover. `infer_all` refuses such an `emit` at compile
+time, since one list of lines cannot serve several literals. Linear's bound
+push is the example (`linear/justify.cc`). A line the `emit` writes itself
+can be hinted the same way, with
+`logger->emit_under_reason(RUPProofRule{hints}, ..., ProofLevel::Temporary,
+reason)`, as Cumulative's per-time flag lemmas are.
+
+A justification that writes many temporary lines under one long reason can wrap
+its emit in `WithAbbreviatedReason`, which has those lines name one extension
+variable in place of the reason. This is opt-in, because a smaller proof is not
+always a faster check: measure before taking it. See
+[`abbreviated-reasons.md`](abbreviated-reasons.md).
+
 **A `JustifyExplicitly` handed to `infer_all` justifies the whole batch,
 once.** The `emit` is never told which literal it is justifying, so it runs
 exactly once per `infer_all` call, before any of the literals are applied,

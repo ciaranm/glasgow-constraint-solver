@@ -45,6 +45,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::get_if;
 using std::make_optional;
 using std::make_shared;
 using std::make_unique;
@@ -1501,6 +1502,76 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     }
 }
 
+namespace
+{
+    // The hints for a RUP of `flag` under a reason, where `flag` is reified
+    // over the bits of a plain start variable as `start <= bound` (upper) or
+    // `start >= bound` (! upper): one literal that bounds the start at least
+    // that far, turned into a bound on the same bits by its atom's definition,
+    // then the flag's half `(start <= bound) -> flag`. Under the negated claim
+    // that is two opposite bounds over one bit sum, which unit propagation
+    // refutes bit by bit. The literal is looked for in the reason and among
+    // `also_true`, the negations of whatever extra disjuncts the claim carries.
+    //
+    // Nullopt, for a plain RUP, when no literal does it: a bound the propagator
+    // took from its own earlier inference rather than from the reason, say.
+    // Nothing here creates an atom: a definition that does not exist yet is not
+    // one the reason's literal can be relying on.
+    auto start_flag_hints(NamesAndIDsTracker & tracker, const ProofFlag & flag, const SimpleIntegerVariableID & start, bool upper, Integer bound,
+        const ReasonLiterals & reason, const vector<IntegerVariableCondition> & also_true) -> optional<vector<ProofLine>>
+    {
+        auto implied_by = [&]() { return reification_half(tracker, flag, ReificationHalf::ImpliedBy); };
+        auto try_literal = [&](const IntegerVariableCondition & c) -> optional<vector<ProofLine>> {
+            if (c.var != IntegerVariableID{start})
+                return nullopt;
+            using enum VariableConditionOperator;
+            if (upper ? (Less == c.op && c.value <= bound + 1_i) : (GreaterEqual == c.op && c.value >= bound)) {
+                if (auto def = tracker.existing_defining_line(c))
+                    return vector<ProofLine>{*def, implied_by()};
+                // A literal the bits cannot violate: the flag's half, which
+                // then asks for more than the bits can give, conflicts alone.
+                if (tracker.bit_sum_implies(start, c.op, c.value))
+                    return vector<ProofLine>{implied_by()};
+                return nullopt;
+            }
+            if (Equal == c.op && (upper ? c.value <= bound : c.value >= bound)) {
+                // The equality's definition sets both order atoms, one of
+                // which is the bound wanted.
+                auto eq = tracker.existing_defining_line(c);
+                auto side = tracker.existing_defining_line(upper ? start < c.value + 1_i : start >= c.value);
+                if (eq && side)
+                    return vector<ProofLine>{*eq, *side, implied_by()};
+            }
+            return nullopt;
+        };
+
+        for (const auto & r : reason)
+            if (const auto * proof_literal = get_if<ProofLiteral>(&r))
+                if (const auto * literal = get_if<Literal>(proof_literal))
+                    if (const auto * cond = get_if<IntegerVariableCondition>(literal))
+                        if (auto hints = try_literal(*cond))
+                            return hints;
+        for (const auto & cond : also_true)
+            if (auto hints = try_literal(cond))
+                return hints;
+        return nullopt;
+    }
+
+    // Does the reason say this optional task is present, as the very literal
+    // its activity flag's definition conjoins? Without it the activity lemma's
+    // hints would leave that conjunct unset.
+    auto reason_says_present(const ReasonLiterals & reason, const IntegerVariableID & presence) -> bool
+    {
+        for (const auto & r : reason)
+            if (const auto * proof_literal = get_if<ProofLiteral>(&r))
+                if (const auto * literal = get_if<Literal>(proof_literal))
+                    if (const auto * cond = get_if<IntegerVariableCondition>(literal))
+                        if (cond->var == presence && VariableConditionOperator::Equal == cond->op && 1_i == cond->value)
+                            return true;
+        return false;
+    }
+}
+
 auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & inputs, const State & state, auto & inference, ProofLogger * const logger)
     -> PropagatorState
 {
@@ -1734,6 +1805,42 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
             presence_lits.push_back(*presence[i] == 1_i);
     auto reason_with_presence = [&]() { return with_extra(generic_reason(reason_vars), presence_lits); };
 
+    // The per-time flag lemmas: `flag` (before or after) under the reason, and
+    // any extra disjuncts the claim carries. Hinted where start_flag_hints can
+    // say why, which needs the flag to be reified on the start alone: always
+    // for `before`, and for `after` only with a constant length.
+    auto start_flag_lemma = [&](const ReasonLiterals & reason, const ProofFlag & flag, size_t i, bool upper, Integer bound,
+                                const vector<IntegerVariableCondition> & ext) -> ProofLine {
+        optional<vector<ProofLine>> hints;
+        const auto * start = get_if<SimpleIntegerVariableID>(&starts[i]);
+        if (start && (upper || ! l_is_var(i))) {
+            vector<IntegerVariableCondition> negated_ext;
+            for (const auto & e : ext)
+                negated_ext.push_back(! e);
+            hints = start_flag_hints(logger->names_and_ids_tracker(), flag, *start, upper, bound, reason, negated_ext);
+        }
+        WPBSum claim = WPBSum{} + 1_i * flag;
+        for (const auto & e : ext)
+            claim += 1_i * e;
+        return logger->emit_under_reason(RUPProofRule{move(hints)}, move(claim) >= 1_i, ProofLevel::Temporary, reason);
+    };
+    // And `active`, from the two just written: its half saying that before,
+    // after and (for an optional task) presence together give active. The
+    // presence conjunct has to come from the reason.
+    auto active_flag_lemma = [&](const ReasonLiterals & reason, size_t i, size_t fi, ProofLine before_line, ProofLine after_line,
+                                 const vector<IntegerVariableCondition> & ext) -> ProofLine {
+        auto active = active_flag(i, fi);
+        optional<vector<ProofLine>> hints;
+        if (! presence[i] || reason_says_present(reason, *presence[i]))
+            hints = vector<ProofLine>{before_line, after_line, reification_half(logger->names_and_ids_tracker(), active, ReificationHalf::ImpliedBy)};
+        WPBSum claim = WPBSum{} + 1_i * active;
+        for (const auto & e : ext)
+            claim += 1_i * e;
+        return logger->emit_under_reason(RUPProofRule{move(hints)}, move(claim) >= 1_i, ProofLevel::Temporary, reason);
+    };
+    // The bound `after_{i,t}` asks of a constant-length task's start.
+    auto after_bound = [&](size_t i, Integer t) { return t - llb(i) + 1_i; };
+
     // Proof helper: pin task i's guaranteed load contribution at t and
     // return a (line, coeff) pair to feed the time-table pol. For a
     // constant height that is "active = 1" scaled by the height; for a
@@ -1743,11 +1850,11 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
     auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t,
                                optional<Integer> start_lo = nullopt) -> std::pair<ProofLine, Integer> {
         auto fi = (t - per_task_t_lo[i]).raw_value;
-        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flag(i, fi) >= 1_i, ProofLevel::Temporary);
+        auto before_line = start_flag_lemma(reason, before_flag(i, fi), i, true, t, {});
         // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
         materialise_after_sum(i, start_lo ? *start_lo : state.lower_bound(starts[i]));
-        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flag(i, fi) >= 1_i, ProofLevel::Temporary);
-        auto active_line = logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flag(i, fi) >= 1_i, ProofLevel::Temporary);
+        auto after_line = start_flag_lemma(reason, after_flag(i, fi), i, false, after_bound(i, t), {});
+        auto active_line = active_flag_lemma(reason, i, fi, before_line, after_line, {});
         if (! h_is_var(i))
             return {active_line, hlb(i)};
         auto contrib_line = logger->emit_rup_proof_line_under_reason(reason, contrib_sum_of(contrib_bits(i, fi)) >= hlb(i), ProofLevel::Temporary);
@@ -2016,13 +2123,12 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
     auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, const ExtLits & ext, Integer s_lo_after,
                           optional<Integer> counted_height = nullopt) -> std::pair<ProofLine, Integer> {
         auto fj = (t - per_task_t_lo[j_idx]).raw_value;
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        auto before_line = start_flag_lemma(reason, before_flag(j_idx, fj), j_idx, true, t, ext);
         // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext
         // for ub-push, under the running bound for lb-push).
         materialise_after_sum(j_idx, s_lo_after);
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
-        auto active_line = logger->emit_rup_proof_line_under_reason(
-            reason, plus_ext(WPBSum{} + 1_i * active_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        auto after_line = start_flag_lemma(reason, after_flag(j_idx, fj), j_idx, false, after_bound(j_idx, t), ext);
+        auto active_line = active_flag_lemma(reason, j_idx, fj, before_line, after_line, ext);
         if (! h_is_var(j_idx))
             return {active_line, hlb(j_idx)};
         auto counted = counted_height.value_or(hlb(j_idx));
@@ -2142,11 +2248,10 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
             throw ProofError{
                 "cumulative published not-first / not-last: task " + std::to_string(j_idx) + " has no flag at time " + std::to_string(t.raw_value)};
         auto fj = static_cast<size_t>((t - per_task_t_lo[j_idx]).raw_value);
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        auto before_line = start_flag_lemma(reason, before_flag(j_idx, fj), j_idx, true, t, ext);
         materialise_after_sum(j_idx, s_lo_after);
-        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
-        return logger->emit_rup_proof_line_under_reason(
-            reason, plus_ext(WPBSum{} + 1_i * active_flag(j_idx, fj), ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        auto after_line = start_flag_lemma(reason, after_flag(j_idx, fj), j_idx, false, after_bound(j_idx, t), ext);
+        return active_flag_lemma(reason, j_idx, fj, before_line, after_line, ext);
     };
 
     auto published_nfnl_justification = [&](Integer a2, Integer b, const vector<PublishedTask> & theta, size_t j, Integer j_lb, Integer j_ub,
@@ -2385,7 +2490,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
             };
 
             ++cumulative_counters[rule_time_table_overflow].contradictions;
-            inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+            inference.contradiction(
+                logger, JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             return PropagatorState::DisableUntilBacktrack;
         }
 
@@ -2794,7 +2900,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                 if (not_first) {
                                     auto justify = published_nfnl_justification(set_est, set_lct, theta, j.task, s_lo, s_hi, set_ect, true);
                                     inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? set_ect + 1_i : set_ect,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                 }
                                 else {
                                     // Back out of the reflection: the window is
@@ -2802,7 +2909,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                     auto lst = -set_ect;
                                     auto justify = published_nfnl_justification(-set_lct, -set_est, theta, j.task, s_lo, s_hi, lst, false);
                                     inference.infer_less_than(logger, starts[j.task], one_too_far ? lst - j.length : lst - j.length + 1_i,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                 }
                                 pushed_in_sweep = true;
                             }
@@ -3028,12 +3136,14 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                 starts_inside ? GuardToDischarge::Low : GuardToDischarge::High, energetic_contributors);
                             if (starts_inside) {
                                 inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? high_guard + 1_i : high_guard,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                    reason_with_presence());
                                 pushed_in_sweep = true;
                             }
                             else {
                                 inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                    JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                    reason_with_presence());
                                 pushed_in_sweep = true;
                             }
                         }
@@ -3092,7 +3202,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                     auto justify = edge_finding_justification(
                                         a, b, inside_tasks, j.task, low_guard, min_ect, GuardToDischarge::Low, energetic_contributors);
                                     inference.infer_greater_than_or_equal(logger, starts[j.task], one_too_far ? min_ect + 1_i : min_ect,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                     pushed_in_sweep = true;
                                 }
                             }
@@ -3113,7 +3224,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                     auto justify = edge_finding_justification(
                                         a, b, inside_tasks, j.task, low_guard, s_hi + 1_i, GuardToDischarge::High, energetic_contributors);
                                     inference.infer_less_than(logger, starts[j.task], one_too_far ? low_guard - 1_i : low_guard,
-                                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}},
+                                        reason_with_presence());
                                     pushed_in_sweep = true;
                                 }
                             }
@@ -3408,8 +3520,9 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                                 // Which rung it was, as the proof comment says: (KAOC)
                                 // exactly when the knapsack cap was needed somewhere.
                                 ++cumulative_counters[strengthen.empty() ? rule_overload_elastic : rule_overload_knapsack].contradictions;
-                                inference.contradiction(
-                                    logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
+                                inference.contradiction(logger,
+                                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::CumulativeOverload{owner}},
+                                    reason_with_presence());
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             throw UnexpectedException{
@@ -3528,8 +3641,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                     };
 
                     ++cumulative_counters[rule_overload].contradictions;
-                    inference.contradiction(
-                        logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
+                    inference.contradiction(logger, JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::CumulativeOverload{owner}},
+                        reason_with_presence());
                     return PropagatorState::DisableUntilBacktrack;
                 }
             }
@@ -3972,8 +4085,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                         };
 
                         ++cumulative_counters[rule_time_table_height].firings;
-                        inference.infer_less_than(logger, heights_var[j], counted, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                            reason_with_presence());
+                        inference.infer_less_than(logger, heights_var[j], counted,
+                            JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
                     }
                 }
             }
@@ -4041,8 +4154,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                 };
 
                 ++cumulative_counters[rule_presence].firings;
-                inference.infer_equal(
-                    logger, *presence[j], 0_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                inference.infer_equal(logger, *presence[j], 0_i,
+                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
                 continue;
             }
 
@@ -4072,8 +4185,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                 };
 
                 ++cumulative_counters[rule_time_table_lb].firings;
-                inference.infer_greater_than_or_equal(
-                    logger, starts[j], pushed, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                inference.infer_greater_than_or_equal(logger, starts[j], pushed,
+                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             }
 
             // ub-push: mirror image. The scan walks down from the top of the
@@ -4131,8 +4244,8 @@ auto gcs::innards::propagate_cumulative_unwrapped(const CumulativeInputs & input
                 };
 
                 ++cumulative_counters[rule_time_table_ub].firings;
-                inference.infer_less_than(
-                    logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+                inference.infer_less_than(logger, starts[j], new_ub + 1_i,
+                    JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             }
         }
 

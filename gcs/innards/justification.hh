@@ -95,6 +95,12 @@ namespace gcs::innards
      *   - \c then_rup picks the proof shape: ThenRUP::Yes emits the steps at a
      *     temporary level then RUPs the inferred literal under the reason; ThenRUP::No
      *     lets the steps conclude the inference themselves.
+     *   - The \c emit may return a RUPProofRule instead of nothing. Under
+     *     ThenRUP::Yes the closing RUP then cites its lines, so VeriPB propagates
+     *     over those alone rather than over everything live, and a rule without
+     *     lines keeps the plain RUP. The lines must suffice for the literal as
+     *     inferred, taking the reason as given: the logger adds what its own
+     *     reason handling needs. Only for a single literal; infer_all refuses it.
      *   - \c hint is the assertion-mode annotation (NoHint by default), resolved by
      *     hint_annotation exactly as for JustifyUsingRUP. In Off mode it is ignored,
      *     so the hint never changes the emitted proof.
@@ -112,6 +118,27 @@ namespace gcs::innards
         ThenRUP then_rup;
         [[no_unique_address]] Hint_ hint{};
     };
+
+    /**
+     * \brief Wrap a JustifyExplicitly's emit so that its temporary lines name one
+     * extension variable in place of the reason.
+     *
+     * `JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hint}`
+     * runs \c justify under a ProofLogger::AbbreviateReason. It is an opt-in, to
+     * be taken only where measurement says it pays: see
+     * dev_docs/abbreviated-reasons.md.
+     *
+     * \ingroup Innards
+     * \sa ProofLogger::AbbreviateReason
+     */
+    template <typename Emit_>
+    struct WithAbbreviatedReason
+    {
+        Emit_ emit;
+    };
+
+    template <typename Emit_>
+    WithAbbreviatedReason(Emit_) -> WithAbbreviatedReason<Emit_>;
 
     template <typename Emit_>
     JustifyExplicitly(Emit_, ThenRUP) -> JustifyExplicitly<Emit_, NoHint>;

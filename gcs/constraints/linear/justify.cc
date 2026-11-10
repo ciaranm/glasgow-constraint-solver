@@ -4,25 +4,39 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
+
+#include <utility>
+#include <variant>
+#include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::move;
 using std::optional;
 using std::pair;
+using std::vector;
+using std::visit;
 
 auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coeff_vars, const LinearBounds & bounds,
-    const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality, pair<optional<ProofLine>, optional<ProofLine>> proof_lines)
-    -> void
+    const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality, pair<optional<ProofLine>, optional<ProofLine>> proof_lines,
+    const optional<IntegerVariableCondition> & negated_conclusion) -> RUPProofRule
 {
     // Deview mode: the propagator's coeff_vars list is the tidy_up_linear-sanitised
     // form (bare SimpleIntegerVariableIDs), but the OPB sum_line is emitted in the
     // user's views' bits. Deview mode substitutes the framework's deview-form line
     // (in X-bits) for proof_lines, matching the reason reifs that add_for_literal
     // pushes for bare SimpleIntegerVariableIDs.
+    auto & tracker = logger.names_and_ids_tracker();
     PolBuilder pol;
-    pol.enable_deview_mode(logger.names_and_ids_tracker());
+    pol.enable_deview_mode(tracker);
     pol.add(second_constraint_for_equality ? proof_lines.second.value() : proof_lines.first.value());
+
+    // The closing RUP's hints, in the order it uses them: the units it needs
+    // first, then the line below, then the definition that turns the negated
+    // conclusion into a bound on the changing variable's bits.
+    vector<ProofLine> hints;
 
     bool any_bound_added = false;
     for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
@@ -45,8 +59,14 @@ auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coef
         if (logger.names_and_ids_tracker().bit_sum_implies(lit))
             continue;
 
-        pol.add_for_literal(logger.names_and_ids_tracker(), lit, abs(get_coeff(cv)));
+        pol.add_for_literal(tracker, lit, abs(get_coeff(cv)));
         any_bound_added = true;
+
+        // linear_bounds_reason leaves a bound out of the reason when its
+        // boundary pin is a unit, because a RUP over everything finds the pin
+        // for itself. A hinted one only finds what it is given.
+        if (auto pin = tracker.boundary_pin_line(get_var(cv), upper ? bounds[idx].second + 1_i : bounds[idx].first))
+            hints.push_back(*pin);
     }
 
     // There used to be a division by the changing variable's coefficient here.
@@ -57,9 +77,25 @@ auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coef
     // would loosen the line enough to lose the RUP.
     //
     // With no bound added, the pol would only restate its base line, which the
-    // RUP can use as it stands.
-    if (any_bound_added)
-        pol.emit(logger, ProofLevel::Temporary);
+    // RUP can use as it stands. That RUP stays unhinted.
+    if (! any_bound_added)
+        return RUPProofRule{};
+    hints.push_back(pol.emit(logger, ProofLevel::Temporary));
+    if (! negated_conclusion)
+        return RUPProofRule{};
+
+    // What is left is the changing variable's bits under the reason. The
+    // negated conclusion is an order atom on the same variable, whose
+    // definition bounds the same bits the other way: two opposite bounds over
+    // one bit sum, which unit propagation refutes bit by bit from the top. A
+    // variable with no bits is its own literal, and the line above mentions it
+    // directly.
+    visit(overloaded{
+              [&](const ProofLine & def) { hints.push_back(def); }, //
+              [&](const XLiteral &) {}                              //
+          },
+        tracker.need_pol_item_defining_literal(*negated_conclusion));
+    return RUPProofRule{move(hints)};
 }
 
 auto gcs::innards::justify_linear_contrapositive(ProofLogger & logger, const auto & coeff_vars, const LinearBounds & bounds, ProofLine proof_line)
@@ -91,15 +127,15 @@ auto gcs::innards::justify_linear_contrapositive(ProofLogger & logger, const aut
 
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
-    pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
+    pair<optional<ProofLine>, optional<ProofLine>> proof_line, const optional<IntegerVariableCondition> & negated_conclusion) -> RUPProofRule;
 
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
     const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
-    pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
+    pair<optional<ProofLine>, optional<ProofLine>> proof_line, const optional<IntegerVariableCondition> & negated_conclusion) -> RUPProofRule;
 
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<SimpleIntegerVariableID> & coeff_vars,
     const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
-    pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
+    pair<optional<ProofLine>, optional<ProofLine>> proof_line, const optional<IntegerVariableCondition> & negated_conclusion) -> RUPProofRule;
 
 template auto gcs::innards::justify_linear_contrapositive(
     ProofLogger & logger, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, const LinearBounds & bounds, ProofLine proof_line) -> void;

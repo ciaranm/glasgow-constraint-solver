@@ -13,6 +13,7 @@
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/objective.hh>
 #include <gcs/proof.hh>
+#include <gcs/variable_condition.hh>
 
 #include <map>
 #include <memory>
@@ -89,6 +90,12 @@ namespace gcs::innards
         auto log_stacktrace() -> void;
 
         auto move_to_core(const ProofLine & line) -> void;
+
+        class AssumedReasonLiteralFilter;
+
+        auto emit_assumed_unit(const VariableConditionFrom<SimpleIntegerVariableID> &, int level) -> ProofLine;
+
+        auto define_abbreviated_reason() -> void;
 
     public:
         /**
@@ -197,6 +204,18 @@ namespace gcs::innards
             const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
 
         /**
+         * Log that we have inferred a literal by RUP under the reason, with
+         * the given rule's hints. This is infer()'s plain-RUP arm for a
+         * caller that knows which lines the RUP needs. The logger puts the
+         * lines its own reason handling needs (the units for root-true
+         * literals it leaves out, an abbreviated reason's definition) in
+         * front of them, so `rule` names only what the inference itself
+         * needs. A rule without lines is exactly infer(lit, JustifyUsingRUP{},
+         * reason).
+         */
+        auto infer_using_hinted_rup(const Literal & lit, const RUPProofRule & rule, const ReasonLiterals & reason) -> void;
+
+        /**
          * \brief Return the current <em>active proof level</em> &mdash; the
          * integer depth used to tag proof lines.
          *
@@ -272,6 +291,89 @@ namespace gcs::innards
          * of explicit-justification scopes respectively.
          */
         auto forget_proof_level(int depth) -> void;
+
+        /**
+         * \brief Take every variable's current bounds as given, for as long
+         * as the active proof level lasts.
+         *
+         * Only for a state the proof has as a consequence of the formula alone:
+         * no guesses, so that each bound is a unit the proof can derive from
+         * what it already has, rather than something that holds only under a
+         * decision. The search calls this at the root of each pass, once
+         * propagation has reached a fixpoint.
+         *
+         * From then until \c forget_proof_level forgets the active level, a
+         * line written under a reason leaves out each reason literal that
+         * states one of those bounds exactly (`x >= lb` or `x < ub + 1`, or
+         * `x = v` for a variable fixed at `v`), as long as the line is checked
+         * by unit propagation: an unhinted `rup`, an `a`, or a hinted `rup`,
+         * which gets the units added to its hints. An `ia` keeps its literals,
+         * because it is checked against the one line it cites. A bound still at
+         * its declared value is left out when
+         * NamesAndIDsTracker::order_literal_holds_at_top says the proof already
+         * has it. Any other bound gets its unit written down, at this level, the
+         * first time a line leaves it out, so every omission is backed by a
+         * line VeriPB has checked.
+         *
+         * Does nothing when assertions are on: the external justifier is not
+         * yet told about the units.
+         */
+        auto assume_current_bounds(const State &) -> void;
+
+        /**
+         * \brief While one of these is alive, lines keep every reason literal,
+         * as if assume_current_bounds had not been called.
+         *
+         * For a justification whose later steps rely on its lines spelling the
+         * reason out in full: a `pol` that expects a reason literal's term to
+         * cancel against one of the opposite sign, say, or a hinted `rup` that
+         * cites such a sum. Leaving the literal out of the first line makes it
+         * stronger, but the sum no longer cancels, and what is left over needs a
+         * unit the later step has no way to see.
+         */
+        class KeepAssumedReasonLiterals
+        {
+        private:
+            ProofLogger & _logger;
+
+        public:
+            explicit KeepAssumedReasonLiterals(ProofLogger &);
+            ~KeepAssumedReasonLiterals();
+
+            KeepAssumedReasonLiterals(const KeepAssumedReasonLiterals &) = delete;
+            auto operator=(const KeepAssumedReasonLiterals &) -> KeepAssumedReasonLiterals & = delete;
+        };
+
+        /**
+         * \brief While one of these is alive, a temporary line written under
+         * exactly this reason names one extension variable in its place.
+         *
+         * The variable is defined, on first use, as the conjunction of the
+         * reason's literals, at the temporary level the lines go to. It is
+         * therefore deleted together with every line that names it. The line
+         * the justification finally infers is at the current level, so it
+         * keeps the whole reason, as does an `ia`, which has to match the line
+         * it cites term for term.
+         *
+         * This is opt-in, per justification. A smaller proof is not always a
+         * faster check, so only hold one where measurement says it pays; see
+         * dev_docs/abbreviated-reasons.md. A justification that combines its
+         * lines with lines written outside the guard under the same reason
+         * must not hold one, because the terms would no longer cancel.
+         */
+        class AbbreviateReason
+        {
+        private:
+            ProofLogger & _logger;
+            bool _active;
+
+        public:
+            AbbreviateReason(ProofLogger &, const ReasonLiterals &);
+            ~AbbreviateReason();
+
+            AbbreviateReason(const AbbreviateReason &) = delete;
+            auto operator=(const AbbreviateReason &) -> AbbreviateReason & = delete;
+        };
 
         /**
          * Emit the specified text as a comment.

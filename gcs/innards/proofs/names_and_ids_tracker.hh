@@ -461,6 +461,21 @@ namespace gcs::innards
         [[nodiscard]] auto boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> std::optional<ProofLine>;
 
         /**
+         * The line need_pol_item_defining_literal() would give for `cond`, but
+         * only if it already exists: nothing is created or emitted, so a
+         * caller assembling RUP hints can ask about any literal.
+         *
+         * For GreaterEqual and Less, the order atom's definition half
+         * (`[x >= v] -> x >= v`, or `~[x >= v] -> x <= v-1`). For Equal, the
+         * forward half, and only where it is the full `[x = v] -> [x >= v] /\
+         * ~[x >= v+1]`, so that it sets both order atoms: not the compact form
+         * at a declared bound, nor a value of a direct-encoded variable, which
+         * is a primitive literal with no line. Nullopt for anything else,
+         * including a variable that is not a plain one.
+         */
+        [[nodiscard]] auto existing_defining_line(const IntegerVariableCondition & cond) const -> std::optional<ProofLine>;
+
+        /**
          * Does the variable's own bit sum satisfy the order literal `id >= v`
          * (or `id < v`) under every assignment of its bits? That is, is `v` at
          * or below the least value the bits can spell (above the greatest, for
@@ -491,6 +506,13 @@ namespace gcs::innards
          */
         [[nodiscard]] auto order_literal_holds_at_top(const SimpleOrProofOnlyIntegerVariableID & id, VariableConditionOperator op, Integer v) const
             -> bool;
+
+        /**
+         * The bounds track_bounds recorded for a variable, or nullopt if it has
+         * none. Unlike tracked_bounds this does not throw, and answers from the
+         * same dense table as order_literal_holds_at_top.
+         */
+        [[nodiscard]] auto declared_bounds_if_tracked(const SimpleIntegerVariableID & id) const -> std::optional<std::pair<Integer, Integer>>;
 
         /**
          * Set things up internally as if the specified variable was a real

@@ -15,6 +15,8 @@
 
 #include <optional>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 #include <util/overloaded.hh>
 
@@ -68,13 +70,39 @@ namespace gcs::innards
      * \ingroup Innards
      */
     template <typename Emit_>
-    auto emit_explicit_steps(ProofLogger & logger, const Emit_ & emit, const ReasonLiterals & reason) -> void
+    auto emit_explicit_steps(ProofLogger & logger, const Emit_ & emit, const ReasonLiterals & reason) -> decltype(auto)
     {
         if constexpr (requires { emit(reason); })
-            emit(reason);
+            return emit(reason);
         else
-            emit_justification(logger, emit, reason);
+            return emit_justification(logger, emit, reason);
     }
+
+    /**
+     * \brief Run the wrapped emit with the reason abbreviated.
+     *
+     * \ingroup Innards
+     * \sa WithAbbreviatedReason
+     */
+    template <typename Emit_>
+    auto emit_justification(ProofLogger & logger, const WithAbbreviatedReason<Emit_> & wrapped, const ReasonLiterals & reason) -> decltype(auto)
+    {
+        ProofLogger::AbbreviateReason abbreviate{logger, reason};
+        return emit_explicit_steps(logger, wrapped.emit, reason);
+    }
+
+    /**
+     * \brief Does this emit return hints for the closing RUP?
+     *
+     * An emit returning a RUPProofRule names the lines the RUP after its steps
+     * needs (see JustifyExplicitly).
+     *
+     * \ingroup Innards
+     */
+    template <typename Emit_>
+    constexpr bool emit_returns_rup_hints = std::is_same_v<std::remove_cvref_t<decltype(emit_explicit_steps(std::declval<ProofLogger &>(),
+                                                               std::declval<const Emit_ &>(), std::declval<const ReasonLiterals &>()))>,
+        RUPProofRule>;
 
     /**
      * \brief The mode-dispatched back end for a JustifyExplicitly inference.
@@ -134,9 +162,16 @@ namespace gcs::innards
                 .visit(simplify_literal(logger.names_and_ids_tracker(), lit));
         }
         auto t = logger.temporary_proof_level();
-        emit_explicit_steps(logger, emit, reason);
-        if (then_rup == ThenRUP::Yes)
-            logger.infer(lit, JustifyUsingRUP{}, reason);
+        if constexpr (emit_returns_rup_hints<Emit_>) {
+            auto rule = emit_explicit_steps(logger, emit, reason);
+            if (then_rup == ThenRUP::Yes)
+                logger.infer_using_hinted_rup(lit, rule, reason);
+        }
+        else {
+            emit_explicit_steps(logger, emit, reason);
+            if (then_rup == ThenRUP::Yes)
+                logger.infer(lit, JustifyUsingRUP{}, reason);
+        }
         logger.forget_proof_level(t);
     }
 }
