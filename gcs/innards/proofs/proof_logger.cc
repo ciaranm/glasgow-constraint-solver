@@ -828,7 +828,7 @@ auto ProofLogger::assume_current_bounds(const State & state) -> void
         _imp->assumption_frames.pop_back();
     }
 
-    Imp::AssumptionFrame frame{level, {}};
+    Imp::AssumptionFrame frame{level, {}, {}};
     auto n = state.what_variable_id_will_be_created_next().index;
     frame.by_variable.resize(n);
     frame.candidates.resize(n, {ReasonLiteralFilter::no_value, ReasonLiteralFilter::no_value, ReasonLiteralFilter::no_value});
