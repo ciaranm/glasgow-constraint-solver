@@ -1,0 +1,3 @@
+add_executable(element_stress element_stress.cc)
+target_link_libraries(element_stress PUBLIC glasgow_constraint_solver)
+target_link_libraries(element_stress LINK_PUBLIC cxxopts)

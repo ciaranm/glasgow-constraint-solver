@@ -28,6 +28,7 @@ add_test(NAME dzn_reader COMMAND $<TARGET_FILE:dzn_test>)
 
 add_subdirectory(auto_table)
 add_subdirectory(cake)
+add_subdirectory(element_stress)
 add_subdirectory(colour)
 add_subdirectory(circuit_small)
 add_subdirectory(circuit_random)

@@ -29,11 +29,13 @@
 #endif
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -108,6 +110,21 @@ namespace
     auto justify_for_every_index_choice(ProofLogger & logger, const State & state, const ReasonLiterals & reason, const IndexVars_ & index_vars,
         const Weighted<Term_> & conclusion) -> void
     {
+        // EXPERIMENT ONLY (cpaior2027 paper): one flat cases line over every
+        // index's equality literals, instead of the nested chain.
+        static const bool flat = [] {
+            auto e = std::getenv("GCS_ELEMENT_CASES");
+            return e && std::string_view{e} == "flat";
+        }();
+        if (flat) {
+            std::vector<ProofLiteralOrFlag> all_cases;
+            for (const auto & iv : index_vars)
+                for (auto && c : case_variables_over_values(iv, state.each_value_immutable(iv)))
+                    all_cases.push_back(c);
+            logger.emit_cases_proof_line_under_reason(reason, WPBSum{} + conclusion >= 1_i, all_cases, ProofLevel::Temporary);
+            return;
+        }
+
         WPBSum prefix;
         auto rule_out = [&](auto && self, size_t d) -> void {
             if (d + 1 < index_vars.size())
