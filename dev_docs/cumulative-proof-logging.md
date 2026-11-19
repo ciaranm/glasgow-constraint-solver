@@ -1006,7 +1006,7 @@ active_{i,t}  ⇔  before_{i,t} ∧ after_{i,t} ∧ (presences[i] = 1)
 ```
 
 `C_t` keeps its shape. A `{0, 1}` variable is direct-only encoded as one
-PB literal (`i[name][b0]`, with `= 0` its negation — see
+PB literal (`z[name]`, with `= 0` its negation — see
 [`variable-encodings.md`](variable-encodings.md)), so the three-way AND
 costs one term in the same two reification halves, and nothing else in
 the encoding has to know the task is optional.

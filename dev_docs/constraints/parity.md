@@ -239,7 +239,7 @@ has no case, because cake has no rule for it; `scp_reader_test` checks that its
 donor with an equality-type literal over a `{0, 1}` variable (`v = 0`, `v = 1`,
 `v ≠ 0`, `v ≠ 1`; `array_bool_xor` posts `v ≠ 0`). The chain derivation's
 subproof adds the labelled step clauses and cancels the step's literal by
-spelling, and our OPB writes `v ≠ 0` as `i[v][b0]` where cake writes
+spelling, and our OPB writes `v ≠ 0` as `z[v]` where cake writes
 `~i[v][eq0]`, which is #1193's mismatch. VeriPB rejects the presolved proof
 against cake's OPB at the `qed` of the first such subproof, and verifies it
 against ours. Ordering literals and wider variables pass, and so do Boolean
