@@ -376,7 +376,10 @@ choice, not the constraint's, but it means the OPB's *coefficients* grow with
 domain size even though its *row count* does not. And `NotIf` reifies its two
 selectors **fully** (both `[r]` and `[f]` halves) where `Iff` reifies them only
 forward (`[r]`), because in the `Iff` case the `le`/`ge` rows already supply the
-other direction.
+other direction. The exception is the not-equals `Iff` (`not_equals_iff`, stored
+as an equality iff the negated condition): cake writes the `[f]` halves there
+too, as for `NotIf`, and so has the solver since 2026-11-23. Before that the
+chain verified, but `not_equals_iff_sat` could not run `strict`.
 
 An `Equals` between two operands of a width-4 domain is two rows:
 
@@ -395,8 +398,8 @@ row parses against cake's re-derived model.
 |---|---|---|
 | `@c[id][le]`, `@c[id][ge]` | the two halves of the equality | `MustHold`, `If`, `Iff` |
 | `@c[id][gt]`, `@c[id][lt]` | the two strict comparisons | `MustNotHold` |
-| `@b[id][gt][r]`, `@b[id][gt][f]` | forward/reverse halves of the `gt` selector | `NotIf` (both), `Iff` (`[r]` only) |
-| `@b[id][lt][r]`, `@b[id][lt][f]` | ditto for `lt` | `NotIf` (both), `Iff` (`[r]` only) |
+| `@b[id][gt][r]`, `@b[id][gt][f]` | forward/reverse halves of the `gt` selector | `NotIf` (both), `Iff` (`[r]` only; both for `not_equals_iff`) |
+| `@b[id][lt][r]`, `@b[id][lt][f]` | ditto for `lt` | `NotIf` (both), `Iff` (`[r]` only; both for `not_equals_iff`) |
 | `@c[id][al1]` | the at-least-one: `cond -> lt + gt >= 1` for `NotIf`, `¬cond -> lt + gt >= 1` for `Iff` | `NotIf`, `Iff` |
 
 The selector-flag rows are labelled with the flag's own name plus a role suffix

@@ -357,13 +357,18 @@ value. As written, on `ortho_latin`:
 **`AllDifferentExcept`** replaces the selector's guard with a conjunction: each
 half is reified on the selector *and*, for every excluded value `s`, both
 `vars[i] ≠ s` and `vars[j] ≠ s`. Still definitional, and still `n(n − 1)` rows,
-but each carries `2|excluded|` more literals, and those are **equality**
-literals, which is what keeps it off the strict chain. Three differences from
-`AllDifferent`'s encoding that a reader of the OPB will trip on: the selector is
-an unnamed `create_proof_flag("notequals_except")` rather than `x[id][i_j]`; its
-polarity is the other way round (true means `vars[i] < vars[j]`); and the rows
-are unlabelled. Encoded from the **original** excluded list, not the pruned one
-the propagator uses (#480).
+but each carries `2|excluded|` more literals, **equality** literals. The
+selector and labels are `AllDifferent`'s, cake's: `x[id][i_j]`, true meaning
+`vars[i] > vars[j]`, and `@c[id][<i>lt<j>]` / `[<i>gt<j>]`. (Until
+2026-11-23 the selector was an unnamed `create_proof_flag("notequals_except")`
+of the opposite polarity, and the rows were unlabelled.) Encoded from the
+**original** excluded list, not the pruned one the propagator uses (#480).
+
+Both classes encode the pairs in the order the variables were **posted**, not
+the sorted order their propagators use: cake indexes `x[id][i_j]` by position
+in the `.scp`, so a sorted encoding named a different pair `x[id][0_1]` from
+cake's whenever a constraint was posted out of creation order (fixed
+2026-11-23; the proof never cites the selectors, so it verified either way).
 
 **`SymmetricAllDifferent`** is three parts: up to two bound rows per variable
 from `define_bound` (only where the declared domain is wider than
@@ -379,16 +384,17 @@ consequence the Hall justifications cite, which is why it is there.
 `AllDifferent`'s rows carry `@c[id][<i>lt<j>]` and `@c[id][<i>gt<j>]`, cake's own
 names (#354), and **no rule cites them**. The justifications reach the rows by
 unit propagation over the variables' literals, so the labels exist for
-`opbdiff` to match against cake and for nothing else. `SymmetricAllDifferent`'s
-clique rows carry the same labels under its own constraint id; its channelling
-and bound rows, and every `AllDifferentExcept` row, are unlabelled.
+`opbdiff` to match against cake and for nothing else. `AllDifferentExcept`'s
+rows and `SymmetricAllDifferent`'s clique rows carry the same labels under their
+own constraint ids; `SymmetricAllDifferent`'s channelling and bound rows are
+unlabelled.
 
 ### Cake conformity
 
 | Class | Chain mode | Cases | Where it diverges |
 |---|---|---|---|
-| `AllDifferent` | `strict` | `all_different_sat` (three over `0..3`), `all_different_unsat` (four into three) | nowhere: byte-matches cake since #354 |
-| `AllDifferentExcept` | `none` | `all_different_except_sat`, `all_different_except_unsat`, and since #1004 `all_different_except_duplicate` (two repeated variables) | the excluded-value literals are equality literals, which diverge from cake's eager variable encoding (#358) |
+| `AllDifferent` | `strict` | `all_different_sat` (three over `0..3`), `all_different_unsat` (four into three), `all_different_unordered_sat` (posted as `(Z X Y)`) | nowhere: byte-matches cake since #354, and for any posting order since 2026-11-23 |
+| `AllDifferentExcept` | `strict`, but `none` for the duplicate case | `all_different_except_sat`, `all_different_except_unsat`, `all_different_except_unordered_sat` (posted out of order, two excluded values), and since #1004 `all_different_except_duplicate` (two repeated variables) | byte-matches cake since 2026-11-23, except where an excluded value lies outside a variable's domain: the order literals at that domain's bounds differ by the 0-versus-1 coefficient (#358) |
 | `SymmetricAllDifferent` | `none` | `symmetric_all_different_sat`, `symmetric_all_different_unsat` | the bit/eq encoding's labels; the boundary pins cake's encoder needs are arranged as persistent proof lines |
 
 Two things no case exercises. **The `BC` and `VC` arms never reach the chain**:
@@ -1914,13 +1920,12 @@ incremental SCC decomposition. Every one of those changes kept the search tree
 and moved the proof's shape, which is why proof-line figures for this family
 should always carry a commit.
 
-**Two classes, one `prepare` idiom, two different reasons it is safe.**
-`AllDifferent::prepare` does `_sanitised_vars = move(_vars)` on a `const`
-member, which silently copies; `AllDifferentExcept::prepare` does the same on a
-non-`const` one, which really moves, leaving `_vars` empty for `clone()` and
-`s_expr()` to read. That is safe only because `Constraint::install` is
-`&&`-qualified — a prepared object is consumed and never cloned or serialised
-again, and the `.scp` is written from the unprepared originals the problem
-keeps. Nothing is wrong. It is recorded because it is the shape of #865, where a
-`clone()` did lose a member, and the next person to reach for `_vars` after
-`prepare` in either class should know which of the two they are in.
+**`prepare` copies `_vars`; it does not move it.** Until 2026-11-23
+`AllDifferent::prepare` did `_sanitised_vars = move(_vars)` on a `const`
+member, which silently copied, and `AllDifferentExcept::prepare` the same on a
+non-`const` one, which really moved. That was safe, because
+`Constraint::install` is `&&`-qualified (a prepared object is never cloned or
+serialised again), but it left `_vars` empty in one class and not the other.
+Both now copy, because `define_proof_model` encodes from `_vars` in the posted
+order (see [The proof model](#the-proof-model)). #865 is the shape to watch
+for: a `clone()` that loses a member.

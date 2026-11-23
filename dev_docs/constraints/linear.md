@@ -402,15 +402,18 @@ view's bits), and **logarithmic in every domain width**. `S = Σ cᵢ·BinEnc(x�
 |---|---|---|
 | `MustHold` | `S ≤ v`, `S ≥ v` | `c[id][le]`, `c[id][ge]` |
 | `MustNotHold` | flag `b[id][ne]`; `ne → S ≥ v + 1`; `¬ne → S ≤ v − 1` | `c[id][gt]`, `c[id][lt]` |
-| `If c` | `c → S ≤ v`, `c → S ≥ v` | `c[id][le]`, `c[id][ge]`, invented: "not chain-verified" |
-| `NotIf c` | unlabelled flag `linne`; `c ∧ linne → S ≥ v + 1`; `c ∧ ¬linne → S ≤ v − 1` | none |
-| `Iff c` | `c → S = v` as `le`/`ge`; unlabelled flags `lineqgt`, `lineqlt` with `gt → S ≥ v + 1`, `lt → S ≤ v − 1`; `lt + gt + c ≥ 1` | `c[id][le]`, `c[id][ge]` only |
+| `If c` | `c → S ≤ v`, `c → S ≥ v` | `c[id][le]`, `c[id][ge]` |
+| `NotIf c` | flags `b[id][gt]`, `b[id][lt]`, fully reified: `gt ↔ S ≥ v + 1`, `lt ↔ S ≤ v − 1`; `lt + gt + ¬c ≥ 1` | `b[id][gt][r]`/`[f]`, `b[id][lt][r]`/`[f]`, `c[id][al1]` |
+| `Iff c` | `c → S = v` as `le`/`ge`; flags `b[id][gt]`, `b[id][lt]` with `gt → S ≥ v + 1`, `lt → S ≤ v − 1` (fully reified, as for `NotIf`, when the condition is stored negated, i.e. `lin_not_equals_iff`); `lt + gt + c ≥ 1` | `c[id][le]`, `c[id][ge]`, `b[id][gt][r]`, `b[id][lt][r]` (and `[f]`), `c[id][al1]` |
 
 Every row is linear in the number of terms, and every form is a handful of
-rows. `NotIf` and `Iff`'s flags are OPB variables, created with no
-constraint id, and are defined by unit propagation on a solution: the flags
-are one-directional (`flag → row`). `Iff`'s disjunction row forces one of
-its flags; `NotIf` uses both polarities of its one flag.
+rows. The reified forms are `ReifiedEquals`' encodings, row for row, which
+are cake's (`encode_equal` and its reified not-equal; see
+[`equals.md`](equals.md)). The selector flags are OPB variables, determined
+by unit propagation on a solution. `Iff`'s and `NotIf`'s at-least-one rows
+force one of them when the sum must differ from `v`. Until 2026-11-23 the
+`Iff` flags were unlabelled `f[k][lineqgt]` / `f[k][lineqlt]`, and `NotIf`
+used one unlabelled flag `linne` with the condition in each half.
 
 ### Labels
 
@@ -422,8 +425,8 @@ label. The labels are cake's, and matter to `opbdiff`, except for two:
   nothing for the other three forms. The propagator the difference-logic
   presolver installs builds `pol`s on it, so changing which row it names
   breaks a caller.
-- The `If` equality's `le`/`ge` labels are marked as invented, because no
-  chain lane covers them.
+- The `If` equality's `le`/`ge` labels were once marked as invented, for want
+  of a chain lane; `lin_equals_if_sat` now checks them against cake.
 
 ### Cake conformity
 
@@ -435,18 +438,16 @@ label. The labels are cake's, and matter to `opbdiff`, except for two:
 | `lin_not_equals_{sat,unsat}` | `strict` |
 | `lin_strict_{lt,gt}_edge_sat`, `lin_strict_lt_edge_unsat` (since #1217) | `strict` |
 | `lin_less_equal_iff_sat` | `strict` (since 2026-11-23) |
-| `lin_equals_iff_sat`, `lin_strict_lt_edge_iff_sat` (since #1217) | `none` |
+| `lin_equals_if_sat`, `lin_equals_iff_sat`, `lin_not_equals_if_sat`, `lin_not_equals_iff_sat` | `strict` (since 2026-11-23) |
+| `lin_strict_lt_edge_iff_sat` (since #1217) | `none` |
 
-Sixteen of the eighteen are byte-for-byte label matches with cake. The other
-two are reified and chain-only. `lin_equals_iff_sat`'s two selectors are our
-own unlabelled `f[k][lineqgt]` / `f[k][lineqlt]`, where cake has `b[id][gt]` /
-`b[id][lt]` with `@b[id][…][r]` halves and an `@c[id][al1]` row.
-`lin_strict_lt_edge_iff_sat`'s condition is a {0,1} variable (#1193). The four `lin_strict_*_edge` cases are `.scp`
+Twenty-one of the twenty-two are byte-for-byte label matches with cake.
+`lin_strict_lt_edge_iff_sat` is chain-only: its condition is a {0,1}
+variable (#1193). The four `lin_strict_*_edge` cases are `.scp`
 strict inequalities (`lin_less_than`, `lin_greater_than`, `lin_less_than_iff`)
 at the ends of the bounded range, where the reader moves the integer step into
 the sum as a constant (`verified_encodings/scp_cases/CMakeLists.txt:53-60`,
-`:370`). No
-lane covers `If`, `NotIf` or a reified not-equals.
+`:404`).
 
 ### Proof-time state
 
@@ -1071,7 +1072,8 @@ the same instances, the same verified proofs.
 - **Why it is true** — the sum is known.
 - **Proof technique** — `RUP`. For `Iff`, `¬c` (the sum is not `v`) comes from
   the `c → le`/`ge` rows, and `c` (the sum is `v`) from the `gt`/`lt` flags'
-  rows and the disjunction row. For `NotIf`, `¬c` comes from the `linne` rows.
+  rows and the disjunction row. For `NotIf`, `¬c` comes from the selectors'
+  `[r]` rows and the `al1` row.
 - **Reason** — `generic_reason` over the scope and the condition, built once.
 - **Assertion** — the condition literal, `∨ ¬reason`.
 - **Hint** — `hints::LinearEquality`.

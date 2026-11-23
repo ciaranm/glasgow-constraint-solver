@@ -97,6 +97,10 @@ add_scp_chain_test(lin_not_equals_unsat strict)
 # conform and the encoding now byte-matches cake's.
 add_scp_chain_test(all_different_unsat  strict)
 add_scp_chain_test(all_different_sat    strict)
+# The variables posted out of creation order, (Z X Y): cake indexes the pairs by
+# position in the .scp, so the solver encodes them in the order posted, not in
+# the sorted order its propagators use (x[id][0_1] is the Z, X pair on both sides).
+add_scp_chain_test(all_different_unordered_sat strict)
 
 # strict: all_equal. cake labels each consecutive-pair equality's two halves
 # @c[id][<i>le] (vars[i+1] - vars[i] >= 0) and @c[id][<i>ge] (vars[i] - vars[i+1]
@@ -191,13 +195,13 @@ add_scp_chain_test(nvalue_neg_sat none)
 # the selectors with the condition negated. The solver now matches each exactly (the
 # @c[...]/@b[...][r]/[f] lines byte-match), reusing the create_proof_flag(ConstraintID,
 # annotation) b[...] overload. SAT enumeration over each reification mode (exercises
-# both selector halves). Three of the four byte-match cake (strict). not_equals_iff
-# stays none: there cake also writes the [f] halves of the b[id][gt]/b[id][lt]
-# selectors, fully reifying them, where the solver writes only the [r] halves.
+# both selector halves). All four byte-match cake (strict). not_equals_iff, too,
+# fully reifies the selectors (it is the equality iff the negated condition, and
+# cake writes the [f] halves there as for not_equals_if).
 add_scp_chain_test(equals_if_sat        strict)
 add_scp_chain_test(equals_iff_sat       strict)
 add_scp_chain_test(not_equals_if_sat    strict)
-add_scp_chain_test(not_equals_iff_sat   none)
+add_scp_chain_test(not_equals_iff_sat   strict)
 
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
@@ -386,12 +390,16 @@ add_scp_chain_test(gcc_closed_out_of_bounds_sat     strict)
 # leading (var op value) triple on lin_equals / lin_less_equal, exactly as the
 # writer emits it; these are the fully-reified (_iff) shapes, so both directions
 # of the biconditional are defined and enumeration exercises both. The unreified
-# lin_* cases above are strict, and so is lin_less_equal_iff. lin_equals_iff stays
-# none because its two selectors are the solver's own, unlabelled f[k][lineqgt] /
-# f[k][lineqlt], where cake has b[id][gt] / b[id][lt] with @b[id][..][r] halves and
-# an @c[id][al1] row. lin_strict_lt_edge_iff stays none for its {0,1} condition
-# variable (#1193).
-add_scp_chain_test(lin_equals_iff_sat      none)
+# lin_* cases above are strict, and so are lin_less_equal_iff and the reified linear
+# (not-)equalities (lin_equals_if is the le / ge halves alone), which are written as the reified equals family above is: the
+# le / ge halves on the condition, selectors b[id][gt] / b[id][lt] with @b[id][..][r]
+# halves (and [f] halves for lin_not_equals_iff and lin_not_equals_if), and
+# @c[id][al1]. lin_strict_lt_edge_iff stays none for its {0,1} condition variable
+# (#1193).
+add_scp_chain_test(lin_equals_if_sat       strict)
+add_scp_chain_test(lin_equals_iff_sat      strict)
+add_scp_chain_test(lin_not_equals_iff_sat  strict)
+add_scp_chain_test(lin_not_equals_if_sat   strict)
 add_scp_chain_test(lin_less_equal_iff_sat  strict)
 add_scp_chain_test(lin_strict_lt_edge_iff_sat none)
 
@@ -618,9 +626,12 @@ add_scp_chain_test(lex_smart_table_empty_left_unsat  strict)
 #   at_most_one (vars) val -- at most one variable equals val.
 #   among (vars) (values) how_many -- exactly how_many variables take a
 #     value-of-interest.
-# among byte-matches cake (strict). all_different_except stays none: its pair flag
-# is the solver's own, unlabelled f[k][notequals_except], where cake has
-# x[id][i_j] and labels the two rows @c[id][<i>gt<j>] / [<i>lt<j>]. at_most_one's
+# among byte-matches cake (strict), and so does all_different_except, whose pairs
+# are all_different's: x[id][i_j] (true for vars[i] > vars[j]) and rows
+# @c[id][<i>lt<j>] / [<i>gt<j>], each also escaped by an excluded value.
+# all_different_except_duplicate stays none: its excluded values -2 and 3 lie
+# outside Z's domain 0..2, and the order literals that places at Z's bounds differ
+# by the 0-versus-1 coefficient (#358). at_most_one's
 # rows reference no order or equality literal, and differ from cake's in polarity,
 # labels and one coefficient of two rows per position. The
 # refutation (unsat) cases verify via RUP; the enumeration (sat) cases verify
@@ -630,8 +641,11 @@ add_scp_chain_test(lex_smart_table_empty_left_unsat  strict)
 # the value; among counts occurrences of a value, unsat demanding more than the
 # candidates can supply. (The sibling precedence globals -- value_precede and
 # seq_precede_chain -- are conformed and chain separately, below.)
-add_scp_chain_test(all_different_except_sat    none)
-add_scp_chain_test(all_different_except_unsat  none)
+add_scp_chain_test(all_different_except_sat    strict)
+add_scp_chain_test(all_different_except_unsat  strict)
+# Posted out of creation order, (C A B), with two excluded values: the pairs are
+# indexed by .scp position, as for all_different_unordered_sat.
+add_scp_chain_test(all_different_except_unordered_sat strict)
 # Two repeated variables, X and Y, each forced into the two excluded values, which
 # lie either side of and between the runs removed; the forcing is one RUP range
 # removal per run against the aliased pair's own rows (#988).
