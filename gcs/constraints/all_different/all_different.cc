@@ -62,7 +62,9 @@ auto AllDifferent::with_consistency(AllDifferentConsistency level) -> AllDiffere
 
 auto AllDifferent::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    _sanitised_vars = move(_vars);
+    // A sorted copy, for the propagators; _vars keeps the order the constraint
+    // was posted in, which is the order the .scp lists and cake indexes by.
+    _sanitised_vars = _vars;
     sort(_sanitised_vars);
     _has_duplicate_vars = adjacent_find(_sanitised_vars) != _sanitised_vars.end();
     if (_has_duplicate_vars) {
@@ -118,7 +120,7 @@ auto AllDifferent::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Identical for every consistency level: the choice is a propagation-strength
     // knob and never changes the encoding.
-    define_clique_not_equals_encoding(model, _constraint_id, _sanitised_vars);
+    define_clique_not_equals_encoding(model, _constraint_id, _vars);
 }
 
 auto AllDifferent::install_propagators(Propagators & propagators) -> void

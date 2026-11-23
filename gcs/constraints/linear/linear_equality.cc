@@ -206,6 +206,23 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model, const State &
     for (auto & [c, v] : _coeff_vars.terms)
         terms += c * v;
 
+    // cake_pb_cp's selectors for the reified forms: b[id][gt] -> sum > value and
+    // b[id][lt] -> sum < value, each half labelled with the flag's own name, [r]
+    // for the implication and, when fully reified, [f] for its converse.
+    auto define_selectors = [&](bool fully_reify) -> pair<ProofFlag, ProofFlag> {
+        auto gtflag = model.create_proof_flag(_constraint_id, "gt");
+        auto gt_name = model.names_and_ids_tracker().pb_file_string_for(gtflag);
+        model.add_labelled_constraint(gt_name + "[r]", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+        if (fully_reify)
+            model.add_labelled_constraint(gt_name + "[f]", terms <= _value, HalfReifyOnConjunctionOf{{! gtflag}});
+        auto ltflag = model.create_proof_flag(_constraint_id, "lt");
+        auto lt_name = model.names_and_ids_tracker().pb_file_string_for(ltflag);
+        model.add_labelled_constraint(lt_name + "[r]", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
+        if (fully_reify)
+            model.add_labelled_constraint(lt_name + "[f]", terms >= _value, HalfReifyOnConjunctionOf{{! ltflag}});
+        return pair{gtflag, ltflag};
+    };
+
     overloaded{
         [&](const reif::MustHold &) {
             // condition is definitely true, it's just an inequality -- cake_pb_cp
@@ -221,27 +238,29 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model, const State &
             model.add_labelled_constraint(_constraint_id, "lt", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
         }, //
         [&](const reif::If & cond) {
-            // The reified (if/iff) linear equalities are not chain-verified, so an
-            // invented @c[id][le/ge] label is fine.
+            // cake_pb_cp labels the equality halves le / ge, each half-reified on
+            // the condition.
             _proof_line = model.add_labelled_constraint(constraint_id(), "le", "ge", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
         }, //
         [&](const reif::NotIf & cond) {
-            // condition is definitely false, the flag implies either greater or less
-            auto neflag = model.create_proof_flag("linne");
-            model.add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
-            model.add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
+            // cake_pb_cp's reified not-equal (-if), as ReifiedEquals writes it:
+            // selectors b[id][gt] / b[id][lt] fully reified against the strict
+            // comparisons ([r] and [f] halves, labelled with the flag's own name),
+            // and an at-least-one @c[id][al1] over lt, gt and the negated
+            // condition, so cond -> sum != value.
+            auto [gtflag, ltflag] = define_selectors(true);
+            model.add_labelled_constraint(_constraint_id, "al1", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * ! cond.cond >= 1_i);
         }, //
         [&](const reif::Iff & cond) {
-            // condition unknown, the condition implies it is neither greater nor less
+            // cake_pb_cp's encode_equal (-iff), as ReifiedEquals writes it: the
+            // equality's le / ge halves on the condition, selectors b[id][gt] /
+            // b[id][lt] implying the strict comparisons ([r] halves; for
+            // lin_not_equals_iff, stored as an equality iff the negated condition,
+            // fully reified, [f] halves too), and an at-least-one @c[id][al1] over
+            // lt, gt and the condition.
             _proof_line = model.add_labelled_constraint(constraint_id(), "le", "ge", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
-
-            auto gtflag = model.create_proof_flag("lineqgt");
-            model.add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-            auto ltflag = model.create_proof_flag("lineqlt");
-            model.add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
-
-            // lt + eq + gt >= 1
-            model.add_constraint(WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond.cond >= 1_i);
+            auto [gtflag, ltflag] = define_selectors(_flipped_cond);
+            model.add_labelled_constraint(_constraint_id, "al1", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond.cond >= 1_i);
         } //
     }
         .visit(_reif_cond);
