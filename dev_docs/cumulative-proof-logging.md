@@ -1439,8 +1439,8 @@ different ones are not even where their bounds agree today.
 `constraint_type()` is `cumulative_optional` for the optional form, so
 the verified-encoding chain does not silently match it against
 `cake_pb_cp`'s `cumulative` encoder, which would re-derive a strictly
-weaker set of capacity rows. cake has no optional cumulative encoder, and
-that gap is now named rather than hidden.
+weaker set of capacity rows. `cake_pb_cp` has had its own
+`cumulative_optional` encoder since CakeML `930601d6` (#1417), which is ours.
 
 ## The height rule (#1239)
 
@@ -3587,8 +3587,9 @@ differences remain, neither specific to this encoding:
   reject a negative capacity or height when the constraint is posted instead, so
   over every model we accept they are tautologies.
 
-cake still has no `cumulative_optional` encoder, so the optional form stays outside
-the chain (see the follow-ups).
+Since CakeML `930601d6` (#1417) cake also encodes `cumulative_optional`, as we do:
+the same block with `[p_i = 1]` a further conjunct of each `sact` flag. The
+`cumulative_optional_*` chain cases cover it.
 
 **The one cost the encoding still carries** is the recovery's `~2m^3` lines per
 cited time point, which shows as 1.36x at `n = 5`, 2.36 at `n = 10` and 1.87 at
@@ -3646,8 +3647,6 @@ so any difference is the encoding's.
   absent. The propagation that is being left on the table is real:
   "if present, `j` cannot start before `b`" is derivable by exactly the
   chain above, stopped early.
-- **A `cake_pb_cp` encoder for `cumulative_optional`.** Until there is
-  one, the optional form is outside the verified-encoding chain.
 The current scaffolding (`_before_flags`, `_after_flags`,
 `_active_flags`, `_contrib_flags`, `_end`, `_capacity_lines`) is
 enough for time-table-strength reasoning over variable `d`/`r`/`b` and not

@@ -1,0 +1,1 @@
+( (version 1) (variables (X0 0 1) (X1 0 1) (X2 0 1) (Y0 0 1) (Y1 0 1) (Y2 0 1) (P2 0 1)) (constraints (_1 disjunctive2d_optional (X0 X1 X2) (Y0 Y1 Y2) (2 2 1) (2 2 1) (1 1 P2))) (prob_type enumerate) )

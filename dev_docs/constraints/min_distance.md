@@ -14,7 +14,9 @@
 > cardinality instead of an at-most-one per value, which names this family's
 > per-site at-most-ones), #1224 (the matching bound's proof can be rejected
 > over positions declared wider than 100 values; fix open as #1362). Tracked
-> under #871.
+> under #871. **Cake chain** since 2026-11-23: `cake_pb_cp` from CakeML
+> `930601d6` encodes it (#1417), and the solver now uses cake's names; see
+> [Cake conformity](#cake-conformity).
 
 ### Re-audit, 2026-10-08
 
@@ -131,7 +133,7 @@ z = min_{0 ≤ i < j < p} D[x_i, x_j]        and, with R,   D[x_i, x_j] ≥ R_ij
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `MinDistance` | `unsupported`[^vocab] | `n/a`[^vocab] | `unsupported`[^vocab] | ✓ `min_distance`, with `R` as an optional trailing matrix; the propagation mode is not written[^scpmode] | no cake chain: `cake_pb_cp` has no rule[^cake] |
+| `MinDistance` | `unsupported`[^vocab] | `n/a`[^vocab] | `unsupported`[^vocab] | ✓ `min_distance`, with `R` as an optional trailing matrix; the propagation mode is not written[^scpmode] | chains through `cake_pb_cp`, strict[^cake] |
 
 [^vocab]: No frontend has a vocabulary for it: neither MiniZinc's standard
     library nor XCSP3 defines a minimum-distance global, and `minizinc/mznlib`,
@@ -146,12 +148,11 @@ z = min_{0 ≤ i < j < p} D[x_i, x_j]        and, with R,   D[x_i, x_j] ≥ R_ij
     chosen sites", which is incomplete rather than wrong: `Z` is the greatest
     such bound, the minimum itself (corrected by #1396, open).
 
-[^cake]: `cake_pb_cp out.scp` on a `min_distance` model prints `unsupported
-    constraint: min_distance` (checked on three `.scp` files, plain, with `R`
-    and maximising, `tmp/fd-small/min_distance/scp/`; each verifies under VeriPB
-    against the solver's own OPB). So there is no `scp_chain_min_distance*`
-    case, and the encoding below is checked against nothing but its own
-    definition.
+[^cake]: `cake_pb_cp` has had a `min_distance` rule since CakeML `930601d6`
+    (CakePB `develop-cp` `62bdc7f`), asked for in #1417; before that it printed
+    `unsupported constraint: min_distance`. Its rows are the solver's, and the
+    solver took its names, so four `scp_chain_min_distance_*` cases compare the
+    two OPBs strictly; see [Cake conformity](#cake-conformity).
 
 ### Options
 
@@ -223,14 +224,14 @@ install) and, per site `a`, the positions `P_a` that can take it. `z_lo` and
 S})` the distance levels.
 
 ```
-u_a  ⇔  Σ_{i ∈ P_a} [x_i = a] ≥ 1                         flag f[..][mindist_u_<a>], per site
-Σ_{i ∈ P_a} [x_i = a] + (p−1)·[z ≥ 1] ≤ p                   per site with |P_a| ≥ 2; if z_lo ≥ 1, just ≤ 1; if z_hi ≤ 0, omitted
-¬u_a ∨ ¬u_b ∨ [z ≤ D[a,b]]                                  per site pair a < b, omitted when z_hi ≤ D[a,b]
-¬[x_i = a] ∨ ¬[x_j = b]                                     per i < j, a ∈ dom x_i, b ∈ dom x_j with D[a,b] < R_ij
-d_a  ⇔  Σ_{i ∈ P_a} [x_i = a] ≥ 2                          flag mindist_d_<a>, lazily, for level 0
-w_ab ⇔  u_a + u_b ≥ 2                                       flag mindist_w_<a>_<b>, lazily
-m_k  ⇔  m_{k−1} ∨ (the d and w witnesses at level L_{k−1})   flag mindist_m_<L_{k−1}>
-[z ≥ L_k] ∨ m_k                                             per level with z_lo < L_k (m_0 is false)
+u_a  ⇔  Σ_{i ∈ P_a} [x_i = a] ≥ 1                         flag v[id][<a>][u], per site
+Σ_{i ∈ P_a} [x_i = a] + (p−1)·[z ≥ 1] ≤ p                   @c[id][mindist_dup_<a>], per site with |P_a| ≥ 2; if z_lo ≥ 1, just ≤ 1; if z_hi ≤ 0, omitted
+¬u_a ∨ ¬u_b ∨ [z ≤ D[a,b]]                                  @c[id][mindist_pair_<a>_<b>], per site pair a < b, omitted when z_hi ≤ D[a,b]
+¬[x_i = a] ∨ ¬[x_j = b]                                     @c[id][mindist_req_<i>_<j>_<a>_<b>], per i < j, a ∈ dom x_i, b ∈ dom x_j with D[a,b] < R_ij
+d_a  ⇔  Σ_{i ∈ P_a} [x_i = a] ≥ 2                          flag v[id][<a>][d], lazily, for level 0
+w_ab ⇔  u_a + u_b ≥ 2                                       flag v[id][<a>_<b>][w], lazily
+m_k  ⇔  m_{k−1} ∨ (the d and w witnesses at level L_{k−1})   flag v[id][<L_{k−1}>][m]
+[z ≥ L_k] ∨ m_k                                             @c[id][mindist_guard_<L_k>], per level with z_lo < L_k (m_0 is false)
 ```
 
 The first three kinds push `z` down: a selected pair of distinct sites bounds
@@ -269,23 +270,43 @@ side 100,000, so most but not all distances distinct (`mdroot.cc`):
 square of side 100) the ladder is short: 5,544 lines at `n = 50` with 119
 levels.
 
-**Building it is `Θ(L · n²)`.** `witnesses_at(v)` (`min_distance.cc:230`) scans
+**Building it is `Θ(L · n²)`.** `witnesses_at(v)` (`min_distance.cc:239`) scans
 every candidate pair for the distance `v`, and the ladder calls it once per
-level (`:258`), so the build is quadratic in the pairs when every distance is
+level (`:267`), so the build is quadratic in the pairs when every distance is
 distinct; see [Initialisation](#initialisation-and-global-data).
 
 ### Labels
 
-`None.` Every row is written unlabelled by `add_constraint`. The rules cite no
-row by line number either: every derivation is RUP or a `pol` over lines the
-justification itself derives, and the four flag kinds are found by name.
+Every row carries the label `cake_pb_cp` gives it (#1417):
+`@c[id][mindist_dup_<a>]`, `[mindist_pair_<a>_<b>]`,
+`[mindist_req_<i>_<j>_<a>_<b>]` and `[mindist_guard_<t>]`, and each flag's two
+reification halves `@v[id][…][r]` (flag ⇒ sum) and `[f]` (sum ⇒ flag). They
+are there for the cake chain, not for the proof: the rules cite no row, by
+label or by line number, since every derivation is RUP or a `pol` over lines
+the justification itself derives, and the four flag kinds are found by name.
 
 ### Cake conformity
 
-**Not checked: `cake_pb_cp` has no rule for `min_distance`** (see the frontend
-table). So no `scp_chain` case exists, `opbdiff` has nothing to compare against,
-and nothing but `CheckOnly`'s all-RUP proofs and the enumeration tests stands
-behind the encoding. The `.scp` side is covered: `scp_reader_test` has two
+**Checked, strictly.** `cake_pb_cp` has encoded `min_distance` since CakeML
+`930601d6` (#1417), with the solver's rows. The names were the open point in
+#1417; cake chose them and the solver followed: the value flags `v[id][<a>][u]`,
+`[d]`, `v[id][<a>_<b>][w]` and `v[id][<t>][m]` were `f[<k>][mindist_…]`, under
+the tracker's running counter, and the rows, unlabelled before, carry the
+labels above. Cake takes the sites from the declared domains, as `prepare()`
+takes them from the install-time ones; the two agreed on every shape tried,
+including a site no position can take. Both refuse fewer than two positions:
+the solver at construction, cake by writing `@BAD_INPUT >= 1`.
+
+Four `scp_chain` cases (`verified_encodings/scp_cases`) run strict:
+enumeration with and without `R`, a refutation, and a maximisation. Each
+declares its positions one value past the sites at both ends, on purpose. A
+site at a variable's bound makes cake write that bound's `≥`-literal definition
+with a 0 coefficient where the solver writes 1 (#358), and a {0,1} position has
+its `=` literals written as its bit (#1193); either would turn `opbdiff` off,
+and with it the check on the names. Both are shared variable-encoding
+differences, not this family's.
+
+The `.scp` side is covered too: `scp_reader_test` has two
 `min_distance` cases (enumeration with and without `R`, and a write → read →
 write round trip), and every proving test run reads its own `.scp` back
 (`check_scp_writer_reader_symmetry`).
@@ -308,9 +329,9 @@ write round trip), and every proving test run reads its own `.scp` back
   position.
 - **Deleted:** only the temporaries, when each justification closes; the
   cached at-least-ones stay.
-- **Naming:** the flags are `f[<k>][mindist_u_<a>]`, `mindist_d_<a>`,
-  `mindist_w_<a>_<b>` and `mindist_m_<t>`, with `<k>` the tracker's running
-  counter, so a tool locates them by the suffix. No row is labelled.
+- **Naming:** the flags are `v[<id>][<a>][u]`, `v[<id>][<a>][d]`,
+  `v[<id>][<a>_<b>][w]` and `v[<id>][<t>][m]`, `cake_pb_cp`'s names (#1417),
+  and every row is labelled (see [Labels](#labels)).
 - **In the OPB, not introduced in the proof:** all four flag kinds are
   `create_proof_flag_fully_reifying` in `define_proof_model`, so they are model
   flags. Each is determined by unit propagation on a solution (`u` and `d` from
@@ -886,6 +907,10 @@ Facts that hold for every rule:
   root, and verifies four proofs (`s VERIFIED BOUNDS -3 <= obj <= -3` and the
   infeasible pair).
 - **`scp_reader_test`**: two cases, see [Cake conformity](#cake-conformity).
+- **`scp_chain_min_distance_*`**: four cases through the verified chain, with
+  `opbdiff` strict; see [Cake conformity](#cake-conformity). Without
+  `cake_pb_cp` on the `PATH` each falls back to checking the proof against the
+  solver's own OPB.
 - **`am1_from_pairs_test`**: the guarded fold, on synthetic cliques.
 - **Audit lane:** the `MinDistance` row.
 - **`p_dispersion`** (ctest): runs the binary's defaults, which is the `tuple`
@@ -1077,7 +1102,7 @@ the same with proofs on or off.
 - **With proofs, building the model is quadratic in the site pairs** when
   most distances are distinct: 26 s at 600 sites with 82,426 distinct
   distances.
-- **No frontend reaches it,** and no `cake_pb_cp` rule checks its encoding.
+- **No frontend reaches it.**
 - **Its assertions carry no hint.**
 
 ### Next steps

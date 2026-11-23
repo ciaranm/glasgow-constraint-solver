@@ -194,7 +194,7 @@ switches, and `with_rules`' "(all of them, by default)"
 |---|---|---|---|---|---|
 | `Disjunctive` (strict) | `fzn_disjunctive_strict` ✓ | `noOverlap` 1-D, `zeroIgnored="false"` ✓ | ? | `disjunctive_strict` ✓ | constant or variable durations |
 | `Disjunctive` (non-strict) | `fzn_disjunctive` ✓ | `noOverlap` 1-D, `zeroIgnored="true"` ✓ | ? | `disjunctive` ✓ | |
-| `Disjunctive` with presences | `fzn_disjunctive_opt`, `fzn_disjunctive_strict_opt` ✓[^opt] | `n/a` (XCSP3's `noOverlap` has no optional form) | ? | `disjunctive_optional`, `disjunctive_strict_optional` ✓ | outside the cake chain |
+| `Disjunctive` with presences | `fzn_disjunctive_opt`, `fzn_disjunctive_strict_opt` ✓[^opt] | `n/a` (XCSP3's `noOverlap` has no optional form) | ? | `disjunctive_optional`, `disjunctive_strict_optional` ✓ | chains through `cake_pb_cp` since #1417 |
 
 `gcspy` has no binding for `Disjunctive` at all: `n/a` there, not a gap
 anyone has asked about.
@@ -443,10 +443,22 @@ rule. The published not-first / not-last and the sorting-network
 certificate were never put through the chain. They cite the same kinds of
 row, but that is reasoning, not a run.
 
-The optional forms are **outside the chain**: cake has no encoder for them.
+The optional forms have chained since `cake_pb_cp` from CakeML `930601d6`
+(CakePB `develop-cp` `62bdc7f`), which encodes them at our request (#1417).
 `constraint_type()` names them `disjunctive_optional` and
-`disjunctive_strict_optional`, so the gap is a miss rather than a silent
-mismatch.
+`disjunctive_strict_optional`, which is what cake dispatches on. Its encoding
+is ours: the separation clause with `¬[p_i = 1] ∨ ¬[p_j = 1]` for each
+variable presence, under the same names and labels. Three chain cases cover
+them, `disjunctive_optional_sat` and `_unsat` and
+`disjunctive_strict_optional_sat`, all mode `none`. Run in `strict` mode,
+`opbdiff` matches every row of the two `sat` cases except the presences'
+bound rows: a presence is a {0,1} variable, which the solver writes as one
+unlabelled `1 i[P][b0] >= 0` and cake as labelled `@i[P][lb]` and `@i[P][ub]`
+rows (#1193). Two of the `unsat` case's starts are {0,1} variables, and there
+cake writes a 0 coefficient on the flag of a before-flag half the start
+domains already imply, where the solver writes 1, as for the plain forms. Cake also
+accepts a presence with a wider domain, bounding it to 1 by a row
+`@c[id][p_<i>_le1]`; the solver refuses one in `prepare()`.
 
 ### Proof-time state
 
@@ -1792,8 +1804,6 @@ way.
   time-tabling's scan quadratic until #1279.)
 - **Views and constant starts** are left out of edge-finding, not-first /
   not-last and the set rule, and constant starts out of the overload check.
-- **No cake encoder** for the optional forms, so those proofs are not
-  chain-verified.
 - **No `gcspy` binding.**
 
 ### Next steps

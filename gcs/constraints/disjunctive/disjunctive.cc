@@ -2978,10 +2978,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 auto Disjunctive::constraint_type() const -> std::string
 {
     // The optional forms are named apart from the plain ones rather than
-    // sharing a name: cake_pb_cp dispatches on this, and it has no encoder for
-    // an optional disjunctive, so a shared name would silently offer it the
-    // non-optional encoding of a different constraint. Naming the gap is what
-    // makes it a miss rather than a mismatch.
+    // sharing a name: cake_pb_cp dispatches on this, and an optional disjunctive
+    // is a different constraint, whose separation clauses carry the presence
+    // disjuncts. cake_pb_cp has had encoders for the optional forms since CakeML
+    // 930601d6 (#1417); a shared name would have it re-derive the non-optional
+    // encoding instead.
     if (_presences.empty())
         return _strict ? "disjunctive_strict" : "disjunctive";
     return _strict ? "disjunctive_strict_optional" : "disjunctive_optional";

@@ -211,7 +211,7 @@ optional form, `presences[i] = 1`). The constraint holds iff, at every integer
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
 | `Cumulative` (four arguments) | `fzn_cumulative` ✓ | `cumulative` ✓ | `frontend gap` (no issue)[^cpmpy] | `cumulative` ✓ | variable `s`, `d`, `r`, `b` in both frontends[^fe] |
-| `Cumulative` (with presences) | `fzn_cumulative_opt` ✓[^opt] | `n/a` | `frontend gap` (no issue)[^cpmpy] | `cumulative_optional` ✓ | outside the `cake_pb_cp` chain[^optcake] |
+| `Cumulative` (with presences) | `fzn_cumulative_opt` ✓[^opt] | `n/a` | `frontend gap` (no issue)[^cpmpy] | `cumulative_optional` ✓ | chains through `cake_pb_cp` since #1417[^optcake] |
 
 [^fe]: MiniZinc's `mznlib/fzn_cumulative.mzn` forwards straight to
     `glasgow_cumulative`, which `fzn-glasgow` posts as
@@ -227,9 +227,8 @@ optional form, `presences[i] = 1`). The constraint holds iff, at every integer
     start and an `occurs` Boolean. An absent constant start becomes `0`.
     XCSP3 has no optional-task cumulative.
 [^optcake]: `constraint_type()` is `cumulative_optional` for the optional form,
-    so that the verified-encoding chain names the gap rather than silently
-    mismatching: `cake_pb_cp` has no encoder for it (see
-    [Cake conformity](#cake-conformity)).
+    which is what `cake_pb_cp` dispatches on. It has had an encoder for it
+    since CakeML `930601d6` (see [Cake conformity](#cake-conformity)).
 [^cpmpy]: `gcspy` (`python/gcspy.cc`) has no Cumulative binding at all, so
     CPMpy's GCS interface cannot post one natively. Whether CPMpy decomposes
     `Cumulative` before it reaches GCS was not checked. No issue is filed.
@@ -487,10 +486,18 @@ skips the label oracle, for documented reasons
   which cites #358. #358 is closed, and whether the divergence is still there
   was not re-checked.
 
-**`cumulative_optional` has no cake encoder.** It is named apart by
-`constraint_type()`, so the gap is visible rather than silent. The rules say a
-request waits for the next batch of cake requests rather than going alone
-(scheduling-front scope note).
+**`cumulative_optional` chains** since `cake_pb_cp` from CakeML `930601d6`
+(CakePB `develop-cp` `62bdc7f`), which encodes it at our request (#1417).
+`constraint_type()` names it apart, and cake dispatches on that name. Its
+encoding is ours: the checkpoint block with `[p_i = 1]` as a further conjunct
+of each `sact` flag, under the same names and labels. Two chain cases,
+`cumulative_optional_sat` (a variable length, one constant presence) and
+`cumulative_optional_unsat`, run at `none`. In `strict` mode `opbdiff`
+matches every row of the `sat` case but the presences' bound rows, which the
+solver and cake write differently for a {0,1} variable (#1193). Two of the
+`unsat` case's starts are {0,1} too, and it also differs where cake writes a 0
+coefficient on the flag of a reification half the start domains already
+imply, and the solver 1, as for the plain form.
 
 ### Proof-time state
 
@@ -2323,8 +2330,8 @@ family's headline cost.
   of starts per step, but the profile is still a flat array rebuilt on every
   call, the scans still visit every time point, and per-time steps remain for
   variable heights, views and derived constraints (#705, #364, #742).
-- **`cumulative_optional` is outside the cake chain**, and a user who sets
-  `GCS_CUMULATIVE_ENCODING` writes a model cake would not reproduce. Since
+- **A user who sets `GCS_CUMULATIVE_ENCODING`** writes a model cake would not
+  reproduce. Since
   #1278 the variable is documented as a diagnostic.
 
 ### Next steps

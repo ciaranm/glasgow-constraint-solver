@@ -445,6 +445,28 @@ add_scp_chain_test(disjunctive2d_var_sat  none)
 add_scp_chain_test(disjunctive_strict_sat   none)
 add_scp_chain_test(disjunctive2d_strict_sat none)
 
+# none (chain-only): the optional forms, disjunctive_optional,
+# disjunctive_strict_optional, disjunctive2d_optional and
+# disjunctive2d_strict_optional, where each task or rectangle has a presence
+# (a {0,1} variable or the constant 1) and only present ones must not overlap.
+# cake_pb_cp has encoded them since CakeML 930601d6 (#1417): the separation clause
+# above with a disjunct ~[p_i = 1] per variable presence, which is the solver's
+# encoding, under the same names and labels. Stays none for #1193: a presence is
+# a {0,1} variable, whose bound rows the solver and cake write differently, which
+# is the only difference on the sat cases. The unsat cases' {0,1} starts add the
+# 0-versus-1 coefficient on an implied before-flag half, as for the plain forms.
+# (cake also takes a presence with a wider domain and bounds it by
+# @c[id][p_<i>_le1]; the solver rejects that when the constraint is posted.)
+# Each sat case is the #1417 example: the strict one has a zero-length task and a
+# variable length, the 2D strict one a variable width. Each unsat case has two
+# present tasks that cannot separate, beside a third with a variable presence.
+add_scp_chain_test(disjunctive_optional_sat          none)
+add_scp_chain_test(disjunctive_optional_unsat        none)
+add_scp_chain_test(disjunctive_strict_optional_sat   none)
+add_scp_chain_test(disjunctive2d_optional_sat        none)
+add_scp_chain_test(disjunctive2d_optional_unsat      none)
+add_scp_chain_test(disjunctive2d_strict_optional_sat none)
+
 # none (chain-only): cumulative. Tasks [start, start+length) each occupy `height`
 # of a shared resource; at every time point the total height of active tasks is at
 # most `cap` (lengths, heights and cap may each be a variable or a constant). Both
@@ -486,6 +508,19 @@ add_scp_chain_test(cumulative_var_height_sat   none)
 add_scp_chain_test(cumulative_var_duration_sat none)
 add_scp_chain_test(cumulative_mixed_sat        none)
 add_scp_chain_test(cumulative_unsat            none)
+
+# none (chain-only): cumulative_optional, cumulative with a presence per task (a
+# {0,1} variable or the constant 1). cake_pb_cp has encoded it since CakeML
+# 930601d6 (#1417): the start-checkpoint block above with [p_i = 1] added as a
+# conjunct of each sact flag, which is the solver's encoding, under the same names
+# and labels. Stays none for #1193: the presences are {0,1} variables, whose bound
+# rows differ, which is the only difference on the sat case; the unsat case's {0,1}
+# starts add the 0-versus-1 coefficient on an implied half, as cumulative has. sat is the #1417 example, with a variable length
+# and one constant presence; unsat has two present length-2 tasks starting at 0 or
+# 1, which always share time 1, over capacity 1, beside a third with a variable
+# presence.
+add_scp_chain_test(cumulative_optional_sat   none)
+add_scp_chain_test(cumulative_optional_unsat none)
 
 # increasing / decreasing / strictly_*: the sequence of variables is (strictly)
 # monotone. cake encodes the family as the chain of consecutive comparisons
@@ -783,3 +818,22 @@ add_scp_chain_test(modulus_signed_dividend_sat  none)
 add_scp_chain_test(modulus_fully_signed_sat     none)
 add_scp_chain_test(modulus_negneg_sat           none)
 add_scp_chain_test(modulus_signed_dividend_unsat none)
+
+# strict: min_distance. z is the smallest distance D[x_i, x_j] over the pairs of
+# positions, each x_i picking a site 0..n-1, with an optional matrix of pairwise
+# requirements. cake_pb_cp has encoded it since CakeML 930601d6 (#1417), with the
+# solver's rows and cake's names for them: value flags v[id][a][u] (some position
+# is on site a), [d] (two are), v[id][a_b][w] (sites a and b both used) and
+# v[id][t][m] (a distance below level t is attained), and labelled rows
+# @c[id][mindist_dup_<a>|pair_<a>_<b>|req_<i>_<j>_<a>_<b>|guard_<t>]. The positions'
+# domains reach one past the sites at each end on purpose: a site at a variable's
+# bound would make cake write that bound's ge-literal definition with a 0
+# coefficient where the solver writes 1 (#358), and opbdiff would have to be off.
+# Values outside the sites are infeasible on both sides. So these are strict, and
+# check the names. sat and requirements_sat enumerate (27 and 8 solutions); unsat
+# asks for z >= 5, where no placement does better than 3; maximize_opt has four
+# sites, and the best placement's minimum distance is 3.
+add_scp_chain_test(min_distance_sat              strict)
+add_scp_chain_test(min_distance_unsat            strict)
+add_scp_chain_test(min_distance_requirements_sat strict)
+add_scp_chain_test(min_distance_maximize_opt     strict)

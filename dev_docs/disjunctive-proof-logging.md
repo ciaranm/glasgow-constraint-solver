@@ -1634,11 +1634,11 @@ pols fails `disjunctive_2d_test`'s `d1` lane and the optional test's
 own `mixed_consts`. The falsification emits them because it inherits a
 shape-independent derivation, not one that happens to hold small.
 
-`cake_pb_cp` has no encoder for the optional form, so
 `constraint_type()` is `disjunctive2d_optional` /
-`disjunctive2d_strict_optional`, keeping it out of the
-verified-encoding chain rather than silently mismatched against the
-plain encoder — the same reason 1D's optional form is named apart.
+`disjunctive2d_strict_optional`, so that a verified encoder never
+re-derives the plain encoding for the optional form, the same reason
+1D's optional form is named apart. `cake_pb_cp` has encoded both
+optional forms since CakeML `930601d6` (#1417), so they chain-verify.
 
 ### The cumulative relaxation (#972)
 
@@ -2289,14 +2289,6 @@ would take from *this* encoding:
   bind, and XCSP3 still raises an unsupported error. Nothing asks for
   it yet, and the API and `.scp` routes are what the proof-logging
   claim rests on.
-- **A `cake_pb_cp` encoder for the optional forms.** The pairwise
-  encoding matches cake's for the non-optional constraints, which is
-  why disjunctive proofs chain-verify, and the optional forms differ
-  from it by two literals per separation clause in 1D and in 2D alike.
-  Until cake has that, `disjunctive_optional` /
-  `disjunctive_strict_optional` and `disjunctive2d_optional` /
-  `disjunctive2d_strict_optional` are outside the chain, which is what
-  those names are for.
 - **Conditional pruning for an undecided task.** Its own bounds are
   never pruned, because there is no conditional-bounds store and an
   unconditional prune would be unsound if the task turns out absent.

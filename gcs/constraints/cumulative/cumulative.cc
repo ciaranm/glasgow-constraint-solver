@@ -4353,10 +4353,9 @@ auto Cumulative::constraint_type() const -> std::string
     // The optional form is a different constraint, not a variant of this one:
     // its active flags carry a third conjunct, so a verified encoder for
     // "cumulative" would re-derive a strictly different --- and weaker --- set
-    // of capacity rows from the same s-expression. cake_pb_cp has no optional
-    // cumulative encoder today, so naming it apart is what keeps the
-    // verified-encoding chain honest about the gap rather than silently
-    // mismatching.
+    // of capacity rows from the same s-expression. cake_pb_cp has had a
+    // cumulative_optional encoder since CakeML 930601d6 (#1417), which
+    // dispatches on this name.
     return _presences.empty() ? "cumulative" : "cumulative_optional";
 }
 
