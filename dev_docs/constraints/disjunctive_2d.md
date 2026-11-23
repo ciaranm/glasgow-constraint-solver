@@ -383,10 +383,12 @@ what lets a proof cite them after the chain re-derives the OPB.
 Four SCP chain cases run at strictness `none`:
 `disjunctive2d_sat`, `disjunctive2d_unsat`, `disjunctive2d_var_sat` (one
 variable width, non-strict) and `disjunctive2d_strict_sat` (a zero-width
-rectangle inside a wider one, 67 solutions against 81 non-strict). They stay at
-`none` because the ordering rows reference the operands' bit encodings, which
-still differ from cake's eager encoding (#358, closed as not planned on
-2026-06-30).
+rectangle inside a wider one, 67 solutions against 81 non-strict). The last two
+run with `opbdiff` strict and byte-match cake (re-checked 2026-11-23 against cake
+`930601d6`). `disjunctive2d_sat` and `disjunctive2d_unsat` stay at `none`: their
+coordinates are {0,1} variables, whose bound rows the solver and cake write
+differently (#1193), and `disjunctive2d_unsat` also has ordering halves its
+domains imply, where cake writes a 0 coefficient on the flag and the solver 1.
 
 The optional forms have chained since `cake_pb_cp` from CakeML `930601d6`
 (#1417). Their `constraint_type()`s, `disjunctive2d_optional` and

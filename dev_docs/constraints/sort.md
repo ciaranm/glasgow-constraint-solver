@@ -184,12 +184,13 @@ there so that the solver's OPB and cake's line up.
 
 ### Cake conformity
 
-`scp_chain_{sort,arg_sort}_{sat,unsat}` chain-verify in `none` mode. Both
+`scp_chain_{sort,arg_sort}_{sat,unsat}` chain-verify; `sort_sat` runs in
+`strict` mode (since 2026-11-23) and the other three in `none`. Both
 encodings are cake's row for row (against `cake_pb_cp` built from CakeML
 `cp_enc_new` at `91fe2e2b8`), so the propagators' steps resolve against cake's
-OPB. The cases stay `none` for the literal-encoding divergence (#358) the whole
-section shares, and nothing else: `sort_sat` passes `opbdiff` outright,
-`sort_unsat` differs by one `@i[Y1][ub]` row, and `arg_sort_sat` and
+OPB. The other three stay `none` for the literal-encoding divergence the whole
+section shares, and nothing else: `sort_unsat` differs by one `@i[Y1][ub]` row
+(`Y1` is a {0,1} variable, #1193), and `arg_sort_sat` and
 `arg_sort_unsat` each have 131 rows matching and 6 differing, all of them
 tautologies where cake gives a literal coefficient 0 and the solver 1 (three
 `@i[P<j>][ge0][r]` atom halves and three `rcge0_k` rows).

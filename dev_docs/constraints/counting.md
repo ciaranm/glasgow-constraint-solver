@@ -498,7 +498,7 @@ rebuilds from the `.scp`, which is written from the same object.
 | Case | Chain | `opbdiff` | Why not `strict` |
 |---|---|---|---|
 | `count_sat`, `count_unsat` | full workflow 2 | `strict` | — |
-| `among_sat`, `among_unsat` | full workflow 2 | `none` | the eq-literal encoding gap (#358), shared with `element` and `table` |
+| `among_sat`, `among_unsat`, `among_out_of_bounds_sat` | full workflow 2 | `strict` (since 2026-11-23) | — |
 | `nvalue_sat`, `nvalue_unsat`, `nvalue_neg_sat` | full workflow 2 | `none` | #358, and the occurrence-row membership of #488 |
 | `global_cardinality_{sat,unsat,closed_sat,closed_unsat}` | full workflow 2 | `none` | #358 |
 | `global_cardinality_gac_{sat,unsat,closed_sat}` | full workflow 2 | `none` | #358 |

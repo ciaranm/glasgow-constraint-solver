@@ -221,7 +221,11 @@ building CakeML is awkward) the runner degrades to a workflow-1 self-verify
 still exercised; it skips (`SKIP_RETURN_CODE 77`) only when `veripb` itself is
 absent. To run the full chain locally rather than the fallback, put `cake_pb_cp`
 on `PATH` (alongside `veripb`/`opbdiff`, e.g. symlinked into `~/.cargo/bin`) or
-point `CAKE_PB_CP` at the built binary. The `(prob_type enumerate)` `.scp`
+point `CAKE_PB_CP` at the built binary. The cases track a development cake, not
+a release: since 2026-11-23 they need `cake_pb_cp` from CakeML `930601d6`
+(CakePB `develop-cp` `62bdc7f`) or later. An older one fails the cases for
+keywords it lacks at step 2 (`unsupported constraint`), and a few `strict` cases
+at step 5, where its rows differ from the solver's. The `(prob_type enumerate)` `.scp`
 section (so cake emits `preserved:`, which `decide` would not) means
 **SAT cases verify by complete enumeration** — not just UNSAT — so the table can
 exercise the naturally-satisfiable forms too.
