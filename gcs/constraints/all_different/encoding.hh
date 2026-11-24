@@ -28,8 +28,8 @@ namespace gcs
         // constraints implies that variable must take a value in `excluded`,
         // and does so to unit propagation: a range of non-excluded values for
         // it can be removed by RUP alone.
-        auto define_clique_not_equals_except_encoding(
-            ProofModel & model, const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & excluded) -> void;
+        auto define_clique_not_equals_except_encoding(ProofModel & model, const ConstraintID & constraint_id,
+            const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & excluded) -> void;
 
         // Install a SimpleDefinition-priority contradiction initialiser that
         // proves the input was unsatisfiable because of a duplicate variable

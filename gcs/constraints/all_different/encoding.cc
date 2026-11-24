@@ -25,7 +25,8 @@ auto gcs::innards::define_clique_not_equals_encoding(
             // (vars[i] < vars[j]), @c[id][<i>gt<j>] the higher. The proof never
             // references these selectors by name (the propagator's justifications
             // RUP over the variable literals), so the name/polarity are free to
-            // match cake without touching any proof step.
+            // match cake without touching any proof step. The positions are those
+            // of the .scp, so callers pass the variables in the order posted.
             // Explicit vector (not a braced list): with the scalar b[id][role]
             // overload also present, a braced {i, j} is ambiguous against
             // std::string's (count, char) constructor.
@@ -49,21 +50,28 @@ template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
 template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
     Propagators &, const ConstraintID &, const string &, const string &, const hints::AllDifferentExcept &) -> void;
 
-auto gcs::innards::define_clique_not_equals_except_encoding(
-    ProofModel & model, const vector<gcs::IntegerVariableID> & vars, const vector<gcs::Integer> & excluded) -> void
+auto gcs::innards::define_clique_not_equals_except_encoding(ProofModel & model, const ConstraintID & constraint_id,
+    const vector<gcs::IntegerVariableID> & vars, const vector<gcs::Integer> & excluded) -> void
 {
     for (unsigned i = 0; i < vars.size(); ++i)
         for (unsigned j = i + 1; j < vars.size(); ++j) {
-            auto selector = model.create_proof_flag("notequals_except");
-            HalfReifyOnConjunctionOf lower_conj{selector};
-            HalfReifyOnConjunctionOf higher_conj{! selector};
+            // As define_clique_not_equals_encoding, cake's names: the selector is
+            // x[id][i_j], TRUE meaning vars[i] > vars[j], and the halves are
+            // @c[id][<i>lt<j>] and @c[id][<i>gt<j>]. Each half is also escaped by
+            // either variable taking an excluded value. Nothing in the proof
+            // refers to the selector or the labels.
+            auto selector = model.create_proof_flag(constraint_id, vector<long long>{static_cast<long long>(i), static_cast<long long>(j)});
+            HalfReifyOnConjunctionOf lower_conj{! selector};
+            HalfReifyOnConjunctionOf higher_conj{selector};
             for (const auto & s : excluded) {
                 lower_conj.emplace_back(vars[i] != s);
                 lower_conj.emplace_back(vars[j] != s);
                 higher_conj.emplace_back(vars[i] != s);
                 higher_conj.emplace_back(vars[j] != s);
             }
-            model.add_constraint(WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
-            model.add_constraint(WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
+            model.add_labelled_constraint(
+                constraint_id, to_string(i) + "lt" + to_string(j), WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
+            model.add_labelled_constraint(
+                constraint_id, to_string(i) + "gt" + to_string(j), WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
         }
 }

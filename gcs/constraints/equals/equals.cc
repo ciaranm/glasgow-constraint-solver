@@ -444,15 +444,22 @@ auto ReifiedEquals::define_proof_model(ProofModel & model, const State &) -> voi
             // b[id][gt] / b[id][lt] half-implying the strict comparisons (cake's gtv/ltv
             // via cvar_imply, each labelled with the flag's own name + [r]); and an
             // at-least-one @c[id][al1] tying lt, gt and the condition together.
+            // For not_equals_iff (stored as an equality iff the negated condition)
+            // cake FULLY reifies the selectors, as for not_equals_if: it adds the
+            // [f] halves, ~gt -> V1 <= V2 and ~lt -> V1 >= V2.
             model.add_labelled_constraint(
                 _constraint_id, "le", "ge", WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
 
             auto gtflag = model.create_proof_flag(_constraint_id, "gt");
-            model.add_labelled_constraint(model.names_and_ids_tracker().pb_file_string_for(gtflag) + "[r]",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            auto gt_name = model.names_and_ids_tracker().pb_file_string_for(gtflag);
+            model.add_labelled_constraint(gt_name + "[r]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            if (_neq)
+                model.add_labelled_constraint(gt_name + "[f]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= 0_i, HalfReifyOnConjunctionOf{{! gtflag}});
             auto ltflag = model.create_proof_flag(_constraint_id, "lt");
-            model.add_labelled_constraint(model.names_and_ids_tracker().pb_file_string_for(ltflag) + "[r]",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+            auto lt_name = model.names_and_ids_tracker().pb_file_string_for(ltflag);
+            model.add_labelled_constraint(lt_name + "[r]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+            if (_neq)
+                model.add_labelled_constraint(lt_name + "[f]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 0_i, HalfReifyOnConjunctionOf{{! ltflag}});
 
             model.add_labelled_constraint(_constraint_id, "al1", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * reif.cond >= 1_i);
         } //

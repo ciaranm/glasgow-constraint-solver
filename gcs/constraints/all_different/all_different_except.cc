@@ -65,7 +65,9 @@ auto AllDifferentExcept::clone() const -> unique_ptr<Constraint>
 
 auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    _sanitised_vars = move(_vars);
+    // A sorted copy, for the propagators; _vars keeps the order the constraint
+    // was posted in, which is the order the .scp lists and cake indexes by.
+    _sanitised_vars = _vars;
     sort(_sanitised_vars);
 
     // Drop excluded values that don't appear in any variable's initial domain.
@@ -138,7 +140,7 @@ auto AllDifferentExcept::define_proof_model(ProofModel & model, const State &) -
     // out-of-domain exception value still contributes its (statically-true)
     // literals to the pair rows, keeping the rows' propagation strength -- and
     // hence the proof steps they support -- identical on both sides.
-    define_clique_not_equals_except_encoding(model, _sanitised_vars, _excluded);
+    define_clique_not_equals_except_encoding(model, _constraint_id, _vars, _excluded);
 }
 
 auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
