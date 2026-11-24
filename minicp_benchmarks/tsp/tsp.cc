@@ -34,12 +34,12 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
                 cxxopts::value<string>()->default_value("tsp"))              //
             ("branch",
-                "Branching heuristic: default, or dom-wdeg[:VARIANT] "               //
-                "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",             //
-                cxxopts::value<string>()->default_value("default"))                  //
-            ("timeout", "Abort the solve after this many seconds (0 = no limit)",    //
-                cxxopts::value<double>()->default_value("0"))                        //
-            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                "Branching heuristic: default, or dom-wdeg[:VARIANT] "                          //
+                "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",                        //
+                cxxopts::value<string>()->default_value("default"))                             //
+            ("timeout", "Abort the solve after this many seconds (0 = no limit)",               //
+                cxxopts::value<double>()->default_value("0"))                                   //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale (0 is off)", //
                 cxxopts::value<unsigned long long>()->implicit_value("100"));
 
         options.add_options()(
@@ -132,8 +132,9 @@ auto main(int argc, char * argv[]) -> int
     p.post(dist_sum == 1_i * obj);
     p.minimise(obj);
 
-    auto restarts =
-        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
+    auto restarts = options_vars.contains("restarts") && options_vars["restarts"].as<unsigned long long>() > 0
+        ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
+        : nullopt;
 
     auto branch_spec = options_vars["branch"].as<string>();
     BranchHeuristic brancher;

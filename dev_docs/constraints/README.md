@@ -872,8 +872,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   derivation are refused. Filed:
   under optimisation the refined store arms a pass's nogoods late whenever the
   next root is seeded by an improved bound (#1390); a restart scale of 0 never
-  terminates, through the own `--timeout` of XCSP3, the examples and the
-  MiniCP benchmarks (#1391); the refined
+  terminated, through the own `--timeout` of XCSP3, the examples and the
+  MiniCP benchmarks, and `luby()` now refuses it (#1391); the refined
   propagator never adopted #506's `scope_only`, so under dom/wdeg its
   conflicts weight no variable, one cause of refined and scan diverging there
   (#1392; with it fixed they still charge some failures to different
