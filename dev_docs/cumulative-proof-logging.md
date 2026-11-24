@@ -3607,7 +3607,8 @@ differences remain, neither specific to this encoding:
   from cake and a 1 from us.** Both rows are tautologies, and `reification_shape`
   clamps the same way for every reified row we write; cake's `less_equal_iff`
   writes a 0 there too.
-- **cake writes `@c[id][cap_ge0]` and `@c[id][h_<i>_ge0]`, which we do not.** We
+- **cake writes `@c[id][cap_ge0]` and `@c[id][h_<i>_ge0]` when the capacity or a
+  height may be negative, which we do not.** We
   reject a negative capacity or height when the constraint is posted instead, so
   over every model we accept they are tautologies.
 

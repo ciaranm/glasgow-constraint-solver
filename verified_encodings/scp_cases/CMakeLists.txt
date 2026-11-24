@@ -190,13 +190,13 @@ add_scp_chain_test(nvalue_neg_sat none)
 # and the condition; the -if drops the selectors, and the not_equals_if FULLY reifies
 # the selectors with the condition negated. The solver now matches each exactly (the
 # @c[...]/@b[...][r]/[f] lines byte-match), reusing the create_proof_flag(ConstraintID,
-# annotation) b[...] overload. Byte-match is gated only by the condition variable's
-# eq-literal *definition* (@i[Z][eq1] via the ge ladder), the same lazy-vs-eager
-# variable-encoding divergence as element (#358) -- so these chain-verify but register
-# `none`. SAT enumeration over each reification mode (exercises both selector halves).
-add_scp_chain_test(equals_if_sat        none)
-add_scp_chain_test(equals_iff_sat       none)
-add_scp_chain_test(not_equals_if_sat    none)
+# annotation) b[...] overload. SAT enumeration over each reification mode (exercises
+# both selector halves). Three of the four byte-match cake (strict). not_equals_iff
+# stays none: there cake also writes the [f] halves of the b[id][gt]/b[id][lt]
+# selectors, fully reifying them, where the solver writes only the [r] halves.
+add_scp_chain_test(equals_if_sat        strict)
+add_scp_chain_test(equals_iff_sat       strict)
+add_scp_chain_test(not_equals_if_sat    strict)
 add_scp_chain_test(not_equals_iff_sat   none)
 
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
@@ -377,17 +377,22 @@ add_scp_chain_test(global_cardinality_gac_unsat    none)
 # reaches them from the GAC propagator, which is a different set of proof steps.
 add_scp_chain_test(global_cardinality_gac_closed_sat none)
 # #1413: values a variable's declared bounds exclude get no term (or, for an
-# unreachable Element index, no row); cake drops them in step.
-add_scp_chain_test(gcc_closed_out_of_bounds_sat     none)
+# unreachable Element index, no row); cake drops them in step since CakeML 930601d6
+# (the cake before it still wrote those terms). Strict: no value at a bound is
+# involved, so the #358 coefficient above does not arise.
+add_scp_chain_test(gcc_closed_out_of_bounds_sat     strict)
 
 # none (chain-only): the reified linear forms. cake reads the reification as a
 # leading (var op value) triple on lin_equals / lin_less_equal, exactly as the
 # writer emits it; these are the fully-reified (_iff) shapes, so both directions
 # of the biconditional are defined and enumeration exercises both. The unreified
-# lin_* cases above are strict; these stay none for the same eq-ladder reason as
-# the other reified families.
+# lin_* cases above are strict, and so is lin_less_equal_iff. lin_equals_iff stays
+# none because its two selectors are the solver's own, unlabelled f[k][lineqgt] /
+# f[k][lineqlt], where cake has b[id][gt] / b[id][lt] with @b[id][..][r] halves and
+# an @c[id][al1] row. lin_strict_lt_edge_iff stays none for its {0,1} condition
+# variable (#1193).
 add_scp_chain_test(lin_equals_iff_sat      none)
-add_scp_chain_test(lin_less_equal_iff_sat  none)
+add_scp_chain_test(lin_less_equal_iff_sat  strict)
 add_scp_chain_test(lin_strict_lt_edge_iff_sat none)
 
 # none (chain-only): regular (the sequence of variables is a word accepted by a
@@ -421,29 +426,32 @@ add_scp_chain_test(regular_narrow_domain_sat none)
 # flag from the variable bounds by unit propagation -- a RUP step that is
 # underivable against a half-reified OPB. cake_pb_cp now FULL-reifies the before
 # flags (cbimply_var, the biconditional), so that converse is present and the chain
-# verifies. Stays none: the ordering linear constraints reference the start/size
-# bit encodings, which still diverge from cake's eager variable encoding (#358).
-# sat enumerates the non-overlapping placements; unsat is a pigeonhole (more unit
-# tasks than slots / two width-2 rectangles that cannot separate in a 2x2 area).
-add_scp_chain_test(disjunctive_sat        none)
+# verifies. sat enumerates the non-overlapping placements; unsat is a pigeonhole
+# (more unit tasks than slots / two width-2 rectangles that cannot separate in a
+# 2x2 area). Every case here whose starts and sizes are wider than {0,1}
+# byte-matches cake (strict). disjunctive_unsat, disjunctive2d_sat and
+# disjunctive2d_unsat have only {0,1} coordinates, whose bound rows the solver and
+# cake write differently (#1193); disjunctive2d_unsat also has ordering halves its
+# domains imply, where cake writes a 0 coefficient on the flag and the solver 1.
+add_scp_chain_test(disjunctive_sat        strict)
 add_scp_chain_test(disjunctive_unsat      none)
 # Variable-duration disjunctive: the duration term stays on the before flag's
 # left-hand side and cancels against the duration's bound row in the pairwise
 # justification pols, so the proof references only rows cake's OPB also has
 # (there is no end = s + l variable anywhere). This is what constant-duration
 # cases never exercise.
-add_scp_chain_test(disjunctive_var_sat    none)
+add_scp_chain_test(disjunctive_var_sat    strict)
 add_scp_chain_test(disjunctive2d_sat      none)
 add_scp_chain_test(disjunctive2d_unsat    none)
 # Variable-size disjunctive2d: as disjunctive_var, per axis.
-add_scp_chain_test(disjunctive2d_var_sat  none)
+add_scp_chain_test(disjunctive2d_var_sat  strict)
 # The strict keywords, which keep zero-size tasks rather than dropping them (cake's
 # `strct`). Both cases put a zero-size task inside a wider one, which is the only
 # shape where strict and non-strict differ: 7 solutions here against 9 for
 # `disjunctive`, and 67 against 81 for `disjunctive2d`. A case with all-positive
 # sizes would exercise the keyword but assert nothing about the semantics.
-add_scp_chain_test(disjunctive_strict_sat   none)
-add_scp_chain_test(disjunctive2d_strict_sat none)
+add_scp_chain_test(disjunctive_strict_sat   strict)
+add_scp_chain_test(disjunctive2d_strict_sat strict)
 
 # none (chain-only): the optional forms, disjunctive_optional,
 # disjunctive_strict_optional, disjunctive2d_optional and
@@ -483,11 +491,12 @@ add_scp_chain_test(disjunctive2d_strict_optional_sat none)
 # used to derive). The one syntactic difference: where a reification half is
 # already implied by the start domains, cake writes a 0 coefficient on the flag and
 # the solver writes 1. Both rows are tautologies, and every other reified encoder in
-# the chain differs from cake in the same way. Stays none, for two reasons: cake
-# also writes @c[id][cap_ge0] and @c[id][h_<i>_ge0] rows the solver has no
-# counterpart for (it rejects a negative capacity or height when the constraint is
-# posted instead), and for the cases with {0,1} starts the start bit encodings
-# still diverge from cake's eager variable encoding (#358).
+# the chain differs from cake in the same way. var_height_sat and var_duration_sat
+# have neither that row nor a {0,1} variable, and byte-match cake (strict). The rest
+# stay none: sat, var_sat and unsat have {0,1} starts, whose bound rows differ
+# (#1193), and mixed_sat has the 0-versus-1 row. (Cake also writes @c[id][cap_ge0]
+# and @c[id][h_<i>_ge0] rows when the capacity or a height may be negative; the
+# solver rejects such a model when the constraint is posted, so no case has them.)
 #
 # sat enumerates the placements that keep every checkpoint within capacity; unsat
 # forces more load onto one than the capacity allows. cumulative_var_height_sat
@@ -504,8 +513,8 @@ add_scp_chain_test(disjunctive2d_strict_optional_sat none)
 # and 3.
 add_scp_chain_test(cumulative_sat              none)
 add_scp_chain_test(cumulative_var_sat          none)
-add_scp_chain_test(cumulative_var_height_sat   none)
-add_scp_chain_test(cumulative_var_duration_sat none)
+add_scp_chain_test(cumulative_var_height_sat   strict)
+add_scp_chain_test(cumulative_var_duration_sat strict)
 add_scp_chain_test(cumulative_mixed_sat        none)
 add_scp_chain_test(cumulative_unsat            none)
 
@@ -609,11 +618,11 @@ add_scp_chain_test(lex_smart_table_empty_left_unsat  strict)
 #   at_most_one (vars) val -- at most one variable equals val.
 #   among (vars) (values) how_many -- exactly how_many variables take a
 #     value-of-interest.
-# All stay none. all_different_except's and among's per-value / per-pair
-# encodings reference the variables' eq/ge literals, which diverge from cake's
-# eager variable encoding (#358); at_most_one's rows reference no order or
-# equality literal, and differ from cake's in polarity, labels and one
-# coefficient of two rows per position. The
+# among byte-matches cake (strict). all_different_except stays none: its pair flag
+# is the solver's own, unlabelled f[k][notequals_except], where cake has
+# x[id][i_j] and labels the two rows @c[id][<i>gt<j>] / [<i>lt<j>]. at_most_one's
+# rows reference no order or equality literal, and differ from cake's in polarity,
+# labels and one coefficient of two rows per position. The
 # refutation (unsat) cases verify via RUP; the enumeration (sat) cases verify
 # because the clauses use the eq literals cake also provides. all_different_except
 # sat exempts a value from distinctness (off-diagonal plus the exempt diagonal),
@@ -629,11 +638,11 @@ add_scp_chain_test(all_different_except_unsat  none)
 add_scp_chain_test(all_different_except_duplicate  none)
 add_scp_chain_test(at_most_one_sat             none)
 add_scp_chain_test(at_most_one_unsat           none)
-add_scp_chain_test(among_sat                   none)
-add_scp_chain_test(among_unsat                 none)
+add_scp_chain_test(among_sat                   strict)
+add_scp_chain_test(among_unsat                 strict)
 # #1413: values a variable's declared bounds exclude get no term (or, for an
-# unreachable Element index, no row); cake drops them in step.
-add_scp_chain_test(among_out_of_bounds_sat     none)
+# unreachable Element index, no row); cake drops them in step since CakeML 930601d6.
+add_scp_chain_test(among_out_of_bounds_sat     strict)
 
 # none (chain-only): symmetric_all_different (the assignment is an involution: if
 # var i takes value start + j then var j takes value start + i). cake's encoder is
@@ -663,8 +672,9 @@ add_scp_chain_test(symmetric_all_different_unsat  none)
 add_scp_chain_test(element_2d_sat              none)
 add_scp_chain_test(element_2d_unsat            none)
 # #1413: values a variable's declared bounds exclude get no term (or, for an
-# unreachable Element index, no row); cake drops them in step.
-add_scp_chain_test(element_unreachable_index_sat     none)
+# unreachable Element index, no row); cake drops them in step since CakeML 930601d6.
+# The 1-D case byte-matches (strict); the 2-D one has a {0,1} index (#1193).
+add_scp_chain_test(element_unreachable_index_sat     strict)
 add_scp_chain_test(element_2d_unreachable_index_sat  none)
 
 # none (chain-only): value_precede / seq_precede_chain. Both build a proof-only
@@ -736,7 +746,10 @@ add_scp_chain_test(knapsack_unsat  none)
 # the OPB -- they are introduced lazily in the proof when first used during search,
 # so they verify against cake's lean OPB. sat enumerates the sorted images of three
 # 0..2 values; unsat forces y0 >= 2 while y1 <= 1, impossible for a sorted sequence.
-add_scp_chain_test(sort_sat    none)
+# sort_sat byte-matches cake (strict). sort_unsat's y1 is a {0,1} variable (#1193),
+# and arg_sort's cases have rows a domain implies, where cake writes a 0 coefficient
+# on the literal and the solver 1 (#358).
+add_scp_chain_test(sort_sat    strict)
 add_scp_chain_test(sort_unsat  none)
 add_scp_chain_test(arg_sort_sat    none)
 add_scp_chain_test(arg_sort_unsat  none)
@@ -745,16 +758,18 @@ add_scp_chain_test(arg_sort_unsat  none)
 # encoding (fresh x[id][axis_i][bin] magnitude flags, reified sign atoms, product
 # channelled to |Z|). The signed cases exercise cake's four sign-gated magnitude
 # rows per operand and the six sign clauses: the propagator picks the negative rows
-# via cake's [v>=0] atoms and pins z's sign = sign(x)*sign(y). none, not strict: the
-# operand eq/ge ladder still differs by the #358 lazy-vs-eager variable encoding.
+# via cake's [v>=0] atoms and pins z's sign = sign(x)*sign(y). signed_sat and
+# square_sat byte-match cake (strict). The rest stay none: each has rows a domain
+# implies (a [v >= 0] over a non-negative operand, an atom at a bound), where cake
+# writes a 0 coefficient on the literal and the solver 1 (#358).
 add_scp_chain_test(multiply_sat           none)
 add_scp_chain_test(multiply_unsat         none)
-add_scp_chain_test(multiply_signed_sat    none)
+add_scp_chain_test(multiply_signed_sat    strict)
 add_scp_chain_test(multiply_signed_unsat  none)
 # aliased shapes go through the same slot-keyed emitters natively: cake
 # accepts repeated variables in multiply arguments (no distinctness
 # hypotheses in its soundness theorems), so squares chain-verify too
-add_scp_chain_test(multiply_square_sat    none)
+add_scp_chain_test(multiply_square_sat    strict)
 add_scp_chain_test(multiply_square_unsat  none)
 add_scp_chain_test(multiply_result_alias_sat none)
 

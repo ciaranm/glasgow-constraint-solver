@@ -445,7 +445,7 @@ are always the verbose ones and the two cannot drift apart that way.
 | Class | Chain cases | Mode |
 |---|---|---|
 | `Plus`, `Minus` | `plus_sat`, `plus_unsat`, `minus_sat`, `minus_unsat` | `strict`: byte-identical to cake |
-| `Multiply` | 7: unsigned, signed, square and result-alias, SAT and UNSAT | `none`: chain-verified, not byte-compared |
+| `Multiply` | 7: unsigned, signed, square and result-alias, SAT and UNSAT | `strict` for `multiply_signed_sat` and `multiply_square_sat` (since 2026-11-23); `none` for the other five |
 | `Divide` | 11, over every sign pattern, zero-spanning dividends and divisors | `none` |
 | `Modulus` | 12, likewise | `none` |
 | `Power` | none: cake has no power encoder | — |
@@ -457,9 +457,13 @@ are always the verbose ones and the two cannot drift apart that way.
   defines `i[V][eq0]` atoms for operands we never define. Second, where an
   operand's declared domain is non-negative, a row whose `[v ≥ 0]` term is
   vacuous carries coefficient 1 from us and 0 from cake, in the shared atom
-  definition and in the constraint's own `Zlt0_ge` / `Ylt0_ge`. `Multiply` was
-  not re-run in `strict` mode. #1066 asks for the reason to be updated or the
-  mode tightened.
+  definition and in the constraint's own `Zlt0_ge` / `Ylt0_ge`. #1066 asks
+  for the reason to be updated or the mode tightened. For `Multiply` both are
+  done (2026-11-23, against cake `930601d6`): `multiply_signed_sat` and
+  `multiply_square_sat` byte-match and run `strict`, and the other five differ
+  only by the second class, on `[v ≥ 0]` terms and on order literals at a
+  bound, which their comment now says. `Divide` and `Modulus` keep the old
+  comment.
 - **The chain never isolates `Multiply`'s bounds proofs.** All seven
   `multiply` cases are tiny, so under the default `Auto` they tabulate, and
   the bounds propagator runs beside a GAC table. Whether any bounds inference

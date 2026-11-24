@@ -473,18 +473,20 @@ full workflow-2 chain: `sat`, `var_sat`, `var_height_sat`, `var_duration_sat`,
 `mixed_sat` and `unsat`. Re-run for this audit, each printed `OK: full
 workflow-2 chain passed`. Between them they cover constant and variable
 lengths, heights and capacity, a negative start, and tasks dropped for zero
-length and for zero height. All six run with opbdiff mode **`none`**, which
-skips the label oracle, for documented reasons
-(`verified_encodings/scp_cases/CMakeLists.txt`):
+length and for zero height. Re-checked on 2026-11-23 against cake `930601d6`:
+`var_height_sat` and `var_duration_sat` byte-match cake and run with opbdiff
+mode **`strict`**. The other four stay **`none`**, which skips the label
+oracle:
 
-- where a reification half is implied by the start domains, cake writes a 0
-  coefficient on the flag and we write 1. Both are tautologies.
-- cake also writes `@c[id][cap_ge0]` and `@c[id][h_<i>_ge0]` rows. We have no
-  counterpart for those, because we reject a negative capacity or height at
-  posting.
-- `{0, 1}` starts differ in their bit encodings, according to the comment,
-  which cites #358. #358 is closed, and whether the divergence is still there
-  was not re-checked.
+- `sat`, `var_sat` and `unsat` have {0,1} starts, whose bound rows we write as
+  one unlabelled `1 i[S][b0] >= 0` and cake as labelled `@i[S][lb]` and
+  `@i[S][ub]` rows (#1193).
+- `mixed_sat` has a reification half implied by the start domains, where cake
+  writes a 0 coefficient on the flag and we write 1. Both are tautologies.
+
+Cake also writes `@c[id][cap_ge0]` and `@c[id][h_<i>_ge0]` rows, but only when
+the capacity or a height has a negative value in its declared domain. We
+reject such a model when the constraint is posted, so no case can have them.
 
 **`cumulative_optional` chains** since `cake_pb_cp` from CakeML `930601d6`
 (CakePB `develop-cp` `62bdc7f`), which encodes it at our request (#1417).

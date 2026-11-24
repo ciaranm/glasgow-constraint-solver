@@ -434,10 +434,14 @@ label. The labels are cake's, and matter to `opbdiff`, except for two:
 | `lin_equals_{minimize,maximize,maximize_neg}_opt` | `strict` |
 | `lin_not_equals_{sat,unsat}` | `strict` |
 | `lin_strict_{lt,gt}_edge_sat`, `lin_strict_lt_edge_unsat` (since #1217) | `strict` |
-| `lin_equals_iff_sat`, `lin_less_equal_iff_sat`, `lin_strict_lt_edge_iff_sat` (since #1217) | `none` |
+| `lin_less_equal_iff_sat` | `strict` (since 2026-11-23) |
+| `lin_equals_iff_sat`, `lin_strict_lt_edge_iff_sat` (since #1217) | `none` |
 
-Fifteen of the eighteen are byte-for-byte label matches with cake. The three
-reified cases are chain-only. The four `lin_strict_*_edge` cases are `.scp`
+Sixteen of the eighteen are byte-for-byte label matches with cake. The other
+two are reified and chain-only. `lin_equals_iff_sat`'s two selectors are our
+own unlabelled `f[k][lineqgt]` / `f[k][lineqlt]`, where cake has `b[id][gt]` /
+`b[id][lt]` with `@b[id][…][r]` halves and an `@c[id][al1]` row.
+`lin_strict_lt_edge_iff_sat`'s condition is a {0,1} variable (#1193). The four `lin_strict_*_edge` cases are `.scp`
 strict inequalities (`lin_less_than`, `lin_greater_than`, `lin_less_than_iff`)
 at the ends of the bounded range, where the reader moves the integer step into
 the sum as a constant (`verified_encodings/scp_cases/CMakeLists.txt:53-60`,

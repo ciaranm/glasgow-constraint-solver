@@ -411,26 +411,13 @@ The non-optional forms match `cake_pb_cp`'s `disjunctive` encoder,
   shape where strict and non-strict differ).
 
 All four pass the full workflow-2 chain at `7e1c4178` with cake `a402078`.
-They are mode `none`, with no `opbdiff` label oracle. The comment in
-`verified_encodings/scp_cases/CMakeLists.txt` gives the bit encodings (#358)
-as the reason; #358 closed on 2026-06-30. Run in `strict` mode today:
-
-- `disjunctive_sat`, `disjunctive_var_sat` and `disjunctive_strict_sat`:
-  `opbdiff` matches every row of ours, and cake's OPB has one extra row per
-  pair, the same separation clause written a second time for the reversed
-  pair (`@c[_1][1_0sepal1]` beside `0_1`). `disjunctive_sat` gives 21
-  matches and 3 rows only in cake.
-- `disjunctive_unsat`, whose starts are `{0, 1}`: 16 matches, 2 differing and
-  6 only in cake. Ours writes one unlabelled `1 i[Sk][b0] >= 0` per start
-  variable (three rows), where cake writes a labelled lower- and upper-bound
-  row per variable (six rows, e.g. `@i[S0][ub]`, `@i[S1][lb]`), besides the
-  duplicated clauses. The CMakeLists comment calls this the binary-encoding
-  subcase of #358. #358 itself is about order and equality ladders, and it
-  was closed as not planned ("Byte-match (strict `opbdiff`) is not the
-  goal"), which is why the
-  divergence persists.
-
-All four still verify through cake; only the label oracle would fail.
+Three of them now run with `opbdiff` strict and byte-match cake:
+`disjunctive_sat`, `disjunctive_var_sat` and `disjunctive_strict_sat`
+(re-checked on 2026-11-23 against cake `930601d6`; they already matched under
+`f1133b4`, which no longer wrote the duplicated reversed-pair clause cake
+`a402078` had). `disjunctive_unsat` stays `none`. Its starts are {0,1} variables, for
+which ours writes one unlabelled `1 i[Sk][b0] >= 0` and cake labelled
+`@i[Sk][lb]` and `@i[Sk][ub]` rows (#1193); every other row matches.
 
 The in-repo cases only exercise the default rules. **Two energetic proofs
 also chain-verify.** `ft06` was minimised with edge-finding alone, and again
