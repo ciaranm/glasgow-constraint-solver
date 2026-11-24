@@ -182,7 +182,7 @@ ys[i] + heights[i] ≤ ys[j]  ∨  ys[j] + heights[j] ≤ ys[i]
 |---|---|---|---|---|---|
 | `Disjunctive2D` (strict) | ✓ `fzn_diffn` → `glasgow_diffn`[^mzn] | ✓ `noOverlap` 2-D with `zeroIgnored = false`, constant or variable lengths[^xcsp] | ?[^gcspy] | ✓ `disjunctive2d_strict` | default rules only from every frontend |
 | `Disjunctive2D` (non-strict) | ✓ `fzn_diffn_nonstrict` → `glasgow_diffn_nonstrict` | ✓ `noOverlap` 2-D with `zeroIgnored = true` | ?[^gcspy] | ✓ `disjunctive2d` | |
-| optional `Disjunctive2D` | `unsupported`: `diffn` takes no `var opt` origins | `unsupported`: XCSP3 has no optional `noOverlap` | ?[^gcspy] | ✓ `disjunctive2d_optional`, `disjunctive2d_strict_optional` | API and `.scp` only |
+| optional `Disjunctive2D` | `unsupported`: `diffn` takes no `var opt` origins | `unsupported`: XCSP3 has no optional `noOverlap` | ?[^gcspy] | ✓ `disjunctive2d_optional`, `disjunctive2d_strict_optional` | API and `.scp` only; chains through `cake_pb_cp` since #1417 |
 | k-D `diffn_k`, `diffn_nonstrict_k` | `decompose`: the standard library's pairwise disjunction of reified linear inequalities[^k] | `unsupported` for k ≠ 2 (`report_unsupported`, citing the closed #146)[^xcsp] | — | — | out of scope (#975) |
 | reified `diffn` | `decompose`: the standard library's `fzn_diffn_reif` | n/a | — | — | |
 | `Disjunctive2DRules` (the relaxation, the projection) | `unsupported`: no flag reaches it | `unsupported` | — | not recorded: `.scp` carries no rule selection | C++ API and `examples/squares` only |
@@ -386,10 +386,20 @@ variable width, non-strict) and `disjunctive2d_strict_sat` (a zero-width
 rectangle inside a wider one, 67 solutions against 81 non-strict). They stay at
 `none` because the ordering rows reference the operands' bit encodings, which
 still differ from cake's eager encoding (#358, closed as not planned on
-2026-06-30). The optional forms have **no
-cake encoder**. Their `constraint_type()`s, `disjunctive2d_optional` and
-`disjunctive2d_strict_optional`, are named apart so that the gap is a miss,
-not a silent mismatch.
+2026-06-30).
+
+The optional forms have chained since `cake_pb_cp` from CakeML `930601d6`
+(#1417). Their `constraint_type()`s, `disjunctive2d_optional` and
+`disjunctive2d_strict_optional`, are what cake dispatches on, and its
+encoding is ours: the separation clause with the two presence disjuncts,
+under the same names and labels. Three cases run at `none`:
+`disjunctive2d_optional_sat`, `disjunctive2d_optional_unsat` and
+`disjunctive2d_strict_optional_sat` (a variable width). In `strict` mode
+`opbdiff` matches every row of the two `sat` cases but the presences' bound
+rows, which the solver and cake write differently for a {0,1} variable
+(#1193). The `unsat` case's coordinates are {0,1} too, and it also differs
+where cake writes a 0 coefficient on the flag of an ordering half the domains
+already imply, and the solver 1.
 
 The chain lanes run default rules only, since an `.scp` carries no rule
 selection. This audit ran the chain by hand (the probe writes the `.scp`, then
@@ -1585,8 +1595,8 @@ is the table's two columns.
    constraints](#concrete-constraints-and-frontend-coverage) now carries it.
 9. **A span-flat certificate for route A** remains open (design note, open
    follow-ups). The cap is the only answer today.
-10. **A cake encoder for the optional forms**, which waits for the next batch of
-    requests to cake upstream, as `cumulative_optional` does.
+10. *Done (#1417).* **A cake encoder for the optional forms**: `cake_pb_cp`
+    has had one since CakeML `930601d6`; see [Cake conformity](#cake-conformity).
 11. **Fix the stale comments**: "six pols" per push, in the code and the note,
     is four; and since #1276 the zero-area leaf check's comment that the
     pairwise pass skips zero-area rectangles (`disjunctive_2d.cc:2233-2236`).

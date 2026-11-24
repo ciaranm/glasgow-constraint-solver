@@ -451,8 +451,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   inference certified, though over positions declared wider than 100 values
   the matching bound's proof can be rejected (#1224, fix open as #1362);
   [`min-distance-proofs.md`](../min-distance-proofs.md)
-  stays as the long note. Library and `.scp` only, and `cake_pb_cp` has no rule
-  for it. Partial by design: forward checking or pairwise arc consistency on
+  stays as the long note. Library and `.scp` only; it chains through
+  `cake_pb_cp`, strictly, since #1417. Partial by design: forward checking or pairwise arc consistency on
   the sites, upper bounds only on `z`, whose lower bound nothing raises before
   every position is fixed. Findings: with proofs, building the ladder scans
   every site pair once per distinct distance, 26 s at 600 sites against 9 ms

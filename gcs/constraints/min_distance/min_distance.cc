@@ -136,13 +136,18 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
         for (const auto & a : _position_sites[i])
             positions_at[a].push_back(i);
 
+    // Every flag and row below carries cake_pb_cp's name for it: flags are
+    // value-indexed, v[id][a][u|d|m] and v[id][a_b][w], and rows are labelled
+    // c[id][mindist_dup_a|pair_a_b|req_i_j_a_b|guard_t].
+    const auto & id = constraint_id();
+
     // u_a <-> OR_i [x_i == a]  (arc-consistent full reif).
     map<Integer, ProofFlag> u;
     for (const auto & a : _sites) {
         WPBSum orsum;
         for (auto i : positions_at[a])
             orsum += 1_i * (_x[i] == a);
-        u.emplace(a, model.create_proof_flag_fully_reifying("mindist_u_" + to_string(a.raw_value), orsum >= 1_i));
+        u.emplace(a, model.create_proof_flag_values_fully_reifying(id, {a.raw_value}, "u", orsum >= 1_i));
     }
 
     // Per-site count: count_a <= 1 + (p-1)[z<=0]. This is the diagonal pair
@@ -157,11 +162,12 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
         WPBSum count;
         for (auto i : pos)
             count += 1_i * (_x[i] == a);
+        auto role = "mindist_dup_" + to_string(a.raw_value);
         if (z_lo >= 1_i)
-            model.add_constraint(count <= 1_i); // [z<=0] impossible: plain at-most-one
+            model.add_labelled_constraint(id, role, count <= 1_i); // [z<=0] impossible: plain at-most-one
         else {
             count += (pbig - 1_i) * (_z >= 1_i); // count_a + (p-1)[z>=1] <= p
-            model.add_constraint(count <= pbig);
+            model.add_labelled_constraint(id, role, count <= pbig);
         }
     }
 
@@ -173,7 +179,8 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
             auto dab = d_at(a, b);
             if (z_hi <= dab)
                 continue;
-            model.add_constraint(WPBSum{} + 1_i * (! u.at(a)) + 1_i * (! u.at(b)) + 1_i * (_z <= dab) >= 1_i);
+            model.add_labelled_constraint(id, "mindist_pair_" + to_string(a.raw_value) + "_" + to_string(b.raw_value),
+                WPBSum{} + 1_i * (! u.at(a)) + 1_i * (! u.at(b)) + 1_i * (_z <= dab) >= 1_i);
         }
 
     // Requirement clauses: forbid x_i = a and x_j = b whenever D[a,b] < R_ij
@@ -188,7 +195,9 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
                 for (const auto & a : _position_sites[i])
                     for (const auto & b : _position_sites[j])
                         if (d_at(a, b) < rij)
-                            model.add_constraint(WPBSum{} + 1_i * (_x[i] != a) + 1_i * (_x[j] != b) >= 1_i);
+                            model.add_labelled_constraint(id,
+                                "mindist_req_" + to_string(i) + "_" + to_string(j) + "_" + to_string(a.raw_value) + "_" + to_string(b.raw_value),
+                                WPBSum{} + 1_i * (_x[i] != a) + 1_i * (_x[j] != b) >= 1_i);
             }
     }
 
@@ -214,7 +223,7 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
             WPBSum count;
             for (auto i : positions_at[a])
                 count += 1_i * (_x[i] == a);
-            auto f = model.create_proof_flag_fully_reifying("mindist_d_" + to_string(a.raw_value), count >= 2_i);
+            auto f = model.create_proof_flag_values_fully_reifying(id, {a.raw_value}, "d", count >= 2_i);
             d.emplace(a, f);
             return f;
         };
@@ -222,8 +231,8 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
             auto key = pair{a, b};
             if (auto it = w.find(key); it != w.end())
                 return it->second;
-            auto f = model.create_proof_flag_fully_reifying(
-                "mindist_w_" + to_string(a.raw_value) + "_" + to_string(b.raw_value), WPBSum{} + 1_i * u.at(a) + 1_i * u.at(b) >= 2_i);
+            auto f =
+                model.create_proof_flag_values_fully_reifying(id, {a.raw_value, b.raw_value}, "w", WPBSum{} + 1_i * u.at(a) + 1_i * u.at(b) >= 2_i);
             w.emplace(key, f);
             return f;
         };
@@ -250,7 +259,7 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
                 clause += 1_i * (_z >= t);
                 if (m_acc)
                     clause += 1_i * (*m_acc);
-                model.add_constraint(clause >= 1_i);
+                model.add_labelled_constraint(id, "mindist_guard_" + to_string(t.raw_value), clause >= 1_i);
             }
             // Fold this level's witnesses into the accumulator for higher levels
             // (only needed while there is still a higher level to guard).
@@ -262,7 +271,7 @@ auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
                         s += 1_i * (*m_acc);
                     for (auto & f : ws)
                         s += 1_i * f;
-                    m_acc = model.create_proof_flag_fully_reifying("mindist_m_" + to_string(t.raw_value), s >= 1_i);
+                    m_acc = model.create_proof_flag_values_fully_reifying(id, {t.raw_value}, "m", s >= 1_i);
                 }
             }
         }
