@@ -5,8 +5,8 @@ reason. Cumulative's edge-finding and energy justifications write about ten per
 inference, each restating a reason of 10–30 literals. A justification can
 instead ask for those lines to name a single flag that stands for the reason.
 That makes the proof smaller and quicker to write. On Cumulative it also makes
-the proof quicker to check, but that does not hold everywhere, which is why
-this is opt-in. This note covers what is written, why the deletions are safe,
+the proof quicker to check, and on MinMax it leaves the check where it was. That
+does not hold everywhere, which is why this is opt-in. This note covers what is written, why the deletions are safe,
 the rules for a justification that opts in, and the measurements behind the
 current opt-ins.
 
@@ -148,25 +148,36 @@ The other 23 produce byte-identical proofs.
 A floor of 2 measured the same as 4. A floor of 8 lost most of the saving on p04
 (0.65 of the size rather than 0.46).
 
-**Measured, but not opted in.** Element and MinMax were opted in on top of
-Cumulative, at a floor of 4, and measured against Cumulative alone on the
-MiniZinc corpus, with the search identical either side and every proof
-verified. Check times are paired VeriPB runs; valve-network and depot-placement
-were checked twice.
+**MinMax,** at its three `JustifyExplicitly` sites (rules 3, 4 and 5 of
+[`constraints/min_max.md`](constraints/min_max.md)), measured against
+Cumulative alone on the MiniZinc corpus: search identical, every proof
+verified, paired VeriPB checks. Four instances change, and the other 22 produce
+byte-identical proofs.
 
-| constraint | instance | proof size | check time before → after |
-|---|---|--:|--:|
-| Element | `2017_crosswords` | 0.35 | 2856 s → 2885 s |
-| Element | `2011_depot-placement` | 0.64 | 561 s → 584 s, 520 s → 525 s |
-| Element | `2023_valve-network` | 1.00 | 768 s → 857 s, 857 s → 929 s |
-| MinMax | `2013_league` | 0.55 | 65.2 s → 64.4 s |
-| MinMax | `2025_EchoSched` | 0.76 | 77.7 s → 77.4 s |
+| instance | proof size | solver instructions | check time before → after |
+|---|--:|--:|--:|
+| `2013_league` | 0.55 | 0.99 | 65.2 s → 64.4 s |
+| `2025_EchoSched` | 0.76 | 1.00 | 77.7 s → 77.4 s |
+| `2011_cyclic-rcpsp` | 0.97 | 0.98 | 48.6 s → 47.7 s |
+| `2024_aircraft-disassembly` | 1.00 | 1.00 | 244 s → 238 s |
 
-Six more instances change (cyclic-rcpsp, table-layout, rel2onto,
-diameterc-mst, kidney-exchange, aircraft-disassembly), with check times
-between 0.98 and 1.04 of before. On the three Element instances in the
-table, the check is never faster. Valve-network is slower on every run: it
-writes about three abbreviated lines per definition, so its proof does not
-shrink. MinMax makes proofs smaller and leaves the check where it was.
+So MinMax buys proof size, and the check stays where it was. That is enough
+to opt in.
+
+**Measured, but not opted in.** Element was measured the same way, opted in
+together with MinMax. Its proofs shrink, but its check is never faster, and
+valve-network is slower on every run: valve-network writes about three
+abbreviated lines per definition, so its proof does not shrink. The
+valve-network and depot-placement pairs were checked twice.
+
+| instance | proof size | check time before → after |
+|---|--:|--:|
+| `2017_crosswords` | 0.35 | 2856 s → 2885 s |
+| `2011_depot-placement` | 0.64 | 561 s → 584 s, 520 s → 525 s |
+| `2023_valve-network` | 1.00 | 768 s → 857 s, 857 s → 929 s |
+
+Five more instances change (table-layout, rel2onto, diameterc-mst,
+kidney-exchange and, with MinMax, cyclic-rcpsp), with check times between 0.98
+and 1.04 of before.
 
 Reachable (hitori) and Disjunctive (p11) check slower; see above.

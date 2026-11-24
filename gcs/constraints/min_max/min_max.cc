@@ -188,8 +188,8 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                         reason.emplace_back(not_in_range(var, lo, hi));
 
                     inference.infer_not_in_range(logger, result, lo, hi,
-                        JustifyExplicitly{//
-                            [logger, result, min, lo = lo, hi = hi, &vars, &selectors](const ReasonLiterals & reason) {
+                        JustifyExplicitly{
+                            WithAbbreviatedReason{[logger, result, min, lo = lo, hi = hi, &vars, &selectors](const ReasonLiterals & reason) {
                                 // The range conclusion cannot be RUPped on its own, and
                                 // not for the reason the per-value form gets away with.
                                 // Negating the conclusion is fine: two opposing bounds on
@@ -223,7 +223,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                             1_i,
                                         ProofLevel::Temporary);
                                 }
-                            },
+                            }},
                             ThenRUP::Yes, hints::MinMax{owner}},
                         ExplicitReason{reason});
                 }
@@ -311,13 +311,12 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                     // The support reason is the base reason plus the just-excluded
                     // interval; with_extra copies the base, so each interval gets a
                     // fresh reason rather than an accumulating literal.
+                    auto justify = [&, lo = lo, hi = hi](const ReasonLiterals & reason) {
+                        rule_out_other_selectors(reason);
+                        justify_not_in_range_across_equality(*logger, reason, IntegerVariableID{*support_1}, lo, hi, result, lo, hi);
+                    };
                     inference.infer_not_in_range(logger, *support_1, lo, hi,
-                        JustifyExplicitly{//
-                            [&, lo = lo, hi = hi](const ReasonLiterals & reason) {
-                                rule_out_other_selectors(reason);
-                                justify_not_in_range_across_equality(*logger, reason, IntegerVariableID{*support_1}, lo, hi, result, lo, hi);
-                            },
-                            ThenRUP::Yes, hints::MinMax{owner}},
+                        JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hints::MinMax{owner}},
                         want_reason ? with_extra(reason, ReasonLiterals{not_in_range(result, lo, hi)}) : Reason{});
                 }
             }
@@ -399,8 +398,8 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                         reason, WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) >= 1_i, ProofLevel::Temporary);
                                 }
                             };
-                            inference.infer_not_equal(
-                                logger, var_i, v, JustifyExplicitly{justf, ThenRUP::Yes, hints::MinMax{owner}}, generic_reason(scope));
+                            inference.infer_not_equal(logger, var_i, v,
+                                JustifyExplicitly{WithAbbreviatedReason{justf}, ThenRUP::Yes, hints::MinMax{owner}}, generic_reason(scope));
                         }
                     }
                 }

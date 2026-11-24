@@ -276,6 +276,14 @@ only the labels and the order.
   - Every conclusion is written at the current search level, and the shared
     backtrack machinery deletes it.
   - Nothing a later step needs is deleted.
+- **Abbreviated reasons.** Rules 3, 4 and 5 run their justifications under
+  `WithAbbreviatedReason`. A reason of four or more literals, once the
+  root-fixed ones are left out, is then defined as one flag `r` at the
+  justification's temporary level, and the lemmas name that flag instead of
+  restating the reason. The definition is deleted with the lemmas, and the
+  conclusion keeps the whole reason. See
+  [`abbreviated-reasons.md`](../abbreviated-reasons.md), which also has the
+  measurements.
 - **Naming.** An external tool finds a selector by name, `x[<constraint
   id>][<position>]`, and the rows by the selectors and variables they mention.
 - **Proofs off.** `_selectors` stays empty when proofs are off, since
@@ -1023,6 +1031,9 @@ with the first column for what the pass costs, allowing for layout noise.
 *Same build and machine. `mm_gcs max 3 D D/2`, the enumeration above over three
 entries, all solutions, VeriPB 3.0.2 with `--force-checked-deletion`; one
 VeriPB run each.*
+
+These figures predate the abbreviated reasons, which make rule 3's lemmas
+shorter wherever its reason has four or more literals.
 
 | D | Solutions | Lines, `Off` | Bytes, `Off` | VeriPB, `Off` | This family's lines, `Off` | Firings | Lines, `Definitions` | VeriPB, `Definitions` |
 |---|---|---|---|---|---|---|---|---|
