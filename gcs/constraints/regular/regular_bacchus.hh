@@ -56,6 +56,10 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
+        /**
+         * \brief As Regular's constructors of the same shape, including the
+         * index checks they make and -1 meaning no transition (#1333).
+         */
         explicit RegularBacchus(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, long>> transitions,
             std::vector<long> final_states, bool short_reasons = true);
 

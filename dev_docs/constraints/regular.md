@@ -15,8 +15,8 @@
 > `Regular` writes at every level is rejected above `Links` for a sequence
 > variable declared as a range whose bounds unit propagation cannot recover,
 > or a view whose own range is such a range, because the tracker omits the
-> boundary pins there), #1333 (an out-of-range state number crashes; shared
-> with `MDD`), #1335 (the `.scp` reader refuses the non-deterministic automata
+> boundary pins there), #1333 (an out-of-range state number crashed; shared
+> with `MDD`; fixed), #1335 (the `.scp` reader refuses the non-deterministic automata
 > the writer emits), #1338 (the graph is copied whole at every search node, 49
 > to 264 times Gecode's instructions; shared with `MDD`), #1339 (the support
 > map keeps an entry per declared value, so every search node costs time
@@ -133,11 +133,15 @@ contiguous.
 - **No final states, or none reachable:** unsatisfiable, detected at the root.
 - **A repeated variable** is allowed and means the same value at every
   position it occupies; see [Robustness and limits](#robustness-and-limits).
-- **State numbers are not validated.** A target or final state outside
-  `0..num_states-1`, `num_states = 0`, a sparse table shorter than
-  `num_states` or a dense one longer is undefined behaviour: segmentation
-  faults, a crash in the constructor, a `ProofError` with proofs on, or, for
-  a bad final state with proofs off, a silently accepted constraint (#1333).
+- **State numbers are validated** (#1333). Every automaton constructor of
+  `Regular`, `RegularLegacy` and `RegularBacchus` refuses `num_states < 1`,
+  more transition rows than states, and a target or final state outside
+  `0..num_states-1` (a target of `-1` in a single-target form means no
+  transition), with `InvalidProblemDefinitionException`. A table with fewer
+  rows than states is padded with empty rows. Before, each of these was
+  undefined behaviour: segmentation faults, a crash in the constructor, a
+  `ProofError` with proofs on, or, for a bad final state with proofs off, a
+  silently accepted constraint.
 
 ### Concrete constraints and frontend coverage
 
@@ -739,7 +743,7 @@ and the XCSP3 check has negative symbols. FlatZinc numbers symbols `1..S`, and
   checked nodes deterministic, 201 of 1,491 non-deterministic. Never a lost
   solution. `regular_test`'s duplicate runs check enumeration only.
 - *Out-of-range state numbers and `num_states = 0`:* undefined behaviour
-  (#1333): a target of 7 with two states segfaults `Upfront` and
+  until #1333's fix, which refuses them in the constructors; before it: a target of 7 with two states segfaults `Upfront` and
   `PerCall` with proofs off, and throws `ProofError` ("can't find literals for
   flag") under every strategy with proofs on, uncaught by
   `glasgow_scp_solver --prove` (exit 134); `num_states = 0` segfaults all
@@ -788,7 +792,8 @@ and #1268 for the non-deterministic constructor), and a declared domain or view
 outside `±(2⁶⁰ − 1)` is refused by
 #1214. The regex compiler's `lo..hi` loop and class-range loop step a bounded
 `Integer` and cannot overflow; they can only be very long (#1227, and this audit's comment
-on it). State numbers are `long` and are not checked (#1333).
+on it). State numbers are `long`, and are checked against `num_states` in the
+constructors (#1333).
 
 ### Interval efficiency
 
@@ -1234,7 +1239,8 @@ solves there, 40 with proofs, in 0.75 s; `regular_legacy_test` 50 (25),
   has a handful of live states per layer.
 - **A start state other than 1 through MiniZinc** (#1328): `regex.mzn` and
   `nurses.mzn` both use `q0 = 1`, and no test uses the enum form.
-- **Out-of-range state numbers** (#1333).
+- Out-of-range state numbers are covered by `regular_test`'s malformed
+  cases (#1333).
 - **Holey initial domains** for the per-node GAC check: none of the tests has
   one (the "1-based alphabet with a hole" shape has its hole in the transition
   table, over `1..3`); branching makes holes, and the sweeps here cover holey
@@ -1427,7 +1433,6 @@ here.
 - **`Bacchus` accepts an empty sequence** whose start state is not final
   (#1329), and its proofs can be rejected (#1331). It is a benchmarking
   option; no front end selects it.
-- **A malformed automaton crashes** rather than being refused (#1333).
 - **A repeated variable propagates less than it could** (each position is
   independent); no solution is lost.
 - **Wide declared domains do not install**: the OPB is per value (#841), and so
@@ -1507,8 +1512,8 @@ here.
    always fails. Small; it wants an instruction count on rule 2's fixture,
    and solution sequences and node counts unchanged. (Building the `Reason`
    once per call in `PerCall`, #1353's fix, is done by #1445.)
-6. **Validate the automaton** (#1333) in each constructor and the `.scp`
-   reader. Small.
+6. **Done** (#1333): every automaton constructor validates the indices, and
+   the `.scp` reader goes through them.
 7. **Read non-deterministic automata from `.scp`** (#1335) and add an NFA
    chain case. Small.
 8. **Width** (#841, #1227 and this audit's comment on it): out-of-alphabet values as a range row per

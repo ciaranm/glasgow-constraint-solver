@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/require_bounded.hh>
+#include <gcs/constraints/regular/automaton_shape.hh>
 #include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regular_bacchus.hh>
 #include <gcs/exception.hh>
@@ -232,9 +233,13 @@ struct RegularBacchus::Bridge
 RegularBacchus::RegularBacchus(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
     _vars(move(v)), _num_states(n), _transitions(move(t)), _final_states(move(f)), _short_reasons(sr)
 {
-    for (const auto & state : _transitions)
-        for (const auto & [value, _] : state)
+    innards::check_automaton_states("RegularBacchus", n, _transitions.size(), _final_states);
+    for (size_t q = 0; q < _transitions.size(); ++q)
+        for (const auto & [value, target] : _transitions[q]) {
             innards::require_bounded(value, "a transition value of RegularBacchus");
+            innards::check_automaton_target("RegularBacchus", n, q, target, true);
+        }
+    _transitions.resize(n);
     set<Integer> sym_set;
     for (const auto & state_map : _transitions)
         for (const auto & [val, _] : state_map)
@@ -243,9 +248,13 @@ RegularBacchus::RegularBacchus(vector<IntegerVariableID> v, long n, vector<unord
 }
 
 RegularBacchus::RegularBacchus(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
-    _vars(move(v)), _num_states(n), _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})), _final_states(move(f)),
-    _short_reasons(sr)
+    _vars(move(v)), _num_states(n), _final_states(move(f)), _short_reasons(sr)
 {
+    innards::check_automaton_states("RegularBacchus", n, transitions.size(), _final_states);
+    for (size_t q = 0; q < transitions.size(); ++q)
+        for (auto target : transitions[q])
+            innards::check_automaton_target("RegularBacchus", n, q, target, true);
+    _transitions.resize(n);
     for (size_t i = 0; i < transitions.size(); ++i)
         for (size_t j = 0; j < transitions[i].size(); ++j)
             if (transitions[i][j] != -1)

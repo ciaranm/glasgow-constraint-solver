@@ -840,18 +840,20 @@ namespace
         });
 
         // --- Automata. The alphabet is given by the automaton, so the hazard is
-        // the variables' own width rather than the number of states.
+        // the variables' own width rather than the number of states. (These
+        // once passed a third transition row for two states, which nothing
+        // read; the constructors now refuse one, #1333.)
         add("Regular", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 3);
-            p.post(Regular{v, 2, {{{1_i, 1L}}, {{1_i, 1L}}, {{1_i, 1L}}}, {1L}});
+            p.post(Regular{v, 2, {{{1_i, 1L}}, {{1_i, 1L}}}, {1L}});
         });
         add("RegularLegacy", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 3);
-            p.post(RegularLegacy{v, 2, {{{1_i, 1L}}, {{1_i, 1L}}, {{1_i, 1L}}}, {1L}});
+            p.post(RegularLegacy{v, 2, {{{1_i, 1L}}, {{1_i, 1L}}}, {1L}});
         });
         add("RegularBacchus", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 3);
-            p.post(RegularBacchus{v, 2, {{{1_i, 1L}}, {{1_i, 1L}}, {{1_i, 1L}}}, {1L}});
+            p.post(RegularBacchus{v, 2, {{{1_i, 1L}}, {{1_i, 1L}}}, {1L}});
         });
         add("MDD", Expect::KnownTrip, [](Problem & p) {
             auto v = wide(p, 2);

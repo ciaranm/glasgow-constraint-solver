@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/mdd/mdd.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -125,9 +126,62 @@ auto run_all_tests(bool proofs) -> void
     run_mdd_test(proofs, "no variables, root not accepting", {}, {}, {1}, {});
 }
 
+// Malformed indices are refused when the constraint is built (#1333). Before,
+// an out-of-range target, final state or count went straight into a vector in
+// the propagator or the proof model: a segfault, a ProofError, or a silently
+// accepted constraint, depending on the shape and the strategy.
+auto run_malformed_tests() -> bool
+{
+    Problem p;
+    auto x = p.create_integer_variable(0_i, 1_i, "x");
+    auto y = p.create_integer_variable(0_i, 1_i, "y");
+
+    bool ok = true;
+    auto expect = [&](const string & label, bool refused, auto && build) {
+        try {
+            build();
+            if (refused) {
+                println(cerr, "malformed {}: accepted, expected InvalidProblemDefinitionException", label);
+                ok = false;
+            }
+        }
+        catch (const InvalidProblemDefinitionException &) {
+            if (! refused) {
+                println(cerr, "well-formed {}: refused", label);
+                ok = false;
+            }
+        }
+    };
+
+    using Layers = vector<vector<unordered_map<Integer, long>>>;
+    vector<IntegerVariableID> xy{x, y};
+    auto mdd = [&](const string & label, bool refused, const Layers & t, const vector<long> & npl, const vector<long> & terminals) {
+        expect(label, refused, [&] { [[maybe_unused]] MDD m{xy, t, npl, terminals}; });
+    };
+
+    // One node per layer, both values to node 0, as the base shape.
+    mdd("target past the next layer", true, {{{{0_i, 0L}, {1_i, 3L}}}, {{{0_i, 0L}, {1_i, 0L}}}}, {1, 1, 1}, {0});
+    mdd("negative target other than -1", true, {{{{0_i, -2L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {0});
+    mdd("terminal past the last layer", true, {{{{0_i, 0L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {0, 5});
+    mdd("negative terminal", true, {{{{0_i, 0L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {-1});
+    mdd("negative node count", true, {{{{0_i, 0L}}}, {}}, {1, -1, 1}, {0});
+    mdd("more node maps than nodes", true, {{{{0_i, 0L}}}, {{{0_i, 0L}}, {{0_i, 0L}}}}, {1, 1, 1}, {0});
+    expect("terminal with no variables past the only node", true, [&] { [[maybe_unused]] MDD m{{}, {}, {1}, {1}}; });
+
+    // -1 is "no transition", as a missing entry is, and an empty later layer
+    // is unsatisfiable rather than malformed.
+    mdd("-1 target", false, {{{{0_i, -1L}, {1_i, 0L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {0});
+    mdd("empty later layer", false, {{{{0_i, -1L}}}, {}}, {1, 0, 1}, {0});
+
+    return ok;
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
+
+    if (! run_malformed_tests())
+        return EXIT_FAILURE;
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
