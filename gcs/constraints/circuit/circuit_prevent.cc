@@ -7,6 +7,7 @@
 #include <gcs/innards/propagators.hh>
 
 #include <any>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -35,6 +36,19 @@ namespace
         auto & chain = any_cast<PreventChainData &>(state.get_constraint_state(chain_handle));
         auto n = static_cast<long>(succ.size());
 
+        // One reason for every inference this pass makes, built on the first: it
+        // copies the whole successor list, so building one per inference was
+        // quadratic when a pass closes or forbids many chains at once, as on a large
+        // fixed ring (#1453). Built lazily so that a pass inferring nothing pays
+        // nothing. It is materialised against the state at each inference all the
+        // same.
+        std::optional<Reason> reason_storage;
+        auto shared_reason = [&]() -> const Reason & {
+            if (! reason_storage)
+                reason_storage = generic_reason(succ);
+            return *reason_storage;
+        };
+
         bool progress = true;
         while (progress) {
             progress = false;
@@ -60,7 +74,7 @@ namespace
                     if (chain.len[o] + 1 < n) {
                         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             output_cycle_to_proof(succ, o, chain.len[o] + 1, pos_var_data, state, *logger);
-                        inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
+                        inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, shared_reason());
                     }
                     // else: the final edge of the full Hamiltonian cycle -- nothing to infer.
                 }
@@ -76,13 +90,13 @@ namespace
                             output_cycle_to_proof(succ, o, new_len, pos_var_data, state, *logger, Integer{d}, Integer{o});
                         };
                         inference.infer(
-                            logger, succ[d] != Integer{o}, JustifyExplicitly{justf, ThenRUP::Yes, hints::Circuit{owner}}, generic_reason(succ));
+                            logger, succ[d] != Integer{o}, JustifyExplicitly{justf, ThenRUP::Yes, hints::Circuit{owner}}, shared_reason());
                         if (state.optional_single_value(succ[d]))
                             fixed_a_successor = true;
                     }
                     else {
                         // The chain spans every node; it must close to complete the tour.
-                        inference.infer(logger, succ[d] == Integer{o}, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
+                        inference.infer(logger, succ[d] == Integer{o}, JustifyUsingRUP{hints::Circuit{owner}}, shared_reason());
                         fixed_a_successor = true;
                     }
                 }

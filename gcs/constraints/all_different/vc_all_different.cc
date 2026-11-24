@@ -22,6 +22,7 @@
 #include <functional>
 #include <optional>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 
@@ -32,8 +33,10 @@ using std::decay_t;
 using std::function;
 using std::is_same_v;
 using std::pair;
+using std::size_t;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::variant;
 using std::vector;
 using std::ranges::adjacent_find;
@@ -115,7 +118,30 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         }
     }
 
+    // Each popped variable has to be checked against the fixed values still
+    // waiting in to_propagate. Scanning them is quadratic when many variables
+    // become fixed in one call, as a whole ring does under Circuit (#1453), so
+    // past a short stack an index from each waiting value to its positions takes
+    // over. The scan's first match is the earliest waiting entry with the same
+    // value, which is the front of that value's position list: entries are only
+    // ever pushed and popped at the back, so each list is in increasing order and
+    // the popped entry is always the last of its own. The clash found, and so the
+    // reason given, is the same either way.
+    constexpr size_t index_from = 16;
+    std::optional<unordered_map<long long, vector<size_t>>> positions_of;
+    auto push = [&](const IntegerVariableID & v, Integer value) {
+        to_propagate.emplace_back(v, value);
+        if (positions_of)
+            (*positions_of)[value.raw_value].push_back(to_propagate.size() - 1);
+    };
+
     while (! to_propagate.empty()) {
+        if (! positions_of && to_propagate.size() > index_from) {
+            positions_of.emplace();
+            for (const auto & [p, entry] : enumerate(to_propagate))
+                (*positions_of)[entry.second.raw_value].push_back(p);
+        }
+
         auto [var, val] = to_propagate.back();
         to_propagate.pop_back();
 
@@ -124,14 +150,26 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         Reason var_inline_storage;
         const Reason & var_assigned_reason = reason_for(var, val, var_inline_storage);
 
-        for (auto other : to_propagate) {
-            if (other.second == val) {
-                // we're already in a contradicting state
-                Reason other_inline_storage;
-                if (! inference.infer_not_equal_or_stop(
-                        logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}}, reason_for(other.first, val, other_inline_storage)))
-                    return false;
-            }
+        // The earliest waiting variable already fixed to val, if any: we're then
+        // already in a contradicting state.
+        std::optional<size_t> clash;
+        if (positions_of) {
+            auto & positions = positions_of->at(val.raw_value);
+            positions.pop_back();
+            if (! positions.empty())
+                clash = positions.front();
+        }
+        else
+            for (const auto & [p, other] : enumerate(to_propagate))
+                if (other.second == val) {
+                    clash = p;
+                    break;
+                }
+        if (clash) {
+            Reason other_inline_storage;
+            if (! inference.infer_not_equal_or_stop(
+                    logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}}, reason_for(to_propagate[*clash].first, val, other_inline_storage)))
+                return false;
         }
 
         for (std::size_t k = 0; k < unassigned.size();) {
@@ -142,7 +180,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
                 if (! inference.infer_not_equal_or_stop(logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, var_assigned_reason))
                     return false;
                 if (auto other_val = state.optional_single_value(other)) {
-                    to_propagate.emplace_back(other, *other_val);
+                    push(other, *other_val);
                     unassigned[k] = unassigned.back();
                     unassigned.pop_back();
                     continue;

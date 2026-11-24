@@ -236,10 +236,14 @@ auto Circuit::install_propagators(Propagators & propagators) -> void
         propagators.install(
             constraint_id(),
             [succ = _succ, owner = constraint_id()](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                for (auto [idx, s] : enumerate(succ)) {
-                    inference.infer_not_equal(
-                        logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
-                }
+                // One reason for every inference: generic_reason copies the whole
+                // successor list, so building it per node made this root pass
+                // quadratic in the node count, and it was most of the time on a
+                // large fixed ring (#1453). It is materialised against the state
+                // at each inference all the same.
+                auto reason = generic_reason(succ);
+                for (auto [idx, s] : enumerate(succ))
+                    inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{hints::Circuit{owner}}, reason);
                 return PropagatorState::DisableUntilBacktrack;
             },
             Triggers{});
