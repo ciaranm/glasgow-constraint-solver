@@ -493,6 +493,13 @@ namespace gcs::innards
             -> bool;
 
         /**
+         * The bounds track_bounds recorded for a variable, or nullopt if it has
+         * none. Unlike tracked_bounds this does not throw, and answers from the
+         * same dense table as order_literal_holds_at_top.
+         */
+        [[nodiscard]] auto declared_bounds_if_tracked(const SimpleIntegerVariableID & id) const -> std::optional<std::pair<Integer, Integer>>;
+
+        /**
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_name() etc will work with it.
          */

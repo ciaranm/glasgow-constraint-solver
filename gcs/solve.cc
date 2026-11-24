@@ -116,6 +116,12 @@ namespace
                 if (optional_abort_flag && optional_abort_flag->load())
                     return SearchResult::Stop;
 
+                // The root fixpoint holds under no decision, so from here on a
+                // reason need not restate it. Its lines are at this frame's
+                // level, which is also what forgets the assumption.
+                if (logger && 0 == depth)
+                    logger->assume_current_bounds(state);
+
                 // The branchers in search_heuristics.cc are coroutines, so calling
                 // branch_callback only builds the frame: the CurrentState reference is
                 // stored, and nothing reads it until begin() resumes the coroutine on

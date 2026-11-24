@@ -236,6 +236,12 @@ library. For an introduction to *using* the solver, start with the top-level
   justification layer: `JustifyExplicitly` / `JustifyUsingRUP`, the mandatory
   `ThenRUP` enum, the pay-for-use `SimpleInferenceTracker`, and the typed
   per-constraint assertion hints (`gcs::innards::hints`).
+- [Leaving root-fixed bounds out of reasons](assumed-root-bounds.md) — the
+  `assume_current_bounds` call the search makes at the root, which reason
+  literals it lets the logger leave out and the unit lines that back them, and
+  `KeepAssumedReasonLiterals`, the opt-out for a justification whose later
+  steps cancel reason terms. Read before writing a justification that combines
+  its own lines.
 - [SCP s-expression migration](scp_s_expr_migration.md) — how constraints expose
   themselves to the sub-constraint-proof (SCP) writer via `s_expr`, and the
   status of the per-constraint migration.

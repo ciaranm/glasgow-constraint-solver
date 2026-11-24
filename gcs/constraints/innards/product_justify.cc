@@ -115,6 +115,9 @@ namespace
 auto gcs::innards::product_justify::derive_operand_bound(
     ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound, ProofLevel result_level) -> ConditionalBound
 {
+    // Every line here is a ConditionalBound that a later pol, ia or pbc
+    // combines expecting the reason spelled out in full.
+    ProofLogger::KeepAssumedReasonLiterals keep_reasons{logger};
     // V-form, so the line cancels against the V-form channel rows. One `ia`
     // citing the bound atom's definition, rather than a database-wide RUP.
     // The restatement is load-bearing, not a convenience: it renormalises
@@ -242,6 +245,9 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
     const SimpleOrProofOnlyIntegerVariableID & bits_a, const SimpleOrProofOnlyIntegerVariableID & bits_b, const ConditionalBound & a_ub,
     const ConditionalBound & b_ub, ProofLevel result_level) -> ConditionalBound
 {
+    // Every line here is a ConditionalBound that a later pol, ia or pbc
+    // combines expecting the reason spelled out in full.
+    ProofLogger::KeepAssumedReasonLiterals keep_reasons{logger};
     auto cases = merge_cases(a_ub.cases, b_ub.cases);
 
     // The bounds arrive as -mag >= -value; live sign branches always give a
@@ -318,6 +324,9 @@ auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & l
     const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower,
     const vector<ProofLine> & claim_hints) -> ConditionalBound
 {
+    // Every line here is a ConditionalBound that a later pol, ia or pbc
+    // combines expecting the reason spelled out in full.
+    ProofLogger::KeepAssumedReasonLiterals keep_reasons{logger};
     // The mag_Z rows pin |z| = grid sum, gated on z's sign atom; the atom
     // itself is entailed by the operand sign-case atoms through the sign
     // clauses (via the eq0 definition rows when an operand's non-negative
@@ -376,6 +385,9 @@ auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger,
     const vector<SignCaseDimension> & dims, const vector<std::optional<ConditionalBound>> & premise_by_pattern,
     const vector<Literal> & zero_refutations, SubproofRUPHints hint_rups) -> ProofLine
 {
+    // Every line here is a ConditionalBound that a later pol, ia or pbc
+    // combines expecting the reason spelled out in full.
+    ProofLogger::KeepAssumedReasonLiterals keep_reasons{logger};
     if (premise_by_pattern.size() != (1u << dims.size()))
         throw UnexpectedException{"wrong number of case patterns"};
 
