@@ -465,9 +465,12 @@ at `Inferences` and `Backtracking` otherwise (#1330).
 
 **`PerCall`, during search** (every call, `regular_legacy.cc:285-384`): with
 `short_reasons` on, a flag `f ⇔ R` defined by two `red` lines at
-`ProofLevel::Top`, never deleted (the deletion is commented out,
-`regular_legacy.cc:378-383`); then McIlree's per-edge lemmas, each stated
-under `f` at `Current`. Since #1120 (#1446) `f` is defined only the first time a
+`ProofLevel::Current`, deleted on backtrack with the lines that name it; then
+McIlree's per-edge lemmas, each stated under `f` at `Current`. Until #1465
+the definition was at `ProofLevel::Top` and never deleted. On
+`regular_random --legacy --short-reasons --all -n 6`, seeds 1 and 2, moving it
+to `Current` takes VeriPB from 408 s to 37.5 s and from 536 s to 25.6 s, with
+the proof unchanged except its deletion lines. Since #1120 (#1446) `f` is defined only the first time a
 call's lemma or pruning cites it; until then it was defined **on every call,
 whether or not anything was inferred, at every assertion level**, so
 `PerCall` grew the permanent database by two lines per call. On `rdfa 12 6 3
@@ -1133,7 +1136,7 @@ row and the exactly-one.
   in-degree, and one per incoming edge of a node killed by its out-degree, each
   of one to three literals plus `f` (on `nono 25 1 50`: 26,379 lines with two
   terms, 118,223 with three and 194,542 with four, `f` included), and two
-  permanent `red` lines per call for `f`. Measured shares are under [Proof
+  `red` lines per call for `f`, at `Current` since #1465. Measured shares are under [Proof
   performance](#proof-performance).
 - **Gaps** — `None` under `Upfront` and `PerCall` at `Off`. Under `Bacchus`,
   rejected re-derivations wherever the backtracks are real RUPs, which is up
@@ -1332,7 +1335,8 @@ predicts; on the enumeration `Bacchus` is smaller and close in time. `PerCall`
 is the slowest at **both** levels, and at `Inferences` its 4.68 s against
 `Upfront`'s 0.31 s is not the justifications, which are asserted there: it is
 the two permanent `red` lines per call for the short-reason flag, which every
-later RUP pays for. The fact-check measured that: with
+later RUP pays for (they are deleted on backtrack since #1465, and this table
+predates that). The fact-check measured that: with
 `with_short_reasons(false)`, `PerCall` on `rdfa 12 6 3 1` at `Inferences` is
 21,456 lines and 0.31 s against 32,076 lines and 4.52 s with it on (the
 difference is 10,620 `red` lines, two per call for 5,310 calls), and at `Off`
@@ -1450,8 +1454,9 @@ here.
   as `-1..2`, or a view whose own range is one (#1330).
 - **A `.scp` holding a non-deterministic automaton cannot be read back**
   (#1335).
-- **`PerCall`'s proofs grow the permanent database by two lines per call**,
-  which shows at every assertion level.
+- **`PerCall`'s proofs grew the permanent database by two lines per call**,
+  which showed at every assertion level, until #1465 moved the short-reason
+  flag to `Current`.
 
 ### Next steps
 
@@ -1513,7 +1518,7 @@ here.
    first. The regex alphabet was not filed separately: it is this audit's
    comment on #1227.
 9. **`PerCall`'s short-reason flag on every call: done** by #1446 (#1120), which
-   defines it on first use; deleting it after the call is still open.
+   defines it on first use. Deleting it on backtrack: done by #1465.
    Separately, its in-degree
    lemmas' per-value lines name the wrong variable and are dead weight (rule
    2); worth a mutation check before dropping them. Not filed.

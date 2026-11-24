@@ -4,7 +4,8 @@
 > **Audited** 2026-09-27 at `c9ceea25`; re-audited 2026-10-08 at `0a5b4ec6`
 > for #1119 and #1121 ·
 > **Fixed since the audit**: #1120 (a short-reason flag defined on every call
-> and never deleted, 20 times the checking time on an enumeration), by #1446;
+> and never deleted, 20 times the checking time on an enumeration), by #1446,
+> and the flag is deleted on backtrack since #1465;
 > #1119 (an entry over a variable outside
 > the scope aborted the solve), by #1213, and #1121 (`LexSmartTable` and
 > `AtMostOneSmartTable` hints named no constraint), by #1182; see [Re-audit,
@@ -86,7 +87,8 @@ Three things to know before touching it.
   8–15 times slower than the native `Lex`. Until #1446, with the default short
   reasons, it defined a reason flag on every call whether or not anything
   followed, and never deleted it; on one enumeration that took checking from
-  0.79 s to 15.9 s. The flag is now defined only when something first cites it.
+  0.79 s to 15.9 s. The flag is now defined only when something first cites it,
+  and since #1465 it is deleted on backtrack.
 
 ## What it is
 
@@ -176,8 +178,8 @@ names a declared variable and a unary one when it is an integer.
 ### Options
 
 **`with_short_reasons(std::optional<bool>)`**, default `true`. With proofs on,
-at every assertion level, each call defines a fresh flag fully reifying its
-reason; at `AssertionLevel::Off` it states its justifications under that one
+at `AssertionLevel::Off`, a call that has something to justify defines a fresh
+flag fully reifying its reason, and states its justifications under that one
 literal instead of the whole reason; see [Proof-time state](#proof-time-state). It does not change the
 OPB model, only the proof. `std::nullopt` leaves it on. `LexSmartTable` and
 `AtMostOneSmartTable` build their `SmartTable` with the default and cannot
@@ -404,15 +406,14 @@ rows of binary entries, order entries only, binary plus unary entries, the
   Either end line can stand in for the other in a two-set conflict, so
   neither is load-bearing alone. A value entry needs nothing: its literal
   reaches the excluded values through the order literals directly.
-- **Lazily, per call, at any assertion level**: with short reasons on, a
-  flag `f[N][sr]`, two `red` lines fully reifying the call's whole reason, at
-  `ProofLevel::Top`. It is made after the call has worked out which rows are
-  live and which values are unsupported, but without looking at either, so it
-  is made whether or not anything follows; at an assertion level nothing cites
-  it. Because the information is already there, making it lazily is a local
-  change. It is **never
-  deleted**: the `delete_range` is commented out. So a proof carries one per
-  propagator call.
+- **Lazily, per call, at `AssertionLevel::Off` only**: with short reasons on,
+  a flag `f[N][sr]`, two `red` lines fully reifying the call's whole reason, at
+  `ProofLevel::Current`. It is made only when the call has a contradiction or a
+  removal to justify (#1446). The call's conclusions name it, and they are at
+  `Current` too, so it is deleted with them on backtrack. Until #1465 it was
+  at `ProofLevel::Top` and never deleted, so every definition stayed in
+  VeriPB's database for the rest of the proof; see [Proof
+  performance](#proof-performance) for what that cost.
 - **Lazily, per call, at `AssertionLevel::Off` only**:
   - **Tree-filtering lemmas**, one per filtering step of a binary entry, at
     `ProofLevel::Current`. Each is `¬t_i ∨ conclusion ∨ ¬premise`, the entry's
@@ -938,6 +939,20 @@ the option is right and the per-call flag was not (#1120). #1446 reproduces
 the table's first and third rows exactly against main's library (VeriPB
 15.56 s against 1.08 s), and leaves the short-reasons-off proof byte-identical.
 
+**Deleting the flag.** Until #1465 the definitions were at `Top` and never
+deleted. Moving them to `Current` changes nothing in the proof except the
+deletion lines: the definitions no longer split a level's `del range`. Same
+build and machine, VeriPB 3.0.2 with `--force-checked-deletion`, one run each:
+
+| | `sr` definition lines | bytes | VeriPB at `Top` | VeriPB at `Current` |
+|---|--:|--:|--:|--:|
+| at most one, `n = 5`, all solutions | 312 | 2,113,681 | 1.11 s | 0.81 s |
+| at most one, `n = 6`, all solutions | 3,110 | 33,283,119 | 67.15 s | 15.22 s |
+| `smart_table_random --short-reasons -n 24`, seeds 1–3, first solution | 6–8 | 0.36–0.47 MB | 0.61–0.91 s | 0.61–1.00 s |
+
+On `smart_table_random` to a first solution there are too few definitions to
+matter.
+
 **Own versus shared.** Not separated by measurement. What can be said: with
 short reasons off, the at-most-one proof at `n = 5` has 59,358 lines against
 the native class's 49,930 on the same search. Its 6,250 solution-blocking RUPs
@@ -976,8 +991,8 @@ time at this level measures nothing useful.
    lane running `smart_table_test` at `GCS_ASSERTION_LEVEL=Inferences`, with
    a check that no asserted clause is falsified by a later `solx`.
 2. **Done** (#1120, by #1446): the short-reason flag is made only when a call
-   has something to justify at `Off`. Still open: whether to delete it after
-   use, as the commented-out code meant to.
+   has something to justify at `Off`. Since #1465 it is also deleted on
+   backtrack, as the commented-out code meant to.
 3. **Reject or absorb out-of-scope entries** (#1119). **Done by #1213**, by
    absorbing them, as cake does: the propagator works over every variable an
    entry names.

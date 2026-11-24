@@ -541,7 +541,6 @@ namespace
         // defined here only when a call has a contradiction or a removal to justify
         // at Off, which is the only place it is read (#1120): defined on every call,
         // it was most of an enumeration's proof and most of its checking time.
-        ProofLine reason_definition_1, reason_definition_2;
         auto make_reason_to_use = [&]() -> Reason {
             if (! short_reasons)
                 return reason;
@@ -549,12 +548,12 @@ namespace
             for (const auto & lit : reason) {
                 reason_sum += 1_i * get<ProofLiteral>(lit);
             }
-            // At ProofLevel::Top, and never deleted: see the commented-out deletions below.
-            auto [_reason_short, _line1, _line2] =
-                logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Top);
-            ProofFlag reason_short = _reason_short;
-            reason_definition_1 = _line1;
-            reason_definition_2 = _line2;
+            // At ProofLevel::Current, the level of every line that names sr, so the
+            // definition is deleted with them on backtrack. At Top it was never
+            // deleted, and the definitions piling up made checking an enumeration
+            // several times slower.
+            auto [reason_short, _line1, _line2] =
+                logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Current);
             return singleton_reason(reason_short);
         };
 
@@ -566,9 +565,6 @@ namespace
                     }
                 };
                 inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, make_reason_to_use());
-                // if (short_reasons) {
-                //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
-                // }
             }
             else {
                 inference.contradiction(logger, JustifyUsingRUP{hints::SmartTable{owner}}, reason);
@@ -595,9 +591,6 @@ namespace
                 };
                 inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
             }
-            // if (short_reasons) {
-            //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
-            // }
         }
         else {
             for (const auto & [var, value] : removals)
