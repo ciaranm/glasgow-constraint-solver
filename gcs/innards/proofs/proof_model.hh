@@ -54,18 +54,23 @@ namespace gcs::innards
      * as the `e` line after a `soli` or the bound before a conclusion, spells
      * it the same way --- over X's bits even if a constraint has registered the
      * view since (issue #1206).
+     *
+     * A constant objective has no variable at all, only its constant, and its
+     * objective line is `min: c ;`. Every solution is then optimal (#1230).
      */
     struct ObjectiveLinearForm final
     {
-        SimpleIntegerVariableID variable;
+        std::optional<SimpleIntegerVariableID> variable;
         Integer coefficient;
         Integer constant;
+
+        /// The variable part, `coefficient * variable`, or nothing for a
+        /// constant objective.
+        [[nodiscard]] auto variable_term() const -> WPBSum;
     };
 
     /**
      * \brief The linear form of an objective variable.
-     *
-     * \throws UnimplementedException for a constant objective.
      */
     [[nodiscard]] auto objective_linear_form(const IntegerVariableID &) -> ObjectiveLinearForm;
 
