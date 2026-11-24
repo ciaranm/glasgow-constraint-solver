@@ -62,6 +62,16 @@ namespace
         return true;
     }
 
+    // Whether the closing RUP of a bound push may be hinted: only for a row
+    // with no gate, which an unreified constraint says with a TrueLiteral. A
+    // gate is a reason literal, but the row may be half-reified on a different
+    // literal it implies (a stage citing cake's channel rows does), and the
+    // lines that cross between the two are the encoding's to know.
+    auto is_ungated(const optional<Literal> & add_to_reason) -> bool
+    {
+        return ! add_to_reason || is_literally_true(*add_to_reason);
+    }
+
     auto linear_bounds_reason(bool want_reason, ProofLogger * const logger, const auto & coeff_vars, const LinearBounds & bounds,
         const optional<SimpleIntegerVariableID> & var, bool invert, const optional<Literal> & add_to_reason) -> Reason
     {
@@ -74,11 +84,12 @@ namespace
         // A term still at its declared bound contributes a literal the proof
         // already has at the top: one its bits cannot violate (a 0/1 variable's
         // >= 0), or one whose boundary pin is a persistent unit. Our own RUP,
-        // which is unhinted and follows justify_linear_bounds's pol, has those
-        // anyway, so they are left out: on a sum of 0/1 variables they are
-        // almost the whole reason (issue #1035). This is safe only because
-        // nothing cites the line this reason is rendered into: a step that did
-        // --- an `ia`, a hinted RUP, a pol expecting the literal's term to
+        // which follows justify_linear_bounds's pol, has those anyway: unhinted
+        // it finds the pin for itself, and hinted it cites it (justify_linear_bounds
+        // adds every pin to the hints). So they are left out: on a sum of 0/1
+        // variables they are almost the whole reason (issue #1035). This is safe
+        // only because nothing else cites the line this reason is rendered into:
+        // a step that did --- an `ia`, a pol expecting the literal's term to
         // cancel --- would need it back.
         auto tracker = logger ? &logger->names_and_ids_tracker() : nullptr;
         auto holds_at_top = [&](const SimpleIntegerVariableID & v, VariableConditionOperator op, Integer value) {
@@ -232,7 +243,8 @@ namespace
         if (coeff) {
             if (bounds[p].second >= (1_i + remainder)) {
                 auto justf = [&](const ReasonLiterals &) {
-                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
+                    return justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value(),
+                        is_ungated(add_to_reason) ? optional{var >= 1_i + remainder} : nullopt);
                 };
                 auto landed = inference.infer_less_than_or_stop_with_updated_bound(logger, var, 1_i + remainder,
                     JustifyExplicitly{justf, ThenRUP::Yes, hint},
@@ -245,7 +257,8 @@ namespace
         else {
             if (bounds[p].first < -remainder) {
                 auto justf = [&](const ReasonLiterals &) {
-                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
+                    return justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value(),
+                        is_ungated(add_to_reason) ? optional{var < -remainder} : nullopt);
                 };
                 auto landed = inference.infer_greater_than_or_equal_or_stop_with_updated_bound(logger, var, -remainder,
                     JustifyExplicitly{justf, ThenRUP::Yes, hint},
@@ -270,7 +283,8 @@ namespace
         if (coeff > 0_i && remainder >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff)) {
                 auto justf = [&](const ReasonLiterals &) {
-                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
+                    return justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value(),
+                        is_ungated(add_to_reason) ? optional{var >= 1_i + remainder / coeff} : nullopt);
                 };
                 auto landed = inference.infer_less_than_or_stop_with_updated_bound(logger, var, 1_i + remainder / coeff,
                     JustifyExplicitly{justf, ThenRUP::Yes, hint},
@@ -284,7 +298,8 @@ namespace
             auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
             if (bounds[p].second >= 1_i + div_with_rounding) {
                 auto justf = [&](const ReasonLiterals &) {
-                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
+                    return justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value(),
+                        is_ungated(add_to_reason) ? optional{var >= 1_i + div_with_rounding} : nullopt);
                 };
                 auto landed = inference.infer_less_than_or_stop_with_updated_bound(logger, var, 1_i + div_with_rounding,
                     JustifyExplicitly{justf, ThenRUP::Yes, hint},
@@ -297,7 +312,8 @@ namespace
         else if (coeff < 0_i && remainder >= 0_i) {
             if (bounds[p].first < remainder / coeff) {
                 auto justf = [&](const ReasonLiterals &) {
-                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
+                    return justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value(),
+                        is_ungated(add_to_reason) ? optional{var < remainder / coeff} : nullopt);
                 };
                 auto landed = inference.infer_greater_than_or_equal_or_stop_with_updated_bound(logger, var, remainder / coeff,
                     JustifyExplicitly{justf, ThenRUP::Yes, hint},
@@ -311,7 +327,8 @@ namespace
             auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
             if (bounds[p].first < div_with_rounding) {
                 auto justf = [&](const ReasonLiterals &) {
-                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
+                    return justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value(),
+                        is_ungated(add_to_reason) ? optional{var < div_with_rounding} : nullopt);
                 };
                 auto landed = inference.infer_greater_than_or_equal_or_stop_with_updated_bound(logger, var, div_with_rounding,
                     JustifyExplicitly{justf, ThenRUP::Yes, hint},

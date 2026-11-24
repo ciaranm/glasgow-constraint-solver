@@ -204,6 +204,18 @@ namespace gcs::innards
             const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
 
         /**
+         * Log that we have inferred a literal by RUP under the reason, with
+         * the given rule's hints. This is infer()'s plain-RUP arm for a
+         * caller that knows which lines the RUP needs. The logger puts the
+         * lines its own reason handling needs (the units for root-true
+         * literals it leaves out, an abbreviated reason's definition) in
+         * front of them, so `rule` names only what the inference itself
+         * needs. A rule without lines is exactly infer(lit, JustifyUsingRUP{},
+         * reason).
+         */
+        auto infer_using_hinted_rup(const Literal & lit, const RUPProofRule & rule, const ReasonLiterals & reason) -> void;
+
+        /**
          * \brief Return the current <em>active proof level</em> &mdash; the
          * integer depth used to tag proof lines.
          *

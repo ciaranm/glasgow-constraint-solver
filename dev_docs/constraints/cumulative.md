@@ -542,6 +542,15 @@ What the proof contains, and how an external tool finds it.
   - **Guarded window-energy rows** for the edge-finding family are derived at
     `Top` the first time a `(task, window, guards, length)` key is needed, and
     cited from then on. The cache is per constraint and never pruned.
+- **Hinted pins.** The per-firing `before` / `after` / `active` lemmas that
+  pin a task's contribution (`pin_contributor`, `pin_pushed`,
+  `published_pin`) are hinted RUPs. They cite a reason literal's definition
+  and the flag's half, or, for `active`, the two lemmas and its own half
+  (`start_flag_lemma`, `active_flag_lemma`). Where the reason gives no
+  literal that does it (a variable length, a view start, a bound from this
+  call's own earlier push), the lemma stays an unhinted RUP. See
+  [`cumulative-proof-logging.md`](../cumulative-proof-logging.md) for the
+  argument and the measurements.
 - **Deletion.** Everything per-firing goes at `ProofLevel::Temporary` and is
   deleted with the firing. Nothing at `Top` is ever deleted, except when a
   derived Cumulative declines at install after deriving some rows: it deletes

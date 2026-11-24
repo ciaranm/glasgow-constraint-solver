@@ -536,6 +536,30 @@ The `pin_contributor` / `pin_pushed` helpers in
 and both push inferences share one shape across all constant/variable
 combinations.
 
+**The before, after and active lemmas are hinted RUPs** (`start_flag_lemma`,
+`active_flag_lemma`). Unhinted, each propagated over the whole live database,
+and on generated RCPSP they were most of the checking time: hinting them took
+pair 01 of the CPAIOR set from 33 s to 11 s. `before_{i,t}` cites a reason
+literal on `s_i` that bounds it by `t` from above, turned into a bound on the
+start's bits by its atom's definition, then the flag's own half `(s_i ≤ t) →
+before`: two opposite bounds over one bit sum, which unit propagation refutes
+alone (`veripb-facts.md`). An equality literal goes through its forward
+definition and the order atom it sets. A literal the bits already imply needs
+no line, and the flag's half conflicts by itself. `after_{i,t}` is the mirror
+for a constant length. `active_{i,t}` cites the two lemmas just written and
+its own half; for an optional task the reason must say present, as the very
+literal the half conjoins. Anything else stays an unhinted RUP:
+
+- a variable length, whose `after` is reified on `s_i + l_i`;
+- a start that is a view or a constant;
+- a bound the propagator took from its own earlier push in the same call,
+  which the reason does not state.
+
+The lookup creates nothing (`existing_defining_line`). An atom with no
+definition yet is not one a reason literal can be relying on. The extra
+disjuncts `pin_pushed` and `published_pin` carry count as reason literals,
+negated, since the negated claim sets them.
+
 ### Where a variable length or height can actually be measured
 
 All of the above is certified and fixture-tested, and until #633's
