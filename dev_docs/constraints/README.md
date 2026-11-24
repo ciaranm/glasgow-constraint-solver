@@ -877,9 +877,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   propagator never adopted #506's `scope_only`, so under dom/wdeg its
   conflicts weight no variable, one cause of refined and scan diverging there
   (#1392; with it fixed they still charge some failures to different
-  constraints, which dom/wdeg reads); a store grown by user code mid-search is
+  constraints, which dom/wdeg reads); a store grown by user code mid-search was
   enforced on the refined path only at the next root propagation (so never,
-  without restarts) and gets a rejected proof on the scan path (#1393); and
+  without restarts) and got a rejected proof on the scan path, so the store
+  is now in `innards` (#1393); and
   the engine's refined-watch undo, a linear search per removed watch, took
   59% of the profile samples of `tsp --restarts=100`, until searching from the
   back (#1394, by #1441) cut that run's time by 2.5 times.
