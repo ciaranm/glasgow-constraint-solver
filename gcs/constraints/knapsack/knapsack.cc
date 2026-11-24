@@ -119,14 +119,18 @@ namespace
         return s.str();
     }
 
+    // Cancel a total's term in the row by adding the definition of its current
+    // bound. A view's bound literal is defined over whatever the OPB row wrote
+    // for the view, so the tracker's pol item cancels it as for a plain
+    // variable. A constant total has no term to cancel: writing the row folded
+    // it into the degree (#1229).
     auto add_bound_p_term_to(PolBuilder & builder, const State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> void
     {
         overloaded{
-            [&](const SimpleIntegerVariableID & v) {
-                builder.add_for_literal(logger->names_and_ids_tracker(), upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
-            },                                                                          //
-            [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; }, //
-            [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }    //
+            [&](const ConstantIntegerVariableID &) {}, //
+            [&](const auto &) {
+                builder.add_for_literal(logger->names_and_ids_tracker(), upper ? var <= state.upper_bound(var) : var >= state.lower_bound(var));
+            } //
         }
             .visit(var);
     }
