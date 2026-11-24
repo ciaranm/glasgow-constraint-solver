@@ -113,6 +113,27 @@ namespace gcs::innards
         [[no_unique_address]] Hint_ hint{};
     };
 
+    /**
+     * \brief Wrap a JustifyExplicitly's emit so that its temporary lines name one
+     * extension variable in place of the reason.
+     *
+     * `JustifyExplicitly{WithAbbreviatedReason{justify}, ThenRUP::Yes, hint}`
+     * runs \c justify under a ProofLogger::AbbreviateReason. It is an opt-in, to
+     * be taken only where measurement says it pays: see
+     * dev_docs/abbreviated-reasons.md.
+     *
+     * \ingroup Innards
+     * \sa ProofLogger::AbbreviateReason
+     */
+    template <typename Emit_>
+    struct WithAbbreviatedReason
+    {
+        Emit_ emit;
+    };
+
+    template <typename Emit_>
+    WithAbbreviatedReason(Emit_) -> WithAbbreviatedReason<Emit_>;
+
     template <typename Emit_>
     JustifyExplicitly(Emit_, ThenRUP) -> JustifyExplicitly<Emit_, NoHint>;
 
