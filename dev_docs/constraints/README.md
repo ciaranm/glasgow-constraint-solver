@@ -712,7 +712,7 @@ variant](TEMPLATE.md#the-presolver-variant).
   bounds unit propagation cannot recover, such as `-1..2`, or a view whose own
   range is one, because the tracker omits the boundary pins above `Links`
   (#1330). Also: an out-of-range state number crashes (#1333), the `.scp`
-  reader refuses NFAs (#1335), the graph is deep-copied at every search node
+  reader refused NFAs (#1335, fixed), the graph is deep-copied at every search node
   (#1338; 49 to 264 times Gecode's instructions on nonograms with the same
   node counts), and a stale entry per declared value makes every node cost
   time linear in the declared width (#1339); a long, narrow sequence

@@ -418,11 +418,17 @@ add_scp_chain_test(lin_strict_lt_edge_iff_sat none)
 # narrow_domain_sat has symbols outside its variables' domains (#489): 0 under
 # X0 = 1, 1 and 2 above X1 = 0, and 2 in no domain at all. Cake encodes each
 # position over its own variable's domain only, so a row on such a symbol would
-# define order atoms past the domain that cake's OPB lacks.
+# define order atoms past the domain that cake's OPB lacks. The two nfa cases
+# are non-deterministic automata, which the reader rebuilds since #1335:
+# nfa_sat is unambiguous (0 reads 0 into {1, 2}, and only one of those goes on
+# to accept each word), nfa_ambiguous_sat is (0|1)* 1 (0|1)*, where a word with
+# two 1s has two accepting runs, so the solver's proof takes the canonical run.
 add_scp_chain_test(regular_sat               none)
 add_scp_chain_test(regular_unsat             none)
 add_scp_chain_test(regular_ternary_sat       none)
 add_scp_chain_test(regular_narrow_domain_sat none)
+add_scp_chain_test(regular_nfa_sat           none)
+add_scp_chain_test(regular_nfa_ambiguous_sat none)
 
 # none (chain-only): disjunctive / disjunctive2d. The tasks [start, start+length)
 # (resp. rectangles [x,x+w) x [y,y+h)) pairwise do not overlap. The solver's

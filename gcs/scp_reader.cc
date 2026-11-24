@@ -59,6 +59,7 @@
 #include <algorithm>
 #include <charconv>
 #include <optional>
+#include <set>
 #include <span>
 #include <unordered_map>
 #include <utility>
@@ -70,6 +71,7 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::set;
 using std::size_t;
 using std::span;
 using std::string;
@@ -523,9 +525,9 @@ namespace
     // per state in order, that state's outgoing edges, each an (symbol target)
     // pair meaning "reading `symbol` moves to state `target`"; (f1 ... fk) are
     // the accepting states. This is cake_pb_cp's shape, and the inverse of the
-    // writer. cake supports non-deterministic automata, but Regular has no public
-    // multi-target constructor, so the reader rebuilds deterministic automata
-    // only -- two edges on the same symbol in one state are rejected.
+    // writer, which writes one edge per target. Two edges on the same symbol
+    // out of one state are a non-deterministic automaton, which cake accepts and
+    // which Regular's set-valued constructor builds (#1335).
     auto read_regular(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
     {
         if (terms.size() != 6)
@@ -533,16 +535,13 @@ namespace
         auto vars = resolve_variable_list(variables, terms[2], "the regular variable list");
         auto num_states = static_cast<long>(as_integer(terms[3]).raw_value);
         const auto & per_state = children_of(terms[4], "the regular per-state edge lists");
-        vector<unordered_map<Integer, long>> transitions(per_state.size());
+        vector<unordered_map<Integer, set<long>>> transitions(per_state.size());
         for (std::size_t q = 0; q < per_state.size(); ++q)
             for (const auto & edge : children_of(per_state[q], "a regular state's edge list")) {
                 const auto & pair = children_of(edge, "a regular edge");
                 if (pair.size() != 2)
                     throw ScpReadError{"a regular edge must be (symbol target)"};
-                auto target = static_cast<long>(as_integer(pair[1]).raw_value);
-                if (! transitions[q].emplace(as_integer(pair[0]), target).second)
-                    throw ScpUnrebuildableShapeError{
-                        "the .scp reader rebuilds deterministic automata only: a state has two edges on the same symbol"};
+                transitions[q][as_integer(pair[0])].insert(static_cast<long>(as_integer(pair[1]).raw_value));
             }
         vector<long> finals;
         for (const auto & f : children_of(terms[5], "the regular final-state list"))

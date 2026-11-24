@@ -89,10 +89,9 @@ Two narrower things neither check demands:
 
 - **Not every instance need round-trip.** A shape the public constructors
   cannot rebuild raises `ScpUnrebuildableShapeError`, which both checks
-  tolerate. There is one: a non-deterministic automaton, which cake accepts but
-  `Regular` has no public constructor for. Any other read failure fails, so the
-  cost is only that a model whose first unreadable thing is an automaton hides a
-  bad keyword later in the same file, which is part of why both lanes exist.
+  tolerate. There is none today: the one there was, a non-deterministic
+  automaton, is rebuilt through `Regular`'s set-valued constructor since #1335.
+  Any other read failure fails.
   Both lanes used to tolerate every read failure, because views were
   unreadable: in the constraint suite 10,046 test `.scp` files failed on a
   view, and `n_queens` was one of the examples. Once the reader learned view
