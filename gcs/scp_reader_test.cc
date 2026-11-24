@@ -46,6 +46,7 @@
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/integer.hh>
+#include <gcs/presolvers/parity_system_gathering.hh>
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
 #include <gcs/scp_reader.hh>
@@ -60,6 +61,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -793,6 +795,42 @@ TEST_CASE("read_scp: equals and not_equals enumerate correctly")
     // not_equals against a constant, the way crystal_maze uses it.
     for (const auto & s : enumerate("( (version 1) (variables (X -2 2)) (constraints (_1 not_equals X 0)) (prob_type enumerate) )"))
         CHECK(s.at("X") != 0);
+}
+
+TEST_CASE("read_scp: a not_equals read back is gathered by ParitySystemGathering as what it says")
+{
+    // The reader builds an unreified not_equals as a ReifiedEquals on
+    // MustNotHold without the NotEquals spelling flag. The presolver used to
+    // read that flag as the polarity, so it gathered `X != Y` as `X = Y` and,
+    // with the donor retired, enumerated the wrong solutions (#1381). Sharing X
+    // with the parity row is what puts the two rows in one component; a lone
+    // not_equals would be left to its own propagator. The parity literals are
+    // spelt `X != 0` because that is the atom the equality row's literals
+    // canonicalise to; `X >= 1` is the same fact but a separate column.
+    for (const string op : {"not_equals", "equals"}) {
+        Problem problem;
+        auto variables = read_scp(problem,
+            "( (version 1) (variables (X 0 1) (Y 0 1) (Z 0 1)) (constraints (_1 parity ((X != 0) (Z != 0)) (1 >= 1)) (_2 " + op +
+                " X Y)) (prob_type enumerate) )")
+                             .variables;
+        auto stats = std::make_shared<ParitySystemGatheringStats>();
+        problem.add_presolver(ParitySystemGathering{stats});
+        set<map<string, long long>> solutions;
+        solve_with(problem, SolveCallbacks{.solution = [&](const CurrentState & state) -> bool {
+            map<string, long long> solution;
+            for (const auto & [name, id] : variables)
+                solution.emplace(name, state(id).raw_value);
+            solutions.insert(std::move(solution));
+            return true;
+        }});
+        CHECK(stats->boolean_rows_offered == 1);
+        CHECK(stats->components_installed == 1);
+        CHECK(solutions.size() == 2);
+        for (const auto & s : solutions) {
+            CHECK(s.at("X") + s.at("Z") == 1);
+            CHECK((s.at("X") == s.at("Y")) == (op == "equals"));
+        }
+    }
 }
 
 TEST_CASE("read_scp: a reified equals enumerates correctly")

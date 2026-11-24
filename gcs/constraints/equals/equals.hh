@@ -59,10 +59,15 @@ namespace gcs
          * these says anything about the proof output, which
          * ConstraintProofModelData is for.
          *
-         * `enforces_equality()` is false for a NotEquals: the reification
-         * condition alone does not say which, because MustNotHold on an Equals
-         * and MustHold on a NotEquals are different spellings of the same thing
-         * and only one of them is constructible.
+         * The reification condition alone says what the constraint means:
+         * MustHold is `v1 = v2`, MustNotHold is `v1 != v2`, `If{c}` is
+         * `c -> v1 = v2`, `NotIf{c}` is `c -> v1 != v2`, and `Iff{c}` is
+         * `c <-> v1 = v2` (a NotEqualsIff stores the negated condition). The
+         * `neq` constructor
+         * argument only chooses how an `Iff` describes itself; it is not exposed
+         * here because reading it as a polarity is wrong whenever it disagrees
+         * with the condition, as it does for the `.scp` reader's unreified
+         * `not_equals` (#1381).
          * @{
          */
         [[nodiscard]] auto left_variable() const -> IntegerVariableID
@@ -80,10 +85,6 @@ namespace gcs
             return _cond;
         }
 
-        [[nodiscard]] auto enforces_equality() const -> bool
-        {
-            return ! _neq;
-        }
         ///@}
 
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
