@@ -3,9 +3,9 @@
 > **Maturity** experimental, opt-in: off unless added; reached from the C++
 > API only, including a `.scp` read back with `read_scp`; no front end and no
 > example adds it · **Audited** 2026-10-20 at `86caad24` · **Open issues**
-> filed by this audit: #1381, a `.scp`'s `not_equals`, or any `ReifiedEquals`
-> whose `neq` flag disagrees with its condition, is lifted with the wrong
-> polarity, and the solve returns wrong solutions; #1380, the pass is
+> filed by this audit: #1381 (fixed since: a `.scp`'s `not_equals`, or any
+> `ReifiedEquals` whose `neq` flag disagreed with its condition, was lifted
+> with the wrong polarity, and the solve returned wrong solutions); #1380, the pass is
 > quadratic in time and memory in the size of the XOR structure. Commented on
 > #1193: a gathered system's proof fails the cake chain whenever a `ParityOdd`
 > donor has an equality-type literal (`v = c`, `v ≠ c`) over a `{0, 1}`
@@ -41,17 +41,16 @@ against the presolver variant of the
 Five things to know before touching it.
 
 - **It is invisible by design, so the counters are the only evidence.** It adds
-  no OPB content and, outside #1381's shape, changes no solution set. A
+  no OPB content and changes no solution set. A
   version that gathered nothing
   would pass every solution, OPB and VeriPB check in the tree. The header and
   the test file both say so. See [Evidence that it fired](#evidence-that-it-fired).
-- **It decides a Boolean donor's polarity from the wrong field, and that gives
-  wrong answers.** The row's parity comes from `enforces_equality()`, which is
-  `! _neq`, a description-only flag. What the constraint means is decided by
-  its condition. `read_scp` builds every `not_equals` as `(MustNotHold, neq =
-  false)`, so a `.scp` written by `fzn-glasgow` and read back with the presolver
-  added gives 4 solutions where Gecode and the model give 2. With proofs on,
-  VeriPB rejects the proof. With proofs off nothing notices. See #1381 and
+- **A Boolean donor's polarity comes from its condition, and only from
+  there.** It used to come from `enforces_equality()`, which was `! _neq`, a
+  description-only flag. `read_scp` builds every `not_equals` as `(MustNotHold,
+  neq = false)`, so a `.scp` written by `fzn-glasgow` and read back with the
+  presolver added gave 4 solutions where Gecode and the model give 2 (#1381,
+  fixed; the accessor is gone). See
   [lift-boolean-equality-row](#rewrite-lift-boolean-equality-row).
 - **No front end reaches it** (#983). Through a local switch in `fzn-glasgow`,
   which is on no branch, it gathers 111 rows into one system on
@@ -146,7 +145,7 @@ This is the entry-point table, with one row because there is one class:
    broadened to every presolver, and this one is cited there. The C++ API can
    read a
    `.scp` with `read_scp` and add the presolver. That route is live, and it is
-   the one where #1381's wrong answers appear.
+   the one where #1381's wrong answers appeared.
 
 What each front end posts, for when one of them gets a switch:
 
@@ -166,7 +165,7 @@ What each front end posts, for when one of them gets a switch:
 | | `xor` inside an expression | `ParityOdd` over the arguments and an auxiliary `not_r`, with `r + not_r = 1` as a `LinearEquality` (`:1588–1602`) | the `ParityOdd` row, yes. The link `r ⊕ not_r = 1` is a linear equality, which the scan does not read, so `r` is never joined to the row |
 | `gcspy` | `post_xor` | `ParityOdd` | n/a, no presolver plumbing |
 | `.scp` | `parity` | `ParityOdd` | yes |
-| | `equals` / `not_equals` | `ReifiedEquals{x, y, MustHold or MustNotHold, false}` (`scp_reader.cc:263`, `:480`) | yes, and **a `not_equals` with the wrong polarity** (#1381) |
+| | `equals` / `not_equals` | `ReifiedEquals{x, y, MustHold or MustNotHold, false}` (`scp_reader.cc:263`, `:480`) | yes (a `not_equals` was lifted with the wrong polarity until #1381 was fixed) |
 
 Through the local switch (see [Detection](#detection-and-its-failure-modes)),
 both MiniZinc 2.9.7 and 2.10.1 deliver the same donors to the scan on the two
@@ -271,9 +270,9 @@ arrives that way: 21 of `parity-learning`'s donors and 1,536 of
     installs, whose callers are `ParitySystem` and this presolver.
   - `build_gf2_system` and `canonical_atom`, with that propagator.
   - `ReifiedEquals`' accessors (`left_variable`, `right_variable`,
-    `reification_condition`, `enforces_equality`), which exist for this
-    presolver. Outside the tests, it is the only caller of
-    `enforces_equality()`, and that accessor is the cause of #1381.
+    `reification_condition`), which exist for this presolver. A fourth,
+    `enforces_equality()`, returned `! _neq`; it was the cause of #1381 and is
+    gone.
   - `Propagators::disable_propagators_for_constraints`
     (`propagators.cc:864–884`), with `DifferenceLogic`, as
     [`difference_logic.md`](difference_logic.md) records.
@@ -686,22 +685,22 @@ These facts hold for every entry:
   `reif::MustNotHold`, both operands with bounds within `[0, 1]` in the state
   at presolve time (`:147–177`). Otherwise it is counted in `skipped_reified`,
   which is checked first, or in `skipped_wide_operands`.
-- **Posts.** The two-literal row `{x ≠ 0, y = 0}` when `enforces_equality()`,
-  otherwise `{x ≠ 0, y ≠ 0}`, with `ParitySlackFormIsRUP` as its slack source.
+- **Posts.** The two-literal row `{x ≠ 0, y = 0}` for `MustHold`, and
+  `{x ≠ 0, y ≠ 0}` for `MustNotHold`, with `ParitySlackFormIsRUP` as its slack source.
   `boolean_rows_offered` counts it.
 - **Derived mode.** Yes.
-- **Why it is true**, for the derived classes. Over `{0, 1}`, `x = y` says
+- **Why it is true.** Over `{0, 1}`, `x = y` says
   `[x ≠ 0] = [y ≠ 0]`, an even 2-XOR, and `x ≠ y` says they differ, an odd
-  one. **It is not true when `_neq` disagrees with the condition.** The constraint's
+  one. **Before #1381 was fixed it was not true when `_neq` disagreed with the
+  condition**, because the polarity was read from `_neq`. The constraint's
   meaning is its condition: `MustHold` is `x = y` and `MustNotHold` is `x ≠ y`
   (`equals.cc:404–418`, the propagators, and `constraint_type()`). `_neq` only
-  describes it (`equals.cc:386–392`, #865). `enforces_equality()` returns
-  `!_neq`. `Equals` is `(MustHold, false)` and `NotEquals` is `(MustNotHold,
-  true)`, so both agree. But the public constructor's default builds
-  `(MustNotHold, false)`, and so does `read_scp` for every `not_equals`
-  (`scp_reader.cc:263`, `:480`). Such a donor is lifted as an equality.
-  `gcs/constraints/equals/equals.hh:62–66` says that only one of the two
-  spellings is constructible. Both are (#1381).
+  describes it (`equals.cc:386–392`, #865). `Equals` is `(MustHold, false)`
+  and `NotEquals` is `(MustNotHold, true)`, so both agree. But the public
+  constructor's default builds `(MustNotHold, false)`, and so does `read_scp`
+  for every `not_equals` (`scp_reader.cc:300`). Such a donor was lifted as an
+  equality until #1381 was fixed; the header then also claimed that only one
+  of the two spellings was constructible.
 - **Proof technique.** Of the lift: none. Of its slack rows: `RUP`, twice.
   Negating either half fixes both operands. For an `Equals` donor, that
   falsifies its `le` or `ge` row, JP 3.2. For a `NotEquals` donor, it falsifies
@@ -1180,8 +1179,10 @@ fixtures.
 
 **What the tests do not cover:**
 
-- **A Boolean donor whose `_neq` disagrees with its condition**, and any
-  `.scp` read back (#1381). That is the one wrong answer this audit found.
+- A Boolean donor whose `_neq` disagrees with its condition, and a `.scp`
+  read back, are covered since #1381's fix: `bool_not_equals_unflagged` and
+  `bool_equals_flagged` in the presolver test, and a `read_scp` case in
+  `scp_reader_test`. That was the one wrong answer this audit found.
 - **Any per-node consistency check.** The equivalence runs use plain
   enumeration.
 - **Views, constants and root-narrowed operands** as Boolean donors; a
@@ -1330,9 +1331,9 @@ elimination, which runs before any unit is inferred.
 
 ### Proof-logging gaps
 
-- **#1381**: a mis-polarised Boolean donor's slack row is rejected, at every
-  assertion level. The proof never certifies the wrong answer, but the solve
-  produces one.
+- **#1381** (fixed): a mis-polarised Boolean donor's slack row was rejected,
+  at every assertion level. The proof never certified the wrong answer, but
+  the solve produced one.
 - **#1193's cause**: against cake's OPB, a `ParityOdd` donor with an
   equality-type literal over a `{0, 1}` variable has an underivable slack row.
   Against the solver's own OPB, every `Off` proof outside #1381's shape
@@ -1352,8 +1353,6 @@ elimination, which runs before any unit is inferred.
 - **No front end can turn it on** (#983), and `glasgow_scp_solver` cannot
   either: #1374 asked for a `DifferenceLogic` switch there, and a comment
   now asks for every presolver (#983 is the general design question).
-- **Wrong solutions through `read_scp`**, or a directly constructed
-  `ReifiedEquals` whose `neq` disagrees with its condition (#1381).
 - **Three-argument `bool_xor`, and every reified Boolean equality, is
   skipped**, though an `Iff` over `{0, 1}` is a 3-XOR (#983).
 - **Quadratic in the XOR structure's size** (#1380; #1309's engine term is
@@ -1388,11 +1387,10 @@ elimination, which runs before any unit is inferred.
 
 Ranked by what they buy for what they cost.
 
-1. **Fix the polarity (#1381).** Take a Boolean row's parity from the
-   condition, `MustHold` or `MustNotHold`, not from `_neq`. Correct
-   `equals/equals.hh`'s claim that only one spelling is constructible, and add a
-   fixture for each off-diagonal shape and one through `read_scp`. A few lines,
-   and it closes the only wrong answer found.
+1. ~~**Fix the polarity (#1381).**~~ Done: the parity comes from the
+   condition, `enforces_equality()` is gone, `equals/equals.hh` no longer
+   claims only one spelling is constructible, and there is a fixture for each
+   off-diagonal shape and one through `read_scp`.
 2. **Make the pass linear (#1380).** Sparse canonicalisation for the
    grouping, and one pass for the atom counts. The scratch patch passes the
    test, and on 32,000 components cuts setup to the first node from 6.7 s and

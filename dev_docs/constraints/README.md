@@ -1117,16 +1117,16 @@ variant](TEMPLATE.md#the-presolver-variant).
     brute force, and a MiniZinc differential through a local switch (1,200
     models on each of 2.9.7 and 2.10.1, against Gecode) found no wrong answer
     among the derived classes, and every `Off` proof outside #1381's
-    shapes verified.
+    shapes (fixed since) verified.
   - **Order.** `AutoTable` cannot change what it gathers. A `DifferenceLogic`
     added first can, by fixing a bound-literal condition on an operand; the
     solutions agreed.
   - **Findings.**
-    - It takes a Boolean donor's polarity from `ReifiedEquals`' description-only
+    - It took a Boolean donor's polarity from `ReifiedEquals`' description-only
       `_neq` flag instead of its condition. `read_scp` builds every
       `not_equals` that way, so a `.scp` written by `fzn-glasgow` and read back
-      with the presolver gives 4 solutions where the model has 2. With proofs
-      on, VeriPB rejects the proof (#1381).
+      with the presolver gave 4 solutions where the model has 2. With proofs
+      on, VeriPB rejected the proof (#1381, fixed).
     - Its own pass is quadratic in time and memory in the XOR structure: setup
       to the first node takes 6.7 s and 1.4 GB on 32,000 two-row components,
       against 0.13 s without it (#1380; #1309 added the engine's share,

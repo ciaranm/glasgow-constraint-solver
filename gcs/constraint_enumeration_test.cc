@@ -91,7 +91,6 @@ namespace
     {
         string id;
         IntegerVariableID left, right;
-        bool equality;
         size_t reification_kind;
 
         [[nodiscard]] auto operator==(const SeenEquals &) const -> bool = default;
@@ -109,8 +108,7 @@ namespace
     {
         vector<SeenEquals> result;
         for (const auto & c : problem.each_constraint_of_type<ReifiedEquals>())
-            result.push_back(SeenEquals{
-                as_string(c.constraint_id()), c.left_variable(), c.right_variable(), c.enforces_equality(), c.reification_condition().index()});
+            result.push_back(SeenEquals{as_string(c.constraint_id()), c.left_variable(), c.right_variable(), c.reification_condition().index()});
         return result;
     }
 
@@ -303,12 +301,12 @@ TEST_CASE("Typed enumeration recovers ParityOdd and the Equals family")
 
     CHECK(collect_parities(p) == vector<SeenParity>{{"_1", {x != 0_i, y != 0_i}}, {"_2", {x != 0_i, z == 1_i}}});
 
-    // Equals is MustHold and NotEquals is MustNotHold, so the reification kinds
-    // differ while enforces_equality() is what actually says which is which.
+    // Equals is MustHold and NotEquals is MustNotHold, and the reification kind
+    // is all a reader needs to tell them apart (#1381).
     auto equals = collect_equals(p);
     REQUIRE(equals.size() == 2);
-    CHECK(equals[0] == SeenEquals{"_3", x, y, true, must_hold});
-    CHECK(equals[1] == SeenEquals{"_4", y, z, false, must_not_hold});
+    CHECK(equals[0] == SeenEquals{"_3", x, y, must_hold});
+    CHECK(equals[1] == SeenEquals{"_4", y, z, must_not_hold});
 }
 
 TEST_CASE("Typed enumeration finds nothing in an empty problem")

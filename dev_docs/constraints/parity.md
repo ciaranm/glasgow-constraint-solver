@@ -10,11 +10,11 @@
 > front end), #310 (range literals cannot be written into the model, so a
 > range literal in either class throws with proofs on; #1225 is the same throw,
 > filed for reification conditions), #649 (implied equivalences have nowhere
-> to live), #868 (cross-solver). Filed since, in the presolver: #1381, it
-> takes a Boolean donor's polarity from `enforces_equality()`, so a
-> `ReifiedEquals` whose `neq` flag disagrees with its condition, such as every
-> unreified `not_equals` that `read_scp` builds, gives wrong answers when the
-> presolver gathers it. Filed since, in the system: #1386, a chain is
+> to live), #868 (cross-solver). Filed since, in the presolver, and fixed: #1381,
+> it took a Boolean donor's polarity from `enforces_equality()`, so a
+> `ReifiedEquals` whose `neq` flag disagreed with its condition, such as every
+> unreified `not_equals` that `read_scp` builds, gave wrong answers when the
+> presolver gathered it. Filed since, in the system: #1386, a chain is
 > expensive for the system. A chain of unit inferences made in one call has a
 > justification quadratic in the chain's length. Finding the units' supports,
 > and the elimination in every order measured except with the chain's first
@@ -152,10 +152,10 @@ condition's kind, so an `Iff` over a constant condition is skipped too) and
 both operands' bounds lie within `{0, 1}` as the presolver finds them, after
 the root initialisers and before any root propagation (the rest count as
 `skipped_wide_operands`); over wider operands an equality is not a parity. It
-reads the row's parity from `enforces_equality()`, which is wrong when the
-constraint's `neq` flag disagrees with its condition, as for every unreified
-`not_equals` that `read_scp` builds; the system then enforces the opposite of
-the donor (#1381).
+reads the row's parity from the condition, `MustHold` even and `MustNotHold`
+odd. It used to read the constraint's `neq` flag, which disagrees with the
+condition for every unreified `not_equals` that `read_scp` builds, and the
+system then enforced the opposite of the donor (#1381, fixed).
 
 ### Reification
 
@@ -810,9 +810,9 @@ is #1225). A range literal (`x ∈ [l, u]` or its negation) in `ParityOdd` or
 are on, because the names-and-IDs tracker cannot yet state one in the OPB. With
 proofs off the answers are right. No front end posts a range literal here; the
 C++ API can. Otherwise every inference over correctly gathered rows is
-justified, and nothing is asserted at `AssertionLevel::Off`. A Boolean donor
-gathered with the wrong polarity makes VeriPB reject the system's first slack
-row for it (#1381).
+justified, and nothing is asserted at `AssertionLevel::Off`. Before #1381 was
+fixed, a Boolean donor gathered with the wrong polarity made VeriPB reject the
+system's first slack row for it.
 
 For a presolver-installed system, the hints name `CurrentlyUnnamedConstraint`
 and carry no origin rows (rules 5 and 6). That is **not** an information gap:
@@ -824,9 +824,6 @@ elimination, per assertion.
 ### Known limitations
 
 - **The system is reachable from no front end** (#983).
-- **The presolver can gather a Boolean donor with the wrong polarity**, and
-  then the solutions are wrong (#1381).
-  Reached from the C++ API, including a `.scp` read with `read_scp`.
 - **Gathering can cost more than it prunes**: four times slower, for nothing, on
   `parity-learning`.
 - **`ParityOdd` is not GAC over a repeated literal**; the system is.
