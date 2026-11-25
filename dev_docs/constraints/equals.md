@@ -496,7 +496,7 @@ and it is the only tuned thing in the family.
 |---|---|---|---|---|---|---|
 | dispatcher, decided must-hold | `on_change` both operands | derived: **both operands** | 1–3 | `Equals`, and `If`/`Iff` fixed true at install | never claims | yes, once an operand is fixed |
 | dispatcher, decided must-not-hold | `on_instantiated` both operands | derived: **nothing** | 4, 9 | `NotEquals`, and `NotIf`/`Iff` fixed false at install | never claims | yes, once it has acted |
-| dispatcher, undecided | `on_change` both operands **and** the condition | derived: **both operands** and the condition | 1–9 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
+| dispatcher, undecided | `on_change` both operands **and** the condition | derived: **both operands** and the condition | 1–9 | the four reified forms while `cond` is open | none: the enforce arms never claim (the dispatcher forwards a claim since #1043, stripped it before) | yes, on any verdict |
 | — with **one constant operand** | `on_instantiated` both **and** a refined watch on `other != c`, plus the condition | derived: **the non-constant operand**, and the condition variable | 1, 4, 6, 7 | any variant with exactly one constant operand | as above | as above |
 
 Every row is derived from the triggers; the family sets

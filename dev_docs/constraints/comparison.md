@@ -523,7 +523,7 @@ both operands are constants.**
 | initialiser, both operands constant | — (runs once at root) | derived: **nothing** | 6, 7 | any variant over two constants, where there is something to say | n/a | n/a — one shot |
 | dispatcher, decided must-hold | `on_bounds` both operands | derived: **nothing** | 1, 8 | the four unconditional `Less*`/`Greater*`, and `If`/`Iff` fixed true at install | never claims | yes, once the bounds are separated |
 | dispatcher, decided must-not-hold | `on_bounds` both operands | derived: **nothing** | 2, 8 | a `MustNotHold` condition, a `NotIf` fixed true, or an `Iff` fixed false, at install | never claims | yes, likewise |
-| dispatcher, undecided | `on_bounds` both operands **and** the condition | derived: **the condition variable only** | 1–5, 8 | the four reified forms while `cond` is open | claims stripped | yes, on any verdict |
+| dispatcher, undecided | `on_bounds` both operands **and** the condition | derived: **the condition variable only** | 1–5, 8 | the four reified forms while `cond` is open | none: the enforce arms never claim (the dispatcher forwards a claim since #1043, stripped it before) | yes, on any verdict |
 
 **`on_bounds` is the whole trigger story, and it is the right answer rather
 than a compromise.** Every pass reads `state.bounds()` and nothing else — no

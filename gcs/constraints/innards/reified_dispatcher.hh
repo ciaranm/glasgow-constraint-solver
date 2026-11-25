@@ -195,21 +195,28 @@ namespace gcs::innards
                 enforce_constraint_must_not_hold = std::move(enforce_constraint_must_not_hold),
                 infer_cond_when_undecided = std::move(infer_cond_when_undecided)](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                // An enforce pass may claim idempotence (EnableButIdempotent),
-                // but this runtime dispatch does not forward the claim: a
-                // re-run of the dispatcher also re-tests the reification
-                // condition, and nobody has audited that interplay yet. The
-                // install-time decided paths above forward claims unchanged,
-                // since there the run is exactly the enforce call.
-                auto without_any_idempotency_claim = [](PropagatorState s) {
-                    return s == PropagatorState::EnableButIdempotent ? PropagatorState::Enable : s;
-                };
+                // Idempotence (#1043, item 4): an enforce arm's
+                // EnableButIdempotent is forwarded. A re-run re-tests the
+                // condition, but test_reification_condition() is a function of
+                // the condition literal alone, and a literal that is decided
+                // true or false stays so as domains shrink, so the immediate
+                // re-run takes the same arm and calls the same enforce function
+                // on exactly the domains this run left, which is what that
+                // function's own claim is about. reif.cond reaches only reasons
+                // and the choice of proof line, never an inference. The
+                // Undecided and Deactivated arms never claim. A condition on a
+                // variable of the scope, directly or through a view, makes a
+                // duplicate trigger position, so install ignores the claim.
+                // This holds for an enforce function whose claim depends on the
+                // domains and on state that only its own arm advances; one that
+                // shares state with the other arm (Lex's state handle) must be
+                // re-audited before it claims. Today only the reified linear
+                // inequality's arms claim (propagate_linear and
+                // propagate_linear_incremental, each with its own fold handle).
                 return overloaded{
-                    [&](const evaluated_reif::MustHold & reif) {
-                        return without_any_idempotency_claim(enforce_constraint_must_hold(state, inference, logger, reif.cond));
-                    }, //
+                    [&](const evaluated_reif::MustHold & reif) { return enforce_constraint_must_hold(state, inference, logger, reif.cond); }, //
                     [&](const evaluated_reif::MustNotHold & reif) {
-                        return without_any_idempotency_claim(enforce_constraint_must_not_hold(state, inference, logger, reif.cond));
+                        return enforce_constraint_must_not_hold(state, inference, logger, reif.cond);
                     }, //
                     [&](const evaluated_reif::Undecided &) {
                         // The verdict's justification type varies per constraint

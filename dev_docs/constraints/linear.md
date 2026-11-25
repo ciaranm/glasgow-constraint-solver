@@ -6,13 +6,13 @@
 > #1035 (#1055) and the integer-range PRs (#1214, #1215, #1220) ·
 > **Open issues** filed by this audit: #1034 (the incremental propagator's
 > state is a heap allocation per slot per node), #1042 (the reified equality
-> ignores its bounds), #1043 (tidying, items 4 and 5 left). Filed from review:
+> ignores its bounds). Filed from review:
 > #1091 (an equality's fixpoint can take a number of sweeps linear in the
 > domain width). Already open and touching this family: #868 (cross-solver),
 > #310 (a range-literal reification condition cannot be written into the
 > model), and #1225, filed since by the integer-range audit (the same condition
 > throws with proofs on). **Fixed since the audit**: #1032, #1033, #1035,
-> #1036, #1043's first three items, #1103 (filed from review: under
+> #1036, #1043 (tidying; items 1–3 by #1075, 4 and 5 later), #1103 (filed from review: under
 > `Tabulated`, a released form built a table), and #1298 (filed from the
 > 2026-10-08 re-audit: every reified inequality threw on a partial sum or a
 > maximum that only its undecided check computes); see
@@ -31,7 +31,7 @@ first pass got wrong.
 | #1032, XCSP3 `<sum>` with `ne` | #1074 | the translation posts `LinearNotEquals` directly, so the frontend cell is ✓ and two new lanes cover the escaping shapes; the known limitation and next step are gone |
 | #1033, constant-condition `If` forms | #1077 | a constant condition is resolved per form, and a false one on `If`/`NotIf` releases the constraint ([Semantics](#semantics)); `linear_constant_test` has a row for each form and constant |
 | #1036, `gcspy`'s `≥` binding | #1073 | it posts `LinearGreaterThanEqualIff`, and `post_linear_less_equal_iff` is registered at last; Python tests exist, but CI does not run them |
-| #1043, tidying | #1075, **items 1–3 only** | the dead `pair<bool, …>` branches are gone, and the two comments are corrected (rule 8, [Options](#options)); item 4 (the idempotence-claim disagreement) and item 5 (folding `linear-slack-waking.md` in) are still open |
+| #1043, tidying | #1075 (items 1–3), then items 4 and 5 | the dead `pair<bool, …>` branches are gone, and the two comments are corrected (rule 8, [Options](#options)); the dispatcher now forwards an enforce arm's idempotence claim, as the equality already did (item 4); `linear-slack-waking.md` is folded into [Developer commentary](#slack-based-waking) (item 5) |
 | #1035, trivial reason literals | #1055, **open** at the time | nothing yet; done in [Re-audit, 2026-10-08](#re-audit-2026-10-08) |
 
 **Corrected from review**, not from a fix:
@@ -505,7 +505,7 @@ has 8 terms or more, which doubles the slots #1034 is about on
 | incremental sweep (`propagate_linear_incremental`) | `on_bounds`, every term | derived: none | 1–4 | at or above the threshold | **claims it** | only for an empty sum, via the stateless path |
 | slack-watched sweep | `scope_only`, plus refined watches on covering terms' bounds | **declared** none (`holes_affect_propagation = {}`) | 1, 3, 4 | an inequality decided at install, if slack is on | no: returns `Enable` so the watches can wake it | no |
 | not-equals (`propagate_linear_not_equals`) | `on_instantiated`, every term (#807) | derived: none | 6, 7 | equality decided false | not claimed | yes, once it has acted |
-| reified inequality (dispatcher) | the enforce direction's triggers ∪ `c` | derived | 1, 3, 4, 8, 9 | an undecided inequality | stripped: the dispatcher does not pass the sweep's claim on | on a verdict |
+| reified inequality (dispatcher) | the enforce direction's triggers ∪ `c` | derived | 1, 3, 4, 8, 9 | an undecided inequality | forwards the sweep's claim once the condition is decided (#1043; stripped before) | on a verdict |
 | reified equality, undecided | `on_change`, every term; `c` | derived: yes | 10–12 undecided; 1–3 once decided true; 6, 7 once decided false | an undecided equality | forwards the sweep's claim when decided true | on acting |
 | equality, constant row | initialiser | — | 5 | a fixed equality with no terms | — | — |
 | `Tabulated` | `install_tabulation`'s | the extensional family's | 13 | `with_consistency(Tabulated{})`, unless the form is released (#1108) | as `table.md` | as `table.md` |
@@ -525,14 +525,25 @@ Before it, 100 lanes ran with the checker silently off (#1056), but
 MiniZinc and 6,178 XCSP3 instances found no false claim. The slack-watched form
 cannot claim it, since a coarse re-wake would defeat the watches.
 
-**The two reified classes disagree about passing the claim on.** When the
-condition is undecided at install, the shared dispatcher strips an enforced
-sweep's `EnableButIdempotent`, because a re-run also re-tests the condition and
-"nobody has audited that interplay yet". The equality's hand-written undecided
-branch returns the sweep's claim unchanged once the condition is decided true.
-The harness's re-run check has not caught a problem in the `eq_if` and
-`eq_iff` lanes, but the two classes should agree (#1043, item 4); see [Next
-steps](#next-steps).
+**Both reified classes pass the claim on.** When the condition is undecided at
+install, the equality's hand-written undecided branch has always returned the
+sweep's claim once the condition is decided true. The shared dispatcher, which
+the inequality goes through, used to strip it, because a re-run also re-tests
+the condition and "nobody had audited that interplay". #1043 (item 4) did, with
+a critical review on the Fable model: a decided condition literal stays decided
+as domains shrink, so the immediate re-run takes the same arm and calls the
+same enforce function on the domains this run left; the condition reaches only
+reasons and proof lines; the undecided and deactivated arms never claim; and a
+condition on a variable of the sum makes a duplicate trigger, so install
+ignores the claim. The dispatcher now forwards it, and both code sites carry
+that audit note. Of the dispatcher's users only the reified inequality's
+enforce arms claim (comparison, equals and lex never do). Evidence: a probe
+counted thousands of forwarded claims in each of `le_if`, `le_iff`, `ge_iff`
+and `le_notif`, in both propagation modes, all passing
+`GCS_CHECK_IDEMPOTENT_CLAIMS`; a mutation that claimed without enforcing made
+the checker abort in `le_if`, `le_iff` and `ge_iff`, so the check reaches this
+path; and `linear_test` run directly, so uncapped, passes in every mode, both
+propagation modes and three seeds.
 
 **Holes affect.** Two arms observe holes. The undecided reified equality asks,
 once one term is left, whether the value that would satisfy the equality is in
@@ -1474,12 +1485,11 @@ Ranked by what they buy for what they cost. The audit's first three (#1032,
      cannot drift back to `bounds(Z)` unnoticed;
    - a #1091-shaped equality at several widths, in both arms, with proofs on
      and off.
-6. **Tidying**, the rest of #1043 (#1075 did items 1–3):
-   - decide whether the equality's undecided branch should strip the sweep's
-     idempotence claim, as the dispatcher does for the inequality (item 4);
-   - fold `linear-slack-waking.md` into this document's commentary (item 5).
-     That also means updating the comment in `propagate.cc` that cites it, so
-     it waits for a non-docs change.
+6. **Tidying**, the rest of #1043 (#1075 did items 1–3). **Done**: the two
+   reified classes now agree, both forwarding the claim (item 4; see
+   [Propagator inventory](#propagator-inventory)), and
+   `linear-slack-waking.md` is folded into [Developer
+   commentary](#slack-based-waking) (item 5).
 7. **#1042 — a bounds check in the undecided reified equality.** Cheap, and it
    would remove the one-failure probe case, but the corpus shows no benefit.
 8. **#310**, for the range-literal condition. It is the solver-wide gap, not
