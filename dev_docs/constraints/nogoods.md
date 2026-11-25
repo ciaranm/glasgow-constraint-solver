@@ -6,9 +6,7 @@
 > **Open issues** filed by this audit: #1390 (under optimisation with
 > restarts, the refined store arms the nogoods learned in a pass that improved
 > the incumbent only at a later root that leaves the objective bound
-> unchanged), #1391 (a restart scale of 0 never terminates and ignores the
-> abort flag, and the own `--timeout` of XCSP3, the examples and the MiniCP
-> benchmarks, which accept it), #1392 (the refined propagator declares no
+> unchanged), #1392 (the refined propagator declares no
 > scope: it never adopted #506's `scope_only`, so under dom/wdeg with restarts
 > the store's conflicts weight no variable). Fixed since: #1393 (a `NogoodStore`
 > grown by user code mid-search: the two paths disagreed, and the scan path's
@@ -165,10 +163,10 @@ descended sibling is kept, including a first sibling `x ≠ v` or `x ∉ I`.
 
 | Route | Flag | Notes |
 |---|---|---|
-| C++ | `SolveCallbacks::restarts = RestartSchedule::luby(scale)` | `luby(0)` never terminates (#1391) |
+| C++ | `SolveCallbacks::restarts = RestartSchedule::luby(scale)` | `luby(0)` throws `InvalidProblemDefinitionException`; it used to never terminate (#1391) |
 | `fzn-glasgow` | `--restarts=N` | `N = 0` means off (`fzn_glasgow.cc:1424-1429`); the help text (`:371-373`) and the `.msc` flag text (`minizinc/glasgow.msc.in:10`) still say "find-one / optimisation only", though enumeration with restarts is supported (`solve.cc:146-150`) |
-| `xcsp_glasgow_constraint_solver` | `--restarts[=N]` | bare means 100; prints `d RESTARTS` and `d LEARNED NOGOODS`; `N = 0` hangs through its own `--timeout` and SIGTERM (#1391) |
-| examples | `--restarts` on `langford`, `colour`, `ortho_latin`; MiniCP `tsp`, `qap`, `magic_series`, `magic_square`, `n_queens` | each passes `N` straight to `luby()`, and each hangs at 0 |
+| `xcsp_glasgow_constraint_solver` | `--restarts[=N]` | bare means 100; prints `d RESTARTS` and `d LEARNED NOGOODS`; `N = 0` used to hang through its own `--timeout` and SIGTERM, and now aborts with `luby()`'s exception, since the front end does not catch it there (#1391) |
+| examples | `--restarts` on `langford`, `colour`, `ortho_latin`; MiniCP `tsp`, `qap`, `magic_series`, `magic_square`, `n_queens` | `N = 0` means off, as in `fzn-glasgow`; each used to pass it straight to `luby()` and hang (#1391) |
 | `gcspy`, `glasgow_scp_solver` | none | |
 
 **Front-end differentials, with restarts against without.** XCSP3: every
@@ -813,7 +811,6 @@ is no cake chain to run.
 - **For proof verification:** `qap --restarts=1 8` (26 s at `Off`) and
   `langford --restarts=1 8` (6 s). `langford --restarts=10 11` writes 733 MB and
   takes 27 minutes to check.
-- **Never uncapped:** any `--restarts=0` (#1391).
 
 ### CPU performance
 
@@ -923,11 +920,10 @@ Restart use:
   refined path, which is the learned store's default: those learned in a pass
   that improved the incumbent stay unarmed until a later root that leaves the
   objective bound unchanged (#1390). The answers are right.
-- **A restart scale of 0 hangs**, through the own `--timeout` of XCSP3, the
-  examples and the MiniCP benchmarks (and through SIGTERM on XCSP3, the one
-  front end that handles it; `fzn-glasgow` treats 0 as off), even on an
-  instance whose root propagation alone would refute it, since the root never
-  propagates (#1391).
+- **A restart scale of 0 is refused** by `luby()`, which throws; the
+  examples, the MiniCP benchmarks and `fzn-glasgow` treat `--restarts=0` as
+  off, and the XCSP3 solver aborts with the exception. It used to hang through
+  every front end's `--timeout` (#1391).
 - **Store conflicts do not inform dom/wdeg** on the refined path, and the
   refined and scan paths branch differently under it (#1392). The scope fix
   removes that cause; the paths still charge some failures to different
@@ -971,8 +967,9 @@ Anything else, which would need work first:
    changed by accident. Tested in a scratch build only by counts: refined then
    equals scan on every `qap` size tried and every non-dom/wdeg pair of the
    random differential. Needs the suite and a timing check.
-2. **Reject or neutralise a scale of 0** (#1391), and read the abort
-   flag in the restart driver loop. Trivial.
+2. **Done** (#1391): `luby(0)` throws, the examples and benchmarks treat 0
+   as off, and the restart driver loop reads the abort flag between passes.
+   The XCSP3 front end could also treat 0 as off, or catch the exception.
 3. **Declare the refined propagator's scope** (#1392):
    `scope_only = trigger_vars`, as #506 intended. One line. It does not make
    the two paths one search under dom/wdeg, since they charge some failures to

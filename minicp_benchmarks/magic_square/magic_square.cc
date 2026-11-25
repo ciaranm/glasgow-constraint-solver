@@ -45,7 +45,7 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<std::string>()->default_value("default"))                                                   //
             ("timeout", "Abort the solve after this many seconds (0 = no limit)",                                          //
                 cxxopts::value<double>()->default_value("0"))                                                              //
-            ("restarts", "Restart on a Luby schedule with the given conflict scale",                                       //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale (0 is off)",                            //
                 cxxopts::value<unsigned long long>()->implicit_value("100"))                                               //
             ("all-different", "All-different encoding to use: 'gac', 'bc', 'vc', or 'not-equals' (the not-equals clique)", //
                 cxxopts::value<std::string>()->default_value("not-equals"));
@@ -143,8 +143,9 @@ auto main(int argc, char * argv[]) -> int
     p.post(LessThan{grid[0][0], grid[size - 1][size - 1]});
     p.post(LessThan{grid[0][0], grid[size - 1][0]});
 
-    auto restarts =
-        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
+    auto restarts = options_vars.contains("restarts") && options_vars["restarts"].as<unsigned long long>() > 0
+        ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
+        : nullopt;
 
     auto branch_spec = options_vars["branch"].as<std::string>();
     BranchHeuristic brancher;

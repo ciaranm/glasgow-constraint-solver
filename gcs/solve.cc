@@ -459,6 +459,14 @@ auto gcs::solve_with(
                     observer->on_restart();
                 restart_schedule->advance();
                 restart.cutoff = restart_schedule->current_cutoff();
+
+                // A pass that ends at its cutoff reads the abort flag only if
+                // it propagated somewhere first, so check it here too rather
+                // than rely on every pass doing so (#1391). The proof is
+                // balanced at the root, so stopping here concludes as any
+                // other abort does.
+                if (optional_abort_flag && optional_abort_flag->load())
+                    search_result = SearchResult::Stop;
             }
         } while (search_result == SearchResult::RestartCutoffHit);
 

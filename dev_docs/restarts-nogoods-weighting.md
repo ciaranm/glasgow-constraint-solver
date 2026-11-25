@@ -67,7 +67,8 @@ Completeness holds because the cutoff grows without bound **and** the recorded
 nogoods stop already-refuted regions being re-explored: a later pass searches
 differently (weights and the incumbent objective bound persist), and the growing
 Luby cutoff eventually exceeds the whole tree so a final pass completes. (At a
-scale of 0 every cutoff is 0 and no pass completes: #1391.)
+scale of 0 every cutoff is 0 and no pass would complete, which is why
+`RestartSchedule::luby()` refuses it: #1391.)
 
 ### RestartSchedule
 
