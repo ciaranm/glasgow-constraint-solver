@@ -1,6 +1,9 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/regular/regex.hh>
 #include <gcs/constraints/regular/regular.hh>
+#include <gcs/constraints/regular/regular_bacchus.hh>
+#include <gcs/constraints/regular/regular_legacy.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -383,9 +386,76 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
         {1, 2});
 }
 
+// Malformed indices are refused when the constraint is built (#1333). Before,
+// an out-of-range target, final state or count went straight into a vector in
+// the propagator or the proof model: a segfault, a ProofError, or a silently
+// accepted constraint, depending on the shape and the strategy.
+auto run_malformed_tests() -> bool
+{
+    Problem p;
+    auto x = p.create_integer_variable(0_i, 1_i, "x");
+    auto y = p.create_integer_variable(0_i, 1_i, "y");
+
+    bool ok = true;
+    auto expect = [&](const string & label, bool refused, auto && build) {
+        try {
+            build();
+            if (refused) {
+                println(cerr, "malformed {}: accepted, expected InvalidProblemDefinitionException", label);
+                ok = false;
+            }
+        }
+        catch (const InvalidProblemDefinitionException &) {
+            if (! refused) {
+                println(cerr, "well-formed {}: refused", label);
+                ok = false;
+            }
+        }
+    };
+
+    using Sparse = vector<unordered_map<Integer, long>>;
+    using Dense = vector<vector<long>>;
+    using Multi = vector<unordered_map<Integer, set<long>>>;
+    vector<IntegerVariableID> xy{x, y};
+
+    // Every constructor that takes an automaton, over the same bad shapes.
+    // RegularLegacy and RegularBacchus are internal, but are posted directly by
+    // their own tests and by the large-domain audit, so they are held to it too.
+    auto all_forms = [&](const string & label, bool refused, long n, const Sparse & sparse, const Dense & dense, const Multi & multi,
+                         const vector<long> & finals) {
+        expect("Regular sparse " + label, refused, [&] { [[maybe_unused]] Regular r{xy, n, sparse, finals}; });
+        expect("Regular dense " + label, refused, [&] { [[maybe_unused]] Regular r{xy, n, dense, finals}; });
+        expect("Regular multi " + label, refused, [&] { [[maybe_unused]] Regular r{xy, n, multi, finals}; });
+        expect("RegularLegacy sparse " + label, refused, [&] { [[maybe_unused]] RegularLegacy r{xy, n, sparse, finals}; });
+        expect("RegularLegacy dense " + label, refused, [&] { [[maybe_unused]] RegularLegacy r{xy, n, dense, finals}; });
+        expect("RegularBacchus sparse " + label, refused, [&] { [[maybe_unused]] RegularBacchus r{xy, n, sparse, finals}; });
+        expect("RegularBacchus dense " + label, refused, [&] { [[maybe_unused]] RegularBacchus r{xy, n, dense, finals}; });
+    };
+
+    all_forms(
+        "target past the states", true, 2, {{{0_i, 1}, {1_i, 7}}, {{0_i, 0}}}, {{1, 7}, {0, -1}}, {{{0_i, {1}}, {1_i, {7}}}, {{0_i, {0}}}}, {0});
+    all_forms("negative target other than -1", true, 2, {{{0_i, -2}}, {}}, {{-2}, {}}, {{{0_i, {-2}}}, {}}, {0});
+    all_forms("final state past the states", true, 2, {{{0_i, 1}}, {{0_i, 0}}}, {{1}, {0}}, {{{0_i, {1}}}, {{0_i, {0}}}}, {0, 5});
+    all_forms("negative final state", true, 2, {{{0_i, 1}}, {{0_i, 0}}}, {{1}, {0}}, {{{0_i, {1}}}, {{0_i, {0}}}}, {-1});
+    all_forms("no states", true, 0, {}, {}, {}, {});
+    all_forms("more rows than states", true, 1, {{{0_i, 0}}, {{0_i, 0}}}, {{0}, {0}}, {{{0_i, {0}}}, {{0_i, {0}}}}, {0});
+
+    // Fewer rows than states is fine: the missing states have no transitions.
+    // And -1 is "no transition" in the single-target forms.
+    all_forms("fewer rows than states", false, 3, {{{0_i, 1}}}, {{1}}, {{{0_i, {1}}}}, {2});
+    expect("Regular sparse -1 target", false, [&] { [[maybe_unused]] Regular r{xy, 2, Sparse{{{0_i, -1}, {1_i, 1}}, {}}, {1}}; });
+    expect("Regular dense -1 target", false, [&] { [[maybe_unused]] Regular r{xy, 2, Dense{{-1, 1}, {}}, {1}}; });
+    expect("Regular multi -1 target", true, [&] { [[maybe_unused]] Regular r{xy, 2, Multi{{{0_i, {-1}}}, {}}, {1}}; });
+
+    return ok;
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
+
+    if (! run_malformed_tests())
+        return EXIT_FAILURE;
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 

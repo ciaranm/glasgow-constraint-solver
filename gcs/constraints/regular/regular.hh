@@ -90,9 +90,25 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
+        /**
+         * \brief Constrain that the sequence of variables is accepted by a
+         * deterministic automaton over states `0 .. num_states - 1`, starting in
+         * state 0: transitions[q] maps each value to the state reached from q
+         * on it. A missing value, or a target of -1, means no transition.
+         *
+         * There may be fewer transition rows than states (the rest have no
+         * transitions) but not more. \throws InvalidProblemDefinitionException
+         * if num_states is less than 1, there are more rows than states, or a
+         * target or final state is not a state (#1333). The same holds for the
+         * other two automaton constructors.
+         */
         explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, long>> transitions,
             std::vector<long> final_states);
 
+        /**
+         * \brief As above, with transitions[q][v] the state reached from q on
+         * the value v, for v from 0, and -1 for no transition.
+         */
         explicit Regular(
             std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions, std::vector<long> final_states);
 
@@ -102,6 +118,7 @@ namespace gcs
          * to the set of states reachable from q on it, and state 0 is the
          * start. proof_strategy::Bacchus requires every such set to have
          * exactly one member (it refuses an empty set as well as a larger one).
+         * There is no -1 sentinel here: every member must be a state.
          */
         explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
             std::vector<long> final_states);

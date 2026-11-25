@@ -5,7 +5,8 @@
 > **Open issues** filed by this audit: #1329 (a zero-variable diagram with an
 > empty accepting list reports solutions; filed with `RegularBacchus`'s twin;
 > fix open as #1366),
-> #1333 (the constructor does not check node indices; with `Regular`'s), #1336
+> #1333 (the constructor did not check node indices; with `Regular`'s; fixed),
+> #1336
 > (six kinds of MiniZinc shape the binding gets wrong), #1338 (the graph is
 > deep-copied at every search node; with `Regular`'s), #1339 (a wide declared
 > domain leaves one empty map entry per value for the rest of the search; with
@@ -76,17 +77,19 @@ there is no separate "true" node, and any subset of the last layer can accept.
 
 The constructor (`mdd.cc:438–454`) checks that `nodes_per_layer` has `n + 1`
 entries and starts with 1, that `layer_transitions` has `n` layers and each has
-at least `nodes_per_layer[i]` node maps (extra maps are never read), and every
-transition value against `±(2⁶⁰ − 1)` (`require_bounded`, since #1215). It does
-**not** check targets or terminals against the node counts (#1333; see
-[Robustness and limits](#robustness-and-limits)).
+exactly `nodes_per_layer[i]` node maps, and every transition value against
+`±(2⁶⁰ − 1)` (`require_bounded`, since #1215). Since #1333 it also checks that
+every later node count is at least 0, every target is `-1` (no transition) or
+a node of the next layer, and every accepting terminal is a node of the last
+layer, throwing `InvalidProblemDefinitionException` otherwise. Extra node maps
+used to be accepted and never read; they are now refused.
 
 - **No variables:** `nodes_per_layer = {1}`, and the empty sequence is accepted
   exactly when 0 is accepting. With node indices in range that means an empty
-  accepting list is unsatisfiable, and GCS reports solutions for it (#1329);
-  an out-of-range terminal gives the same wrong answer with proofs off and
-  undefined behaviour with proofs on, an out-of-range `flags[n][f]` (an
-  exception in the probe; #1329 and #1333).
+  accepting list is unsatisfiable, and GCS reports solutions for it (#1329).
+  An out-of-range terminal used to give the same wrong answer with proofs off
+  and undefined behaviour with proofs on; the constructor now refuses it
+  (#1333).
 - **No accepting terminals**, or none reachable: unsatisfiable, found at the
   root when `n ≥ 1`.
 - **A transition to `-1`** is read as no transition, because `find_transition`
@@ -509,7 +512,8 @@ XCSP3 models use values from −3 to 9, and `multilabel.mzn` negative labels.
   to find that out (`probes/aliasex.cc`). In the sweep's `alias` shape, 196 of
   3,474 checked nodes fail generalised arc consistency, in 141 of 6,000
   instances, with every solution set right and every proof accepted.
-- ***Node indices are not validated*** (#1333). A target beyond
+- ***Node indices were not validated*** (#1333, fixed: the constructor now
+  refuses all of these). A target beyond
   `nodes_per_layer[i+1]` crashes with proofs off (`SIGFPE` in one probe, a
   segmentation fault in another) and throws "can't find literals for flag" with
   proofs on; a target of `-2` does the same (a segmentation fault with proofs
@@ -832,7 +836,8 @@ solutions.
 
 **What the tests do not cover.**
 
-- **No variables**, which is #1329, and **node indices out of range**, #1333.
+- **No variables**, which is #1329. (Node indices out of range, #1333, are
+  covered by `mdd_test`'s malformed cases.)
 - **Holey initial domains**: every tested domain is an interval.
 - **Views, repeated variables and constants**: none tested.
 - **Any assertion level but `Off`.** The audit's sweep ran `Definitions`,
@@ -1024,8 +1029,6 @@ VeriPB rejects it (#1329).
 ### Known limitations
 
 - **An `MDD` over no variables can report solutions it should not** (#1329).
-- **An out-of-range node index crashes the solver or corrupts the proof**
-  instead of being refused (#1333).
 - **MiniZinc's `mdd` with an empty `x`, a second node at level 1, a node at a
   level outside `1..L+1`, or no nodes gives an error or undefined behaviour**
   (#1336).

@@ -1,5 +1,6 @@
 #include <cmath>
 #include <gcs/constraints/innards/require_bounded.hh>
+#include <gcs/constraints/regular/automaton_shape.hh>
 #include <gcs/constraints/regular/canonical_run.hh>
 #include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regex.hh>
@@ -448,11 +449,15 @@ namespace
 }
 
 RegularLegacy::RegularLegacy(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f) :
-    _vars(move(v)), _num_states(n), _transitions(t.size()), _final_states(move(f)), _regex(nullopt)
+    _vars(move(v)), _num_states(n), _final_states(move(f)), _regex(nullopt)
 {
-    for (const auto & state : t)
-        for (const auto & [value, _] : state)
+    innards::check_automaton_states("RegularLegacy", n, t.size(), _final_states);
+    for (size_t q = 0; q < t.size(); ++q)
+        for (const auto & [value, target] : t[q]) {
             innards::require_bounded(value, "a transition value of RegularLegacy");
+            innards::check_automaton_target("RegularLegacy", n, q, target, true);
+        }
+    _transitions.resize(n);
     for (size_t q = 0; q < t.size(); ++q)
         for (const auto & [val, target] : t[q])
             if (target != -1L)
@@ -461,8 +466,13 @@ RegularLegacy::RegularLegacy(vector<IntegerVariableID> v, long n, vector<unorder
 }
 
 RegularLegacy::RegularLegacy(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f) :
-    _vars(move(v)), _num_states(n), _transitions(n), _final_states(move(f)), _regex(nullopt)
+    _vars(move(v)), _num_states(n), _final_states(move(f)), _regex(nullopt)
 {
+    innards::check_automaton_states("RegularLegacy", n, transitions.size(), _final_states);
+    for (size_t q = 0; q < transitions.size(); ++q)
+        for (auto target : transitions[q])
+            innards::check_automaton_target("RegularLegacy", n, q, target, true);
+    _transitions.resize(n);
     for (size_t i = 0; i < transitions.size(); i++)
         for (size_t j = 0; j < transitions[i].size(); j++)
             if (transitions[i][j] != -1L)

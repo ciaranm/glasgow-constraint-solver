@@ -711,7 +711,7 @@ variant](TEMPLATE.md#the-presolver-variant).
   `Inferences` and `Backtracking` for a variable declared as a range whose
   bounds unit propagation cannot recover, such as `-1..2`, or a view whose own
   range is one, because the tracker omits the boundary pins above `Links`
-  (#1330). Also: an out-of-range state number crashes (#1333), the `.scp`
+  (#1330). Also: an out-of-range state number crashed (#1333, fixed), the `.scp`
   reader refuses NFAs (#1335), the graph is deep-copied at every search node
   (#1338; 49 to 264 times Gecode's instructions on nonograms with the same
   node counts), and a stale entry per declared value makes every node cost
@@ -739,7 +739,7 @@ variant](TEMPLATE.md#the-presolver-variant).
   diagram leaves no flag unassigned on a solution. The audit found a wrong
   answer through the C++ API and the `.scp` reader: a diagram over no
   variables with an empty accepting list reports solutions, and VeriPB rejects
-  the proof (#1329). Node indices are not validated (a crash, #1333), and
+  the proof (#1329). Node indices were not validated (a crash, #1333, now refused), and
   MiniZinc's binding errors on six kinds of valid shape, including nodes at
   levels outside `1..L+1`, and reads past two vectors whenever N = 0 (#1336).
   It is 75 to 94 times Gecode's instructions on nonograms at equal node and
