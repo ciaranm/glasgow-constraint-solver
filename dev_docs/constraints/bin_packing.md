@@ -5,9 +5,10 @@
 > (`proof_strategy::Upfront`, `bin_packing::Shaw`) ·
 > **Audited** 2026-10-10 at `86caad24`, with the proof timings re-taken on
 > 2026-10-14 at the same commit ·
-> **Open issues** filed by this audit: #1345 (XCSP3's single-`<condition>`
-> form constrains bins no item can take, so it reports `UNSATISFIABLE` on
-> satisfiable instances and loses solutions; fix open as #1360), #1347 (item
+> **Fixed since the audit**: #1345 (XCSP3's single-`<condition>` form
+> constrained bins no item can take, so it reported `UNSATISFIABLE` on
+> satisfiable instances and lost solutions; fixed by #1360) ·
+> **Open issues** filed by this audit: #1347 (item
 > domains outside the bins and negative load lower bounds, which MiniZinc's
 > definition constrains away, error from MiniZinc, `var opt` models over
 > 1-based bins among them;
@@ -28,8 +29,7 @@
 > tries only 1 and the distinct sizes as thresholds, and misses prunes and
 > failures the same derivation gives at other thresholds; confirmed here,
 > and answered by a measurement over search, on which the shipped list and
-> counted set were kept, with the two source comments corrected by #1359
-> (open);
+> counted set were kept, with the two source comments corrected by #1359;
 > see [Next steps](#next-steps)), #200 (one layered-diagram framework), #833
 > (the large-domain policy), #868 (cross-solver comparisons; this document
 > gives one, by hand). Filed since, from review: #1358 (Stage 4's
@@ -65,14 +65,15 @@ propagation is staged, and the stages are the thing to know:
 
 Five things to know before touching it.
 
-- **One wrong-answer route, in a front end.** XCSP3's single-`<condition>`
-  form makes a load for every bin from 0 up to the largest item value and puts
-  the condition on all of them, including bins that no item's domain contains,
-  whose load is 0. A condition that rejects 0 then makes Glasgow report
-  `UNSATISFIABLE` on satisfiable instances, with a proof VeriPB accepts, or
-  lose solutions: 7 of 400 random instances against ACE (#1345). No other
-  route gave a wrong answer: 1,600 random proofs plus 800 tight ones verify
-  with the right counts, and brute-forced root fixpoints are sound,
+- **One wrong-answer route, in a front end, now fixed.** XCSP3's
+  single-`<condition>` form made a load for every bin from 0 up to the largest
+  item value and put the condition on all of them, including bins that no
+  item's domain contains, whose load is 0. A condition that rejects 0 then
+  made Glasgow report `UNSATISFIABLE` on satisfiable instances, with a proof
+  VeriPB accepts, or lose solutions: 7 of 400 random instances against ACE
+  (#1345, fixed by #1360). No other route gave a wrong answer: 1,600 random
+  proofs plus 800 tight ones verify with the right counts, and brute-forced
+  root fixpoints are sound,
   views, constants and repeated variables included (128,000 random instances
   without repeated variables, half of them with views and constants, and
   20,000 with repeats).
@@ -149,8 +150,9 @@ initial lower bound is negative, or a capacity is negative.
 - **An item that fits no bin** is ordinary: Stage 2 removes each bin from it
   and the domain empties.
 - **The bins are numbered from 0.** Front ends with other numbering pass an
-  offset and post views (MiniZinc), or create bins from 0 (XCSP3); see the
-  table's footnotes.
+  offset and post views (MiniZinc, and XCSP3's `<condition>` form, from the
+  smallest item value), or create bins from 0 (XCSP3's `<limits>` and
+  `<loads>`); see the table's footnotes.
 - **A negative capacity or a constant negative load** is unsatisfiable, but is
   refused rather than failed.
 - **A repeated variable** (an item twice, a load that is another load or an
@@ -188,16 +190,21 @@ initial lower bound is negative, or a capacity is negative.
     cannot meet that, since its bins are the items' own range. Tests:
     `binpackingtest.mzn`, `binpackingoffsettest.mzn` (non-1-based capacities
     and the single-capacity form).
-[^xcond]: `buildConstraintBinPacking` (`xcsp_glasgow_constraint_solver.cc:700–723`)
-    creates a load in `0..Σ sizes` for every bin from 0 up to the largest item
-    upper bound (`bin_packing_num_bins`, `:680–690`), posts the load form and
-    applies the condition to every load. Bins no item's domain contains get
-    the condition too, with load 0, so a condition that rejects 0 answers
-    wrongly (#1345). An item domain with a negative value is reported
-    unsupported (`:685–686`). The XCSP3 3.2 specification quantifies over the
-    bins items take (§4.1.6.4); ACE 2.6 over the union of the domains.
-[^xlim]: `:725–748` posts the capacity form for constant `<limits>` and the load
-    form over constants for constant `<loads>`; `:750–764` the load form for
+[^xcond]: `buildConstraintBinPacking` (`xcsp_glasgow_constraint_solver.cc:687–743`)
+    takes the bins to be the values the items' domains contain, `v_min..v_max`
+    offset to start at 0, so negative item values are accepted. It posts the
+    load form over `x_i − v_min`, with a load in `0..Σ sizes` for each value
+    some domain contains and a constant zero load for each value in the range
+    that none does, and applies the condition only to the former. That is ACE
+    2.6's reading, over the union of the domains; the XCSP3 3.2 specification
+    quantifies over the bins items take (§4.1.6.4), and the two differ only
+    when some item could take a bin but none does and the condition rejects 0.
+    Until #1360 the condition went on a load for every bin from 0 to the
+    largest upper bound, so a condition rejecting 0 answered wrongly (#1345),
+    and an item domain with a negative value was reported unsupported. Tests:
+    `xcsp/tests/bin_packing_condition_{shift,gap,var,negative}.xml`.
+[^xlim]: `:745–767` posts the capacity form for constant `<limits>` and the load
+    form over constants for constant `<loads>`; `:770–784` the load form for
     variable `<loads>`. Bins are numbered from 0, with no `startIndex` (the
     parser reads one for every `<binPacking>`, `XMLParserTags.cc:1628–1630`,
     but the manager passes it on only for `<conditions>`,
@@ -207,7 +214,7 @@ initial lower bound is negative, or a capacity is negative.
     `solve_with`, which the binary does not catch there, so the process aborts
     with exit 134 (#1347; the same uncaught exception as #1337). Test:
     `xcsp/tests/bin_packing.xml` (constant `<limits>`).
-[^xuns]: `:753–754` and `:766–769` call `report_unsupported`; for `<conditions>`
+[^xuns]: `:773–774` and `:786–789` call `report_unsupported`; for `<conditions>`
     the parser itself reports the condition malformed first.
 [^cpmpy]: `gcspy` binds nothing in this family. CPMpy's upstream GCS
     interface, as copied on 2026-09-23 (`tmp/linear-audit/cpmpy_gcs.py:93–94`,
@@ -253,7 +260,9 @@ status and solution set together. Harnesses and reproducers are in
 - **XCSP3**, 400 random instances against ACE 2.6 and a brute force
   (`xcspdiff.py`, seeds 1 to 8): 214 agree with ACE, and 18 more where ACE
   itself fails agree with the brute force. **7 are wrong answers**, all in the
-  condition form, all against both ACE and the brute force (#1345). ACE is
+  condition form, all against both ACE and the brute force (#1345; on the
+  same seeds #1360's fix gives none, and none of the 14 negative-value
+  `UNSUPPORTED` below). ACE is
   not ground truth on its own: a fact-check found it answering wrongly on
   condition-form instances with zero-size items (four, none among these 400),
   so every disagreement was settled by the brute force. 54 abort where ACE
@@ -553,8 +562,8 @@ initialiser share; each search's clone of the constraint prepares its own. With
 Shaw it sizes Stage 4's scratch and computes the
 threshold list (1 and every distinct size above 1, largest first) and the
 items in decreasing size (`:1801–1839`): `O(n log n)`. The comment there
-(`:1821–1826` at `86caad24`) calls this list the whole family, which #1359
-(open) corrects; it is a sample, kept by choice (rule 11, #1355).
+(`:1821–1826` at `86caad24`) called this list the whole family, which #1359
+corrected; it is a sample, kept by choice (rule 11, #1355).
 
 With `consistency::GAC` it builds, for each bin, the **static diagram**: the
 partial sums of the sizes of the first `i` items that can be in the bin,
@@ -1301,7 +1310,7 @@ procedures in turn, and one is guaranteed to succeed.
   instances are still without support at the root fixpoint.
   **It also samples its own bound** (#1355). It tries `α` at 1 and at the
   distinct sizes (`:1827–1832`). The comment there (`:1821–1826`, line
-  numbers at `86caad24` throughout; #1359, open, corrects it) says that is
+  numbers at `86caad24` throughout; #1359 corrected it) said that is
   the whole family because `DELTA` is piecewise constant in `α` with
   breakpoints at the sizes. It is not: while `S(α)` stays the same, `c_i =
   ⌈sizes[i] / α⌉` and each bin's `⌈(T_b − cap_b) / α⌉` still change between
@@ -1312,7 +1321,7 @@ procedures in turn, and one is guaranteed to succeed.
   15`. The shipped code needs three nodes and two failures to refute it; a
   scratch build that adds 15 fails at the root, and its proof verifies,
   under `GAC` and `BC`. The counted set is a choice too: the comment at
-  `:1594–1597` (which #1359, open, corrects) says an item below the threshold
+  `:1594–1597` (which #1359 corrected) said an item below the threshold
   only pays its way once it is pinned, but such an item can raise each of its
   `|D_i|` bins' rounded overflows by one at a cost of `|D_i| − 1`. Against
   `S(α)`, both with every
@@ -1596,9 +1605,12 @@ scratch `tmp/fd-bp/bin_packing/`):
   with `BC`.
 - **Holey item domains, views on loads beyond the degenerate cases, and
   repeated variables**, outside the audit's sweeps.
-- **XCSP3's condition form, negative values from any front end, item domains
-  reaching outside the bins, and `var opt` models**: none tested, which is how #1345
-  and #1347 stayed hidden.
+- **Negative values from any front end but XCSP3's condition form, item
+  domains reaching outside the bins, and `var opt` models**: none tested,
+  which is how #1347 stayed hidden. XCSP3's condition form was untested too
+  until #1360, which is how #1345 stayed hidden; its four
+  `bin_packing_condition_*` cases now cover a shifted range, a gap, a
+  variable operand and a negative item value.
 - **Wide shapes**: a large size under `Upfront`, beyond the one `Clean` row
   with unit sizes.
 - **The `.scp` against cake**: no registered chain case, and the loads form
@@ -1852,18 +1864,20 @@ widths.
 `None` for the inferences: every one is justified at `Off` under both
 strategies, every assertion carries its reason, and no stage changes with
 proofs on (Stage 4's choice of which bins to count is made from the load's
-kind, not from whether a proof is written). One wrong-answer route has a
-verified proof: XCSP3's condition form proves the mistranslated model
-`UNSATISFIABLE` (#1345), which no checker of this family can catch, since
-the mistranslation is in the `.scp` it starts from.
+kind, not from whether a proof is written). One wrong-answer route had a
+verified proof until #1360: XCSP3's condition form proved the mistranslated
+model `UNSATISFIABLE` (#1345), which no checker of this family can catch,
+since the mistranslation is in the `.scp` it starts from.
 
 ### Known limitations
 
-- **XCSP3 models with a single `<condition>` can be answered wrongly** when
-  the items' domains skip a bin below the largest, or all start above 0, and
-  the condition rejects an empty bin (`ge`, `gt` or `eq` with a positive
-  operand, `ne` with 0, `in` above 0, or a variable operand under those)
-  (#1345).
+- **XCSP3's single `<condition>` follows ACE, not the letter of the
+  specification**: the condition applies to every value some item's domain
+  contains, where XCSP3 3.2 quantifies over the bins items take. The two
+  differ only when an item could take a bin but none does and the condition
+  rejects 0 (see the `xcond` footnote in [Concrete constraints and frontend
+  coverage](#concrete-constraints-and-frontend-coverage); #1360, which fixed
+  #1345's wrong answers).
 - **MiniZinc errors on `var opt` items over 1-based bins, on item domains
   reaching outside the bins and
   on loads declared with negative lower bounds; XCSP3 aborts on negative
@@ -1947,14 +1961,15 @@ independent check `CHECK.txt`).
   the 428 BPPLIB refutations within the cap, against 171 and 99 without it;
   every root refutation is Stage 4's.
 - *Decision:* keep the shipped list and `S(α)`. The two source comments
-  that call them complete and dominant are corrected by #1359 (open), with
+  that called them complete and dominant were corrected by #1359, with
   their copies in the design note. The offline argument of rule 11 is
   unaffected either way.
 
-1. **Fix XCSP3's condition form** (#1345): build the bins from the union of
-   the items' domains with an offset, and post the condition only on loads of
-   values some item can take. Small; removes the wrong answers and the
-   negative-value `UNSUPPORTED`. Add a condition-form test with `ge`.
+1. **Fix XCSP3's condition form** (#1345). **Done** by #1360, as proposed:
+   the bins are the union of the items' domains with an offset, the condition
+   goes only on loads of values some item can take, the wrong answers and the
+   negative-value `UNSUPPORTED` are gone, and four condition-form tests,
+   one with `ge`, were added.
 2. **Front ends** (#1347): post the standard range constraint on `bin[i]`
    (and `load[b] >= 0`) in Glasgow's MiniZinc redefinitions, which also
    rescues the refused `var opt` models (a fact-check's scratch copy of the
@@ -2032,7 +2047,7 @@ independent check `CHECK.txt`).
       `bounds_only` and `upfront_proof` constructor flags (six places) where
       the API is `with_consistency` and `with_proof_strategy` (all corrected by
       #1396; its two Stage 4 claims, at `:390–391` and `:395–397` on
-      main at `86caad24`, are corrected by #1359 (open), which also adds to
+      main at `86caad24`, are corrected by #1359, which also added to
       "Where the work goes", at `:445–447` there, that the shave's necessary
       condition passes nearly every free item where `DELTA` is 0, #1358);
     - `dev_docs/xcsp.md:249–252` ("Honest gaps") says `binPacking` has no
@@ -2044,8 +2059,8 @@ independent check `CHECK.txt`).
       `:369–370` says
       `emit_bin_scaffolding` "Mirrors knapsack.cc", where the function now
       lives in `knapsack_upfront.cc:177` (all corrected by #1396; the
-      Stage 4 comments at `:1821–1826` and `:1594–1597` are corrected by #1359
-      (open), which also adds #1358's caveat to the shave's necessary condition
+      Stage 4 comments at `:1821–1826` and `:1594–1597` are corrected by #1359,
+      which also added #1358's caveat to the shave's necessary condition
       at `:1645–1650`);
     - `bin_packing.hh:20–25` and `:174–175` claim per-bin GAC, and `:104–106`
       per-bin GAC on the item variables; `:106–129` describes the removed

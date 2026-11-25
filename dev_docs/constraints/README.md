@@ -797,9 +797,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   every assertion level but `Links`, where the generic #1210 (commented on)
   rejects some runs with range-declared variables. The audit found one
   wrong-answer route, in a front end: XCSP3's single-`<condition>` form
-  constrains bins no item can take, so it proves satisfiable instances
-  `UNSATISFIABLE` and loses solutions (7 of 400 against ACE and a brute
-  force; #1345). MiniZinc errors on item domains reaching outside the bins,
+  constrained bins no item can take, so it proved satisfiable instances
+  `UNSATISFIABLE` and lost solutions (7 of 400 against ACE and a brute
+  force; #1345, fixed by #1360). MiniZinc errors on item domains reaching outside the bins,
   on `var opt` models over 1-based bins and on negative load lower bounds,
   all of which its own definition constrains away, and XCSP3 aborts on
   negative sizes, limits and loads, variable loads included (#1347, the
