@@ -175,9 +175,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   fixed: a constant in `GlobalCardinality`'s array (#1046, found by the
   `inverse` audit; #1187), aliasing in `GlobalCardinality` and `Count` (#1191,
   #1197, #1201) and a view registered by a later constraint (#1200).
-  Re-audited 2026-10-08. Two bugs found after that are open: `Count` with `n`
-  and `y` one variable can lose solutions (#1304), and `Among` with `n` among
-  its positions can write proofs VeriPB rejects (#1308).
+  Re-audited 2026-10-08. Two bugs found after that are fixed: `Count` with `n`
+  and `y` one variable could lose solutions (#1304, fixed by #1364), and
+  `Among` with `n` among its positions could write proofs VeriPB rejected
+  (#1308, fixed by #1365).
 - [`linear.md`](linear.md) — `LinearEquality`, `LinearNotEquals`,
   `LinearLessThanEqual`, `LinearGreaterThanEqual` and their reified forms:
   twelve named classes over two base classes and one bound sweep, and the

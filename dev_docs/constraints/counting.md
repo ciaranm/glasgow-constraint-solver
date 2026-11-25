@@ -12,16 +12,16 @@
 > (at `GAC` on an unsorted open cover), is fixed by #1030. Filed since and open:
 > #1193 (workflow 2 only: `GlobalCardinality`'s Hall `pol`s and `Among`'s `pol`s
 > over its sum row fail cake's chain on a {0,1} variable with both its values in
-> the set); #1304 (`Count` with `n` and `y` one variable can lose solutions,
-> proofs off too; fix open as #1364) and #1308 (`Among` with `n` among the
-> positions over a definition range wider than 100 values: VeriPB can reject
-> the proof; fix open as #1365), both from a random sweep of `Among` after
-> #1205. **Fixed since the audit**: #1053 (`NValue`'s count-only wakes and
+> the set). **Fixed since the audit**: #1053 (`NValue`'s count-only wakes and
 > its idempotence), filed by review; #1046 (`GlobalCardinality` proofs aborted
 > or were rejected when its array held a constant), filed by the `inverse`
 > audit; #1191 and #1197 (`GlobalCardinality` proofs rejected under aliasing),
 > #1200 (a view registered by a constraint posted later; `GlobalCardinality` and
-> `Among`) and #1201 (`Count` proofs rejected under aliasing). See [Re-audit,
+> `Among`) and #1201 (`Count` proofs rejected under aliasing); and, both found
+> by a random sweep of `Among` after #1205, #1304 (`Count` with `n` and `y` one
+> variable could lose solutions, proofs off too; fixed by #1364) and #1308
+> (`Among` with `n` among the positions over a definition range wider than 100
+> values: VeriPB could reject the proof; fixed by #1365). See [Re-audit,
 > 2026-09-26](#re-audit-2026-09-26) and [Re-audit,
 > 2026-10-08](#re-audit-2026-10-08). Already open and touching this family: #843
 > (`NValue`'s encoding is per value), #876 (the `GAC` arm has no large-domain
@@ -139,10 +139,10 @@ Three things to know before touching it.
   its own push; #1197 and #1200 were a view spelled two ways in one proof.
   This audit's own wrong answer, solutions lost at `GAC` on an open constraint
   whose cover was not ascending (#1026), is fixed by #1030. Two more bugs,
-  found since by a random sweep of `Among`, are open: `Count` with `n` and `y`
-  one variable can lose solutions, with proofs off too (#1304), and `Among`
-  with `n` among its positions over a definition range wider than 100 values
-  can write proofs VeriPB rejects (#1308).
+  found since by a random sweep of `Among`, are fixed: `Count` with `n` and `y`
+  one variable could lose solutions, with proofs off too (#1304 → #1364), and
+  `Among` with `n` among its positions over a definition range wider than 100
+  values could write proofs VeriPB rejected (#1308 → #1365).
 
 ## What it is
 
@@ -154,8 +154,8 @@ Three things to know before touching it.
   shapes could be rejected until #1205 (#1201). Since then `count_test` posts
   `y` among the positions, `n` among the positions, and `n` as `y` or as a view
   of it, but not `y` among the positions through a view (see [Tests](#tests)).
-  With `n` and `y` one variable, `Count` can still lose solutions, with proofs
-  off too (#1304; [Known limitations](#known-limitations)).
+  With `n` and `y` one variable, `Count` could also lose solutions, with proofs
+  off too, until #1364 (#1304; see [Rule: count-array](#rule-count-array)).
 - **`Among(vars, S, n)`** — `n = |{i : vars[i] ∈ S}|`, `S` a set of constants.
   The constructor sorts `S` and removes duplicates, and since `3435a4e1`
   refuses a value outside the bounded integer range with `IntegerOverflow`
@@ -577,23 +577,24 @@ never saw #1026.
     push when a proof is being written. Before #1205 a push could move a
     position or `y` that the justification then read, when `n` was `y` or
     either was among the positions, and VeriPB rejected the proof (#1201).
-  - **`Among`** is the family's one class whose explicit pushes are still
-    single-literal: rules 9, 10 and 12 (`among.cc:202`, `:216`, `:351`; rule 11
-    is an `infer_all`, `:273`). Rules 10 and 12 read no state in their
-    justifications, only the root at-most-ones and what the partition captured
-    before the push. Rule 9's justification names, per must-match variable, the
-    values of `S` it still has, so its push of `n`'s lower bound matters only
-    when `n` is itself a must-match position, directly or through a view.
-    #1205's static audit named `n` among the positions as a suspect, and its
-    random sweep of `Among` found nothing. `run_self_ref_among_test` posts
-    `Among([s, s], S, s)` and verifies. It is not safe in general (#1308, found
-    since): when that variable's definition range is wider than 100 values,
-    the tracker's at-least-one is a cover keyed on the values the push left,
-    so once the push has taken values of `S` from it the `pol` no longer
-    collapses to `n ≥ k`, and VeriPB rejects the closing RUP. At 100 values or
-    fewer the tracker's per-value line names every value. That is why the test,
-    over `0..4` and `0..3`, saw nothing, and probably why the sweep did not.
-    The answers are right.
+  - **`Among`**'s explicit pushes are single-literal for rules 10 and 12
+    (`among.cc:234`, `:369`). Rule 11 is an `infer_all` (`:291`), and since
+    #1365 so is rule 9 when a proof is being written (`:219`). Rules 10 and 12
+    read no state in their justifications, only the root at-most-ones and what
+    the partition captured before the push. Rule 9's justification names, per
+    must-match variable, the values of `S` it still has, so its push of `n`'s
+    lower bound matters only when `n` is itself a must-match position, directly
+    or through a view. #1205's static audit named `n` among the positions as a
+    suspect, its random sweep of `Among` found nothing, and
+    `run_self_ref_among_test` posts `Among([s, s], S, s)` and verifies. It was
+    not safe in general (#1308, found since): when that variable's definition
+    range is wider than 100 values, the tracker's at-least-one is a cover keyed
+    on the values the push left, so once the push had taken values of `S` from
+    it the `pol` no longer collapsed to `n ≥ k`, and VeriPB rejected the closing
+    RUP. At 100 values or fewer the tracker's per-value line names every value,
+    which is why the test, over `0..4` and `0..3`, saw nothing. The answers
+    were right. #1365 emits rule 9's steps before the push, and
+    `run_aliased_among_test` posts the shape over ranges wider than 100 values.
 
 ## The implementation
 
@@ -802,9 +803,9 @@ correctly. The counts are the interesting half:
     among the array; 3,000 instances against brute force, 300 with VeriPB) found
     nothing wrong, but #1205's sweep of the code before it found proofs rejected
     in 23 of 4,000 instances with no views at all. Since #1205, `count_test`'s
-    own `run_aliased_count_test` (eight rows) posts `n` as the value of interest
-    or a view of it, and the value of interest among the positions, though not
-    through a view there. Four of its rows put `n` among the positions: one with
+    own `run_aliased_count_test` (eight rows, eleven since #1364) posts `n` as
+    the value of interest or a view of it, and the value of interest among the
+    positions, though not through a view there. Four of its rows put `n` among the positions: one with
     `n` also the value of interest (`count_test.cc:359`), and three with `n` not
     it (`:361-363`), one of those with a constant value of interest. #1205's
     sweep found all four shapes rejected, though
@@ -1244,7 +1245,11 @@ rule's **Strength** is what that rule contributes.
   is what #996 was.
 - **Algorithm** — one more pass over the unfixed variables: per variable,
   `contains_all_of(D(y))`, then `each_interval_minus` for the gaps. In
-  intervals.
+  intervals. When `n` shares a variable with `y` or a position, or `y` with a
+  position, directly or through a view, the survivor bookkeeping is first
+  gathered again from the current state (`count.cc:427`, #1364): pushes made
+  after the per-value loop can have moved what it was read from. Whether to
+  regather is decided once, at install time.
 - **Why it is true** — for `y = v`, a variable that can be `v` but is unfixed
   is supported at `v` iff `n` allows a count above `must(v)`, and at other
   values iff `n` allows one below `might(v)`. The two cases above are exactly
@@ -1263,13 +1268,13 @@ rule's **Strength** is what that rule contributes.
   reason; the batching is an optimisation.
 - **Proof size** — per value of `y`, per pruning, up to three lines, plus the
   flag zeroing once per value. `O(|D(y)| · (n + prunings))`.
-- **Gaps** — `None.` The rule itself, though, is wrong when `n` and `y` are
-  one variable, directly or through views: the per-value loop's bookkeeping it
-  decides from can be made stale by pushes after it was gathered (that loop's
-  later removals from `y`, and rules 6 and 7's pushes on `n`, which also move
-  `y`), so it can remove supported values, and the `GAC` claim above fails
-  there (#1304, proofs off too; see [Known limitations](#known-limitations)).
-  VeriPB rejects the proof, correctly.
+- **Gaps** — `None.` Until #1364 the rule itself was wrong when `n` and `y`
+  were one variable, directly or through views: the per-value loop's
+  bookkeeping it decided from could be made stale by pushes after it was
+  gathered (that loop's later removals from `y`, and rules 6 and 7's pushes on
+  `n`, which also move `y`), so it could remove supported values, with proofs
+  off too, and VeriPB rejected the proof, correctly (#1304). The regathering
+  above fixes it.
 - **Tightness** — `Not shown.`
 
 ### Rule: among-lower
@@ -1300,10 +1305,11 @@ rule's **Strength** is what that rule contributes.
   whose domain in the reason lies inside `S`, which the `.scp` gives.
 - **Proof size** — one `pol` over `1 + k` rows, one RUP; the at-least-ones are
   cached by the tracker.
-- **Gaps** — the steps run after the push and read the state, so when `n` is
-  itself a must-match position over a definition range wider than 100 values,
-  VeriPB can reject the proof (#1308; see [Proof-time
-  state](#proof-time-state)). The answers are right.
+- **Gaps** — `None.` Until #1365 the steps ran after the push and read the
+  state, so when `n` was itself a must-match position over a definition range
+  wider than 100 values, VeriPB could reject the proof (#1308; see [Proof-time
+  state](#proof-time-state)). With a proof being written the rule now goes
+  through `infer_all`, which emits before it pushes.
 - **Tightness** — `Not shown.`
 
 ### Rule: among-upper
@@ -1898,9 +1904,9 @@ rule's **Strength** is what that rule contributes.
 
 | Lane | Harness | Checked consistency | Covers |
 |---|---|---|---|
-| `count_constraint` | `solve_for_tests_checking_consistency` | `y` `GAC`, `n` `BC`, array `GAC` | random rows over `y` variable and constant; #254's degenerate rows; `run_dup_count_test` (a repeated array variable) and `run_count_result_in_array_test` via plain `solve_for_tests`; from #1205, `count_test`'s own `run_aliased_count_test` (eight rows: `n` as `y` or a view of it, `y` among the positions, `n` among the positions, with constants; plain `solve_for_tests`, no consistency check, under the harness's branching and then the default one) |
+| `count_constraint` | `solve_for_tests_checking_consistency` | `y` `GAC`, `n` `BC`, array `GAC` | random rows over `y` variable and constant; #254's degenerate rows; `run_dup_count_test` (a repeated array variable) and `run_count_result_in_array_test` via plain `solve_for_tests`; from #1205, `count_test`'s own `run_aliased_count_test` (eight rows: `n` as `y` or a view of it, `y` among the positions, `n` among the positions, with constants; plain `solve_for_tests`, no consistency check, under the harness's branching and then the default one), and from #1364 three more rows reaching #1304 |
 | `count_constraint_view_mixed`, and from #1208 `…_view_mixed_late` | as above, positions wrapped in views; the late lane registers every view after the constraint | as above | |
-| `among_constraint` | `solve_for_tests_checking_consistency` | `n` `GAC`, array `GAC` | random `S` in `[−10, 10]`; #254's rows; `run_dup_among_test`, `run_self_ref_among_test` |
+| `among_constraint` | `solve_for_tests_checking_consistency` | `n` `GAC`, array `GAC` | random `S` in `[−10, 10]`; #254's rows; `run_dup_among_test`, `run_self_ref_among_test`; from #1365, `run_aliased_among_test` (nine rows: `n` among the positions over value-list domains wider than 100 values, directly and through views, and one control at exactly 100; plain `solve_for_tests`, under the harness's branching and then the default one) |
 | `among_constraint_view_mixed`, `…_view_mixed_late` | as above | as above | #1208's PR reports the late lane failing on the proof code before it (#1200) |
 | `n_value_constraint` | plain `solve_for_tests` | **none** | random rows; constant arrays; `run_dup_n_value_test`; from #1109, `n_value_test`'s `run_aliased_count_test` (`n` an array position or a view of one, three rows needing a second run), not the `count_test` function of the same name |
 | `n_value_constraint_view_mixed`, `…_view_mixed_late` | as above | none | |
@@ -1910,7 +1916,7 @@ rule's **Strength** is what that rule contributes.
 | `scp_chain_*` (14) | `run_scp_chain.bash` | — | see [Cake conformity](#cake-conformity) |
 | `xcsp_count`, `xcsp_count_among`, `xcsp_n_values`, `xcsp_cardinality{,_occvars,_intervals,_repeated}` | cached solution counts | — | the XCSP3 bindings |
 | `minizinc-{count,countops,among,nvalue,globalcardinality,…closed,…lowup,…repeated,…repeatedclosed}` | `run_minizinc_test.bash`, against Gecode | — | the MiniZinc bindings |
-| `minizinc-{countaliased,countaliasedboth,countaliasedvoi}` (#1205), `minizinc-globalcardinality{constant,constantclosed}` (#1187), `minizinc-globalcardinalitymagic` (#1196) | as above, with proofs and `--fzn-pattern` | — | #1201's, #1046's and #1191's MiniZinc shapes |
+| `minizinc-{countaliased,countaliasedboth,countaliasedvoi}` (#1205), `minizinc-countaliasedsurvivor` (#1364), `minizinc-amongaliased` (#1365), `minizinc-globalcardinality{constant,constantclosed}` (#1187), `minizinc-globalcardinalitymagic` (#1196) | as above, with proofs and `--fzn-pattern` | — | #1201's, #1304's, #1308's, #1046's and #1191's MiniZinc shapes |
 | `large_domain_audit` rows | guard build only | — | see [Interval efficiency](#interval-efficiency) |
 
 The harness's `BC` is `bounds(Z)`: a support need only lie within its partners'
@@ -1972,9 +1978,11 @@ unreachable; see their entries.
   differential (3,000 plus 300 verified, as itself, an offset view or its
   negation) was clean and not in the tree; #1201 was found later, with `n` as
   `y`. `run_aliased_count_test` now posts `y` among the positions as itself
-  only, `n` among the positions, and `n` as `y` or a view of it, but none of
-  its rows with `n` as `y` hits #1304. No `Among` lane posts `n` among the
-  positions over a range wider than 100 values (#1308).
+  only, `n` among the positions, and `n` as `y` or a view of it; until #1364
+  none of its rows with `n` as `y` hit #1304, and #1364 added three that do.
+  Until #1365 no `Among` lane posted `n` among the positions over a range wider
+  than 100 values (#1308); `run_aliased_among_test` now does, directly and
+  through views.
 - **`NValue` has no consistency check at all**, and no test would notice if it
   pruned less. It prunes little enough that this is not much of a gap.
 - **The flow arm's scale.** At the audit every `GAC` test instance had at most
@@ -2200,11 +2208,12 @@ solution) were not checked.
 
 ### Proof-logging gaps
 
-`None` was known at `0a5b4ec6`. One found since is open: #1308, rule 9's
-lower bound on `n` when `n` is a position over a range wider than 100 values
-(see [Proof-time state](#proof-time-state)). #1304's rejected proofs are not a
-gap: the pruning itself is wrong there, and VeriPB is right to refuse it (see
-[Known limitations](#known-limitations)). Five found after this audit and
+`None` is known, as at `0a5b4ec6`. The one found between, #1308, rule 9's
+lower bound on `n` when `n` is a position over a range wider than 100 values,
+is fixed by #1365 (see [Proof-time
+state](#proof-time-state)). #1304's rejected proofs were not a gap: the pruning
+itself was wrong there, and VeriPB was right to refuse it, until #1364 (see
+[Rule: count-array](#rule-count-array)). Five found after this audit and
 before `0a5b4ec6` are fixed: #1046 (a constant in `GlobalCardinality`'s array,
 #1187), #1191 and
 #1197 (`GlobalCardinality` under aliasing, #1196 and #1199), #1200 (a view
@@ -2215,8 +2224,8 @@ justified, nothing is asserted, and no propagator changes strength when proofs
 are on. #1193 is not a gap in this sense: the proofs verify against our OPB,
 and fail only workflow 2's check against cake's (see [Cake
 conformity](#cake-conformity)). Besides the route `Count`'s and GCC's
-pushing rules take (`infer_all` when a proof is being written; see
-[Proof-time state](#proof-time-state)), the one thing a proof changes is
+pushing rules, and since #1365 `Among`'s lower bound, take (`infer_all` when a
+proof is being written; see [Proof-time state](#proof-time-state)), the one thing a proof changes is
 whether `Among`'s root initialiser runs, and that initialiser only adds
 scaffolding.
 
@@ -2234,13 +2243,6 @@ no `In` has been posted since `76c8eeab`, and it is the closed propagator
 
 ### Known limitations
 
-- **`Count` with `n` and `y` one variable can lose solutions** (#1304), with
-  proofs off as well as on: rule 8 prunes from bookkeeping taken before a push
-  that moved `y`. MiniZinc reaches it (`count(x, y) = y`). VeriPB rejects the
-  proof, correctly.
-- **`Among` with `n` among its positions can write proofs VeriPB rejects**
-  when that variable's definition range is wider than 100 values (#1308, rule
-  9). The answers are right. MiniZinc reaches it.
 - **Workflow 2 fails on a {0,1} variable** (#1193): `GlobalCardinality`'s Hall
   `pol`s over one with both its values in the set, and `Among`'s `pol`s over a
   sum row holding one with both its values in `S`, verify against our OPB but
