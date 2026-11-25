@@ -820,9 +820,9 @@ a node is a reachable partial sum.
    (a large size is what makes `Upfront` wide),
    the capacity form, Shaw, holes, or proofs, and the family has no row in
    `"Large domain proof sizes"`. The `Upfront` hazard above is unprobed by the
-   lane. (Open PR #1302 would add wide-declaration rows for index-valued
-   positions; `BinPacking`'s items are refused if declared wide, which it
-   records.)
+   lane. (#1302 added wide-declaration rows for index-valued positions;
+   `BinPacking`'s items are refused if declared wide, which it records, so
+   this row is unchanged.)
 
 ## Inference catalogue
 

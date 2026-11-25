@@ -849,16 +849,16 @@ for propagation, not for every proof: a successor declared wide makes
    comment and in `large-domains.md`. The fix is to name only the node values,
    or use #939's cover form.
 4. **The audit lane.** Two rows, `Circuit` and `SubCircuit` over four plain
-   variables in `0..3`, both pinned `NoWidePosition` at `86caad24`. They vary
+   variables in `0..3`, both pinned `NoWidePosition` at `86caad24`. They varied
    nothing. The audit case is registered as a ctest only under
    `-DGCS_LARGE_DOMAIN_GUARD=ON` (`gcs/CMakeLists.txt:212`), which no CI lane
-   sets (#920), and this audit did not run a guarded build. PR #1302 (open)
-   pins them `Clean`, with rows that declare the successors wide, as the safer
+   sets (#920), and this audit did not run a guarded build. #1302 has since
+   pinned them `Clean`, with rows that declare the successors wide, as the safer
    choice, following Ciaran's decision ("whichever is safer until we have data
    that argues otherwise"), and does the same for every index-valued position
    (`Inverse`, `SymmetricAllDifferent`, `Tree`, `DTree`, `Path`, `DPath`,
    `Reachable`, `DReachable`, and wide-index rows for `Element`, `ArgSort`,
-   `MinDistance` and `SeqPrecedeChain`); its guarded run trips nothing. The
+   `MinDistance` and `SeqPrecedeChain`); its guarded run tripped nothing. The
    lane asserts no per-value work at the root with proofs off, so it cannot
    see the proof growth of point 3.
 
@@ -1658,9 +1658,10 @@ solver's, and their soundness is argued in **Why it is true** and in the note.
   solutions.
 - **Examples**: `circuit_small`, `circuit_random`,
   `circuit_random-gac-all-different` (#651) and `tour`, with VeriPB.
-- **Audit lane**: the two `NoWidePosition` rows, registered as a ctest only
-  under `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets (#920); see
-  [Interval efficiency](#interval-efficiency) for PR #1302's re-pin.
+- **Audit lane**: the `Circuit` and `SubCircuit` rows, `Clean` over three
+  wide declarations of the successors since #1302 (see [Interval
+  efficiency](#interval-efficiency)), registered as a ctest only under
+  `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets (#920).
 
 **Runtime caps.** No lane in this family sets or clears a cap, and the
 default caps **never fire** on it: every family binary, bare and in both view

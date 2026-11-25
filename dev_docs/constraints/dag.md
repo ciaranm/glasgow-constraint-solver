@@ -496,8 +496,8 @@ it.
    binary is built everywhere, but its audit case is registered as a ctest
    only in a build
    configured with `-DGCS_LARGE_DOMAIN_GUARD=ON` (`gcs/CMakeLists.txt:212–213`),
-   which is off by default and set by no CI lane (#920). PR #1302 (open), which
-   re-pins the index-valued positions of other families `Clean`, leaves this
+   which is off by default and set by no CI lane (#920). #1302, which
+   re-pinned the index-valued positions of other families `Clean`, left this
    row `NoWidePosition`, since every selector must be 0/1.
 
 ## Inference catalogue

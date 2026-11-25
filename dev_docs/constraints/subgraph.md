@@ -359,8 +359,8 @@ offset of `±2⁴⁰` verifies (`proofs/constopb/big.cc`).
    three nodes over plain `0..1` variables (`large_domain_audit_test.cc:794`).
    There is no axis to vary: every position is 0/1 by contract, and the only
    wide thing a position can be is a view of a two-valued variable with a large
-   offset, which is a value range, not a width. PR #1302 (open), which re-pins
-   index-valued positions in other families `Clean`, leaves this row
+   offset, which is a value range, not a width. #1302, which re-pinned
+   index-valued positions in other families `Clean`, left this row
    `NoWidePosition`, since a selector must be `0..1`. The lane is registered as a
    ctest only under `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets (#920),
    so in CI it is built and never run.

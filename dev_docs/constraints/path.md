@@ -556,12 +556,12 @@ no such limit.
 3. **The proof side.** One line per inference, of at most five literals plus
    the inferred one (rule 6: every selected term of the row). No line is per
    value, and there is no width gate because none is needed.
-4. **The audit lane.** Two rows in `gcs/large_domain_audit_test.cc`, `Path` and
-   `DPath`, both pinned `NoWidePosition`. Each declares `r, t ∈ 0..2` on a
-   three-node path. `start` and `end` **can** be declared wide, and are trimmed
-   at the root. The rows vary
-   none of a wide endpoint, a holey one, a view, or one variable for both
-   ends. The lane is registered as a ctest only under
+4. **The audit lane.** At `86caad24`, two rows in
+   `gcs/large_domain_audit_test.cc`, `Path` and `DPath`, both pinned
+   `NoWidePosition`. Each declared `r, t ∈ 0..2` on a three-node path. `start`
+   and `end` **can** be declared wide, and are trimmed at the root. The rows
+   varied none of a wide endpoint, a holey one, a view, or one variable for
+   both ends; since #1302 they vary the first two (below). The lane is registered as a ctest only under
    `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets (#920). **The fact:**
    in a guarded build (`gcs-fd-small-am1-patch-wt/build-guard`, `c9ceea25`,
    whose `path/`, `graph_rules` and `reachable/` sources are identical to
@@ -569,9 +569,9 @@ no such limit.
    holey set with those extremes enumerate without tripping the guard: 12 runs,
    `Path` and `DPath`, with and without proofs, all proofs verifying. A control
    `AllDifferent` over four `0..10⁹` variables does trip it (`guard/g.cc`).
-   At `86caad24` the rows are pinned `NoWidePosition`. PR #1302 (open) pins
-   them `Clean`, with rows that declare the endpoints wide, as the safer
-   choice for every index-valued position, and its guarded run trips
+   At `86caad24` the rows were pinned `NoWidePosition`. #1302 pinned them
+   `Clean`, with rows that declare the endpoints wide in three shapes, as the
+   safer choice for every index-valued position, and its guarded run tripped
    nothing.
 
 ## Inference catalogue
@@ -1158,7 +1158,7 @@ The children's gaps are theirs: see [`reachable.md`](reachable.md) and
    exceed its limit, in `graph_rules::define` and the propagator, which covers
    `DTree`'s single-arc `indeg<v>` rows too (the same change [`tree.md`](tree.md)
    lists). Small; it saves rows and scan, not search.
-8. **Widen the tests.** (The audit lane's pin is PR #1302's; see
+8. **Widen the tests.** (The audit lane's pin was #1302's; see
    [Interval efficiency](#interval-efficiency).) In `path_test`, add a
    view-position pass, one variable for both ends, holey endpoints, and graphs
    of six to ten nodes. Add an `int`-spelling MiniZinc enumeration lane and a

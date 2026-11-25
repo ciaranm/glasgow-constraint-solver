@@ -496,9 +496,9 @@ the clamp narrows it to at most `n` values before anything walks it.
    the root's equality literals for node numbers only; the root's own bit-sum
    encoding is logarithmic in its declared width (60 bits and a sign at
    `±(2⁶⁰ − 1)`).
-4. **The audit lane.** Two rows, `Tree` and `DTree` in
+4. **The audit lane.** At `86caad24`, two rows, `Tree` and `DTree` in
    `gcs/large_domain_audit_test.cc`, pinned `NoWidePosition`, over a three-node
-   path with `r ∈ 0..2`. The root is a position a model can make wide (an
+   path with `r ∈ 0..2`; since #1302, `Clean` rows over wide roots (below). The root is a position a model can make wide (an
    unbounded MiniZinc `var int` is one), and the clamp narrows it before any
    propagator runs. A wide root does not trip the guard: the fact-check ran a
    standalone probe (the lane's rows themselves unchanged) against a build with
@@ -508,13 +508,13 @@ the clamp narrows it to at most `n` values before anything walks it.
    `0..10⁹`, over `±(2⁶⁰ − 1)` and over the holey wide set, full enumeration,
    proofs off and on, 12 runs, no trip, while an `AllDifferent` control over
    four `0..10⁹` variables trips (`tmp/fd-graph/factcheck/tree/guard/`; re-run
-   by this audit, same result). At `86caad24` the rows are pinned
-   `NoWidePosition`. PR #1302 (open) pins them `Clean`, with a wide-declared
+   by this audit, same result). At `86caad24` the rows were pinned
+   `NoWidePosition`. #1302 pinned them `Clean`, with a wide-declared
    root, as the safer choice (Ciaran, 2026-10-09: "whichever is safer until we
    have data that argues otherwise"), together with every other index-valued
    position (`Circuit`, `SubCircuit`, `Inverse`, `Reachable`, `Path` and the
-   rest), and its guarded run trips nothing. The rows vary nothing else: no holes, no views, no
-   constant root. This audit's probes cover those; see
+   rest), and its guarded run tripped nothing. Beyond the three declared
+   shapes, the rows vary nothing: no views, no constant root. This audit's probes cover those; see
    [Robustness](#robustness-and-limits). `Reachable`, `DReachable`, `Path` and
    `DPath` have the same rows with the same label. The lane is registered as a
    ctest only under `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets
@@ -986,8 +986,9 @@ solution, and every one carries its reason.
    `connectivity-proofs.md:402–412` ("These are not GAC") and `tree.hh:91` name
    cycle closure as the gap, and leave out `DTree`'s larger one, nothing
    entering the root (#1314). All corrected by #1396.
-5. **Land PR #1302** (open), which re-pins the `Tree` and `DTree` audit-lane
-   rows `Clean` with a wide-declared root, the safer choice Ciaran picked; see
+5. **Land PR #1302.** **Done**: #1302 re-pinned the `Tree` and `DTree`
+   audit-lane rows `Clean` with a wide-declared root, the safer choice Ciaran
+   picked; see
    [Interval efficiency](#interval-efficiency), item 4.
 6. **Tests.** A `DTree` shape with several nodes of in-degree two or more, so
    that indegree-full fires on more than one node, and one that reaches
