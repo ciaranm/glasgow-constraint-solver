@@ -733,8 +733,9 @@ auto ProofModel::write_preamble() -> void
             // those should be the posted objective's.
             auto [variable, coefficient, constant] = objective_linear_form(_imp->optional_objective->variable);
             _imp->opb_stream << (_imp->optional_objective->direction == ObjectiveDirection::Minimise ? "min: " : "max: ");
-            for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(variable))
-                _imp->opb_stream << coefficient * bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+            if (variable)
+                for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*variable))
+                    _imp->opb_stream << coefficient * bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
             if (constant != 0_i)
                 _imp->opb_stream << constant << " ";
             _imp->opb_stream << ";\n";
@@ -813,9 +814,17 @@ auto gcs::innards::objective_linear_form(const IntegerVariableID & var) -> Objec
     return overloaded{
         [&](const SimpleIntegerVariableID & v) { return ObjectiveLinearForm{v, 1_i, 0_i}; },                                                //
         [&](const ViewOfIntegerVariableID & v) { return ObjectiveLinearForm{v.actual_variable, v.negate_first ? -1_i : 1_i, v.then_add}; }, //
-        [&](const ConstantIntegerVariableID &) -> ObjectiveLinearForm { throw UnimplementedException{}; }                                   //
+        [&](const ConstantIntegerVariableID & c) { return ObjectiveLinearForm{nullopt, 0_i, c.const_value}; }                               //
     }
         .visit(var);
+}
+
+auto gcs::innards::ObjectiveLinearForm::variable_term() const -> WPBSum
+{
+    WPBSum result;
+    if (variable)
+        result += coefficient * *variable;
+    return result;
 }
 
 auto ProofModel::preserve(vector<IntegerVariableID> vars) -> void

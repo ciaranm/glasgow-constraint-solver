@@ -240,6 +240,47 @@ namespace
         if (proofs)
             verify_proof_and_clean_up(proof_name);
     }
+
+    // A constant objective (#1230): the objective line is `min: c ;` or `max: c
+    // ;`, with no variable, and every solution is optimal. It used to throw
+    // UnimplementedException while writing that line. Nothing to do with
+    // views, but it lives here because objective_linear_form, which writes the
+    // objective line and restates it, is what these objective tests are about.
+    auto run_constant_objective_test(bool proofs, bool minimise, Integer value, bool satisfiable) -> void
+    {
+        print(cerr, "constant objective: {} {}{}{}", minimise ? "minimise" : "maximise", value, satisfiable ? "" : ", unsatisfiable",
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 2_i, "x");
+        auto y = p.create_integer_variable(0_i, 2_i, "y");
+        p.post(LessThan{x, y});
+        if (! satisfiable)
+            p.post(LessThan{y, x});
+        if (minimise)
+            p.minimise(constant_variable(value));
+        else
+            p.maximise(constant_variable(value));
+
+        int solutions = 0;
+        auto proof_name = string{"view_registration_constant_objective_"} + (minimise ? "min" : "max") + (satisfiable ? "" : "_unsat");
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState &) -> bool {
+                    ++solutions;
+                    return true;
+                },
+                .stats_report = silent_stats_report() //
+            },
+            proofs ? make_optional<ProofOptions>(ProofFileNames{proof_name}) : nullopt);
+        println(cerr, " {} solutions", solutions);
+        // The first solution is optimal, so nothing improves on it.
+        if (solutions != (satisfiable ? 1 : 0))
+            throw UnexpectedException{"wrong number of solutions"};
+        if (proofs)
+            verify_proof_and_clean_up(proof_name);
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -259,6 +300,10 @@ auto main(int argc, char * argv[]) -> int
         for (const auto & which : {"less_than", "in", "among", "all_different", "abs"})
             for (bool minimise_negation : {false, true})
                 run_objective_test(proofs, which, minimise_negation);
+        for (bool minimise : {false, true})
+            for (auto value : {0_i, 5_i, -3_i, Integer::max_bounded_value()})
+                run_constant_objective_test(proofs, minimise, value, true);
+        run_constant_objective_test(proofs, true, 5_i, false);
     }
 
     return EXIT_SUCCESS;
