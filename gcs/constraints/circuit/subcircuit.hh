@@ -49,23 +49,26 @@ namespace gcs
         /**
          * \brief Propagate SubCircuit by reachability as well: as subcircuit::Prevent, and
          * additionally require every node on the tour to lie in the same strongly connected
-         * component as the node the caller named with with_required_node(), forcing anything
-         * else to opt out.
+         * component as the anchor, the node known to be on the tour (found by the
+         * constraint, or named with with_required_node()), forcing anything else to opt out.
          *
-         * The tour is a cycle through the named node, so a node on it must both be reachable
+         * The tour is a cycle through the anchor, so a node on it must both be reachable
          * from that node and reach it back; the two directions are checked by separate walks
          * and justified by separate arguments, and either can fire without the other.
          *
          * This is the connectivity part of Francis and Stuckey's `scc` algorithm -- their
          * rule for a strongly connected sub-component containing a required node, which is
-         * the one component that always has one. Their four extra pruning rules -- prune
-         * root, prune skip, fix required edges and prune within -- are not here yet; those
-         * need the subtree structure of a depth-first traversal, where these two need only
+         * the one component that always has one. Two of their four extra pruning rules
+         * are here as options, prune root and prune within (with_prune_root() and
+         * with_prune_within(), #813); prune skip and fix required edges are not, and need
+         * the subtree structure of a depth-first traversal, where the two walks need only
          * the component.
          *
-         * It needs with_required_node(), and does nothing without it: there is nothing to
-         * be reachable *from* until some node is known to be on the tour, which is Francis
-         * and Stuckey's own observation about applying this family to subcircuit at all.
+         * It needs an anchor, a node known to be on the tour, and does nothing without one:
+         * there is nothing to be reachable *from* until some node is, which is Francis and
+         * Stuckey's own observation about applying this family to subcircuit at all. The
+         * constraint finds one itself when a declared domain shows it, and
+         * with_required_node() names one.
          *
          * \ingroup Constraints
          */
@@ -77,8 +80,9 @@ namespace gcs
     /**
      * \brief The propagation algorithms supported by SubCircuit: subcircuit::Prevent (the
      * default), subcircuit::Check (cheaper and weaker) or subcircuit::SCC (stronger, and
-     * only useful with with_required_node()). Requesting anything else is a compile-time
-     * error, and the choice never changes the constraint's meaning or its proof encoding.
+     * only useful once there is an anchor; see subcircuit::SCC). Requesting anything else
+     * is a compile-time error, and the choice never changes the constraint's meaning or
+     * its proof encoding.
      *
      * \ingroup Constraints
      */
@@ -106,8 +110,8 @@ namespace gcs
      *
      * The constructor takes only the successor array; configure propagation with the
      * fluent setters. Select the algorithm with with_algorithm() (subcircuit::Prevent by
-     * default, or subcircuit::Check). Neither choice changes the constraint's meaning or
-     * the OPB encoding written for proof logging.
+     * default, subcircuit::Check or subcircuit::SCC). No choice changes the constraint's
+     * meaning or the OPB encoding written for proof logging.
      *
      * \ingroup Constraints
      */
@@ -146,9 +150,9 @@ namespace gcs
     public:
         explicit SubCircuit(std::vector<IntegerVariableID> succ);
 
-        /// Select the propagation algorithm: subcircuit::Prevent (the default) or
-        /// subcircuit::Check. The choice selects propagation strength only and never
-        /// changes the OPB encoding.
+        /// Select the propagation algorithm: subcircuit::Prevent (the default),
+        /// subcircuit::Check or subcircuit::SCC. The choice selects propagation strength
+        /// only and never changes the OPB encoding.
         auto with_algorithm(SubCircuitAlgorithm algorithm) -> SubCircuit &;
 
         /// Enforce all-different over the successors with a full generalised-arc-consistent

@@ -95,24 +95,6 @@ auto Circuit::with_fix_req(optional<bool> enable) -> Circuit &
     return *this;
 }
 
-auto Circuit::with_prune_within(optional<bool> enable) -> Circuit &
-{
-    _scc_options.prune_within = enable.value_or(true);
-    return *this;
-}
-
-auto Circuit::with_prove_using_dominance(optional<bool> enable) -> Circuit &
-{
-    _scc_options.prove_using_dominance = enable.value_or(true);
-    return *this;
-}
-
-auto Circuit::with_enable_comments(optional<bool> enable) -> Circuit &
-{
-    _scc_options.enable_comments = enable.value_or(true);
-    return *this;
-}
-
 auto Circuit::with_prove_am1_by_contradiction(optional<bool> enable) -> Circuit &
 {
     _scc_options.prove_am1_by_contradiction = enable.value_or(true);

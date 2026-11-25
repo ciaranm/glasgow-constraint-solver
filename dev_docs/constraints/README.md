@@ -688,8 +688,7 @@ variant](TEMPLATE.md#the-presolver-variant).
   propagation counts), and with proofs a short-reason flag on every call
   (half a 14-node proof). Its *fix
   required* and *prune skip* rules assert bare units at the assertion levels,
-  left unfiled by decision, as in `smart_table`. Three of `Circuit`'s setters
-  do nothing (#1318). A successor declared wide makes `SubCircuit`'s `SCC`
+  left unfiled by decision, as in `smart_table`.  A successor declared wide makes `SubCircuit`'s `SCC`
   proofs grow with the declared width (#1326).
 - [`regular.md`](regular.md) — `Regular`, a sequence spelling a word an
   automaton accepts, deterministic, non-deterministic or from a MiniZinc-syntax

@@ -34,7 +34,7 @@ of the other: `Circuit` additionally requires every node to be on the tour.
 
 XCSP3-core's `<circuit>` allows isolated vertices and asks for exactly one
 circuit, so it binds to `SubCircuit` with a tour size of at least 2 — see
-[`xcsp.md`](xcsp.md). `Circuit` is reachable from MiniZinc, C++ and `.scp` only.
+[`xcsp.md`](xcsp.md). `Circuit` is reachable from MiniZinc, C++, `gcspy` and `.scp` only.
 
 ## The encoding
 
@@ -588,8 +588,9 @@ the conclusion is different too: `x` sitting at position `t` would put the pinne
 `t-1`, where its own `E(t-1, .)` says it is a self loop, which its pin contradicts. So the
 row emitted is the stronger `pos[x] != t` rather than `E(t, x)`.
 
-**What the tests could and could not pin.** The anchored enumeration sweep now runs with a
-constant in the array, at every size and anchor --- 48 runs, 24 of them with proofs. (72 is
+**What the tests could and could not pin.** The anchored enumeration sweep now runs with a constant in the array, at every size,
+anchored at the first and the last node only --- 48 runs, 24 of them with proofs (which
+is how #1228, an interior anchor, escaped). (72 is
 the figure a careless `grep -c` gives, the proofs-on runs each printing a `$ veripb …` echo
 line as well.) That covers the branch structure, but **not the arithmetic**: at `n <= 6` unit propagation reaches
 `E(t, x)` from the candidate rows and the reason alone, so the pigeonhole line is not

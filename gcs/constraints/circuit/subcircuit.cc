@@ -1067,11 +1067,11 @@ auto SubCircuit::prepare(Propagators & propagators, State & initial_state, Proof
     // about search and this one is also a choice about the encoding.
     //
     // Only the declared domains can be read here, which is why models differ in whether this
-    // finds anything. Both challenge families that use subcircuit pin a node, but only one
-    // pins it where this can see: mario writes `succ[LuigiHouse] = MarioHouse`, which the
-    // flattener folds into the array as a constant, while tpp writes `succ[n] != n`, which
-    // survives as an int_ne over a variable whose declared domain is still full by the time
-    // the redefinition has shifted it to be zero-based.
+    // finds anything. Both challenge families that use subcircuit pin a node, and both pin
+    // it where this can see: mario writes `succ[LuigiHouse] = MarioHouse`, which the
+    // flattener folds into the array as a constant, and tpp writes `succ[n] != n`, where,
+    // since the zero-based shift became an offset view (#802), n's own index is a bound of
+    // its declared domain (on 2012 tpp, `fzn-glasgow --prove` writes the anchored encoding).
     _anchor = _required_node;
     if (! _anchor)
         for (size_t i = 0; i < _succ.size(); ++i)
