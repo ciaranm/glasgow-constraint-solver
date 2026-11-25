@@ -711,7 +711,7 @@ variant](TEMPLATE.md#the-presolver-variant).
   `Inferences` and `Backtracking` for a variable declared as a range whose
   bounds unit propagation cannot recover, such as `-1..2`, or a view whose own
   range is one, because the tracker omits the boundary pins above `Links`
-  (#1330). Also: an out-of-range state number crashes (#1333), the `.scp`
+  (#1330). Also: an out-of-range state number crashed (#1333, fixed), the `.scp`
   reader refused NFAs (#1335, fixed), the graph is deep-copied at every search node
   (#1338; 49 to 264 times Gecode's instructions on nonograms with the same
   node counts), and a stale entry per declared value makes every node cost
@@ -739,7 +739,7 @@ variant](TEMPLATE.md#the-presolver-variant).
   diagram leaves no flag unassigned on a solution. The audit found a wrong
   answer through the C++ API and the `.scp` reader: a diagram over no
   variables with an empty accepting list reports solutions, and VeriPB rejects
-  the proof (#1329). Node indices are not validated (a crash, #1333), and
+  the proof (#1329). Node indices were not validated (a crash, #1333, now refused), and
   MiniZinc's binding errors on six kinds of valid shape, including nodes at
   levels outside `1..L+1`, and reads past two vectors whenever N = 0 (#1336).
   It is 75 to 94 times Gecode's instructions on nonograms at equal node and
@@ -872,14 +872,15 @@ variant](TEMPLATE.md#the-presolver-variant).
   derivation are refused. Filed:
   under optimisation the refined store arms a pass's nogoods late whenever the
   next root is seeded by an improved bound (#1390); a restart scale of 0 never
-  terminates, through the own `--timeout` of XCSP3, the examples and the
-  MiniCP benchmarks (#1391); the refined
+  terminated, through the own `--timeout` of XCSP3, the examples and the
+  MiniCP benchmarks, and `luby()` now refuses it (#1391); the refined
   propagator never adopted #506's `scope_only`, so under dom/wdeg its
   conflicts weight no variable, one cause of refined and scan diverging there
   (#1392; with it fixed they still charge some failures to different
-  constraints, which dom/wdeg reads); a store grown by user code mid-search is
+  constraints, which dom/wdeg reads); a store grown by user code mid-search was
   enforced on the refined path only at the next root propagation (so never,
-  without restarts) and gets a rejected proof on the scan path (#1393); and
+  without restarts) and got a rejected proof on the scan path, so the store
+  is now in `innards` (#1393); and
   the engine's refined-watch undo, a linear search per removed watch, took
   59% of the profile samples of `tsp --restarts=100`, until searching from the
   back (#1394, by #1441) cut that run's time by 2.5 times.
@@ -1117,16 +1118,16 @@ variant](TEMPLATE.md#the-presolver-variant).
     brute force, and a MiniZinc differential through a local switch (1,200
     models on each of 2.9.7 and 2.10.1, against Gecode) found no wrong answer
     among the derived classes, and every `Off` proof outside #1381's
-    shapes verified.
+    shapes (fixed since) verified.
   - **Order.** `AutoTable` cannot change what it gathers. A `DifferenceLogic`
     added first can, by fixing a bound-literal condition on an operand; the
     solutions agreed.
   - **Findings.**
-    - It takes a Boolean donor's polarity from `ReifiedEquals`' description-only
+    - It took a Boolean donor's polarity from `ReifiedEquals`' description-only
       `_neq` flag instead of its condition. `read_scp` builds every
       `not_equals` that way, so a `.scp` written by `fzn-glasgow` and read back
-      with the presolver gives 4 solutions where the model has 2. With proofs
-      on, VeriPB rejects the proof (#1381).
+      with the presolver gave 4 solutions where the model has 2. With proofs
+      on, VeriPB rejected the proof (#1381, fixed).
     - Its own pass is quadratic in time and memory in the XOR structure: setup
       to the first node takes 6.7 s and 1.4 GB on 32,000 two-row components,
       against 0.13 s without it (#1380; #1309 added the engine's share,

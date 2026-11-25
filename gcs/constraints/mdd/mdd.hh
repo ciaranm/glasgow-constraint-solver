@@ -26,7 +26,12 @@ namespace gcs
      * `accepting_terminals` in the final layer.
      *
      * `nodes_per_layer[i]` gives the number of nodes in layer `i` (so
-     * `nodes_per_layer.size() == vars.size() + 1`).
+     * `nodes_per_layer.size() == vars.size() + 1`), and `layer_transitions[i]`
+     * has exactly one entry per node of layer `i`. A missing value, or a target
+     * of -1, means no transition. A later layer may have no nodes, which makes
+     * the diagram unsatisfiable. The constructor throws
+     * InvalidProblemDefinitionException if any of this does not hold, or a
+     * target or accepting terminal is not a node of its layer (#1333).
      *
      * This is a strict generalisation of `Regular`: a DFA is an MDD whose
      * layers all share the same node set and transition function.

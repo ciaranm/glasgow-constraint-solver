@@ -25,6 +25,7 @@ using std::make_shared;
 using std::make_unique;
 using std::move;
 using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::size_t;
 using std::string;
@@ -145,11 +146,17 @@ auto ParitySystemGathering::run(Problem & problem, Propagators & propagators, St
     static_assert(std::derived_from<NotEquals, ReifiedEquals>);
 
     for (const auto & c : problem.each_constraint_of_type<ReifiedEquals>()) {
-        auto unconditional = false;
+        // The condition alone decides what the constraint means: MustHold is
+        // `x = y` and MustNotHold is `x != y`, which is what its OPB rows and its
+        // propagators enforce. Nothing else about the object may be read as the
+        // polarity: the `.scp` reader builds an unreified `not_equals` as
+        // MustNotHold without the NotEquals spelling flag, and the public
+        // constructor can pair either condition with either flag (#1381).
+        optional<bool> equality;
         overloaded{//
-            [&](const reif::MustHold &) { unconditional = true; }, [&](const reif::MustNotHold &) { unconditional = true; }, [&](const auto &) {}}
+            [&](const reif::MustHold &) { equality = true; }, [&](const reif::MustNotHold &) { equality = false; }, [&](const auto &) {}}
             .visit(c.reification_condition());
-        if (! unconditional) {
+        if (! equality) {
             // A conditional equality is not a parity row at all until the
             // condition is decided, and the system has no vocabulary for that.
             ++stats.skipped_reified;
@@ -169,7 +176,7 @@ auto ParitySystemGathering::run(Problem & problem, Propagators & propagators, St
 
         // Odd parity either way: for an equality one literal is negated, which
         // is exactly `!p = p XOR 1`.
-        Literals literals{c.left_variable() != 0_i, c.enforces_equality() ? c.right_variable() == 0_i : c.right_variable() != 0_i};
+        Literals literals{c.left_variable() != 0_i, *equality ? c.right_variable() == 0_i : c.right_variable() != 0_i};
         candidates.push_back(Candidate{ParitySystemRow{move(literals), logger ? make_optional(ParitySlackSource{ParitySlackFormIsRUP{}}) : nullopt,
                                            "pgather" + as_string(c.constraint_id()) + "_"},
             c.constraint_id()});

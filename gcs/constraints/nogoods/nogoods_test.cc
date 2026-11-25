@@ -12,10 +12,12 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <random>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 #include <version>
@@ -41,6 +43,15 @@ using std::size_t;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
+
+// A store grown during search is the search driver's business, not the
+// caller's: a nogood added to it from outside is never armed on the refined
+// path and is enforced without a derivation on the scan path (#1393). So the
+// store-sharing constructor is private, reached only through
+// innards::nogoods_over_learned_store, and only the fixed form is public.
+static_assert(! std::is_constructible_v<Nogoods, std::shared_ptr<innards::NogoodStore>, vector<IntegerVariableID>, bool>);
+static_assert(! std::is_constructible_v<Nogoods, std::shared_ptr<innards::NogoodStore>, vector<IntegerVariableID>>);
+static_assert(std::is_constructible_v<Nogoods, vector<Nogood>, bool>);
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;

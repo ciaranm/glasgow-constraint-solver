@@ -21,7 +21,7 @@ Code map (cited throughout):
 - `gcs/variable_weighting.{hh,cc}` — `WeightingState`, `VariableWeighting` and
   the concrete schemes.
 - `gcs/innards/conflict_observer.hh` — the `ConflictObserver` seam.
-- `gcs/constraints/nogoods/nogoods.{hh,cc}` — the `Nogoods` constraint and `NogoodStore`.
+- `gcs/constraints/nogoods/nogoods.{hh,cc}` — the `Nogoods` constraint, `innards::NogoodStore`, and `innards::nogoods_over_learned_store`.
 - `gcs/search_heuristics.{hh,cc}` — `variable_order::dom_wdeg`, `branch_with`,
   the value generators.
 
@@ -67,7 +67,8 @@ Completeness holds because the cutoff grows without bound **and** the recorded
 nogoods stop already-refuted regions being re-explored: a later pass searches
 differently (weights and the incumbent objective bound persist), and the growing
 Luby cutoff eventually exceeds the whole tree so a final pass completes. (At a
-scale of 0 every cutoff is 0 and no pass completes: #1391.)
+scale of 0 every cutoff is 0 and no pass would complete, which is why
+`RestartSchedule::luby()` refuses it: #1391.)
 
 ### RestartSchedule
 
@@ -176,12 +177,15 @@ literals carries straight over to arbitrary `=`/`≠`/`≥`/`<`/`∈`/`∉` lite
   with `generic_reason` over the nogood's variables).
 - **Consistency = unit propagation per clause**, *not* GAC on the conjunction
   (full CNF propagation is co-NP-hard).
-- **NogoodStore** (`shared_ptr<vector<Nogood>>` + per-nogood variable lists) is
+- **`innards::NogoodStore`** (`shared_ptr<vector<Nogood>>` + per-nogood variable lists) is
   the growable, **engine-owned** backing store. When restarts are enabled,
-  `solve_with` installs one empty `Nogoods` over the store before the model is
+  `solve_with` installs one empty `Nogoods` over the store
+  (`innards::nogoods_over_learned_store`) before the model is
   finalised, holds the store, and threads a `NogoodStore*` into the recursion.
-  It is not user-posted — for parallel each thread owns its own store, so exposing
-  it would be messy.
+  It is not user-posted, and is in `innards` so that it cannot be (#1393): a
+  nogood added anywhere but a restart boundary, after its derivation, is
+  either never armed or enforced without a proof. For parallel each thread
+  would own its own store.
 
 ### Triggers (performance)
 

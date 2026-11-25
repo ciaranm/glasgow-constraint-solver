@@ -70,7 +70,7 @@ if ! have "$CAKE_PB_CP"; then
     # cake_pb_cp unavailable -- fall back to a workflow-1 self-verify so the case
     # still gets checked (the solver's proof is valid against its own OPB).
     echo "[fallback] cake_pb_cp not on PATH (set CAKE_PB_CP to override); workflow-1 self-verify only"
-    out=$(veripb --force-checked-deletion "${base}.opb" "${base}.pbp" 2>&1)
+    out=$(veripb --force-checked-deletion "${base}.opb" "${base}.pbp" 2>&1) || true
     if ! verified "$out"; then echo "FAIL: self-verify"; tail -5 <<< "$out"; exit 1; fi
     check_bounds "$out"
     grep -E '^s VERIFIED' <<< "$out"
@@ -90,11 +90,16 @@ echo "[2] cake_pb_cp: re-derive OPB from ${base}.scp"
 # deletions that check applies to, so ask for the strict behaviour.
 # See dev_docs/solution-clause-deletion.md.
 echo "[3] veripb --elaborate: solver proof against cake's OPB -> core"
-out=$(veripb --force-checked-deletion "${base}.verifiedopb" "${base}.pbp" --elaborate "${base}.corepb" 2>&1)
+# `|| true` on each captured check: veripb exits non-zero on a rejection, and
+# under `set -e` a failing assignment would end the script before the FAIL line
+# and the checker's reason are printed (#1461). The `verified` test that follows
+# decides the verdict. cake_pb_cp exits 0 even on a rejection today, but is
+# guarded the same way so that its message survives if that ever changes.
+out=$(veripb --force-checked-deletion "${base}.verifiedopb" "${base}.pbp" --elaborate "${base}.corepb" 2>&1) || true
 if ! verified "$out"; then echo "FAIL: veripb did not verify"; tail -5 <<< "$out"; exit 1; fi
 
 echo "[4] cake_pb_cp: re-check the elaborated core (the verified step)"
-core_out=$("$CAKE_PB_CP" "${base}.scp" "${base}.corepb")
+core_out=$("$CAKE_PB_CP" "${base}.scp" "${base}.corepb") || true
 if ! verified "$core_out"; then echo "FAIL: cake_pb_cp rejected the core"; tail -5 <<< "$core_out"; exit 1; fi
 check_bounds "$core_out"
 echo "$core_out"

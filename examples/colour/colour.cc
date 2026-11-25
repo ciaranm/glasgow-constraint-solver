@@ -101,11 +101,11 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("colour"))           //
             ("stats", "Print solve statistics")                              //
             ("branch",
-                "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] "          //
-                "(VARIANT one of classic, ia, ca, id, cd, ca.cd, chs)",              //
-                cxxopts::value<string>()->default_value("dom-then-deg"))             //
-            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
-                cxxopts::value<unsigned long long>()->implicit_value("100"))         //
+                "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] "                     //
+                "(VARIANT one of classic, ia, ca, id, cd, ca.cd, chs)",                         //
+                cxxopts::value<string>()->default_value("dom-then-deg"))                        //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale (0 is off)", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))                    //
             ("colours",
                 "Decision variant: ask whether the graph is K-colourable "              //
                 "(rather than minimising the number of colours)",                       //
@@ -197,8 +197,9 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    auto restarts =
-        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
+    auto restarts = options_vars.contains("restarts") && options_vars["restarts"].as<unsigned long long>() > 0
+        ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
+        : nullopt;
 
     auto stop_at_first = k_colours.has_value() || options_vars.contains("first");
 

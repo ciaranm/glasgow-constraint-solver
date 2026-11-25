@@ -1,3 +1,4 @@
+#include <gcs/exception.hh>
 #include <gcs/restarts.hh>
 
 #include <catch2/catch_test_macros.hpp>
@@ -46,4 +47,13 @@ TEST_CASE("Luby schedule keeps returning to small cutoffs")
         schedule.advance();
     }
     CHECK(saw_one_after_the_first_block);
+}
+
+TEST_CASE("Luby schedule refuses a scale of zero")
+{
+    // Every cutoff would be 0, so each pass would end at the root before
+    // propagating or reading the abort flag, and the restart loop would never
+    // stop (#1391).
+    CHECK_THROWS_AS(RestartSchedule::luby(0), InvalidProblemDefinitionException);
+    CHECK_NOTHROW(RestartSchedule::luby(1));
 }

@@ -89,11 +89,17 @@ namespace
     // A Boolean Equals / NotEquals donor, which over {0, 1} operands is a 2-XOR.
     // `condition` set posts the `If` form instead, which is not liftable and is
     // here to check that it is refused and counted rather than lifted wrongly.
+    // `neq_flag` set posts the unconditional form through the general
+    // ReifiedEquals constructor with that flag instead of through Equals or
+    // NotEquals: the flag only picks how an `Iff` describes itself, so a donor
+    // whose flag disagrees with its condition still means what its condition
+    // says, and must be lifted that way (#1381).
     struct BoolDonor
     {
         bool equality;
         int a, b;
         std::optional<int> condition = nullopt;
+        std::optional<bool> neq_flag = nullopt;
     };
     using BoolDonors = vector<BoolDonor>;
 
@@ -157,6 +163,10 @@ namespace
                     p.post(EqualsIf{vars.at(b.a), vars.at(b.b), vars.at(*b.condition) != 0_i});
                 else
                     p.post(NotEqualsIf{vars.at(b.a), vars.at(b.b), vars.at(*b.condition) != 0_i});
+            }
+            else if (b.neq_flag) {
+                auto cond = b.equality ? ReificationCondition{reif::MustHold{}} : ReificationCondition{reif::MustNotHold{}};
+                p.post(ReifiedEquals{vars.at(b.a), vars.at(b.b), cond, *b.neq_flag});
             }
             else if (b.equality)
                 p.post(Equals{vars.at(b.a), vars.at(b.b)});
@@ -386,6 +396,16 @@ auto main(int argc, char * argv[]) -> int
         // joining the components.
         run_equivalence_test(proofs, "bool_both", four_bits, {{0, 1}, {2, 3}}, {BoolDonor{true, 0, 2}, BoolDonor{false, 1, 3}},
             Expected{.rows_gathered = 4, .atoms = 4, .components_installed = 1, .boolean_rows_offered = 2});
+
+        // The two spellings the derived classes never build, whose flag
+        // disagrees with the condition. MustNotHold with the flag false is what
+        // the .scp reader builds for an unreified `not_equals`; both used to be
+        // lifted with the flag's polarity rather than the condition's, which
+        // turned `x != y` into `x = y` and the other way round (#1381).
+        run_equivalence_test(proofs, "bool_not_equals_unflagged", four_bits, {{0, 1}, {2, 3}}, {BoolDonor{false, 1, 2, nullopt, false}},
+            Expected{.rows_gathered = 3, .atoms = 4, .components_installed = 1, .boolean_rows_offered = 1});
+        run_equivalence_test(proofs, "bool_equals_flagged", three_bits, {{0, 1}}, {BoolDonor{true, 1, 2, nullopt, true}},
+            Expected{.rows_gathered = 2, .atoms = 3, .components_installed = 1, .boolean_rows_offered = 1});
 
         // An operand reaching outside {0, 1}: equality there says far more than
         // parity does, so lifting it would be unsound rather than weak.

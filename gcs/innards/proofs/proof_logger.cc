@@ -421,12 +421,12 @@ auto ProofLogger::solution(
             // constraint VeriPB has just derived from the objective line, so
             // spelled the way that line was, over the objective's linear form
             // (issue #1206).
-            auto [variable, coefficient, constant] = objective_linear_form(objective.variable);
+            auto form = objective_linear_form(objective.variable);
             _imp->proof << "e ";
             if (objective.direction == ObjectiveDirection::Minimise)
-                emit_inequality_to(names_and_ids_tracker(), WPBSum{} + coefficient * variable <= value - 1_i - constant, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), form.variable_term() <= value - 1_i - form.constant, _imp->proof);
             else
-                emit_inequality_to(names_and_ids_tracker(), WPBSum{} + coefficient * variable >= value + 1_i - constant, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), form.variable_term() >= value + 1_i - form.constant, _imp->proof);
             _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
             auto atom_line = emit_rup_proof_line(WPBSum{} + 1_i * improving >= 1_i, ProofLevel::Top);
@@ -552,14 +552,14 @@ auto ProofLogger::conclude_bounds(const Objective & objective, Integer root_boun
     // VeriPB treats a `max:` as the minimisation of its negation, and states
     // its bounds that way, so for a maximisation the conclusion's bounds are
     // the negated posted ones.
-    auto [variable, coefficient, constant] = objective_linear_form(objective.variable);
+    auto form = objective_linear_form(objective.variable);
     if (objective.direction == ObjectiveDirection::Minimise) {
-        emit_rup_proof_line(WPBSum{} + coefficient * variable >= root_bound - constant, ProofLevel::Top);
+        emit_rup_proof_line(form.variable_term() >= root_bound - form.constant, ProofLevel::Top);
         _imp->proof << "output NONE;\n";
         _imp->proof << "conclusion BOUNDS " << root_bound << " " << incumbent << ";\n";
     }
     else {
-        emit_rup_proof_line(WPBSum{} + coefficient * variable <= root_bound - constant, ProofLevel::Top);
+        emit_rup_proof_line(form.variable_term() <= root_bound - form.constant, ProofLevel::Top);
         _imp->proof << "output NONE;\n";
         _imp->proof << "conclusion BOUNDS " << -root_bound << " " << -incumbent << ";\n";
     }

@@ -1,3 +1,4 @@
+#include <gcs/exception.hh>
 #include <gcs/restarts.hh>
 
 using namespace gcs;
@@ -28,6 +29,11 @@ RestartSchedule::RestartSchedule(unsigned long long scale) : _scale(scale), _ind
 
 auto RestartSchedule::luby(unsigned long long scale) -> RestartSchedule
 {
+    // At scale 0 every cutoff is 0, so every pass ends at the root before it
+    // propagates or reads the abort flag, and the restart loop goes round for
+    // ever (#1391).
+    if (0 == scale)
+        throw InvalidProblemDefinitionException{"RestartSchedule::luby: the scale must be at least 1; at 0 every cutoff is 0 and search never ends"};
     return RestartSchedule{scale};
 }
 

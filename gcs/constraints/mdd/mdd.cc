@@ -32,6 +32,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::any_cast;
+using std::cmp_equal;
 using std::cmp_less;
 using std::make_shared;
 using std::make_unique;
@@ -457,9 +458,29 @@ MDD::MDD(vector<IntegerVariableID> v, vector<vector<unordered_map<Integer, long>
         throw InvalidProblemDefinitionException{"MDD: layer_transitions.size() must equal vars.size()"};
     if (_nodes_per_layer.empty() || _nodes_per_layer.front() != 1)
         throw InvalidProblemDefinitionException{"MDD: layer 0 must contain exactly one (root) node"};
-    for (size_t i = 0; i < _vars.size(); ++i)
-        if (cmp_less(_layer_transitions[i].size(), _nodes_per_layer[i]))
+    // The indices are checked here so that a bad one is refused rather than
+    // read past the end of a vector in the propagator or the proof model
+    // (#1333). A later layer may be empty, which makes the diagram
+    // unsatisfiable but is not malformed.
+    for (size_t i = 1; i < _nodes_per_layer.size(); ++i)
+        if (_nodes_per_layer[i] < 0)
+            throw InvalidProblemDefinitionException{
+                format("MDD: nodes_per_layer[{}] is {}, and a layer cannot have fewer than 0 nodes", i, _nodes_per_layer[i])};
+    for (size_t i = 0; i < _vars.size(); ++i) {
+        if (! cmp_equal(_layer_transitions[i].size(), _nodes_per_layer[i]))
             throw InvalidProblemDefinitionException{format("MDD: layer_transitions[{}] must have one entry per node in layer {}", i, i)};
+        // As in Regular's single-target forms, -1 means "no transition", the
+        // same as a missing entry.
+        for (size_t q = 0; q < _layer_transitions[i].size(); ++q)
+            for (const auto & [value, target] : _layer_transitions[i][q])
+                if (target != -1 && (target < 0 || target >= _nodes_per_layer[i + 1]))
+                    throw InvalidProblemDefinitionException{
+                        format("MDD: node {} of layer {} has a transition on {} to {}, which is not a node of layer {}", q, i, value.raw_value,
+                            target, i + 1)};
+    }
+    for (auto t : _accepting_terminals)
+        if (t < 0 || t >= _nodes_per_layer.back())
+            throw InvalidProblemDefinitionException{format("MDD: accepting terminal {} is not a node of the last layer", t)};
 }
 
 auto MDD::clone() const -> unique_ptr<Constraint>

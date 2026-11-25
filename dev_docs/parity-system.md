@@ -313,10 +313,10 @@ counted as `skipped_reified`.
 within `{0, 1}`. `x != y` is `[x != 0] XOR [y != 0] = 1`; `x = y` is the same
 with one literal negated, since `!p` is `p XOR 1`. Both are `ReifiedEquals`,
 which is what `clone()` returns, so that is what the enumeration asks for, and
-`reification_condition()` is what says which; `enforces_equality()` is the
-accessor that actually distinguishes them, because `MustNotHold` on an `Equals`
-and `MustHold` on a `NotEquals` are two spellings of the same thing and only one
-is constructible.
+`reification_condition()` is what says which: `MustHold` is `x = y` and
+`MustNotHold` is `x != y`, whatever the constructor's `neq` flag says. (An
+`enforces_equality()` accessor returning `! neq` used to decide it, which was
+wrong for the `MustNotHold` that `read_scp` builds for a `not_equals`, #1381.)
 
 They are worth having less for the rows themselves than for the **atoms they
 share**: they are the edges that join what would otherwise be separate
@@ -447,8 +447,9 @@ because it is the one a real model reaches.
   `chain_naming()`. `primary_row_role` is honestly nullopt: a chain is a family,
   four clauses per literal plus three pins, and no one of them is the row a
   citer could mean.
-- `ReifiedEquals` gained `left_variable()`, `right_variable()`,
-  `reification_condition()` and `enforces_equality()`. No
+- `ReifiedEquals` gained `left_variable()`, `right_variable()` and
+  `reification_condition()` (and an `enforces_equality()`, since removed,
+  #1381). No
   `ConstraintProofModelData` specialisation, deliberately: nothing cites any of
   its rows by name, because both halves of a two-literal slack form are RUP.
 - `ProofFlagKey` gained `family`, and `NamesAndIDsTracker::find_proof_flag_values`

@@ -76,6 +76,11 @@ namespace
         /// its own, as one optional job's two operations on a machine would be.
         /// `presence` must then say {0, 1} too.
         optional<size_t> shares_presence_with = nullopt;
+        /// Posted as a variable declared over `presence` even when that is a
+        /// singleton, rather than resolved to the constant. Such a variable's
+        /// `= 0` and `= 1` atoms are defined separately instead of being one
+        /// bit's two polarities, which is the shape #1411 was about.
+        bool presence_declared_as_variable = false;
     };
 
     [[nodiscard]] auto is_var(pair<int, int> spec) -> bool
@@ -178,6 +183,9 @@ namespace
                 presences.push_back(v);
                 all_vars.push_back(v);
             }
+            else if (t.presence_declared_as_variable)
+                // Fixed, so not enumerated: the oracle reads `presence.first`.
+                presences.push_back(p.create_integer_variable(Integer{t.presence.first}, Integer{t.presence.second}));
             else
                 presences.push_back(constant_variable(Integer{t.presence.first}));
         }
@@ -1035,6 +1043,16 @@ auto main(int argc, char * argv[]) -> int
             // Two tasks sharing one presence variable, whose separation clause
             // then carries it twice.
             {"shared", {{{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {2, 2}, {0, 1}, 0}, {{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {1, 1}, {0, 1}}}},
+            // Presences that are variables declared over {1}, whose `= 0` and
+            // `= 1` atoms are not one bit's two polarities, so the bridge has
+            // to say they are exclusive before it can cancel them (#1411).
+            // The first is #1411's smallest case without its holes; the second
+            // mixes one with a genuine {0, 1} presence and a mandatory task.
+            {"declared_present",
+                {{{0, 8}, {1, 4}, {1, 1}, nullopt, true}, {{0, 8}, {3, 3}, {1, 1}, nullopt, true}, {{2, 6}, {2, 2}, {1, 1}, nullopt, true}}},
+            {"declared_present_mixed",
+                {{{0, 4}, {2, 2}, {1, 1}, nullopt, true}, {{0, 4}, {2, 2}, {0, 1}}, {{0, 4}, {1, 1}, {1, 1}},
+                    {{0, 4}, {2, 2}, {1, 1}, nullopt, true}}},
         };
 
         mt19937 rand(*get_seed());

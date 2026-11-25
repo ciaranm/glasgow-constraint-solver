@@ -360,7 +360,7 @@ auto gcs::solve_with(
         // the ~13.1M-wasted-propagation cost. Setting GCS_LEARNED_NOGOODS_SCAN picks
         // the legacy scan path, for the scan-vs-refined differential and perf check.
         bool refined_nogoods = (std::getenv("GCS_LEARNED_NOGOODS_SCAN") == nullptr);
-        auto nogoods_constraint = Nogoods{nogood_store, problem.all_normal_variables(), refined_nogoods};
+        auto nogoods_constraint = nogoods_over_learned_store(nogood_store, problem.all_normal_variables(), refined_nogoods);
         nogoods_constraint.set_constraint_id(NamedConstraint{"learned_nogoods"});
         std::move(nogoods_constraint).install(propagators, state, optional_proof ? optional_proof->model() : nullptr);
     }
@@ -459,6 +459,14 @@ auto gcs::solve_with(
                     observer->on_restart();
                 restart_schedule->advance();
                 restart.cutoff = restart_schedule->current_cutoff();
+
+                // A pass that ends at its cutoff reads the abort flag only if
+                // it propagated somewhere first, so check it here too rather
+                // than rely on every pass doing so (#1391). The proof is
+                // balanced at the root, so stopping here concludes as any
+                // other abort does.
+                if (optional_abort_flag && optional_abort_flag->load())
+                    search_result = SearchResult::Stop;
             }
         } while (search_result == SearchResult::RestartCutoffHit);
 

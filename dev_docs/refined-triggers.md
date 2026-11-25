@@ -231,8 +231,8 @@ paths, selected by a `bool _refined`:
 
 - **scan** (`install_scan_nogoods`) — the original: coarse `on_change` on every
   nogood variable, rescan the whole store per wake. Kept as the differential
-  oracle. It is the growable-store constructor's default, but `solve_with` asks
-  for it on the learned store only when `GCS_LEARNED_NOGOODS_SCAN` is set.
+  oracle. `solve_with` asks for it on the learned store only when
+  `GCS_LEARNED_NOGOODS_SCAN` is set.
 - **refined** (`install_refined_nogoods`, the fixed-store constructor's default
   and the learned store's) — two-watched-literal over
   refined watches.

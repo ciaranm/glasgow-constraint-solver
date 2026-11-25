@@ -18,7 +18,8 @@ namespace gcs
      * 1, 1, 2, 1, 1, 2, 4, ... times a scale), whose growing-but-occasionally-
      * small cutoffs eventually exceed any tree's size, so a final run completes
      * and the search terminates. That needs a scale of at least one: at scale 0
-     * every cutoff is 0 and the search never ends (issue #1391). The scale is a
+     * every cutoff is 0 and the search would never end, so luby() refuses it
+     * (issue #1391). The scale is a
      * tunable isolated behind a default (see issue #315), not a design input.
      *
      * \note A restart re-explores from the root, so without the recorded nogoods
@@ -40,6 +41,11 @@ namespace gcs
     public:
         /**
          * \brief A Luby schedule: cutoff i is luby(i) * \p scale conflicts.
+         *
+         * \throws InvalidProblemDefinitionException if \p scale is 0, which
+         * would make every cutoff 0 and the search never end (#1391). A front
+         * end that takes a scale from its command line treats 0 as "no
+         * restarts" instead.
          */
         [[nodiscard]] static auto luby(unsigned long long scale = 100ULL) -> RestartSchedule;
 
