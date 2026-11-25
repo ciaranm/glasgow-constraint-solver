@@ -894,7 +894,8 @@ The shapes behind the gaps, from the probe's examples:
   `minizinc-dpath` (the `enum` spelling over nodes `2..5`, all solutions,
   proofs on, with a `--fzn-pattern` guard that the builtin was reached), and
   `minizinc-bounded-dpath` (the `int` spelling, optimisation).
-- **Audit lane:** the two `NoWidePosition` rows above, registered as a ctest
+- **Audit lane:** six `Clean` rows since #1302, `Path` and `DPath` with wide,
+  full-range and holey endpoints (two `NoWidePosition` rows before), registered as a ctest
   only under `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets (#920).
 - **Mutation lanes:** none for this family. `reachable_mutation_{undirected,
   directed}_{border,mandatory,rootdomain}` and their `_none` controls corrupt

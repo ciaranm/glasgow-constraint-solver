@@ -669,7 +669,8 @@ the reachability child's forcing reaches most of what it would.
   `minizinc-steiner` compares the optimum, with a proof, also guarded.
 - **`scp_reader_test`:** the tree family's enumerations through the reader, and
   the write → read → write round trip.
-- **Audit lane:** the `Tree` and `DTree` rows, `NoWidePosition`; registered as
+- **Audit lane:** the `Tree` and `DTree` rows, `Clean` with wide, full-range
+  and holey roots since #1302 (`NoWidePosition` before); registered as
   a ctest only under `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets
   (#920).
 

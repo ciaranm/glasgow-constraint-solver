@@ -419,11 +419,13 @@ change what `consistency::Auto` sees.
 3. **Proofs.** One RUP per inference. The literal definitions the RUP needs are
    the shared layer's, and cost nothing for a `{0, 1}` variable, whose literal is
    its bit.
-4. **The audit lane.** Two rows, `And` and `Or`, both `NoWidePosition` over
-   three `{0, 1}` variables, which is what the lane's comment says the family
-   takes. It takes more: an order literal over a wide variable, as the `set_in`
-   glue posts, is the shape a width probe should vary, and no row does. The
-   probe above shows it flat.
+4. **The audit lane.** Two rows, `And` and `Or`, both `NoWidePosition`. At
+   the audit they were over three `{0, 1}` variables, which is what the lane's
+   comment said the family takes; since #1302 they are over three `0..10⁹`
+   ones, since each variable is read as `v ≠ 0` however wide it is. It takes
+   more: an order literal over a wide variable, as the `set_in` glue posts, is
+   the shape a width probe should vary, and no row does. The probe above shows
+   it flat.
 
 ## Inference catalogue
 

@@ -243,10 +243,13 @@ outside `±(2⁶⁰ − 1)`. Probe: `tmp/fd-codex-1005/ordering/factcheck2/spcov
 2. **The reason side.** The chain's whole-scope generic reason, by hole run.
    The clamp's inference has no reason.
 3. **The proof side.** One line per removal, and one per clamped variable.
-4. **The audit lane.** One row, `SeqPrecedeChain`, pinned `Clean`, but over
-   **`narrow(p, 4, 0, 3)`**: four variables in `0..3`, below the array length,
-   so the row never reaches the clamp. The shape that matters for width, a wide
-   declared domain, is not in the lane, and neither are holes or views; the
+4. **The audit lane.** At the audit, one row, `SeqPrecedeChain`, pinned
+   `Clean`, but over **`narrow(p, 4, 0, 3)`**: four variables in `0..3`, below
+   the array length, so the row never reached the clamp. Since #1302 there are
+   three rows, still `Clean`, over `0..10⁹`, over `±(2⁶⁰ − 1)` (whose lower
+   half stays wide below the clamp) and over a holey wide set, so the shape
+   that matters for width, a wide declared domain, is in the lane. Views are
+   not; the
    test's scale case reaches `1..1000` and the probes above reach `2⁶⁰ − 1`
    (`2⁶¹ − 1` at `c9ceea25`), and both pass.
 
@@ -310,7 +313,8 @@ constraint's ID.
 - **`scp_chain_seq_precede_chain_{sat,nonexact_sat,unsat}`:** see [Cake
   conformity](#cake-conformity).
 - **MiniZinc:** `seqprecedechain.mzn`.
-- **Audit lane:** the `SeqPrecedeChain` row, narrow.
+- **Audit lane:** three `SeqPrecedeChain` rows, wide, full-range and holey,
+  since #1302 (one narrow row before).
 
 **Runtime caps.** No lane sets or clears one, and the default caps never fire:
 56 runs bare (46 data-driven, 6 duplicate-variable, 2 scale, 2 two-chain) and

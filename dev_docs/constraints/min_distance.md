@@ -533,10 +533,12 @@ than `n`.
    value of `z`.
 4. **The audit lane.** One row, `MinDistance`, `Clean`: two positions over
    `{0, 1}` with a wide `z`, under the default mode
-   (`large_domain_audit_test.cc:843`). The `[.proofscaling]` survey measures it
-   at 24 OPB lines and 38 proof lines at widths 10³ and 10⁴ alike. The row does
-   not vary: a **wide `x`**, so the `define_bound` clamp is never exercised;
-   holes; views; `R`; or the other four modes. It has no row in the `"Large
+   (`large_domain_audit_test.cc:843` at the audit). The `[.proofscaling]`
+   survey measures it at 24 OPB lines and 38 proof lines at widths 10³ and 10⁴
+   alike. Since #1302 three `MinDistance/wide-index` rows, `Clean`, declare the
+   positions over `0..10⁹`, over `±(2⁶⁰ − 1)` and over a holey wide set, so the
+   `define_bound` clamp is exercised. No row varies views, `R`, or the other
+   four modes. It has no row in the `"Large
    domain proof sizes"` case, and none is needed while `z` stays bounds-only.
 
 ## Inference catalogue

@@ -1105,7 +1105,9 @@ time move apart here; see [Proof performance](#proof-performance).
 - **`examples/hitori`**: `hitori-propagator` and `hitori-propagator-no-cuts`
   solve the size-4 generated instance with proofs and verify them; the only
   lanes where the propagator meets an instance-sized graph with an open root.
-- **Audit lane:** the two `NoWidePosition` rows above, which are registered as
+- **Audit lane:** six `Clean` rows since #1302, `Reachable` and `DReachable`
+  with wide, full-range and holey roots (two `NoWidePosition` rows before),
+  which are registered as
   a test only when the guard is on, and no CI lane turns it on (#920).
 
 **Runtime caps.** No lane sets or clears one. The default caps (300 solutions,

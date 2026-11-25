@@ -372,7 +372,8 @@ interiors.
    per inference over the donors' slack rows, plus the root scaffolding, which is
    linear in each row's length.
 4. **The audit lane**: one row, `ParityOdd`, `NoWidePosition`, over three
-   `{0, 1}` variables. Nothing for the system.
+   `0..10⁹` variables since #1302 (`{0, 1}` ones at the audit), each read as
+   `v ≠ 0`. Nothing for the system.
 
 ## Inference catalogue
 

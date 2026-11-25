@@ -347,8 +347,10 @@ the propagation path, for a value only the proof uses.**
    `O(n)` reason, and a Hall-case one `O(n²)` lines: see
    [Proof performance](#proof-performance). All of it is in `n`.
 4. **The audit lane.** Two rows, both `Clean`: `Sort` over three and three wide
-   plain variables, and `ArgSort` over three wide `x` and a narrow `p`. Neither
-   has a **tie**, so the `ArgSort` row never reaches the hole case, and even if
+   plain variables, and `ArgSort` over three wide `x` and a narrow `p`; and
+   since #1302 three `ArgSort/wide-index` rows, `Clean`, with `p` declared over
+   `0..10⁹`, over `±(2⁶⁰ − 1)` and over a holey wide set, which `prepare()`
+   trims to the positions. None has a **tie**, so the `ArgSort` row never reaches the hole case, and even if
    it did, the guard counts `State` iterations and this walk is a plain `for`
    loop: a guard build of `c9ceea25` runs the probe at `W = 10⁸` without
    tripping. A row with two equal `x` and a wide third would reach the site;

@@ -690,7 +690,10 @@ into the standing rule.
 
 **4. Where the family stands in the audit lane.** Five rows in
 `gcs/large_domain_audit_test.cc`, all pinned `Clean`, and the reasoning behind
-the set is the most careful in the lane:
+the set is the most careful in the lane. (Since #1302 there are also three
+`Element/wide-index` rows, `Clean`, which declare the index over `0..10⁹`,
+over `±(2⁶⁰ − 1)` and over a holey wide set, where every row below keeps it to
+the array's range; `prepare()`'s `define_bound` trims it at the root.)
 
 | Row | Shape | Why it is a distinct row |
 |---|---|---|
@@ -1150,7 +1153,7 @@ What the tests do **not** cover:
   state, not outstanding work — but this family is a better candidate than most
   if one is ever wanted, because its derivations are the only ones in the arc
   that emit a nested walk rather than a single line.
-- **No large-domain case in the test file itself.** The five audit rows carry
+- **No large-domain case in the test file itself.** The eight audit rows carry
   it, in a build nothing runs by default.
 - **No `Auto` row in the audit lane**, so the pair is exercised at test widths
   and not at width. See [Next steps](#next-steps).
@@ -1542,7 +1545,7 @@ half of #901 rather than a proof-size problem.
    difference. Whether `Auto` should become the default for the constant-array
    classes is a separate call and is not this issue — it is the one #966's
    neighbour leaves open, and it is Ciaran's.
-2. **An `Auto` row in the audit lane.** None of the family's five rows selects
+2. **An `Auto` row in the audit lane.** None of the family's eight rows selects
    `Auto`, so the pair is exercised at test widths by `element_auto_test` and
    `element_test`'s three `*auto` lanes and at width by nothing. Not filed, and
    the smallest item here: a pair runs exactly one of two members and both

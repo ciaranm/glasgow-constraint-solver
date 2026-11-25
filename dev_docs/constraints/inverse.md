@@ -547,13 +547,15 @@ does not matter for width.
    needed-value rule's removals from `y` are bound pushes plus the gaps between
    entries of `x`, so their proof is width-independent too: 135 lines at `±10`
    and at `±10⁹`, above.
-4. **The audit lane**: one row, `Inverse`, `NoWidePosition`, over two arrays of
-   three variables in `0..2`. **It varies nothing**: no declared domain wider
-   than the index range (legal, and trimmed at the root), no starts, no views,
-   no holes, and not the injection form, which is the one shape whose `y` stays
-   wide. So it records the structural fact without probing the one path,
-   `define_bound`, that a wide declared domain actually takes, or the injection
-   form's untrimmed `y`.
+4. **The audit lane**: at the audit, one row, `Inverse`, `NoWidePosition`,
+   over two arrays of three variables in `0..2`. It varied nothing: no declared
+   domain wider than the index range (legal, and trimmed at the root), no
+   starts, no views, no holes, and not the injection form, which is the one
+   shape whose `y` stays wide. Since #1302 there are six rows, all `Clean`:
+   `Inverse` and `Inverse/injection`, each with both arrays declared over
+   `0..10⁹`, over `±(2⁶⁰ − 1)` and over a holey wide set. So the lane now
+   probes `define_bound`, the path a wide declared domain takes, and the
+   injection form's untrimmed `y`. It still varies no starts and no views.
 
 ## Inference catalogue
 
@@ -944,7 +946,7 @@ only, as the one every caller uses (`innards/recover_am1.hh:17-35`), so
 | `xcsp_channel_unequal`, `xcsp_channel_unequal_free`, `xcsp_channel_aliased` | the injection form, against ACE's 12 and 120 solutions, and a repeated entry, which is unsatisfiable (#1047) |
 | `minizinc-inverses`, `-offset`, `-shapes`, `-negative`, `-unequal`, `-aliased` | non-1-based and enum-indexed arrays, an array that is its own inverse, the same three variables in two orders, negative index sets and empty arrays, unequal lengths (#997, #1011), and two equated entries (#1047), where the lane checks that the repeat reaches `glasgow_inverse`. `inverses` and `-offset` compare against MiniZinc's default solver, `-shapes` against it and the standard library's decomposition, `-negative` and `-unequal` against the decomposition alone, and `-aliased` expects `UNSATISFIABLE` |
 | `talent` | the example, with its proof verified |
-| `large_domain_audit` | one `NoWidePosition` row, guard build only |
+| `large_domain_audit` | six `Clean` rows since #1302 (one `NoWidePosition` row before), guard build only |
 
 At `61112ed0` the 16 lanes that `ctest -R 'inverse|channel'` selects all pass,
 and so does `talent`. That run had default caps, MiniZinc 2.9.7, and
@@ -984,8 +986,8 @@ and 60 solutions, and the two view cases cannot reach it.
   know `inverse_injective`, so no `scp_chain` case can post it; its proofs are
   checked by VeriPB against GCS's own OPB only.
 - **A wide `y` in the injection form**, which is the one place a declared
-  domain survives the root; only this re-audit's probe. The audit lane's single
-  row is a narrow bijection.
+  domain survives the root: only this re-audit's probe, until #1302's
+  `Inverse/injection` rows, which run only in the guard build.
 - **A view of another position under the `GAC` check.** Since #1088
   `inverse_test`'s aliased cases post two and three views of one variable, and
   `Inverse(x, x)`, but check solutions only, rightly, since the propagation is
