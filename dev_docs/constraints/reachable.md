@@ -456,8 +456,9 @@ removed with the rest of the out-of-range values (`reachable_test`'s
   `dsteiner` and `d_weighted_spanning_tree` wrappers, error the same way
   (`tree.md`, `path.md`); `Path` throws before its child is installed, so it
   needs its own fix (#1305, which covers all three). `dag` and four-argument `subgraph` have
-  a different defect with the opposite answer: an empty instance is
-  satisfiable and the mznlib flattens it to a wrong UNSAT (#1303). No test posts an empty node set.
+  had a different defect with the opposite answer: an empty instance is
+  satisfiable and the mznlib flattened it to a wrong UNSAT (#1303, fixed by
+  #1363). No test posts an empty node set for this family.
 - *No edges, one node, self loops, parallel edges:* handled, and covered by the
   random checks below and by `reachable_test`'s `single` case.
 - *A repeated variable in `ns`:* sound, not GAC, and not even failure-complete

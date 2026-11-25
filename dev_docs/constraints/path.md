@@ -6,10 +6,10 @@
 > by this audit: #1313 (the missing degree lower bound, which is worth 33 times
 > fewer search nodes on a grid enumeration) and #1305 (an empty node set gives
 > `=====ERROR=====` from MiniZinc's `int` spelling where every reference solver
-> says unsatisfiable; the same issue covers `reachable` and `tree`). #1303 is a
+> says unsatisfiable; the same issue covers `reachable` and `tree`). #1303 was a
 > different defect with the opposite answer: a satisfiable empty `dag` or
-> four-argument `subgraph` that the overrides flatten to a wrong
-> `UNSATISFIABLE`. Also touching this family: #1309 (the engine's quadratic
+> four-argument `subgraph` that the overrides flattened to a wrong
+> `UNSATISFIABLE`, fixed by #1363. Also touching this family: #1309 (the engine's quadratic
 > install, fixed by #1442) and #1316 (the directed forcing `DPath` inherits). The rest of what
 > it would change is
 > small and is under [Next steps](#next-steps). Already open and
@@ -1168,8 +1168,8 @@ The children's gaps are theirs: see [`reachable.md`](reachable.md) and
    `if N = 0 then false`. `Reachable` and `Tree` need the same fix, but
    `PathBase::prepare` throws before its child is installed, so `Path` needs its
    own. Small. #1305. **Caution:** `dag` and the four-argument
-   `subgraph` have the opposite defect (#1303), a satisfiable empty model flattened to
-   a wrong `UNSATISFIABLE`, whose fix is an override guard returning `true`.
+   `subgraph` had the opposite defect (#1303), a satisfiable empty model flattened to
+   a wrong `UNSATISFIABLE`, whose fix (#1363) is an override guard that holds.
    Copying that `then true` guard into the rooted `_enum` overrides (`path`,
    `reachable`, `tree`) would turn their accidental-but-right `UNSATISFIABLE`
    into a wrong `SAT`.

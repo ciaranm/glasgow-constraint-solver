@@ -599,10 +599,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   root taken out and restricted to the input's strongly connected components.
   It is generalised arc consistent by downward closure, and 10,000 random
   graphs found no unsupported value. Repeated variables lose that, but no
-  solutions. The audit's findings: through MiniZinc, an **empty node set is
-  unsatisfiable**, because `fzn_dag.mzn` takes `min` of an empty index set,
+  solutions. The audit's findings: through MiniZinc, an **empty node set was
+  unsatisfiable**, because `fzn_dag.mzn` took `min` of an empty index set,
   which its sibling files guard (#1303, and the four-argument `subgraph`
-  has the same defect). The propagator rebuilds everything on every call and
+  had the same defect; both fixed by #1363). The propagator rebuilds everything on every call and
   searches edges that cannot close a cycle; two changes that keep every
   inference cut 29% of the instructions on `maximum-dag` `25_04` (#1310).
   Installing any one-propagator constraint was quadratic in its trigger count,
@@ -619,9 +619,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   on 24,000 random instances). Its rows and its propagation loop are copied,
   not shared, into `Reachable` and `Dag`; nothing calls this class, and no corpus
   model posts it. The audit found a wrong answer in the front end: the
-  four-argument MiniZinc spelling over an empty node array computes the minimum
-  of an empty index set and comes out unsatisfiable, as `fzn_dag.mzn` does
-  (#1303). And the class costs more than the decomposition it stands in for:
+  four-argument MiniZinc spelling over an empty node array computed the
+  minimum of an empty index set and came out unsatisfiable, as `fzn_dag.mzn`
+  did (#1303, fixed by #1363). And the class costs more than the decomposition it stands in for:
   every call rescans every edge, so a 5×5 grid model through MiniZinc takes
   11.0 s against the stdlib clauses' 6.9 s on the same nodes, and a path of
   10,000 edges with 12 undecided is 9.4 times slower; a candidate with one

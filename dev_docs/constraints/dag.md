@@ -2,11 +2,11 @@
 
 > **Maturity** production ·
 > **Audited** 2026-10-09 at `86caad24` ·
-> **Open issues** filed by this audit: #1303 (MiniZinc's `dag` over an empty
-> node set is reported unsatisfiable; fix open as #1363), #1310 (the
-> propagator rebuilds all of its working state on every call). **Fixed
-> since the audit**: #1309 (`Propagators::install_returning_id` was quadratic
-> in a propagator's trigger count, an engine issue), by #1442. Already open
+> **Open issues** filed by this audit: #1310 (the propagator rebuilds all of
+> its working state on every call). **Fixed since the audit**: #1303
+> (MiniZinc's `dag` over an empty node set was reported unsatisfiable), by
+> #1363; #1309 (`Propagators::install_returning_id` was quadratic in a
+> propagator's trigger count, an engine issue), by #1442. Already open
 > and touching this family: #868 (cross-solver comparisons; this document gives
 > one by hand), #1006 (MiniZinc differential tests over the shapes front ends
 > get wrong), #920 (the large-domain audit binary's header; the issue also
@@ -51,11 +51,12 @@ Three things to know before touching it.
   costs only the two subgraph rows per edge. The proofs are one line per
   inference, and checking the cycle rule's line takes one round of unit
   propagation per level.
-- **Through MiniZinc, an empty node set is unsatisfiable.** `fzn_dag.mzn`
-  takes `min(index_set(ns))`, which is undefined on an empty set. MiniZinc
-  turns that into `false`, and fzn-glasgow reports `=====UNSATISFIABLE=====`
-  where Gecode finds the one solution (#1303). Every non-empty shape
-  agrees with brute force through every front end. Separately and
+- **Through MiniZinc, an empty node set was unsatisfiable until #1363.**
+  `fzn_dag.mzn` took `min(index_set(ns))`, which is undefined on an empty
+  set. MiniZinc turned that into `false`, and fzn-glasgow reported
+  `=====UNSATISFIABLE=====` where Gecode finds the one solution (#1303); the
+  file now guards the empty case. Every non-empty shape agrees with brute
+  force through every front end. Separately and
   deliberately, `Dag` is **stricter than the stdlib decomposition**. That
   decomposition lets a selected edge leave an unselected node, so on a single
   edge it has six solutions to `Dag`'s five; Chuffed's native `dag` has four.
@@ -139,7 +140,8 @@ in `NOTES.txt`):
   sets starting at 1, 0, 3 or −2 and edge index sets starting at 1, 0 or 5.
   That is 450 instances on 2.9.7 (seed 2 with the default sizes, seed 4 with
   one to six nodes) and 450 on 2.10.1 (seeds 3 and 5 likewise). The only
-  disagreements are the 81 instances with no nodes: see #1303.
+  disagreements were the 81 instances with no nodes (#1303); #1363's rerun of
+  seeds 2 and 3 found none.
   Without the `subgraph`, Gecode's solution set differs from the documented
   meaning on 288 of the 900.
 - **`.scp`.** The `.scp` reader, through `glasgow_scp_solver --all`, on the
@@ -441,12 +443,17 @@ starts of −2, 0, 1 and 3.
   context (minimum of empty set is undefined)", the call flattens to `false`
   and fzn-glasgow reports `=====UNSATISFIABLE=====` on 2.9.7 and 2.10.1, where
   Gecode finds the one solution (`tmp/fd-graph/dag/fe/e0.mzn`). In a larger
-  model, one empty `dag` makes the whole model unsatisfiable. The sibling
+  model, one empty `dag` made the whole model unsatisfiable. The sibling
   redefinitions that shift by `min(index_set(...))`, such as `fzn_circuit.mzn`
   and `fzn_inverse.mzn`, guard with `if length(x) = 0 then true else ...`;
-  this one does not (#1303). The four-argument
-  `subgraph(from, to, ns, es)` has the same defect through
-  `fzn_subgraph_enum.mzn`, also #1303, and `subgraph.md` owns it. The rooted families have
+  this one did not until #1363 (#1303). Its guard is
+  `if length(ns) = 0 then forall (e in index_set(es)) (not es[e])`, which
+  is `true` through `dag`, whose asserts refuse an edge with no nodes, and
+  leaves out the edges of a direct `fzn_dag` call, as the standard library's
+  own `fzn_dag` reads an endpoint that is not a node. The four-argument
+  `subgraph(from, to, ns, es)` had the same defect through
+  `fzn_subgraph_enum.mzn`, also #1303 and fixed the same way, and
+  `subgraph.md` owns it. The rooted families have
   a **different** empty-node defect with the opposite answer. There the right
   answer is unsatisfiable, since a root must be selected. Their integer
   spellings give `=====ERROR=====`, because `Reachable`, `Tree` and `Path`
@@ -793,7 +800,8 @@ entries.
 - **Components of more than five nodes.** Nothing in the suite has a component
   bigger than five nodes, so nothing tests the encoding's size. The probes go
   to 400 nodes in one component.
-- **An empty node set through MiniZinc**, which is wrong (#1303).
+- **An empty node set through MiniZinc**, which was wrong, until #1363 added
+  `minizinc-dag-empty` (#1303).
 - **Real instances:** none ported. `2016/maximum-dag` needs a model
   change to reach `Dag` at all.
 
@@ -931,8 +939,6 @@ holds in every solution.
 
 ### Known limitations
 
-- **Through MiniZinc, `dag` over an empty node set makes the model
-  unsatisfiable** (#1303).
 - **It disagrees with MiniZinc's default decomposition on solution counts,
   deliberately**: a selected edge may not leave an unselected node here. Post
   `subgraph` alongside to make the two agree.
@@ -947,10 +953,9 @@ holds in every solution.
 
 ### Next steps
 
-1. **Guard the empty node set in `fzn_dag.mzn`.** One line,
-   `if length(ns) = 0 then true else ... endif`, as the sibling files do, and a
-   `minizinc/tests/` case. Trivial; it fixes a wrong answer. #1303, which
-   also covers the four-argument `subgraph`. The same guard must not go into
+1. **Guard the empty node set in `fzn_dag.mzn`.** **Done** by #1363 (#1303),
+   for the four-argument `subgraph` too, with a `minizinc/tests/` case for
+   each. The same guard must not go into
    the rooted families' `_enum` overrides, whose empty case is genuinely
    unsatisfiable; see [Robustness and limits](#robustness-and-limits).
 2. **Stop the per-call rebuild doing useless work.** Skip edges between input

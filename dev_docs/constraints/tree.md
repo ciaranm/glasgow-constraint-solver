@@ -969,8 +969,8 @@ solution, and every one carries its reason.
    child is installed, so `Path` needs its own fix; the directed `dsteiner` and
    `d_weighted_spanning_tree` wrappers reach it through `dtree`. **Not** the
    same defect as `dag` and the four-argument `subgraph` over an empty node set
-   (#1303), which are satisfiable and flattened to a wrong
-   UNSAT, and whose fix is an mznlib guard returning `true`. Copying that
+   (#1303), which are satisfiable and were flattened to a wrong
+   UNSAT, and whose fix (#1363) is an mznlib guard that holds. Copying that
    `then true` guard into this family's rooted `_enum` overrides would turn
    their accidental but right UNSAT into a wrong SAT.
 4. **Correct passages outside this document** (trivial, comment and
