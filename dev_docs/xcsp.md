@@ -305,8 +305,9 @@ constraints work (#1354). Upstream tags such a group as a flow, so every row
 went through the flow unfolder and crashed on a null cast, and its knapsack
 unfolder never copied the profit condition from the template, so each row
 arrived with an empty one. Both bugs are still in upstream master as of
-2026-10-16. `xcsp_knapsack_group` checks the group against its written-out form,
-`xcsp_knapsack`.
+2026-10-16. `xcsp_knapsack_group` solves a group, `xcsp_knapsack` the same rows
+written out, and `xcsp_knapsack_group_matches_written_out` checks that their
+expected solutions are the same.
 
 A third, `xcsp/xcsp3_parser_element_member.patch`, is applied after those two
 (#1164): an index-free `<element>` over a list of integers reaches the binding

@@ -1368,8 +1368,9 @@ not produced in practice, a filed issue rather than a gap in a derivation
    this step proposed, retagging the group `KNAPSACK` and copying the
    template's profit condition before unfolding it, as a repository parser
    patch (`xcsp/xcsp3_parser_knapsack_group.patch`), and added
-   `xcsp_knapsack_group`, which checks a `<group>` of knapsacks against the
-   same rows written out. The step keeps its number because other documents
+   `xcsp_knapsack_group` and `xcsp_knapsack` (a `<group>` of knapsacks, and
+   the same rows written out) and `xcsp_knapsack_group_matches_written_out`,
+   which checks that the two have the same solutions. The step keeps its number because other documents
    cite the later ones by theirs.
 4. **Make the interior-value pass per terminal state** (#1340): collect each
    row's reachable sums once, then remove the gaps from the total's domain by
