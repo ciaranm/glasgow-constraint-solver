@@ -2,6 +2,7 @@
 #include <gcs/constraints/plus_minus/gac.hh>
 #include <gcs/constraints/plus_minus/hints.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/environment.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -13,16 +14,11 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cstddef>
-#include <cstdio>
 #include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <optional>
-#include <print>
-#include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -36,9 +32,7 @@ using std::max;
 using std::optional;
 using std::pair;
 using std::prev;
-using std::print;
 using std::size_t;
-using std::string_view;
 using std::vector;
 using std::ranges::sort;
 using std::ranges::upper_bound;
@@ -410,25 +404,8 @@ namespace
 
 auto gcs::innards::default_interval_pairs_threshold() -> size_t
 {
-    static const size_t threshold = []() -> size_t {
-        constexpr size_t default_threshold = 1024; // see the header
-        const char * e = std::getenv("GCS_INTERVAL_PAIRS_THRESHOLD");
-        if (! e || ! *e)
-            return default_threshold;
-
-        // The whole string must be a non-negative count that fits: strtoull
-        // would read a malformed value as 0 (always fall back) and a negative
-        // one as a huge count (never fall back). As GCS_ASSERTION_LEVEL does,
-        // ignore anything else with a warning.
-        string_view value{e};
-        size_t parsed = 0;
-        auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
-        if (error != std::errc{} || end != value.data() + value.size()) {
-            print(stderr, "Ignoring unrecognised GCS_INTERVAL_PAIRS_THRESHOLD value '{}'\n", value);
-            return default_threshold;
-        }
-        return parsed;
-    }();
+    // 1024: see the header. A malformed value is ignored with a warning.
+    static const size_t threshold = non_negative_count_from_environment("GCS_INTERVAL_PAIRS_THRESHOLD", 1024);
     return threshold;
 }
 

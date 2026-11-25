@@ -3,6 +3,7 @@
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/innards/assertion_hints.hh>
+#include <gcs/innards/environment.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -533,11 +534,9 @@ GCS_INSTANTIATE_PROPAGATE_LINEAR(SumOf<SimpleIntegerVariableID>, EagerProofLoggi
 
 auto gcs::innards::default_linear_incremental_threshold() -> std::size_t
 {
-    static const std::size_t threshold = []() -> std::size_t {
-        if (const char * e = std::getenv("GCS_LINEAR_INCREMENTAL_THRESHOLD"))
-            return std::strtoull(e, nullptr, 10);
-        return 8; // default: use the incremental path for constraints with >= 8 terms
-    }();
+    // Default: use the incremental path for constraints with >= 8 terms. A
+    // malformed override is ignored with a warning.
+    static const std::size_t threshold = non_negative_count_from_environment("GCS_LINEAR_INCREMENTAL_THRESHOLD", 8);
     return threshold;
 }
 
@@ -625,25 +624,21 @@ GCS_INSTANTIATE_LINEAR_SLACK(SumOf<SimpleIntegerVariableID>);
 
 auto gcs::innards::default_linear_slack_watch_threshold() -> std::size_t
 {
-    static const std::size_t threshold = []() -> std::size_t {
-        if (const char * e = std::getenv("GCS_LINEAR_SLACK_WATCH_THRESHOLD"))
-            return std::strtoull(e, nullptr, 10);
-        return std::numeric_limits<std::size_t>::max(); // default: off, pending wall-clock calibration
-    }();
+    // Default: off, pending wall-clock calibration. A malformed override is
+    // ignored with a warning.
+    static const std::size_t threshold =
+        non_negative_count_from_environment("GCS_LINEAR_SLACK_WATCH_THRESHOLD", std::numeric_limits<std::size_t>::max());
     return threshold;
 }
 
 auto gcs::innards::default_linear_slack_watch_cover_percent() -> std::size_t
 {
-    static const std::size_t percent = []() -> std::size_t {
-        if (const char * e = std::getenv("GCS_LINEAR_SLACK_WATCH_COVER_PERCENT"))
-            return std::strtoull(e, nullptr, 10);
-        // Conservative: only a covering set well under a fifth of the terms is a
-        // clear enough win to risk the per-wake re-arm. A larger initial cover
-        // tends to a constraint that turns tight during search, where waking often
-        // and re-arming each time loses badly. See dev_docs/linear-slack-waking.md.
-        return 15;
-    }();
+    // Conservative: only a covering set well under a fifth of the terms is a
+    // clear enough win to risk the per-wake re-arm. A larger initial cover tends
+    // to a constraint that turns tight during search, where waking often and
+    // re-arming each time loses badly. See dev_docs/linear-slack-waking.md. A
+    // malformed override is ignored with a warning.
+    static const std::size_t percent = non_negative_count_from_environment("GCS_LINEAR_SLACK_WATCH_COVER_PERCENT", 15);
     return percent;
 }
 

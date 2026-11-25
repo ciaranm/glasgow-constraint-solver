@@ -124,6 +124,7 @@ add_library(glasgow_constraint_solver ${_gcs_library_type}
         constraints/table/table.cc
         constraints/tree/tree.cc
         constraints/value_precede/value_precede.cc
+        innards/environment.cc
         innards/integer_overflow.cc
         innards/large_domain_guard.cc
         innards/literal.cc
@@ -1410,6 +1411,10 @@ if(GCS_BUILD_TESTS)
     add_executable(interval_tree_test innards/interval_tree_test.cc)
     target_link_libraries(interval_tree_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_tree_test COMMAND $<TARGET_FILE:interval_tree_test>)
+
+    add_executable(environment_test innards/environment_test.cc)
+    target_link_libraries(environment_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME environment_test COMMAND $<TARGET_FILE:environment_test>)
 
     add_executable(s_expr_test innards/s_expr_test.cc)
     target_link_libraries(s_expr_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
