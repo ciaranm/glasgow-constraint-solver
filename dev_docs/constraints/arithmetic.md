@@ -8,9 +8,9 @@
 > **Open issues** filed by this audit and still open: #1067 (`Modulus`'s
 > quotient magnitude is not determined by unit propagation on a solution, so
 > its hints-only proofs fail VeriPB's solution check), #1068 (an aliased `Plus`
-> or `Minus` converges one value per pass, under every tag), #1066 (tidying:
-> draft thesis numbering, headers describing the pre-rewrite design, dead
-> fields). Filed by this audit and since fixed: #1064 (corner products threw
+> or `Minus` converges one value per pass, under every tag). Filed by this
+> audit and since fixed: #1066 (tidying: draft thesis numbering, headers
+> describing the pre-rewrite design, dead fields; #1491), #1064 (corner products threw
 > `IntegerOverflow`; #1079) and #1065 (`Divide` left a sign-open quotient
 > unpruned; #1081). Found here but not this family's, both since fixed: #1063
 > (the engine's per-node state copy went back to the kernel on every
@@ -365,7 +365,7 @@ argument's `BinEnc`, with constants folded into the degree:
   above. With `x = 2` and `y = 3`, `z = −6` satisfies both channels, the grid
   and the result channel, and only `sgn_pp` excludes it. The code's comment
   called them "all entailed for non-negative operands", which was wrong
-  unless `z` is non-negative too, until #1066's tidying corrected it.
+  unless `z` is non-negative too, until #1491 corrected it.
 
 With `a` and `b` the magnitudes' bit widths, the constraint owns `2ab + 18`
 rows. The sign clauses' atoms (`ge0`, `ge1` and `eq0` for the operands, `ge0`
@@ -638,7 +638,7 @@ and their `view_mixed` twins pass that way at `61112ed0`, capped.
   where `Multiply`'s proof size comes from (see [Proof
   performance](#proof-performance)); #540 targets the case where a factor
   becomes fixed.
-- **Dead fields**, removed by #1066's tidying: `signed_multiply::Data`'s
+- **Dead fields**, removed by #1491: `signed_multiply::Data`'s
   `x_init_lo/hi` and `y_init_lo/hi` were written and never read, and the
   header's reason for them was untrue.
 
@@ -854,7 +854,7 @@ under an explicit `Tabulated`.
      `Auto` and unbounded under `Tabulated` (#880). The extensional
      propagator's support scan is per value; it is the table family's.
    - **`PowerTable`** walks `D(base) × D(exponent)` with no budget (#845).
-     Until #1066's tidying it also re-checked the exponent's membership for a
+     Until #1491 it also re-checked the exponent's membership for a
      value just drawn from its domain.
 2. **Reasons.**
    - **The product group**: zero to six literals (divisor-nonzero and
@@ -938,7 +938,7 @@ Facts that hold across the family:
   (grid-sum upper bound, per-row subproofs), 7.3 and 7.4 (channelling), and
   Procedures 7.6 (product bounds), 7.7 and 7.8 (multiplicand bounds). The
   code's comments used the draft thesis's numbers, 7.5 and 7.6/7.7, until
-  #1066's tidying.
+  #1491.
   `Divide` and `Modulus` use 7.1, 7.2 and the multiplicand-bound refutation,
   but not 7.3 or 7.4: their operands are magnitudes already, channelled to the
   signed variables by linear stages.
@@ -1100,7 +1100,7 @@ Facts that hold across the family:
   holes: interior lemma pairs occur here too.
 - **Reason** — as sum-interval-prune, with the hull operand stated by its
   bounds only. `hints.hh` said the reason states both domains "exactly",
-  which under the fallback it does not; #1066's tidying says so there.
+  which under the fallback it does not; #1491 says so there.
 - **Assertion** — as sum-interval-prune.
 - **Hint** — as sum-interval-prune.
 - **Offline reconstructibility** — `hinted`, as sum-interval-prune; a
@@ -1190,7 +1190,7 @@ Facts that hold across the family:
   [product-bounds](#rule-product-bounds), 37 of the 1,692 roots that did not
   fail left an integer-unsupported bound on `x`, and 36 on `y`.
   `product_bounds_test` pins the known inexactness, and `multiply.hh` called
-  it "bounds consistent multiplication" until #1066's tidying.
+  it "bounds consistent multiplication" until #1491.
 - **Algorithm** — no filter when 0 lies in both the cofactor's and `z`'s
   bounds; otherwise drop a zero endpoint and take floor and ceiling corner
   quotients. Constant time.
@@ -2355,7 +2355,7 @@ Ranked by what they buy for what they cost.
    `multiply` chain case, so the bounds proofs are chain-verified at all. Add
    an `int_mod` MiniZinc lane, and large-domain rows for a square, a view, an
    aliased post and a signed domain.
-7. **#1066: the tidying.** **Done**, including the draft thesis numbering in
+7. **#1066: the tidying.** **Done** by #1491, including the draft thesis numbering in
    code comments and the `none` chain modes' stale reason. The additions
    proposed here, the headers' account of the proof limit (`multiply.hh`,
    `divide_modulus.hh`: an `IntegerOverflow` when the proof model is built,
@@ -2408,4 +2408,4 @@ with a per-node bounds check on weakly signed fixtures; #1081).
 - McIlree's thesis, *Pseudo-Boolean Proof Logging for Constraint Propagation
   Algorithms*, Chapter 7: Justification Subprocedures 7.1–7.4 and Procedures
   7.6–7.8, which the product group follows. The code's comments used the
-  draft's numbers until #1066's tidying.
+  draft's numbers until #1491.
