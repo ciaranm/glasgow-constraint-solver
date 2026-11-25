@@ -775,8 +775,17 @@ dependence, as #1440 does. With it, a fixed ring takes 0.19 s at 10,000
 nodes, 0.68 s at 20,000 and 2.77 s at 40,000: what grows quadratically there is
 not the walk. Re-measured at `fffade10`, after #1442 made installation linear
 (#1309), the ring is unchanged (0.18 s, 0.69 s, 2.76 s, and 10.7 s at 80,000),
-and 98% of it is the value consistent all-different, which checks each
-newly fixed successor against every other one fixed in the same call (#1453).
+and the profile put 98% of it in the value consistent all-different's call
+tree. Most of that was in fact `generic_reason(succ)`, built once per
+inference (and so a copy of the whole successor list per node) by the root
+`succ[i] ≠ i` pass and by `Prevent`'s chain loops; the rest was the
+all-different checking each newly fixed successor against every other one fixed
+in the same call. #1453's fix builds the reason once per pass and indexes the
+waiting values past 16 of them, and the ring is now linear: 0.13 s at 160,000
+nodes under `SCC`, and 0.06 s at 80,000 under `Prevent` (from 7.5 s). The
+constructors' duplicate-variable check was quadratic too, which showed on a
+ring with two-valued successors (9.0 s at 80,000 before search, now 0.30 s): it
+now sorts. Proofs are byte-identical.
 
 **Overflow.** Nothing to guard: every successor value and position in
 either encoding is at most `n` in magnitude, the wrap rows' coefficients are
@@ -941,7 +950,9 @@ written; they are cited per rule as history, not as lanes.
   slots, in either class (`circuit.cc:55–61`, `subcircuit.cc:974–980`); the
   root contradiction is installed instead of every propagator.
 - **Strength** — `GAC` on this shape: there is no solution.
-- **Algorithm** — `O(n²)` handle comparisons, once.
+- **Algorithm** — sort a copy of the non-constant successors and look for
+  equal neighbours, `O(n log n)`, per construction (it was `O(n²)` pairwise
+  comparisons until #1453).
 - **Why it is true** — the successors are all different in both classes.
 - **Proof technique** — `RUP`: the clique's two rows for the pair collapse to a
   unit and its negation (JP 3.1's shape, Theorem 2.8).
