@@ -13,6 +13,7 @@
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <optional>
@@ -51,12 +52,16 @@ Circuit::Circuit(vector<IntegerVariableID> succ) : _succ(std::move(succ))
     // entries one variable whenever a model equates them (#1047), so it is
     // answered with a root contradiction, as AllDifferent does. Two slots
     // pinned to the same constant are left to the propagators.
-    for (size_t i = 0; i < _succ.size() && ! _has_duplicate_vars; ++i) {
-        if (is_constant_variable(_succ[i]))
-            continue;
-        for (size_t j = i + 1; j < _succ.size(); ++j)
-            if (_succ[i] == _succ[j])
-                _has_duplicate_vars = true;
+    {
+        // Sorted, so that a repeat is two neighbours: the pairwise scan this
+        // replaces was quadratic in the node count, and on a large ring it was
+        // most of the time before search started (#1453).
+        vector<IntegerVariableID> non_constant;
+        for (const auto & s : _succ)
+            if (! is_constant_variable(s))
+                non_constant.push_back(s);
+        std::ranges::sort(non_constant);
+        _has_duplicate_vars = std::ranges::adjacent_find(non_constant) != non_constant.end();
     }
 }
 
