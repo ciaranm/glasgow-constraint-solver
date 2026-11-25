@@ -905,8 +905,9 @@ Facts common to every entry:
   which the audit found ambiguous, described only that loop. #1265, merged
   after `0a5b4ec6`, replaced it there with "overshoots by at least the right
   hand side itself — `T ≥ 2·R`". The matching code comment at
-  `cumulative_strengthening.cc:629–633` still says "once the rest overshoots
-  by half", after #1265 too; #1301 (open) rewrites it.
+  `cumulative_strengthening.cc:629–633` still said "once the rest overshoots
+  by half" after #1265 too, until #1301 made it "once the rest sums to at
+  least twice kappa".
 - **Tightness** — two lanes:
   - `RaiseTooFast` on `knapsack_raise`. Since #1280 it claims the raised
     coefficient at `kappa + 1` inside the `red`. With the task on and every

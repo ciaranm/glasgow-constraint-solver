@@ -46,7 +46,7 @@ comment in `disjunctive_2d.hh`, several comments in `disjunctive_2d.cc`, the
 relaxation test's header and the noOverlap footnote of the frontend support
 matrix (since retired); and it corrects "6-way" to "5-way with one optional
 rectangle, 6-way with two" in the code and the design note, except one comment
-in `disjunctive_2d_optional_test.cc`, which #1301 (open) corrects.
+in `disjunctive_2d_optional_test.cc`, which #1301 corrected.
 
 **What was measured again.** At `0a5b4ec6`, on fataepyc-10, with timings
 taken one run at a time on one pinned core, and with the probes in
@@ -1646,8 +1646,9 @@ is the table's two columns.
   at `7e1c4178` and matched. At `0a5b4ec6` it still describes the pairwise
   rule with mandatory boxes and "six pols", which #1265, merged after it,
   corrects. #1276 changed several of its `squares` figures (see [Proof
-  performance](#proof-performance)), and those were not updated; #1301
-  (open) re-measures that table.
+  performance](#proof-performance)), and those were not updated until
+  #1301 re-measured that table at `86caad24`, cell for cell as #1261's
+  re-audit found them.
 - [`cumulative-proof-logging.md`](../cumulative-proof-logging.md): the two
   `CumulativeInputs` fields the projection added, and what `Cumulative`'s
   certificates cite.
