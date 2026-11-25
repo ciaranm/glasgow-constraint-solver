@@ -80,7 +80,7 @@ Four things to know before touching it.
   does not even reach `bounds(Z)`.
 - **The encoding matches `cake_pb_cp`'s row for row, but it is unlabelled and
   in a different order.** So the three SCP chain cases can only be `none`.
-  The comment giving #358 as the reason is stale (corrected by #1396, open).
+  The comment that gave #358 as the reason was stale until #1396 corrected it.
 - **Its single-support rule's reason and proof are per value of the result.**
   The reason names `x ≠ r` for every value `r`, where a bound would do.
 
@@ -588,9 +588,9 @@ rest of the propagation is interval-level.
 4. **The audit lane.** One row, `ArrayMinMax`, pinned `KnownTrip`: `ArrayMax`
    over three wide distinct variables into a fourth (`large_domain_audit_test.cc`,
    line 601).
-   - **Its comment is stale.** It blames "H1b (a missing hull bound) and H1a
-     (the union scan)". The union scan has been interval-level since #815, and
-     the trip is the entry pass. Corrected by #1396, open.
+   - **Its comment was stale**, until #1396 corrected it. It blamed "H1b (a
+     missing hull bound) and H1a (the union scan)". The union scan has been
+     interval-level since #815, and the trip is the entry pass.
    - **What it does not vary:** holes, views, `min`, a narrow result (which
      reaches line 332 rather than 320), a single-support shape, or proofs. So
      the reason and proof sides above are outside it.
@@ -1132,14 +1132,14 @@ rules 4 and 5 and [Robustness](#robustness-and-limits).
      would have to target the result too.
 
    Medium; filed as #1166.
-3. **Update the audit row's comment** (done by #1396, open), and add rows
+3. **Update the audit row's comment** (done by #1396), and add rows
    with a narrow result, with holes, and with proofs. Trivial.
 4. **Make the single-support rule's reason and proof per run.** State "no
    other entry meets the result" as each other entry's generic reason, and one
    `¬f_k` per entry by a lemma per run. Small; filed as #1167.
 5. **Label the rows as cake does, in cake's order.** That makes the three
    chain cases `strict`. Also correct the CMake comment's stale #358 reason
-   (done by #1396, open). Small.
+   (done by #1396). Small.
 6. **Measure the per-call overheads:** the domain copies, the `scope` vector,
    the generator frames, and the bound rules' unconditional (though
    non-allocating) reasons. These are candidates for the remaining 6.8 to 8.6

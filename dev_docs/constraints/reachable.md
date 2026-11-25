@@ -188,9 +188,8 @@ against 0.6 ms with the root open, about 4.3 s against 0.8 s for the same 200
 solutions, an enumeration in which it saves almost no nodes with the root
 open (1,160 against 1,193 recursions); with the root fixed it does save nodes,
 1,196 against 1,629 at 20 × 20 and 599 against 1,056 at 10 × 10 (see [CPU
-performance](#cpu-performance)). The header's comment that the switch has "no
-effect on the directed spelling" (`reachable.hh:54–55`) is stale (corrected by
-#1396, open): rules 9 and 10 run under it, and brute force shows `DReachable`
+performance](#cpu-performance)). The header's comment that the switch has "no effect on the directed spelling"
+(`reachable.hh:54–55`) was stale until #1396 corrected it: rules 9 and 10 run under it, and brute force shows `DReachable`
 is GAC with the forcing and not
 without. Turned off, the undirected spelling is still a
 checker at every leaf, and the removals keep the 1-values and the root GAC.
@@ -1447,14 +1446,14 @@ counterpart here: every `reachable` assertion carries its reason.
    open and 3.5 ms fixed, against 0.16 ms undirected with the root open. Low priority while no corpus model
    is directed. Filed as #1316.
 4. **Fix the stale text this audit found outside this document**, as small
-   out-of-stack fixes; the long note stays where it is. #1396 (open) makes
-   the fixes marked so:
+   out-of-stack fixes; the long note stays where it is. **Done** by #1396 for
+   the items marked so; as found at the audit:
    - `connectivity-proofs.md`'s section "What is not one RUP" says the forcing
      is not implemented and that the propagator applies "the five rules in the
-     table"; both stopped being true in 081be4c0. Corrected by #1396, open.
+     table"; both stopped being true in 081be4c0. Corrected by #1396.
    - `connectivity-proofs.md:127–130` says `reachable_test` runs every case
      through `solve_for_tests_checking_gac`; the aliased `dup` run uses plain
-     `solve_for_tests`. Corrected by #1396, open.
+     `solve_for_tests`. Corrected by #1396.
    - **Reported, not proposed for a fix:** the note's `hitori` propagator /
      no-cuts figures (the section at lines 256–339, including 301, 307 and
      326) and `proof-benchmarks.md`'s rows 118–119 are from an earlier tree:
@@ -1467,14 +1466,14 @@ counterpart here: every `reachable` assertion carries its reason.
      note gets a dated note is the maintainer's call.
    - `reachable.hh:54–55` says `with_cut_forcing` has "no effect on the
      directed spelling"; it switches rules 9 and 10 (see [Options](#options)).
-     Corrected by #1396, open.
+     Corrected by #1396.
    - `reachable_test.cc:180` says the mutation fixture is "six free nodes"; it
-     has seven (`208–217`). Corrected by #1396, open.
+     has seven (`208–217`). Corrected by #1396.
    - The comment at `reachable.cc:154–155` and `connectivity-proofs.md`'s
      statements of the size (lines 14, 234, 315, 378 and 625) give it as
      `O(nodes × edges)`, which drops the `n²` term (see [OPB
      encoding](#opb-encoding)); [`tree.md`](tree.md) lists the same lines.
-     All corrected by #1396, open.
+     All corrected by #1396.
 5. **The audit lane's pin.** A wide root, plain or as an offset view,
    enumerates without tripping the guard (see [Interval
    efficiency](#interval-efficiency)). PR #1302 (open) re-pins this family's
@@ -1576,10 +1575,9 @@ steps.
   undirected forcing and why the directed one has no one-pass version, the
   open-root case split, the encoding-size limit, the `hitori` measurements
   against the decomposition including the DB-tax comparison with `none`, the
-  tree and path family built on top, and `Dag`'s rootless variant. Its section
-  "What is not one RUP" is stale: it says the forcing is not implemented, which
-  081be4c0 (in PR #784) changed (corrected by #1396, open); the section
-  before it is current. Its
+  tree and path family built on top, and `Dag`'s rootless variant. Its section "What is not one RUP" was stale until #1396 corrected it: it
+  said the forcing was not implemented, which 081be4c0 (in PR #784) changed;
+  the section before it is current. Its
   propagator and no-cuts `hitori` figures are from an earlier tree (see [Next
   steps](#next-steps) item 4).
 - [`proof-benchmarks.md`](../proof-benchmarks.md): the `hitori` rows, including

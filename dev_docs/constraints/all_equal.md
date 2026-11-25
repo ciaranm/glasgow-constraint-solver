@@ -432,11 +432,10 @@ per-value iterators.
    the per-call guard, which counts values walked per call, as it is for
    `increasing`.
 
-   The `AllEqual/holes` row's comment is stale. It says the pass "then walks
-   each interval a value at a time" and that the row "still trips", and it
-   cites `all_equal.cc:114`; but the row is pinned `Clean`, the per-value
-   loop is gone, and the hole pass is at line 116. Corrected by #1396,
-   open.
+   The `AllEqual/holes` row's comment was stale until #1396 corrected it. It
+   said the pass "then walks each interval a value at a time" and that the row
+   "still trips", and it cited `all_equal.cc:114`; but the row is pinned
+   `Clean`, the per-value loop is gone, and the hole pass was at line 116.
 
 ## Inference catalogue
 
@@ -976,9 +975,9 @@ every shape below gives the right answer at `0a5b4ec6` (see [Re-audit,
    hole pass when the change was a bound, might recover the advantage the
    call counts suggest. This is empirical, and small to try. Not worth an issue
    until it has been tried.
-4. **Correct the stale text elsewhere** (done by #1396, open). Trivial.
-   Step 1 landed without it: #1180 touched neither file, and at `0a5b4ec6` all
-   three passages below are as described.
+4. **Done** (#1396): correct the stale text elsewhere. Step 1 landed
+   without it: #1180 touched neither file, and at `0a5b4ec6` all three
+   passages below were as described.
    - `large_domain_audit_test.cc:438–449`: the `AllEqual/holes` row's comment,
      including its stale `all_equal.cc:114`;
    - [`large-domains.md`](../large-domains.md), line 664: `all_equal.cc` is

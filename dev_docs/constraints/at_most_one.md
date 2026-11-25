@@ -222,9 +222,9 @@ adds one more.
   `seq` flag, where cake writes the literal `¬[x_j = val]`; the rows mean the
   same.
 
-The registration's comment groups this case with `all_different_except` and
+The registration's comment grouped this case with `all_different_except` and
 `among` as diverging because "their per-value / per-pair encodings reference
-the variables' eq/ge literals" (corrected by #1396, open). That is not this
+the variables' eq/ge literals", until #1396 corrected it. That is not this
 family's reason: its rows
 reference no order or equality literal, and the divergence is only polarity
 and labels. Writing `Count`'s three flags and labelling the row `am1`, as
@@ -426,9 +426,9 @@ the rest of this section describes as audited.
    over `wide_lo..probe_width`. On the guard build of `c9ceea25` the native row
    trips in rule 1's generator, at 100,001 values yielded. The rows do not vary
    holes, views, a constant or fixed `val`, or repeats, and never reach rule 2.
-   The native row's comment says an aliased `val` "is rejected at post time";
-   neither class rejects one at post, and only `AtMostOneSmartTable` rejects
-   it at all, from `solve_with` (corrected by #1396, open).
+   The native row's comment said an aliased `val` "is rejected at post time",
+   until #1396 corrected it; neither class rejects one at post, and only
+   `AtMostOneSmartTable` rejects it at all, from `solve_with`.
    Since #1155 the native row is pinned `Clean`, and survives on a guard
    build; the SmartTable row still trips. Sibling rows with `val` fixed and
    with holes were suggested; neither reaches a width-proportional site now

@@ -2230,7 +2230,7 @@ asserted". Both date from before `ce47d70a` (2026-06-04), which removed the
 family's last assertion. A third stale comment, in the flow arm's
 closed-deferral branch, says "the per-variable In constraint certifies this";
 no `In` has been posted since `76c8eeab`, and it is the closed propagator
-(rule 15) that does. All three corrected by #1396, open.
+(rule 15) that does. All three corrected by #1396.
 
 ### Known limitations
 
@@ -2320,8 +2320,7 @@ Ranked by what they buy for what they cost.
    low priority for all its size.
 6. **`GlobalCardinality` tidying, unfiled.** Delete rules 22 and 24, or reduce
    each to a comment saying why it cannot happen, and correct the three stale
-   comments under [Proof-logging gaps](#proof-logging-gaps) (done by #1396,
-   open). Make rules 23 and 28 one `infer_all` per Hall set or cut instead of
+   comments under [Proof-logging gaps](#proof-logging-gaps) (done by #1396). Make rules 23 and 28 one `infer_all` per Hall set or cut instead of
    one `pol` per removal.
    Make rules 25 and 30 remove ranges rather
    than values (#876, and the `GlobalCardinality/hall` `KnownTrip`); both need

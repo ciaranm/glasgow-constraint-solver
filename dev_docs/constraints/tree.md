@@ -128,9 +128,8 @@ except the empty graph. Degenerate shapes:
     zero (by 1 for the `_int` spelling, by `min(index_set(ns))` for `_enum`) and
     call `glasgow_tree` / `glasgow_dtree`; `fzn_glasgow.cc:985` posts the class.
     The undirected one goes straight to `glasgow_tree` rather than doubling the
-    edges into a `dtree` as the standard library does. That does **not** halve
-    the reachability encoding, whatever `fzn_tree_enum.mzn`'s comment says
-    (corrected by #1396, open):
+    edges into a `dtree` as the standard library does. That does **not** halve the reachability encoding, whatever
+    `fzn_tree_enum.mzn`'s comment said before #1396 corrected it:
     undirected `Reachable` already makes two arcs per edge (`reachable.cc:50–60`),
     so a `dtree` over the doubled edge list has the same `2E` arcs. In the size
     table under [OPB encoding](#opb-encoding) the reachability rows of the two
@@ -986,7 +985,7 @@ solution, and every one carries its reason.
    625) and in the comment at `reachable.cc:154–155`.
    `connectivity-proofs.md:402–412` ("These are not GAC") and `tree.hh:91` name
    cycle closure as the gap, and leave out `DTree`'s larger one, nothing
-   entering the root (#1314). All corrected by #1396, open.
+   entering the root (#1314). All corrected by #1396.
 5. **Land PR #1302** (open), which re-pins the `Tree` and `DTree` audit-lane
    rows `Clean` with a wide-declared root, the safer choice Ciaran picked; see
    [Interval efficiency](#interval-efficiency), item 4.
@@ -997,8 +996,7 @@ solution, and every one carries its reason.
 7. **Tidying.** Skip in-degree rows for nodes with a single entering arc, which
    can never fire; that is `path.md`'s next step 7 (skip any `graph_rules` row
    whose variable count does not exceed its limit), one change in the shared
-   helper or its callers. Fix `hints.hh`'s "both spellings use it" (done by
-   #1396, open). Trivial.
+   helper or its callers. `hints.hh`'s "both spellings use it" is fixed (done by #1396).
 
 ## Prior art
 
@@ -1031,10 +1029,9 @@ rows on top of it.
   encoding and every proof idea this family uses. Its section "The tree and path
   family, on top of this" explains why one reachability encoding serves `Tree`,
   `DTree`, `Path` and `DPath`, why the counting rows are the constraint's own
-  rather than more children, and why they are not GAC (though its "One
-  reachability encoding, not two" overstates what doubling costs, and its
-  "These are not GAC" omits `DTree`'s root in-degree gap, both corrected by
-  #1396, open; see next step 4);
+  rather than more children, and why they are not GAC (its "One reachability encoding, not two" overstated what doubling costs,
+  and its "These are not GAC" omitted `DTree`'s root in-degree gap, until
+  #1396 corrected both; see next step 4);
   "Measured, on a grid Steiner tree" is the original
   decomposition-against-propagator comparison, on a different instance from
   the one above.

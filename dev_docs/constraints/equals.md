@@ -1366,7 +1366,7 @@ five of the six exist for a reason that will recur in the next family:
 | `run_wide_no_overlap_equals_test` | width 10⁹, proofs off. Every other domain in the file is inside `[-10, 10]`; `range_infer_test` works inside `[0, 40]`. It pins the **answer**, not the cost — it would have passed before #873 too, slowly — and says so. |
 | `run_wide_proved_no_overlap_equals_test` | the same shape at 10⁶, **proved**, asserting the proof is under a thousand lines before handing it to veripb. This is the lane that pins the cost. The bound is deliberately loose and not a pinned figure: most of a proof this small is fixed overhead, and any threshold separates a constant from a million lines. 10⁶ rather than 10⁹ so that a regression fails rather than filling the disk. |
 | `run_holey_no_overlap_equals_test`, both orders | interleaved disjoint domains, which is the only shape reaching the two moves that carry a range literal. Both orders, because the walk climbs `v1`'s domain and so is not symmetric; between them they reach all six moves. |
-| `run_holey_no_overlap_view_equals_test` | one operand a **view**, with a deliberately non-zero offset so that it does not deview onto the underlying variable and borrow its literals. Written when this was the one shape whose witness was *not* spelled entirely in intervals; since #904 it is, and what the lane now pins is that a wrapped run costs the same as a bare one. Note that it checks solutions, not proof shape — the degradation it was written against verified perfectly well, nine lines longer, so a green lane never said anything about it either way. Its in-file comment still describes the per-value spelling and is stale (corrected by #1396, open). |
+| `run_holey_no_overlap_view_equals_test` | one operand a **view**, with a deliberately non-zero offset so that it does not deview onto the underlying variable and borrow its literals. Written when this was the one shape whose witness was *not* spelled entirely in intervals; since #904 it is, and what the lane now pins is that a wrapped run costs the same as a bare one. Note that it checks solutions, not proof shape — the degradation it was written against verified perfectly well, nine lines longer, so a green lane never said anything about it either way. Its in-file comment still describes the per-value spelling and is stale (corrected by #1396). |
 | `run_value_indicator_equals_test` | the `nmseq` shape in miniature — one reified equality per (variable, value) — with a **driver** that punches a value out of the interior on its own. Every other lane posts a single constraint over its operands, so nothing removes an interior value and a trigger that sees only instantiations passes. Checked as consistency at every node, since a missed wake loses no solutions. |
 | `run_hint_inventory_equals_test` | the wire inventory, read off two real proofs at `AssertionLevel::Inferences`, failing on a subhint outside the family's closed list. |
 
@@ -1701,7 +1701,7 @@ both of the top two items are cheap.
    the argument for not leaving it that way: a probe's table and a lane's table
    read identically and reproduce differently. The shape is already written; it
    needs pinning.
-3. **A stale comment in `equals_test.cc`** (done by #1396, open).
+3. **A stale comment in `equals_test.cc`** (done by #1396).
    `run_holey_no_overlap_view_equals_test` explains its non-zero offset by
    saying it is needed to exercise the per-value spelling, which #904 deleted.
    The offset is still the right choice, for a

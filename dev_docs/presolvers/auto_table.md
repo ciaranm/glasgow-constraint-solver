@@ -529,7 +529,7 @@ that did left it (see [Evidence that it fired](#evidence-that-it-fired)),
 as the header's comment on `ran` says.
 
 The header's comments on `ran` and `compact_table` (`auto_table.hh:33-37`,
-`:55-62`) mention neither exception (corrected by #1389, open).
+`:55-62`) mentioned neither exception, until #1389 corrected them.
 
 Two `AutoTable`s sharing one block in one solve report the later run only,
 (until #1387, apart from `compact_table` when the later run found no tuple),
