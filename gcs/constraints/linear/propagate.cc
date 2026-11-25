@@ -636,8 +636,8 @@ auto gcs::innards::default_linear_slack_watch_cover_percent() -> std::size_t
     // Conservative: only a covering set well under a fifth of the terms is a
     // clear enough win to risk the per-wake re-arm. A larger initial cover tends
     // to a constraint that turns tight during search, where waking often and
-    // re-arming each time loses badly. See dev_docs/linear-slack-waking.md. A
-    // malformed override is ignored with a warning.
+    // re-arming each time loses badly. See dev_docs/constraints/linear.md,
+    // "Slack-based waking". A malformed override is ignored with a warning.
     static const std::size_t percent = non_negative_count_from_environment("GCS_LINEAR_SLACK_WATCH_COVER_PERCENT", 15);
     return percent;
 }

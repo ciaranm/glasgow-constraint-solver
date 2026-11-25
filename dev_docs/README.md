@@ -267,7 +267,8 @@ library. For an introduction to *using* the solver, start with the top-level
   bites, 17–24% of solve time where it does not, hence off by default), and the
   mutation that survives because VeriPB's own unit propagation re-derives
   the row.
-- [Slack-based waking for linear inequalities](linear-slack-waking.md) — waking
+- [Slack-based waking for linear inequalities](constraints/linear.md#slack-based-waking)
+  (in the linear family document, since #1043) — waking
   `ReifiedLinearInequality` only when a *covering* subset of its terms moves,
   via the refined-watch API, instead of on every bound change of every term:
   the per-term potential, the margin that decides how many to watch, and what
