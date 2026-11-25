@@ -115,8 +115,9 @@ auto run_all_tests(bool proofs) -> void
     run_mdd_test(proofs, "no accepting terminals", {{0, 1}, {0, 1}, {0, 1}},
         {{{{0_i, 0}, {1_i, 1}}}, {{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}}, {{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}}}, {1, 2, 2, 2}, {});
 
-    // Variable domains narrower than the MDD alphabet — must still emit
-    // "no transition" constraints over the full alphabet so GAC verifies.
+    // Variable domains narrower than the MDD alphabet: the transitions on 2
+    // are outside every domain, so since #1409 they get no row at all, as in
+    // cake's encoding, and GAC must still verify without them.
     run_mdd_test(proofs, "narrow domains vs alphabet", {{0, 1}, {0, 1}, {0, 1}},
         {{{{0_i, 0}, {1_i, 1}, {2_i, 1}}}, {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 0}}}, {{{0_i, 0}}, {{1_i, 0}}}}, {1, 2, 2, 1}, {0});
 

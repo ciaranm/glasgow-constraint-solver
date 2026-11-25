@@ -23,9 +23,9 @@
 > reach; recorded in [`difference_logic.md`](../presolvers/difference_logic.md)),
 > #868 (cross-solver comparison), #1309 (installing was quadratic in the
 > trigger count, from either entry point; the engine's part is fixed by #1442), #816 (initialisers, root
-> simplification's included, do not observe `--timeout`), and the sibling
-> #1298 (reified linear
-> inequalities, the same class of overflow). Filed since: #1378, reaching in
+> simplification's included, do not observe `--timeout`). The sibling #1298
+> (reified linear inequalities, the same class of overflow) has since been
+> fixed by #1400, which sums them in `WideSum`. Filed since: #1378, reaching in
 > from a presolver (an `AutoTable`'s throwaway root search makes the
 > incremental route's first call below a guess, so the default incremental
 > mode throws `UnexpectedException`); and, from the review of this document,

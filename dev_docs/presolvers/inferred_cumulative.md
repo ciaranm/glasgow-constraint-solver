@@ -1219,8 +1219,8 @@ instance per core complex, against `main` at `73d4f444`:
 
 | Instance | Subproblems | `instructions:u` before / after | Wall before | Wall after |
 |---|---:|---:|---:|---:|
-| `pack007` | 1258 | 53.3 M / 64.4 M | 0.070 s | 0.063 s |
-| PSPLib `J30_10_1` | 2777 | 170.8 M / 165.5 M | 0.062 s | 0.062 s |
+| `pack007` | 1258 | 53.3 M / 64.4 M | 0.0071 s[^pack007wall] | 0.0090 s |
+| PSPLib `J30_10_1` | 2777 | not comparable[^j30timeout] | 0.062 s | 0.062 s |
 | PSPLib `J120_10_1` | 3549 | 0.91 G / 0.31 G | 0.21 s | 0.12 s |
 | PSPLib `J120_59_6` | 6441 | 86.8 G / 5.6 G | 11.9 s | 1.07 s |
 | PSPLib `J120_19_1` | 4683 | 279.7 G / 9.4 G | 33.0 s | 1.6 s |
@@ -1232,6 +1232,16 @@ here and on all 3,984 RCPSP and multi-mode instances of #1408's sweep.
 `pack007`'s pass costs more instructions than before, since a merge now
 builds an index over each half however few states it has; over all of Pack
 the pass takes 0.97× the instructions.
+
+[^pack007wall]: As first written, this row's wall times were 0.070 s and
+    0.063 s, which do not fit its own instruction column (+21%). Five
+    interleaved runs in #1410's review measured 0.0071 s on the old code and
+    0.0090 s on the new: slower, as the instructions say.
+
+[^j30timeout]: At `--timeout 0.01` this instance stops on the timeout, after
+    about 637 recursions, so its instruction count depends on the load. The
+    row first gave 170.8 M / 165.5 M; #1410's review measured 138.3 M on the
+    old code and 146.6 to 148.1 M on the new.
 
 **Where the time goes.** On `J120_59_6` since #1408, `perf`'s sample
 attribution puts about 87% of cycles under `lift_cover`, which is the

@@ -6,12 +6,14 @@
 > filed by this audit: #1373, fully reified donors are never lifted, which is
 > how MiniZinc delivers every conditional difference; #1374,
 > `glasgow_scp_solver` has no switch for the presolver. Shared with
-> [`difference.md`](../constraints/difference.md), which owns the machinery:
-> #1371 and #1372. In-range models that the donors answer throw
-> `IntegerOverflow` through this presolver, from the installed machinery's
-> shortest-path arithmetic (#1371). Its refutation pass (#1372) is reached
-> through the presolver only with `incrementally(false)`, the donors retired and
-> simplification off, which no front end selects. Already open and touching this
+> [`difference.md`](../constraints/difference.md), which owns the machinery,
+> and closed by decision since: #1371 and #1372, by #1403. In-range models
+> that the donors answer throw `IntegerOverflow` through this presolver, from
+> the installed machinery's shortest-path arithmetic, and #1403 kept that throw
+> as a deliberate limit, now saying it came from difference logic. The
+> refutation pass's overflow (#1372) is reached through the presolver only with
+> `incrementally(false)`, the donors retired and simplification off, which no
+> front end selects. Already open and touching this
 > presolver: #598 (the negated forms, deliberately not lifted), #1309
 > (installing its one propagator was quadratic in its scope; fixed by #1442), #816 (the root
 > initialiser it installs does not observe `--timeout`), #983 (no `gcspy`
@@ -83,9 +85,11 @@ Four things to know before touching it.
   `IntegerOverflow` once the presolver is on, in the default configuration too.
   Nine heavy edges is not the threshold: eight heavy edges plus one light one
   throw as well. Two MiniZinc models print `=====UNSATISFIABLE=====` without the
-  presolver and `=====ERROR=====` with it. The causes and the fixes are the
-  installed machinery's: #1371 for everything a front end reaches, and #1372 for
-  a C++-only configuration. See [Robustness and limits](#robustness-and-limits)
+  presolver and `=====ERROR=====` with it. The causes are the installed
+  machinery's: #1371 for everything a front end reaches, and #1372 for a
+  C++-only configuration. Both were closed by #1403 by keeping the throws,
+  which now say they came from difference logic, rather than by widening the
+  arithmetic. See [Robustness and limits](#robustness-and-limits)
   for the shapes measured here.
 
 ## What it is
@@ -807,10 +811,10 @@ on its nodes.
     which no front end selects. From C++ that configuration throws on chain-10
     and on cycle-8 (`ext2fs.cc`), and solves chain-8 and chain-9.
 
-    The sites, how far the list goes, and the fixes are `difference.md`'s: see
-    its [Robustness and
-    limits](../constraints/difference.md#robustness-and-limits), #1371 and
-    #1372. This document records only what the presolver's configurations do.
+    The sites, how far the list goes, and the decision to keep the throws
+    (#1403, closing #1371 and #1372) are `difference.md`'s: see its
+    [Robustness and limits](../constraints/difference.md#robustness-and-limits).
+    This document records only what the presolver's configurations do.
   - **What was measured.** Domains are `±M`, with `M = 2⁶⁰ − 1`, unless stated.
     The donors are `LinearLessThanEqual` (or `LessThanEqual{x + M, y}` for the
     chains), and `LinearLessThanEqualIf` for B and the drift. The probes are
@@ -1341,7 +1345,8 @@ flattening (`tmp/fd-diff/difference_logic/survey/`):
 - 162 of 200 printed counters. Of the other 38:
   - five failed to parse their data;
   - five raised `IntegerOverflow` with or without the presolver
-    (`work-task-variation`, not this presolver's; #244 cites them);
+    (`work-task-variation`, not this presolver's; #244 cited them, and #1402
+    has since fixed it, so this count is as of the survey);
   - one was found unsatisfiable by the flattener, so the solver never ran;
   - the other 27 did not finish inside the limit. Most were still
     flattening. The rest ran `fzn-glasgow` past the limit, without the
@@ -1731,8 +1736,8 @@ These are phrased as a user meets them:
    publish the `r` and `f` roles. Get the strictness flip right; #598 could be
    closed in the same change.
 
-   It depends on #1371. The prototype opens MiniZinc routes to that issue's
-   drift and shape B.
+   It meets #1371's limit, which #1403 kept: the prototype opens MiniZinc
+   routes to that issue's drift and shape B, which throw rather than answer.
 
    It is the only way a MiniZinc model reaches the conditional path; XCSP3
    would also need a reified-ordering peephole. Of the challenge survey's

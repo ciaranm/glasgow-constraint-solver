@@ -9,11 +9,12 @@
 > bound concluded less than its certificate proves), by #1433; #1168 (the
 > overflows), by
 > #1215, with #1214 for view offsets: out-of-range inputs are refused at
-> construction; see [Re-audit, 2026-10-08](#re-audit-2026-10-08). Already open
+> construction; see [Re-audit, 2026-10-08](#re-audit-2026-10-08); #1224 (the
+> matching bound's proof could be rejected over positions declared wider than
+> 100 values, which this audit found already open), by #1362. Already open
 > and touching this family: #833 (the large-domain policy), #944 (interval
 > cardinality instead of an at-most-one per value, which names this family's
-> per-site at-most-ones), #1224 (the matching bound's proof can be rejected
-> over positions declared wider than 100 values; fix open as #1362). Tracked
+> per-site at-most-ones). Tracked
 > under #871. **Cake chain** since 2026-11-23: `cake_pb_cp` from CakeML
 > `930601d6` encodes it (#1417), and the solver now uses cake's names; see
 > [Cake conformity](#cake-conformity).
@@ -50,8 +51,8 @@ Minimum-Distance Constraint over Selected Points* (ModRef 2026), and it is a
 Glasgow extension with no frontend vocabulary: only the C++ API and the `.scp`
 reader post it. One definitional encoding serves five propagation modes, from a
 checker to the paper's conflict-matching bound, and every inference is
-certified, though over wide positions VeriPB can reject the matching bound's
-certificate (#1224). The design and the derivations are in
+certified (over wide positions VeriPB could reject the matching bound's
+certificate until #1362 fixed #1224). The design and the derivations are in
 [`min-distance-proofs.md`](../min-distance-proofs.md), which stays as this
 family's long note; this document audits it.
 
@@ -515,8 +516,9 @@ than `n`.
    matching's pairwise clauses over the sites' literals. The matching's
    at-least-one per position has **two forms, chosen by width**: the per-value
    at-least-one over the variable's whole definition range when that range is
-   at most 100 values, and a cover of its still-possible sites above that
-   (#939; `at_least_one_cover_threshold = 100_i`,
+   at most 100 values, and above that a cover of exactly the sites the
+   at-most-ones name for it, every site of its install-time domain, lost or
+   not (#939, #1362; `at_least_one_cover_threshold = 100_i`,
    `names_and_ids_tracker.cc:93`, tested at `:681`). The threshold is on the
    declared range: a position declared over more than 100 values gets the
    cover: any instance whose `x` is declared over more than 100 sites
@@ -824,7 +826,7 @@ Facts that hold for every rule:
   at-most-one) folded by `recover_am1_from_pairs` with the guard at coefficient
   `|L| − 1`, each pinned by an `ia`; then each non-constant position's
   at-least-one (per value over its definition range up to 100 values, else a
-  cover of its still-possible sites; see [Interval
+  cover of every site its install-time domain held, lost or not; see [Interval
   efficiency](#interval-efficiency)); one `pol` sums and divides by the
   total guard coefficient, leaving `g`; then the conclusion by RUP. The
   preconditions are `t ≥ 1` (the same-site clauses need `z ≤ 0 < t`) and that
@@ -852,18 +854,19 @@ Facts that hold for every rule:
   one summing `pol`; the closing RUP. The prototype's root inference, the first
   use, is 85 lines: 62 guarded clauses, four at-least-ones, 14 fold `pol`s,
   three `ia` pins, one sum and one closing RUP.
-- **Gaps** — VeriPB can reject the closing RUP when a position's at-least-one
-  takes the cover form (a definition range over 100 values) and the position
-  has lost a site of its install-time domain: the cover names only the
-  still-possible sites, while the at-most-ones name every position whose
-  install-time domain held the site. Filed as #1224 by the integer-range audit
-  (with `PairSupportMatch` and a requirements matrix, at `7e1c4178`; #1362
-  finds that neither is needed); fix open as #1362. The solutions are right;
-  only the proof fails. The shipped example reaches it: at `86caad24`,
+- **Gaps** — none known. Until #1362, VeriPB could reject the closing RUP
+  when a position's at-least-one took the cover form (a definition range over
+  100 values) and the position had lost a site of its install-time domain: the
+  cover named only the still-possible sites, while the at-most-ones name every
+  position whose install-time domain held the site. Filed as #1224 by the
+  integer-range audit (with `PairSupportMatch` and a requirements matrix, at
+  `7e1c4178`; #1362 found that neither is needed). The solutions were right;
+  only the proof failed. The shipped example reached it: at `86caad24`,
   `p_dispersion --variant min-distance-psm --random-euclidean 120 --points 4
-  --seed 1 --span 1000 --prove` is rejected at the closing RUP
+  --seed 1 --span 1000 --prove` was rejected at the closing RUP
   (`.pbp:42657`), and the same run on #1362's head verifies
-  (`tmp/fd-wrapup/fc/fc3/mine/p120/RESULTS.txt`).
+  (`tmp/fd-wrapup/fc/fc3/mine/p120/RESULTS.txt`). The cover is now given
+  exactly the sites the at-most-ones name, lost or not.
 - **Tightness** — shown once, not in the tree: #805 removed the `ia` pin and
   found `DropAnAtMostOne`, `NaiveOneShot` and `SkipFinalDivision` each rejected
   at this call site (recorded in `am1_from_pairs.hh`). `am1_from_pairs_test`
@@ -1081,9 +1084,9 @@ put in one table.
 
 ### Proof-logging gaps
 
-One, in the matching bound (rules 8 and 9): once a position whose declared
-range spans more than 100 values has lost a site of its install-time domain,
-VeriPB can reject the certificate (#1224; fix open as #1362). Every other
+None known. Until #1362, the matching bound (rules 8 and 9) had one: once a
+position whose declared range spans more than 100 values had lost a site of
+its install-time domain, VeriPB could reject the certificate (#1224). Every
 inference is justified at `Off`, with no `a` line, and the propagators are
 the same with proofs on or off.
 
@@ -1097,8 +1100,6 @@ the same with proofs on or off.
 - **Generalised arc consistency on `x` is out of reach** (independent set).
   `PairSupport` gives pairwise arc consistency only, and treats a repeated
   variable as two.
-- **The matching bound's proof can be rejected** over positions declared
-  wider than 100 values (#1224; rule 8). The answers are right.
 - **With proofs, building the model is quadratic in the site pairs** when
   most distances are distinct: 26 s at 600 sites with 82,426 distinct
   distances.
@@ -1161,8 +1162,9 @@ the same with proofs on or off.
    "combined by 4 pol lines", and its cost `O(|M|)` pol lines, both from before
    #805's shared fold (now 14 fold `pol`s, three `ia` pins and one sum on the
    same instance, and a fold's worth of `pol`s per clique; corrected by
-   #1396, open); its at-least-one is now the tracker's cached one, a cover
-   of the still-possible sites above 100 values of definition range (#939);
+   #1396); its at-least-one is now the tracker's cached one, a cover of the
+   sites the at-most-ones name above 100 values of definition range (#939,
+   #1362);
    and its figures are from another machine. And correct `read_min_distance`'s
    comment about `Z` (done by #1396, open).
 
