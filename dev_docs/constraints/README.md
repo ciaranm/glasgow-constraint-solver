@@ -701,11 +701,12 @@ variant](TEMPLATE.md#the-presolver-variant).
   Generalised arc consistent on distinct variables under every strategy
   (brute-forced at the root over 12,000 random automata with holes, and per
   node over about 6,000). The audit found two wrong answers and three shapes of
-  rejected proof: through MiniZinc a start state other than 1 builds a
-  different automaton (#1328; enum-typed models, and reified ones on 2.10.1,
-  reach it); `Bacchus` accepts an empty sequence whose start is not final
-  (#1329), and its proofs are rejected because its scaffold leaves out three
-  kinds of published unit clause (#1331); above `Off` the default strategy
+  rejected proof: through MiniZinc a start state other than 1 built a
+  different automaton (#1328, fixed by #1361; enum-typed models, and reified
+  ones on 2.10.1, reached it); `Bacchus` accepted an empty sequence whose
+  start is not final (#1329), and its proofs were rejected because its
+  scaffold left out three kinds of published unit clause (#1331), both fixed
+  by #1366; above `Off` the default strategy
   omits the static dead lines an unambiguous NFA's solution lines need
   (#1332); and the scaffolding `Regular` writes at every level is rejected at
   `Inferences` and `Backtracking` for a variable declared as a range whose
@@ -738,8 +739,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   run at, `Off` or one of the four assertion levels, since a deterministic
   diagram leaves no flag unassigned on a solution. The audit found a wrong
   answer through the C++ API and the `.scp` reader: a diagram over no
-  variables with an empty accepting list reports solutions, and VeriPB rejects
-  the proof (#1329). Node indices were not validated (a crash, #1333, now refused), and
+  variables with an empty accepting list reported solutions, and VeriPB
+  rejected the proof (#1329, fixed by #1366). Node indices were not validated (a crash, #1333, now refused), and
   MiniZinc's binding errors on six kinds of valid shape, including nodes at
   levels outside `1..L+1`, and reads past two vectors whenever N = 0 (#1336).
   It is 75 to 94 times Gecode's instructions on nonograms at equal node and
