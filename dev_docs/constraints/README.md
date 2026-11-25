@@ -681,9 +681,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   (#1307, by #1439), and a large one under the default `SCC`, whose recursive
   walk overflowed an 8 MiB stack from about 7,700 nodes (#1327, by #1440). A one-node
   `circuit` is satisfiable where MiniZinc's own
-  decomposition says not (#1319); and with prune skip switched off VeriPB can
-  reject the `SCC` proof, because two of its published certificates assume the
-  skip edges are already pruned (#1306). Until #1317 (fixed by #1438), the
+  decomposition says not (#1319); and with prune skip switched off VeriPB
+  could reject the `SCC` proof, because two of its published certificates
+  assume the skip edges are already pruned (#1306), until #1367 had the proof
+  derive those edges' absence without pruning them. Until #1317 (fixed by #1438), the
   default `SCC` propagator built a whole-scope reason on every call with
   proofs off (up to 14% of the instructions, at equal recursion and
   propagation counts), and with proofs a short-reason flag on every call

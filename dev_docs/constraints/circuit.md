@@ -4,10 +4,10 @@
 > `Check` and `Prevent`); experimental (`SubCircuit` under `SCC`, with or
 > without its two shaving rules) ·
 > **Audited** 2026-10-09 at `86caad24` ·
-> **Open issues** filed by this audit: #1306 (with `with_prune_skip(false)`, VeriPB can reject the
-> `SCC` proof, because two rules' certificates need prune skip to have run;
-> fix open as #1367),
-> #1319 (a question: a one-node `circuit` answers
+> **Fixed since the audit**: #1306 (with `with_prune_skip(false)`, VeriPB
+> could reject the `SCC` proof, because two rules' certificates need prune
+> skip to have run), by #1367 ·
+> **Open issues** filed by this audit: #1319 (a question: a one-node `circuit` answers
 > differently from MiniZinc's own decomposition). Already open and touching
 > this family: #1228 (`with_required_node()` rejects an anchor whose own index
 > is an interior hole), #833 (the large-domain policy), #868 (cross-solver
@@ -60,12 +60,13 @@ Four things to know before touching it.
   walk recursed once per level of its depth-first tree, and with an 8 MiB
   stack it segfaulted during root propagation, proofs off, from about 7,700
   nodes on a fixed ring and at 10,000 nodes on every domain shape tried; it
-  now keeps its own stack of frames. The wrong proof is
+  now keeps its own stack of frames. The wrong proof was
   `Circuit`'s `SCC` with
-  `with_prune_skip(false)`: the answers stay right, but the certificates of
+  `with_prune_skip(false)`: the answers stayed right, but the certificates of
   *fix required* and *no back edge* assume skip edges are already pruned, and
-  VeriPB rejects them when a skip edge is what makes the argument fail (13 of
-  900 `circuit_random --no-prune-skip` proofs; #1306). At the
+  VeriPB rejected them when a skip edge was what made the argument fail (13
+  of 900 `circuit_random --no-prune-skip` proofs; #1306). Since #1367 the
+  proof derives those edges' absence anyway, and the 900 verify. At the
   defaults, no proof was rejected in this audit or its fact-checks.
 - **Until #1317, most of the `SCC` propagator's per-call overhead was not the
   algorithm.** It materialised a reason over every successor on every call,
@@ -909,7 +910,7 @@ switched prune skip off in about half its instances and still never met the
 rejection of #1306, which the fact-check found at 2 of 300 and 0 of 300
 instances under default branching with prune skip off, and 9 of 300 under
 random branching (`tmp/fd-graph/factcheck/circuit/b/r6/`); at the defaults it
-found none in 600.
+found none in 600. #1367 fixed it.
 
 [^knobs]: Each instance drew prune root, prune skip, fix required, prune
     within, the at-most-one method and short reasons at random.
@@ -1175,27 +1176,31 @@ carrying the reason or `sr`; on the 12-node enumeration, 857 firings wrote
   the code meets it only when `with_prune_skip` is on: rules 11 and 12 run in
   the same walk, before this rule, and their conclusions are in the database
   when `ReachTooSmall` needs them. With `with_prune_skip(false)` the rule
-  still fires and the skip edges stay in the reason's graph; when one of them
-  is a way out of the subtree, its reachable set is not too small and VeriPB
-  rejects the derivation (#1306).
+  still fires and the skip edges stay in the domains. Until #1367 they stayed
+  in the reason's graph too, so when one of them was a way out of the
+  subtree its reachable set was not too small and VeriPB rejected the
+  derivation (#1306). Now, at `Off`, `explore` writes rules 11 and 12's
+  derivations for those edges without pruning them and records them in a
+  per-call set, `proved_absent_edges`, which `ReachTooSmall`'s walk skips.
 - **Reason** — the whole-scope reason, through `sr`.
 - **Assertion** — `a 1 ~f[28][sr] >= 1 ::circuit:((constraint_id _9));`
   (`fire/circuit_no_backedges_test_inf.pbp`).
 - **Hint** — `hints::Circuit`.
 - **Offline reconstructibility** — `search`, as rule 7.
 - **Proof size** — one `ReachTooSmall`.
-- **Gaps** — at the defaults, `None.` With `with_prune_skip(false)`, a
-  derivation VeriPB can reject (#1306), with prune skip the only
+- **Gaps** — `None`, since #1367. Before it, with `with_prune_skip(false)`,
+  a derivation VeriPB could reject (#1306), with prune skip the only
   change: two of the 13 rejected `circuit_random --no-prune-skip` proofs in
-  the second fact-check fail inside `No back edges`, with fix required and
+  the second fact-check failed inside `No back edges`, with fix required and
   prune root on (`tmp/fd-graph/factcheck2/circuit/cr/cr_10_54.pbp`,
-  `cr_8_145.pbp`); the reproducer in #1306 reaches it with fix required and
+  `cr_8_145.pbp`); the reproducer in #1306 reached it with fix required and
   prune root off as well (`tmp/fd-graph/circuit/fc/r3_000.pbp:1268`).
 - **Tightness** — `Not shown.` `circuit_no_backedges_test` fires it with
   prune skip off and live skip edges (`5 → 0`, `6 → 0`, `6 → 3`), which the
   derivation walks; it verifies because no domain contains node 7, so every
   reachable set misses 7 whatever the skip edges do. It runs rule 8 with skip
-  edges present, but it cannot catch #1306.
+  edges present, but it could not catch #1306; `circuit_prune_skip_off_test`
+  (#1367) can.
 
 ### Rule: scc-disconnected
 
@@ -1229,15 +1234,21 @@ carrying the reason or `sr`; on the 12-node enumeration, 857 firings wrote
   assumption `succ[v] ≠ u`, run from `v`, the edge's tail
   (`circuit_scc.cc:1023–1024`), where the thesis runs it from the subtree's
   root. **Like rule 8, its precondition is that skip edges are already
-  pruned**, which the code meets only with `with_prune_skip` on. With it
-  off, the rule still fires and its derivation can be rejected (11 of the 13
-  rejected `circuit_random --no-prune-skip` proofs in the second fact-check
-  fail here): the fact-check's six-node instance
-  (`tmp/fd-graph/factcheck/circuit/b/r6/rej2.cc`, default branching) finds its
-  five solutions, and VeriPB rejects line 1356, a `Next implies` step inside
-  the root's `Fix required back edge (2, 5)` derivation; the same instance
-  verifies with prune skip on, and with prune skip and fix required both off
-  and prune root on (`tmp/fd-graph/circuit/fc/r3_*`). #1306.
+  pruned**, which the code met only with `with_prune_skip` on until #1367,
+  and now meets in the proof either way (see rule 8). Before it, with prune
+  skip off the rule still fired and its derivation could be rejected (11 of
+  the 13 rejected `circuit_random --no-prune-skip` proofs in the second
+  fact-check failed here): the fact-check's six-node instance
+  (`tmp/fd-graph/factcheck/circuit/b/r6/rej2.cc`, default branching) found
+  its five solutions, and VeriPB rejected line 1356, a `Next implies` step
+  inside the root's `Fix required back edge (2, 5)` derivation; the same
+  instance verified with prune skip on, and with prune skip and fix required
+  both off and prune root on (`tmp/fd-graph/circuit/fc/r3_*`). #1306. It is
+  now `circuit_prune_skip_off_test`'s first instance. With prune skip off,
+  a node whose other edges are all recorded absences can still have this
+  rule fire on it, with nothing left for the walk to follow; the per-node
+  RUP then closes through the recorded lines, and the test's second instance
+  pins that shape.
 - **Reason** — at `Off`, the whole-scope reason through `sr`, inside the
   derivation, and the inference itself is recorded with `NoReason` and no
   justification, since the derivation has already written it. **At the
@@ -1262,9 +1273,9 @@ carrying the reason or `sr`; on the 12-node enumeration, 857 firings wrote
   bare unit the rule does assert at the assertion levels has no derivation.
 - **Proof size** — one `ReachTooSmall`; 336 firings on the 12-node
   enumeration.
-- **Gaps** — at the defaults and `Off`, `None.` With `with_prune_skip(false)`,
-  a derivation VeriPB rejects (#1306). At the assertion levels,
-  the assertion is wrong.
+- **Gaps** — at `Off`, `None` (with `with_prune_skip(false)` too since
+  #1367; before it, a derivation VeriPB could reject, #1306). At the
+  assertion levels, the assertion is wrong.
 - **Tightness** — `Not shown.` `circuit_prune_root_test` fires it once.
 
 ### Rule: scc-prune-skip-to-root
@@ -1682,10 +1693,16 @@ seeded.
   firing.
 - **Rule 6** fires in no in-tree test; the fact-check reached it only with
   random branching.
-- **#1306's knob setting.** `circuit_no_backedges_test` runs rule 8 with
-  prune skip off and skip edges live, but its instance is infeasible for
-  another reason (no node has 7 as a successor), so the skip edges never
-  decide the argument; and nothing runs rule 10 with prune skip off.
+- **#1306's knob setting**, until #1367. `circuit_no_backedges_test` runs
+  rule 8 with prune skip off and skip edges live, but its instance is
+  infeasible for another reason (no node has 7 as a successor), so the skip
+  edges never decide the argument, and nothing ran rule 10 with prune skip
+  off. #1367 added `circuit_prune_skip_off_test` (two instances, each under
+  fix required and prune root on and off, and its view lanes) and
+  `circuit_random-no-prune-skip`, whose instance needs a skip-subtree
+  derivation. That lane's graph comes from `uniform_real_distribution`,
+  which the standard does not fix, so another standard library may run a
+  different instance there.
 - **Enumerations beyond five nodes** in tree. The `Circuit` scenario tests
   have six to nine nodes and the `SubCircuit` ones up to twelve, one instance
   each, and the `circuit_random` and `tour` examples are larger.
@@ -1859,13 +1876,15 @@ different harness. They are not re-measured here.
 
 ### Proof-logging gaps
 
-- **`with_prune_skip(false)` makes the `SCC` proof wrong.** Rules 8 and 10
-  still fire, but their certificates, JP 6.16 and 6.17, require the skip
-  edges to have been pruned first, which only rules 11 and 12 do. VeriPB
-  rejects the derivation when a skip edge matters, 13 times in 900
-  `circuit_random --no-prune-skip` proofs from 5 to 10 nodes; the search and
-  its answers are unaffected. At the
-  defaults no proof was rejected (#1306).
+- **`with_prune_skip(false)` made the `SCC` proof wrong until #1367.**
+  Rules 8 and 10 still fire, but their certificates, JP 6.16 and 6.17,
+  require the skip edges to have been pruned first, which only rules 11 and
+  12 do. VeriPB rejected the derivation when a skip edge mattered, 13 times
+  in 900 `circuit_random --no-prune-skip` proofs from 5 to 10 nodes; the
+  search and its answers were unaffected (#1306). #1367 writes rules 11 and
+  12's derivations at `Off` with the option off too, without the pruning,
+  and has the walks skip those edges: the 900 verify, search is identical,
+  and with prune skip on the proofs are byte-identical to before.
 - **`SubCircuit`'s pigeonhole and a wide-declared successor.** Not a gap in
   what is justified, but a proof-size defect: under `subcircuit::SCC` the
   pigeonhole (`subcircuit.cc:538–549`) writes one term per declared value of
@@ -1877,16 +1896,13 @@ different harness. They are not re-measured here.
 - **Assertion levels:** rules 10 to 12 assert bare unit clauses at
   `Definitions`, `Links` and `Inferences`; the clauses are not consequences of
   the model. Not filed, by decision (*assertion reasons*). At `Off`, every
-  inference is justified at the defaults; the exception is the knob setting
-  above.
+  inference is justified, under every knob setting since #1367.
 - **The propagators are not weakened by proofs.** Search is the same with
   proofs on or off; the `SCC` arm's proof-only work (the flag, the caches) does
   not change an inference.
 
 ### Known limitations
 
-- **`Circuit` with `with_prune_skip(false)` can write a proof VeriPB rejects**
-  (#1306).
 - **A one-node `circuit` is satisfiable** in Glasgow, Gecode and `cake_pb_cp`,
   and unsatisfiable in MiniZinc's own decomposition and Chuffed; a one-node
   XCSP3 `<circuit>` without a size is reported unsupported rather than
@@ -1911,13 +1927,12 @@ different harness. They are not re-measured here.
 1. **Done** (#1307, by #1439): the empty `Circuit` is vacuously true.
 2. **Done** (#1327, by #1440): `explore` keeps an explicit stack of
    frames, and `circuit_test` has a root-only lane on 20,000-node rings.
-3. **Make rules 8 and 10 safe without prune skip** (#1306).
-   Either run them only when `prune_skip` is on, as JP 6.16 and 6.17's
-   preconditions require, or prune the skip edges in the proof (the rule 11
-   and 12 derivations) whenever rule 8 or 10 needs them, even with the option
-   off. The first is a one-line guard and weakens propagation under that
-   option; the second keeps it. Add a lane with prune skip off on an instance
-   where a skip edge is the only way out of a subtree, such as #1306's.
+3. **Done** (#1306, by #1367): rules 8 and 10 are safe without prune skip.
+   Of the two options, it took the second, which keeps propagation: the
+   rule 11 and 12 derivations are written in the proof with the option off,
+   and the edges recorded so that later reachability walks skip them. The
+   lanes are `circuit_prune_skip_off_test` and
+   `circuit_random-no-prune-skip`.
 4. **Done** (#1317, by #1438): the `SCC` reason is snapshotted only when a
    proof will read it, and the short-reason flag is defined on first use.
 5. **Pass the reason in rules 10 to 12's assertion path** (*assertion
