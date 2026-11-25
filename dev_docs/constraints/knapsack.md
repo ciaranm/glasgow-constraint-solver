@@ -14,7 +14,7 @@
 > MiniZinc Challenge's `multi-knapsack` models spend 43 to 125 s and up to 25 GB
 > in the root call with proofs off, and write more than 40 GB of proof with them
 > on). Already open and touching this family, commented on by this audit:
-> #1229 (a view or constant total throws `UnimplementedException` with proofs
+> #1229 (fixed since: a view or constant total threw `UnimplementedException` with proofs
 > on at `AssertionLevel::Off`, which this audit finds reachable from MiniZinc;
 > both corpus models pass a constant total that it covers, though neither has
 > been seen to reach it), #1070 (every proof line restates the 0/1 items'
@@ -84,12 +84,12 @@ Four things to know before touching it.
   has no sign restriction on items, weights or profits. A negative weight or
   profit is refused while the model is built, which the XCSP3 binary reports as
   `s UNSUPPORTED` (exit 1, since #1447); a negative item value throws from
-  `prepare()`, inside `solve_with`, and escapes the binary as an abort (#1337). With proofs on at `AssertionLevel::Off` (which
-  is what `--prove` gives), a total that is a constant or a view throws
-  `UnimplementedException` (#1229) as soon as a cap-exceeded or lower-bound
-  `pol` names it; MiniZinc reaches that with a fixed capacity, and both corpus
-  models pass a constant total, which would reach it if their root call got far
-  enough (none has been seen to). Above `Off` it does not throw.
+  `prepare()`, inside `solve_with`, and escapes the binary as an abort (#1337). A total that is a constant or a view
+  used to throw `UnimplementedException` with proofs on at
+  `AssertionLevel::Off` as soon as a cap-exceeded or lower-bound `pol` named
+  it, which MiniZinc reached with a fixed capacity (#1229). It now proves at
+  every level: a view's bound literal is added as a plain variable's is, and a
+  constant has no term to cancel.
 
 ## What it is
 
@@ -160,7 +160,8 @@ profit})`.
     `W ≥ 0` and `P ≥ 0` as constraints; the redefinition drops them, and
     `Knapsack` throws on a negative lower bound instead (#1337). A fixed `W`
     or `P` arrives as an integer literal, which `arg_as_var` makes a constant,
-    which #1229 crashes with proofs on at `AssertionLevel::Off`. `knapsacktest.mzn` is the one test.
+    which #1229 crashed with proofs on at `AssertionLevel::Off` until it was
+    fixed. `knapsacktest.mzn` is the one test.
 [^xcsp]: `buildConstraintKnapsack` (`xcsp_glasgow_constraint_solver.cc:820–845`)
     creates an auxiliary total per condition, posts the two-row `Knapsack`, and
     posts each `<condition>` on its auxiliary (`le`, `lt`, `eq`, `ge`, `gt`,
@@ -298,7 +299,14 @@ Totals may be any kind with proofs off, and at every assertion level above
 the first time a cap-exceeded or lower-bound `pol` names its bound
 (`add_bound_p_term_to`, `knapsack.cc:95–105`; `add_bound_p_term`,
 `knapsack_upfront.cc:513–522`; both are reached only from the `Off` paths).
-That is #1229, filed 2026-10-03, which says "with proofs on" without the level.
+That is #1229, filed 2026-10-03, which says "with proofs on" without the level,
+and is now fixed: the helpers add a view's bound literal through
+`PolBuilder::add_for_literal`, as for a plain variable, and skip a constant,
+whose term the row folded into its degree. (The bound term turns out not to be
+load-bearing in `PerCall`: with it dropped for every kind of total, 400 random
+proofs still verify, because the RUP under the reason that follows each `pol`
+has the total's bound anyway. It is kept for the plain variable, unchanged, and
+now added for a view the same way.)
 This audit adds that MiniZinc reaches it whenever a capacity or a profit is a
 parameter and some such `pol` fires, which is nearly always (not, for example,
 for all-zero weights and `W = 0`): `knapsack(w, p, x, 6, P)` with `--prove`
@@ -448,10 +456,10 @@ OPB rows counted by label):
   link rows (with the sign bit) and no atom rows;
 - `[x, x]` with `x ∈ 0..3` against a total in `0..9`: 8.
 
-The constant-total and view-total cases write their OPB and then throw #1229
-(`UnimplementedException`) at the default `AssertionLevel::Off`, so they do not
-solve with `--prove`; the counts are of the OPB, which is complete by then.
-The others solve, and their proofs verify.
+The constant-total and view-total cases used to write their OPB and then
+throw #1229 (`UnimplementedException`) at the default `AssertionLevel::Off`;
+the counts are of the OPB, which was complete by then. Since #1229's fix they
+all solve, and their proofs verify.
 
 ### Labels
 
@@ -632,8 +640,9 @@ front ends' problem is that they pass such shapes through (#1337).
   x]`, with `x ∈ {1, 2}` and `t ∈ 5..12`, leaves `x ∈ {1, 2}` and `t ∈ {6, 8}`;
   only `x = 2, t = 8` is a solution.
 - *Constant or view items:* fine, with and without proofs. *Constant or view
-  totals:* fine without proofs and above `AssertionLevel::Off`,
-  `UnimplementedException` at `Off` (#1229).
+  totals:* fine, with and without proofs, since #1229's fix
+  (`knapsack_test`'s total-kinds cases); before it, `UnimplementedException`
+  at `Off`.
 - *A row of the wrong length:* refused by the constructor under either
   strategy (#1334, #1447; `knapsack_test`'s malformed cases). Until then
   `PerCall` ignored the extra coefficients or threw `std::out_of_range`, and
@@ -1119,8 +1128,9 @@ sense that it must verify uncorrupted; nothing corrupts a derivation.
 
 - **Holey initial domains, views and constants**: none in the suite; this
   audit's root checks and sweeps cover them.
-- **A view or constant total with proofs at `Off`** (#1229): nothing tests it, which is
-  how it stayed hidden from MiniZinc's fixed capacities.
+- A view or constant total with proofs at `Off` is tested since #1229's fix:
+  `knapsack_test`'s total-kinds cases, an offset view, a negated view and a
+  constant, under both strategies.
 - **Negative values from a front end**, and any XCSP3 knapsack at all,
   including a `<group>` of knapsacks against the same rows written out as
   plain `<knapsack>` constraints, which would have caught #1354. (#1357 has
@@ -1315,16 +1325,11 @@ further. A clause averages 16.8 to 20.4 terms on the 0/1 instances.
 ### Proof-logging gaps
 
 `None` for the inferences: every one is justified at `Off` under both
-strategies, and neither propagator changes with proofs on. Two ways a proof is
-not produced at all, each a filed issue rather than a gap in a
-derivation:
+strategies, and neither propagator changes with proofs on. One way a proof is
+not produced in practice, a filed issue rather than a gap in a derivation
+(the other, a constant or view total throwing `UnimplementedException` at
+`AssertionLevel::Off`, was #1229 and is fixed):
 
-- **A constant or view total, with proofs on at `AssertionLevel::Off`,**
-  throws `UnimplementedException` (#1229); above `Off` the inferences are
-  asserted and nothing throws. Reachable from MiniZinc's `--prove` whenever a
-  capacity or profit is a parameter and some cap-exceeded or lower-bound `pol`
-  fires; both corpus models pass a constant total, though neither has been
-  seen to get far enough to throw.
 - **A pseudo-polynomial diagram is written in full on every call** under
   `PerCall`, and from the initial domains under `Upfront`, so a large instance
   cannot be proved in practice (#1341).
@@ -1343,19 +1348,15 @@ derivation:
   sums, costs time proportional to the total's width times the reachable
   sums**, and with proofs on, rule 6 writes one removal per value in a gap.
   #1340.
-- **With proofs on at `AssertionLevel::Off` (`--prove`), a fixed capacity or
-  profit fails** (#1229); at higher assertion levels it does not.
 - **A repeated variable propagates less than it could.**
 - **`Upfront` proofs are smaller but slower to check**, and `Upfront` is slower
   than `PerCall` with proofs off.
 
 ### Next steps
 
-1. **Fix #1229.** For a view total, add the bound literal on the view, as
-   `PolBuilder::add_for_literal` does elsewhere; for a constant total, the row
-   has no total term to cancel and the axiom can be skipped. Small. Then test
-   view and constant totals with proofs; MiniZinc's fixed capacities and the
-   corpus need it.
+1. **Done** (#1229): a view total's bound literal through
+   `PolBuilder::add_for_literal`, nothing for a constant, and view and
+   constant totals tested with proofs under both strategies.
 2. **Front-end semantics for negative values** (#1337): have Glasgow's
    `fzn_knapsack` post `x[i] ≥ 0`, `W ≥ 0` and `P ≥ 0` (or clamp) as the
    standard definition does; in XCSP3, decompose shapes with negative item

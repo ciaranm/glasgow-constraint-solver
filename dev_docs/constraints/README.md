@@ -773,8 +773,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   non-negative), and a negative item value aborts XCSP3, where a negative
   weight or profit is `s UNSUPPORTED` since #1447 (#1337); until #1334 (fixed by #1447) `PerCall` silently dropped excess
   coefficients; and #1229's
-  constant-total crash with proofs at `AssertionLevel::Off` is reachable from
-  a MiniZinc fixed capacity under `--prove` (commented on #1229). `Upfront`'s
+  constant-total crash with proofs at `AssertionLevel::Off`, reachable from
+  a MiniZinc fixed capacity under `--prove`, is fixed. `Upfront`'s
   proofs are 3.0 to 5.9 times smaller in bytes but take 1.10 to 5.9 times
   longer to check (timed solo), and with proofs off it is the slower strategy.
   `dev_docs/knapsack.md` stays as the long note.

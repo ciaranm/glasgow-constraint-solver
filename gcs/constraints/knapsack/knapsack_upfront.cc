@@ -511,14 +511,16 @@ namespace
         }
     }
 
+    // As knapsack.cc's add_bound_p_term_to: a view's bound literal cancels its
+    // term as a plain variable's does, and a constant total has no term to
+    // cancel (#1229).
     auto add_bound_p_term(PolBuilder & b, const State & state, ProofLogger * logger, IntegerVariableID v, bool upper) -> void
     {
         overloaded{
-            [&](const SimpleIntegerVariableID & sv) {
-                b.add_for_literal(logger->names_and_ids_tracker(), upper ? sv <= state.upper_bound(sv) : sv >= state.lower_bound(sv));
-            },                                                                          //
-            [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; }, //
-            [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }    //
+            [&](const ConstantIntegerVariableID &) {}, //
+            [&](const auto &) {
+                b.add_for_literal(logger->names_and_ids_tracker(), upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
+            } //
         }
             .visit(v);
     }

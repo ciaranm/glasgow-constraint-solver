@@ -208,6 +208,102 @@ auto run_malformed_tests() -> bool
     return all_refused;
 }
 
+// Totals that are views or constants (#1229). Each row's total is one of: a
+// plain variable over [lo, hi], an offset view `u + off` with u over [lo, hi], a
+// negated view `-u + off` with u over [-hi, -lo], or the constant `off`. The
+// bound term a cap-exceeded or lower-bound pol adds for the total used to throw
+// UnimplementedException for a view or a constant, under both strategies.
+enum class TotalKind
+{
+    Plain,
+    Offset,
+    Negated,
+    Constant
+};
+
+auto run_total_kinds_test(bool proofs, bool upfront, const string & label, pair<int, int> valrange, const vector<vector<int>> & coeffs,
+    const vector<tuple<TotalKind, pair<int, int>, int>> & totals) -> void
+{
+    print(cerr, "knapsack total kinds {} {}{}", label, upfront ? "upfront" : "percall", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Solutions are the takings and the underlying variable of each
+    // non-constant total, which the takings determine.
+    set<tuple<vector<int>, vector<int>>> expected, actual;
+    auto n_items = coeffs[0].size();
+    vector<int> taken(n_items);
+    std::function<auto(std::size_t)->void> enumerate_taken = [&](std::size_t pos) -> void {
+        if (pos == n_items) {
+            vector<int> underlying;
+            for (const auto & [i, total] : enumerate(totals)) {
+                const auto & [kind, range, off] = total;
+                int sum = 0;
+                for (std::size_t k = 0; k < n_items; ++k)
+                    sum += coeffs[i][k] * taken[k];
+                switch (kind) {
+                case TotalKind::Constant:
+                    if (sum != off)
+                        return;
+                    break;
+                case TotalKind::Plain:
+                case TotalKind::Offset:
+                case TotalKind::Negated: {
+                    auto u = kind == TotalKind::Plain ? sum : kind == TotalKind::Offset ? sum - off : off - sum;
+                    auto [lo, hi] = kind == TotalKind::Negated ? pair{-range.second, -range.first} : range;
+                    if (u < lo || u > hi)
+                        return;
+                    underlying.push_back(u);
+                } break;
+                }
+            }
+            expected.emplace(taken, underlying);
+            return;
+        }
+        for (int v = valrange.first; v <= valrange.second; ++v) {
+            taken[pos] = v;
+            enumerate_taken(pos + 1);
+        }
+    };
+    enumerate_taken(0);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto vs = p.create_integer_variable_vector(n_items, Integer(valrange.first), Integer(valrange.second));
+    vector<IntegerVariableID> ts, us;
+    for (const auto & [kind, range, off] : totals) {
+        switch (kind) {
+        case TotalKind::Constant: ts.push_back(constant_variable(Integer(off))); break;
+        case TotalKind::Plain:
+            us.push_back(p.create_integer_variable(Integer(range.first), Integer(range.second)));
+            ts.push_back(us.back());
+            break;
+        case TotalKind::Offset:
+            us.push_back(p.create_integer_variable(Integer(range.first), Integer(range.second)));
+            ts.push_back(us.back() + Integer(off));
+            break;
+        case TotalKind::Negated:
+            us.push_back(p.create_integer_variable(Integer(-range.second), Integer(-range.first)));
+            ts.push_back(-us.back() + Integer(off));
+            break;
+        }
+    }
+    vector<vector<Integer>> coeffs_integers(coeffs.size());
+    for (unsigned i = 0; i < coeffs.size(); ++i)
+        for (const auto & w : coeffs[i])
+            coeffs_integers[i].push_back(Integer(w));
+
+    auto k = Knapsack{coeffs_integers, vs, ts};
+    if (upfront)
+        k.with_proof_strategy(proof_strategy::Upfront{});
+    else
+        k.with_proof_strategy(proof_strategy::PerCall{});
+    p.post(k);
+
+    auto proof_name = proofs ? make_optional("knapsack_test_total_kinds") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{vs, us});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
@@ -269,6 +365,16 @@ auto main(int argc, char * argv[]) -> int
 
         // {x, y, x} — x's coefficient is summed at positions 0 and 2.
         run_dup_knapsack_test(proofs, "xyx", {0, 2}, {{0, 2}, {0, 2}}, {0, 1, 0}, {{1, 2, 1}, {3, 1, 2}}, {{0, 8}, {0, 12}});
+
+        // The issue's shapes, an offset view and a constant, then a negated
+        // view, each beside a plain total and under both strategies (#1229).
+        using enum TotalKind;
+        for (bool upfront : {false, true}) {
+            run_total_kinds_test(proofs, upfront, "offset", {0, 1}, {{2, 3, 4}, {1, 2, 3}}, {{Offset, {0, 6}, 2}, {Plain, {0, 10}, 0}});
+            run_total_kinds_test(proofs, upfront, "constant", {0, 1}, {{2, 3, 4}, {1, 2, 3}}, {{Constant, {0, 0}, 5}, {Plain, {0, 10}, 0}});
+            run_total_kinds_test(proofs, upfront, "negated", {0, 1}, {{2, 3, 4}, {1, 2, 3}}, {{Plain, {0, 9}, 0}, {Negated, {0, 4}, 4}});
+            run_total_kinds_test(proofs, upfront, "constant_profit", {0, 2}, {{2, 3, 1}, {1, 2, 3}}, {{Offset, {1, 7}, 1}, {Constant, {0, 0}, 4}});
+        }
     }
 
     return EXIT_SUCCESS;
