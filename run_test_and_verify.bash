@@ -81,8 +81,9 @@ fi
 
 # Exit status 2 is a keyword read_scp has no case for, and 1 is a keyword it
 # knows under something it cannot read: both fail the test. Status 3 is a shape
-# the public constructors cannot rebuild (a non-deterministic automaton), which
-# is a documented limitation rather than a coverage gap, and passes. (It does
+# the public constructors cannot rebuild, which would be a documented
+# limitation rather than a coverage gap, and passes. None exists today: a
+# non-deterministic automaton was the one until #1335. (It does
 # mean a model whose first unreadable thing is such a shape can hide a bad
 # keyword later in the same file; the in-process check in the constraint tests
 # has the same property, and between them the constraints are covered either

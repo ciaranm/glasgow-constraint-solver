@@ -16,8 +16,8 @@
 > variable declared as a range whose bounds unit propagation cannot recover,
 > or a view whose own range is such a range, because the tracker omits the
 > boundary pins there), #1333 (an out-of-range state number crashed; shared
-> with `MDD`; fixed), #1335 (the `.scp` reader refuses the non-deterministic automata
-> the writer emits), #1338 (the graph is copied whole at every search node, 49
+> with `MDD`; fixed), #1335 (the `.scp` reader refused the non-deterministic automata
+> the writer emits; fixed), #1338 (the graph is copied whole at every search node, 49
 > to 264 times Gecode's instructions; shared with `MDD`), #1339 (the support
 > map keeps an entry per declared value, so every search node costs time
 > linear in the declared width; shared with `MDD`). Commented on by this
@@ -405,8 +405,9 @@ ambiguous regex `"(0|1)* 1 (0|1)*"` over four variables, with its canonical
 run; the unambiguous NFA `"(0|1)* 1 (0|1)"`; `regular_test`'s
 `nonfinal_sibling` NFA; a parity automaton; and both empty sequences, all
 chain-verify. So the canonical run's `red` steps are accepted against cake's
-OPB. These cannot be chain-test cases yet, because the harness re-solves the
-`.scp` and the reader refuses a non-deterministic automaton (#1335).
+OPB. Since #1335 the reader rebuilds a non-deterministic automaton, so they
+are chain cases too: `regular_nfa_sat` (unambiguous) and
+`regular_nfa_ambiguous_sat` (`(0|1)* 1 (0|1)*`, which takes the canonical run).
 
 Divergences:
 
@@ -1246,8 +1247,10 @@ solves there, 40 with proofs, in 0.75 s; `regular_legacy_test` 50 (25),
   table, over `1..3`); branching makes holes, and the sweeps here cover holey
   domains.
 - **Wide domains** and the regex alphabet in a chain case.
-- **A non-deterministic automaton in a chain case or through the `.scp`
-  reader** (#1335).
+- A non-deterministic automaton in a chain case and through the `.scp` reader
+  is covered since #1335: `scp_chain_regular_nfa_sat`,
+  `scp_chain_regular_nfa_ambiguous_sat`, `scp_reader_test`, and
+  `regex-nondeterministic`'s read-back.
 - **Real instances:** none ported. `examples/nonogram` reads Challenge data
   files but is not a test.
 
@@ -1457,8 +1460,6 @@ here.
 - **Above `Links`, the proof can fail** under the canonical run, `PerCall`'s
   NFA scaffold or `Bacchus`, for a sequence variable declared as a range such
   as `-1..2`, or a view whose own range is one (#1330).
-- **A `.scp` holding a non-deterministic automaton cannot be read back**
-  (#1335).
 - **`PerCall`'s proofs grew the permanent database by two lines per call**,
   which showed at every assertion level, until #1465 moved the short-reason
   flag to `Current`.
@@ -1514,8 +1515,8 @@ here.
    once per call in `PerCall`, #1353's fix, is done by #1445.)
 6. **Done** (#1333): every automaton constructor validates the indices, and
    the `.scp` reader goes through them.
-7. **Read non-deterministic automata from `.scp`** (#1335) and add an NFA
-   chain case. Small.
+7. **Done** (#1335): the reader builds the set-valued `Regular`, and two NFA
+   chain cases are in.
 8. **Width** (#841, #1227 and this audit's comment on it): out-of-alphabet values as a range row per
    gap rather than a row per `(state, value)`, the root pruning of those values
    as range inferences, and the regex alphabet built as an interval and only

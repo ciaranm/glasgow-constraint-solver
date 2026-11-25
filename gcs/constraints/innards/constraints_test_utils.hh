@@ -193,8 +193,9 @@ namespace gcs::test_innards
      * means a new constraint's own test is what catches it.
      *
      * **Every read failure fails, except ScpUnrebuildableShapeError**: a
-     * well-formed instance in a shape the public constructors cannot rebuild (a
-     * non-deterministic automaton is the only one). A missing keyword is
+     * well-formed instance in a shape the public constructors cannot rebuild
+     * (there is none today; a non-deterministic automaton was one until #1335).
+     * A missing keyword is
      * reported as such; anything else -- a malformed term, a view or condition
      * the reader cannot parse, a name Problem::check_name() rejects -- is the
      * writer and reader disagreeing about a keyword they both know, and is
@@ -256,10 +257,9 @@ namespace gcs::test_innards
      *
      * Opt-in, and strict where the symmetry check forgives a shape the public
      * constructors cannot rebuild.
-     * read_scp does not promise that every *instance* round-trips -- a
-     * non-deterministic automaton, for one, is a shape the public constructors
-     * cannot rebuild -- so a caller has to hand this an instance that can
-     * round-trip, with variables under names of its own choosing. In exchange,
+     * read_scp does not promise that every *instance* round-trips -- a shape
+     * the public constructors cannot rebuild would not, though none exists
+     * today -- so a caller has to hand this an instance that can round-trip, with variables under names of its own choosing. In exchange,
      * anything thrown from here is a finding about the writer rather than a
      * limitation of the probe.
      */

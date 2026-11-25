@@ -1,0 +1,1 @@
+( (version 1) (variables (X0 0 1) (X1 0 1)) (constraints (_1 regular (X0 X1) 4 ( ((0 1) (0 2)) ((1 3)) ((0 3)) () ) (3))) (prob_type enumerate) )

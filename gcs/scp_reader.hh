@@ -57,12 +57,13 @@ namespace gcs
      * \brief The specific ScpReadError for a well-formed instance of a keyword
      * this reader knows, in a shape the public constructors cannot rebuild.
      *
-     * There is one such shape: a non-deterministic automaton, which cake_pb_cp
-     * accepts but Regular has no public constructor for. It is a known reader
-     * limitation rather than a malformed document, and the constraint tests'
-     * writer/reader symmetry check tolerates it and nothing else. Add a shape
-     * here only for the same reason; a shape that could be rebuilt is a missing
-     * reader case instead.
+     * There is currently no such shape. The one there was, a non-deterministic
+     * automaton, is rebuilt through Regular's set-valued constructor since
+     * #1335. The class stays for the next shape the public constructors cannot
+     * rebuild, which would be a known reader limitation rather than a malformed
+     * document, and which the constraint tests' writer/reader symmetry check
+     * would tolerate. Add a shape here only for that reason; a shape that could
+     * be rebuilt is a missing reader case instead.
      *
      * \ingroup Core
      */
@@ -136,8 +137,8 @@ namespace gcs
      * `<`, although the writer only uses `=`, `!=`, `>=` and `<`.
      *
      * What the reader does *not* promise is that every *instance* round-trips:
-     * a non-deterministic automaton is a shape the public constructors cannot
-     * rebuild, and raises ScpUnrebuildableShapeError.
+     * a shape the public constructors cannot rebuild would raise
+     * ScpUnrebuildableShapeError. No such shape exists today.
      * Throws SExprParseError on malformed input.
      *
      * \returns The variables by name, and the objective if there was one.
