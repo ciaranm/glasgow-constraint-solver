@@ -1166,7 +1166,7 @@ the same with proofs on or off.
    sites the at-most-ones name above 100 values of definition range (#939,
    #1362);
    and its figures are from another machine. And correct `read_min_distance`'s
-   comment about `Z` (done by #1396, open).
+   comment about `Z` (done by #1396).
 
 ## Prior art
 
