@@ -468,7 +468,7 @@ every level (`regular_legacy.cc:543-551`). It verifies at every level when
 unit propagation can recover the sequence variables' bounds, and is rejected
 at `Inferences` and `Backtracking` otherwise (#1330).
 
-**`PerCall`, during search** (every call, `regular_legacy.cc:285-384`): with
+**`PerCall`, during search** (every call, `regular_legacy.cc:350-435`): with
 `short_reasons` on, a flag `f ⇔ R` defined by two `red` lines at
 `ProofLevel::Current`, deleted on backtrack with the lines that name it; then
 McIlree's per-edge lemmas, each stated under `f` at `Current`. Until #1465
@@ -631,7 +631,7 @@ passes, and on the regex form before the constraint exists. A domain
 | `Upfront` initialiser | — | — | scaffolding, canonical run | `Upfront`, proofs on | — | — |
 | `Regular` (`propagate_regular`, `regular.cc:280-351`) | `on_change`, every position | derived: **every sequence variable** | 1, 2 | `Upfront` (default) | never claims | never |
 | `PerCall` initialiser | — | — | canonical run, or static dead flags for an NFA | `PerCall`, proofs on | — | — |
-| `RegularLegacy` (`regular_legacy.cc:285-384`) | `on_change`, every position | derived: every sequence variable | 1, 2 | `PerCall` | never claims | never |
+| `RegularLegacy` (`regular_legacy.cc:350-435`) | `on_change`, every position | derived: every sequence variable | 1, 2 | `PerCall` | never claims | never |
 | `Bacchus` initialiser | — | — | Bacchus scaffold | `Bacchus`, proofs on | — | — |
 | `RegularBacchus` (`regular_bacchus.cc:173-212`) | `on_change`, every position | derived: every sequence variable | 2 only (rule 1 missing) | `Bacchus` | never claims | never |
 

@@ -90,10 +90,9 @@ auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coef
     // one bit sum, which unit propagation refutes bit by bit from the top. A
     // variable with no bits is its own literal, and the line above mentions it
     // directly.
-    visit(overloaded{
+    visit(overloaded{                                               //
               [&](const ProofLine & def) { hints.push_back(def); }, //
-              [&](const XLiteral &) {}                              //
-          },
+              [&](const XLiteral &) {}},
         tracker.need_pol_item_defining_literal(*negated_conclusion));
     return RUPProofRule{move(hints)};
 }

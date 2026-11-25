@@ -624,8 +624,13 @@ auto ProofLogger::infer_using_hinted_rup(const Literal & lit, const RUPProofRule
 {
     // Everything but the hinted line itself is infer()'s: a range conclusion
     // that has to be split per value, and every assertion level, go there with
-    // a plain RUP. The hints were written for the one literal as stated, so a
-    // split, whose per-value lines they were not written for, does not get them.
+    // a plain RUP, since the hints were written for the one literal as stated.
+    // That catches only a direct caller. infer_explicitly splits such a
+    // NotInRange itself, before the emit runs, and re-runs the emit for each
+    // value, so each per-value != arrives here with hints its emit wrote for
+    // the whole range, and gets them; the RUP may then fail to check. Nothing
+    // reaches that today, since the one hinted emit, Linear's, infers only <
+    // and >= (#1471).
     auto split = false;
     if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
         split = cond->op == VariableConditionOperator::NotInRange && ! names_and_ids_tracker().can_represent_range_literal_for(cond->var);
@@ -953,22 +958,20 @@ auto ProofLogger::define_abbreviated_reason() -> void
     for (const auto & r : *abbreviated.reason) {
         bool keep = true;
         if (const auto * lit = std::get_if<ProofLiteral>(&r))
-            overloaded{
+            overloaded{                                     //
                 [&](const TrueLiteral &) { keep = false; }, //
                 [&](const FalseLiteral &) {},               //
                 [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                     if constexpr (std::is_same_v<T_, SimpleIntegerVariableID>)
                         if (filter && filter->is_candidate(cond) && filter->omit(cond))
                             keep = false;
-                } //
-            }
+                }}
                 .visit(simplify_literal(names_and_ids_tracker(), *lit));
         if (keep) {
-            overloaded{
-                [&](const ProofLiteral & l) { all += 1_i * l; },    //
-                [&](const ProofFlag & f) { all += 1_i * f; },       //
-                [&](const ProofBitVariable & b) { all += 1_i * b; } //
-            }
+            overloaded{                                          //
+                [&](const ProofLiteral & l) { all += 1_i * l; }, //
+                [&](const ProofFlag & f) { all += 1_i * f; },    //
+                [&](const ProofBitVariable & b) { all += 1_i * b; }}
                 .visit(r);
             ++size;
         }
@@ -1050,9 +1053,10 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
         [&](const RUPProofRule & rule) {
             if (rule.lines) {
                 rule_line += ": ";
-                // An abbreviated reason's units, then its definition, so that
-                // propagating the flag sets every literal of the reason before
-                // the line's own hints are reached.
+                // An abbreviated reason's units, then its definition, without
+                // which propagating the flag cannot set the reason's literals.
+                // Their place among the hints does not matter: VeriPB
+                // propagates over the hinted lines as a set (#1471).
                 if (abbreviated) {
                     for (const auto & line : abbreviated->units) {
                         rule_line += relative_proof_line(line, _imp->proof_line.number);
@@ -1061,9 +1065,9 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
                     rule_line += relative_proof_line(*abbreviated->forward, _imp->proof_line.number);
                     rule_line += ' ';
                 }
-                // The units go first: VeriPB takes the hints in the order given,
-                // and the hints after them were written expecting the omitted
-                // literals to be set already.
+                // The units go first, ahead of the line's own hints. That is
+                // for reading only: VeriPB propagates over the hinted lines as
+                // a set, so each unit needs only to be cited (#1471).
                 if (filter)
                     for (const auto & line : filter->extra_hints) {
                         rule_line += relative_proof_line(line, _imp->proof_line.number);

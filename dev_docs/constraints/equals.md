@@ -108,9 +108,11 @@ construction, so `NotEqualsIff(v1, v2, c)` is stored as `Iff{¬c}` and reaches
 the same equality-enforcing code. Read the concrete variant's constructor to
 see what a given class actually installs. The `_neq` member reaches no
 propagation in this family. In the `Iff` arm only, it picks the `.scp` keyword
-and which condition is written (`equals.cc:641`, `:666`), and through the
+and which condition is written (`equals.cc:655`, `:680`), and through the
 keyword the OPB's block comment and the propagator-type label (`problem.cc:246`,
-`constraint.cc:35`); `MustHold`, `MustNotHold`, `If` and `NotIf` take their
+`constraint.cc:35`); since #1470 it also decides whether the `[f]` halves of
+the `gt` and `lt` selectors are written (`equals.cc:456-462`), as `cake_pb_cp`
+writes them for `not_equals_iff` only; `MustHold`, `MustNotHold`, `If` and `NotIf` take their
 keyword from the condition. Until
 #883 it did not reach even that, because `clone()` dropped it (see [Cake
 conformity](#cake-conformity)). `ParitySystemGathering` used to read it,

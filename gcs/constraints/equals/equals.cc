@@ -386,10 +386,11 @@ auto ReifiedEquals::clone() const -> unique_ptr<Constraint>
     // _neq must come along: both Problem::post and Problem::create_propagators
     // clone, so a clone that drops it is the only ReifiedEquals anything ever
     // reads, and the flag is false everywhere it is asked (issue #865). It
-    // controls the written description, not the propagation -- the semantic
-    // flip lives in the derived constructors' negated conditions -- so dropping
-    // it made a NotEqualsIff describe itself as an equals_iff over a negated
-    // condition, which is the same constraint said backwards.
+    // controls the written description and, since #1470, whether the Iff
+    // arm's selectors get their [f] halves in the OPB, not the propagation --
+    // the semantic flip lives in the derived constructors' negated conditions
+    // -- so dropping it made a NotEqualsIff describe itself as an equals_iff
+    // over a negated condition, which is the same constraint said backwards.
     auto cloned = make_unique<ReifiedEquals>(_v1, _v2, _cond, _neq);
     cloned->with_proof_mutation(_proof_mutation);
     return cloned;

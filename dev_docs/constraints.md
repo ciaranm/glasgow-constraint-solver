@@ -566,10 +566,13 @@ naming the lines the closing RUP needs. VeriPB then propagates over those lines
 alone rather than over everything live, which on a model with a big encoding
 is most of the checking time: see
 [`veripb-facts.md`](veripb-facts.md#what-a-rup-step-costs). The lines must be
-enough on their own, taking the reason as given. The logger adds whatever its
-own reason handling needs (the units for root-true literals it leaves out, an
-abbreviated reason's definition), so `emit` names only what the inference
-needs. A rule without lines keeps the plain RUP, which is the fallback for a
+enough on their own, taking the reason as given. The logger adds the units for
+the root-true literals it leaves out, so `emit` names only what the inference
+needs. It adds no abbreviated reason's definition, since the closing RUP is at
+the current level and reasons are abbreviated only at a temporary one: an
+`emit` must not return lines written under an abbreviated reason's flag
+([`abbreviated-reasons.md`](abbreviated-reasons.md)), because the RUP would cite
+them without the definition's reverse half. A rule without lines keeps the plain RUP, which is the fallback for a
 case the hints do not cover. `infer_all` refuses such an `emit` at compile
 time, since one list of lines cannot serve several literals. Linear's bound
 push is the example (`linear/justify.cc`). A line the `emit` writes itself

@@ -441,7 +441,7 @@ label. The labels are cake's, and matter to `opbdiff`, except for two:
 | `lin_equals_if_sat`, `lin_equals_iff_sat`, `lin_not_equals_if_sat`, `lin_not_equals_iff_sat` | `strict` (since 2026-11-23) |
 | `lin_strict_lt_edge_iff_sat` (since #1217) | `none` |
 
-Twenty-one of the twenty-two are byte-for-byte label matches with cake.
+Twenty of the twenty-one are byte-for-byte label matches with cake.
 `lin_strict_lt_edge_iff_sat` is chain-only: its condition is a {0,1}
 variable (#1193). The four `lin_strict_*_edge` cases are `.scp`
 strict inequalities (`lin_less_than`, `lin_greater_than`, `lin_less_than_iff`)
@@ -460,9 +460,9 @@ the sum as a constant (`verified_encodings/scp_cases/CMakeLists.txt:53-60`,
   variable's `≥ 0`, is named by neither the push's `pol` nor its reason, so
   the bound pushes never introduce it (#1055). Before #1055 they named every
   term's current bound (#1035). **The other rules were not trimmed**: the
-  not-equals (rules 6 and 7, `propagate.cc:690`, `:704`) and the reified
+  not-equals (rules 6 and 7, `propagate.cc:879`, `:893`) and the reified
   forms' undecided verdicts (rules 8–12, `linear_inequality.cc:305`,
-  `linear_equality.cc:451`) use `generic_reason` over every variable, so on
+  `linear_equality.cc:470`) use `generic_reason` over every variable, so on
   four 0/1 variables `LinearNotEquals` and `LinearEqualityIff` still
   introduce and cite `x ≥ 0` (measured at `0a5b4ec6`).
 - **The `Tabulated` arm** introduces its selector flags in the proof, at

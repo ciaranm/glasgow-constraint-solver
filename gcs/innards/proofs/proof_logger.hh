@@ -207,11 +207,14 @@ namespace gcs::innards
          * Log that we have inferred a literal by RUP under the reason, with
          * the given rule's hints. This is infer()'s plain-RUP arm for a
          * caller that knows which lines the RUP needs. The logger puts the
-         * lines its own reason handling needs (the units for root-true
-         * literals it leaves out, an abbreviated reason's definition) in
-         * front of them, so `rule` names only what the inference itself
-         * needs. A rule without lines is exactly infer(lit, JustifyUsingRUP{},
-         * reason).
+         * units for the root-true literals it leaves out in front of them,
+         * so `rule` names only what the inference itself needs. It adds no
+         * abbreviated reason's definition: reasons are abbreviated only at
+         * ProofLevel::Temporary, and this RUP is at the current level, after
+         * any AbbreviateReason guard is gone. So the lines in `rule` must not
+         * be ones written under an abbreviated reason's flag, whose reverse
+         * half would not be cited (#1471). A rule without lines is exactly
+         * infer(lit, JustifyUsingRUP{}, reason).
          */
         auto infer_using_hinted_rup(const Literal & lit, const RUPProofRule & rule, const ReasonLiterals & reason) -> void;
 

@@ -58,9 +58,9 @@ internal lines. Each rule is handled as follows:
 | rule | handling |
 |---|---|
 | unhinted `rup`, `a` | omits freely; VeriPB's unit propagation finds the units |
-| hinted `rup` | omits only a literal with a line to cite, and puts that line's ID **before** the existing hints. VeriPB uses hints in order, and appending them was rejected. A declared bound implied by the bits alone has no line, so it stays in. |
+| hinted `rup` | omits only a literal with a line to cite, and adds that line's ID to the hints. It goes before the existing ones, but the order does not matter: VeriPB 3.0.2 propagates over the cited lines as a set, so a hint is needed only to be present. A declared bound implied by the bits alone has no line, so it stays in. |
 | `ia` | keeps everything; it is checked term by term against the one line it cites |
-| inside a subproof | omits only a literal whose unit is already written, since a unit written there would be scoped to the subproof |
+| inside a subproof | writes no new unit, since one written there would be scoped to the subproof. It omits a literal whose unit is already written, and an unhinted line also omits a declared bound the bits imply, which needs no unit because the bits hold everywhere |
 
 The feature is off when the assertion level is not `Off`. The external
 justifier is not yet told which units are assumed. When it is, this call is the

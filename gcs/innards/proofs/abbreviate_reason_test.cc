@@ -5,7 +5,7 @@
  * reason's literals at the same temporary level. These micro models check the
  * cases that the constraints which opt in do not reach: a hinted RUP whose hint
  * needs the reason's literals set, which works only because the definition is
- * cited ahead of it; a level forgotten while the guard is still alive, after
+ * cited too; a level forgotten while the guard is still alive, after
  * which the flag has to be defined afresh; an `ia`, which has to keep the
  * whole reason; the size below which nothing is abbreviated; and a claim that
  * is false, which must still be refused once it is abbreviated.
@@ -150,7 +150,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // Two definition lines, forward and reverse. The hinted line verifies only
-    // with the forward line cited ahead of the row.
+    // with the forward line among its hints.
     check("once", Shape::Once, 5, 5, 2, VeripbAccepts{});
 
     // Forgetting the level deletes the definition, so the next guarded line
