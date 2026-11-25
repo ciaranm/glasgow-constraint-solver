@@ -129,7 +129,10 @@ auto main(int argc, char * argv[]) -> int
     //
     // Search can still throw IntegerOverflow: an arithmetic constraint may, when
     // a value it needs over in-range inputs does not fit in an Integer
-    // (dev_docs/integer-ranges.md). Report it rather than abort.
+    // (dev_docs/integer-ranges.md). Report it rather than abort, and the same
+    // for any other gcs exception that installing or searching throws: a
+    // constraint refusing what it was given, an unimplemented case, or a
+    // proof error (#1230, #1482).
     try {
         if (model.objective) {
             if (model.objective->direction == ObjectiveDirection::Minimise)
@@ -156,7 +159,7 @@ auto main(int argc, char * argv[]) -> int
         if (options_vars.contains("stats"))
             print("{}", stats);
     }
-    catch (const innards::IntegerOverflow & e) {
+    catch (const MessageException & e) {
         println(cerr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }

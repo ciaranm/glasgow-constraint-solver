@@ -10,7 +10,8 @@
 > scope: it never adopted #506's `scope_only`, so under dom/wdeg with restarts
 > the store's conflicts weight no variable). Fixed since: #1393 (a `NogoodStore`
 > grown by user code mid-search: the two paths disagreed, and the scan path's
-> proof was rejected), by moving the store into `innards`; #1394 (the engine's refined-watch undo, 59% of the
+> proof was rejected), by moving the store into `innards`; #1391 (a Luby
+> scale of 0 never terminated), by #1474, which refuses it; #1394 (the engine's refined-watch undo, 59% of the
 > profile samples of `tsp --restarts=100`), by #1441, which searches from the
 > back. Already open and touching this family: #131
 > (a generic watched-clause propagator, the natural home for this one,
@@ -30,7 +31,7 @@ records, and propagating them in later passes.** When a
 `SolveCallbacks::restarts` schedule is set, `solve_with` builds a
 `NogoodStore`, installs one `Nogoods` over it with every problem variable as
 its trigger set, and grows the store at each restart unwind
-(`solve.cc:345-358`, `:245-275`). That is the only use in the tree, and the
+(`solve.cc:353-366`, `:253-283`). That is the only use in the tree, and the
 only one this audit treats as supported. **It is not meant to be a
 user-facing constraint**, and it would probably need work before anything other
 than restarts relied on it: see [Known limitations](#known-limitations) and
@@ -41,11 +42,15 @@ being an endorsement:
 
 - **The C++ API.** `gcs/gcs.hh:55` includes `gcs/constraints/nogoods/nogoods.hh`,
   so `Nogood` and the fixed-set constructor `Nogoods(vector<Nogood>, bool
-  refined = true)` are public. The store and the constructor over it are not
-  (#1393): `innards::NogoodStore` is in `innards`, the store-sharing
+  refined = true)` are public. The store and the constructor over it are
+  internal (#1393): `innards::NogoodStore` is in `innards`, the store-sharing
   constructor is private, and `innards::nogoods_over_learned_store` is the
-  only way to build one, which `solve.cc` and `Nogoods::clone()` use.
-  `nogoods_test` pins that with `static_assert`s. Before #1393 both were
+  only way to build one from outside the class; `solve.cc` uses it, and
+  `Nogoods::clone()` calls the private constructor directly (`nogoods.cc:82`).
+  `nogoods_test` pins that with `static_assert`s. Internal is not
+  unreachable: `nogoods.hh` is an installed header that `gcs.hh` includes, so
+  user code can still call the factory, as it can anything else in `innards`,
+  but that is unsupported. Before #1393 both were
   public, and a store grown by user code mid-search went wrong on both paths
   (below).
 - **The `.scp` reader**, and so `glasgow_scp_solver`.
@@ -70,13 +75,13 @@ Five things to know before touching it.
   any trigger variable and visits every clause; the *refined* path is two
   watched literals over the engine's refined per-literal watches
   ([`refined-triggers.md`](../refined-triggers.md)). The learned store uses
-  refined unless `GCS_LEARNED_NOGOODS_SCAN` is set (`solve.cc:354`); the fixed
+  refined unless `GCS_LEARNED_NOGOODS_SCAN` is set (`solve.cc:362`); the fixed
   constructor defaults to refined; the learned store's mode is chosen by
   `solve_with`, through `innards::nogoods_over_learned_store`. The header's and
   the source's comments that the learned store "stays coarse until ... stage
-  C-2" (`nogoods.hh:74-79`, `:95-102`, `nogoods.cc:131-133`) are stale on
-  arrival: the commit that wrote them, 9c2a0500, also made `solve.cc` pass
-  `refined = true`. Corrected by #1396, open.
+  C-2" (`nogoods.hh:74-79`, `:95-102`, `nogoods.cc:131-133` on `86caad24`) were
+  stale on arrival: the commit that wrote them, 9c2a0500, also made `solve.cc` pass
+  `refined = true`. Corrected by #1396.
 - **Strength is unit propagation on each clause separately**, which is GAC on
   that clause when its literals are over different variables, and weaker when
   two of them share one. Checked by brute force on 26,000 random instances,
@@ -133,10 +138,10 @@ and propagate correctly (below). In a posted nogood they throw with proofs on
 The learned store's nogoods are **reduced nld-nogoods** (Lecoutre et al., see
 [Prior art](#prior-art)): at a restart cutoff, for each frame on the abandoned
 path and each sibling `s` that frame had fully refuted, the nogood is the
-frame's positive decisions plus `s` (`solve.cc:237-275`). A second sibling that
+frame's positive decisions plus `s` (`solve.cc:245-283`). A second sibling that
 is the negation of the first (for instance `x = v` then `x ≠ v`, `x ≠ v` then
 `x = v`, `x < v` then `x ≥ v`, `x ∉ I` then `x ∈ I`) is a negative decision and
-is left out of the prefix passed down (`solve.cc:179-202`); every other
+is left out of the prefix passed down (`solve.cc:187-210`); every other
 descended sibling is kept, including a first sibling `x ≠ v` or `x ∉ I`.
 
 ### Concrete constraints and frontend coverage
@@ -164,8 +169,8 @@ descended sibling is kept, including a first sibling `x ≠ v` or `x ∉ I`.
 | Route | Flag | Notes |
 |---|---|---|
 | C++ | `SolveCallbacks::restarts = RestartSchedule::luby(scale)` | `luby(0)` throws `InvalidProblemDefinitionException`; it used to never terminate (#1391) |
-| `fzn-glasgow` | `--restarts=N` | `N = 0` means off (`fzn_glasgow.cc:1424-1429`); the help text (`:371-373`) and the `.msc` flag text (`minizinc/glasgow.msc.in:10`) still say "find-one / optimisation only", though enumeration with restarts is supported (`solve.cc:146-150`) |
-| `xcsp_glasgow_constraint_solver` | `--restarts[=N]` | bare means 100; prints `d RESTARTS` and `d LEARNED NOGOODS`; `N = 0` used to hang through its own `--timeout` and SIGTERM, and now aborts with `luby()`'s exception, since the front end does not catch it there (#1391) |
+| `fzn-glasgow` | `--restarts=N` | `N = 0` means off (`fzn_glasgow.cc:1438-1442`), as the help text (`:371-374`) and the `.msc` flag text (`minizinc/glasgow.msc.in:10`) say; both used to say "find-one / optimisation only" too, though enumeration with restarts is supported (`solve.cc:154-158`), until #1396 |
+| `xcsp_glasgow_constraint_solver` | `--restarts[=N]` | bare means 100; prints `d RESTARTS` and `d LEARNED NOGOODS`; `N = 0` used to hang through its own `--timeout` and SIGTERM (#1391), then aborted with `luby()`'s exception, and is now refused as a usage error before the instance is read (#1482) |
 | examples | `--restarts` on `langford`, `colour`, `ortho_latin`; MiniCP `tsp`, `qap`, `magic_series`, `magic_square`, `n_queens` | `N = 0` means off, as in `fzn-glasgow`; each used to pass it straight to `luby()` and hang (#1391) |
 | `gcspy`, `glasgow_scp_solver` | none | |
 
@@ -193,7 +198,7 @@ force instead.
   and `solve_with` passes `true`. (Before #1393 the store-sharing constructor
   was public and defaulted to `false`.)
 - **`GCS_LEARNED_NOGOODS_SCAN`**, an environment variable read once per solve
-  by `solve_with` (`solve.cc:354`): if set, even to the empty string, the
+  by `solve_with` (`solve.cc:362`): if set, even to the empty string, the
   learned store uses the scan path. It exists as the differential oracle.
 
 Neither changes the OPB model, which is the same rows either way; they choose
@@ -234,7 +239,7 @@ nogood would be one more literal in the clause.
   grows the store and derives every learned clause in the proof
   (`ProofLogger::emit_learned_nogood`, `proof_logger.cc:447-461`), and
   `Stats::learned_nogoods` is the store's size at the end of the solve
-  (`solve.cc:501-502`).
+  (`solve.cc:519-520`).
 
 ## The proof model
 
@@ -336,7 +341,7 @@ that "a nogood holds the negation of each decision on a path, so any brancher
 that can decide `x != v` --- `smallest_in`'s right branch does --- can put
 `x == v` in a nogood". A nogood holds the kept decisions themselves, not their
 negations, and `smallest_in`'s right branch `x ≠ v` is exactly the negative
-decision that is dropped (`solve.cc:196-198`). All corrected by #1396, open.
+decision that is dropped (`solve.cc:204-206`). All corrected by #1396.
 
 **Scope.** The refined propagator declares none: no coarse trigger, no
 `Triggers::refined` and no `scope_only` (`nogoods.cc:375`).
@@ -629,7 +634,7 @@ Facts that hold for rules 1 and 2:
   abandoned at a restart cutoff, its kept positive decisions `P`, and a sibling
   decision `s` it had fully refuted. The same nogood goes into the store.
 - **Fires when** — the restart unwind, at every frame with a refuted sibling,
-  deepest first (`solve.cc:245-275`); never on a normal backtrack.
+  deepest first (`solve.cc:253-283`); never on a normal backtrack.
 - **Strength** — n/a: a derived clause, not a propagation.
 - **Algorithm** — one line per refuted sibling: `O(|P| + 1)` literals each. The
   number per restart is bounded by the abandoned path's total sibling count.
@@ -656,7 +661,7 @@ Facts that hold for rules 1 and 2:
   procedure**; the thesis's backtracking justifications (§3.3.2) are the
   unreduced, non-restart case. Preconditions: emitted before this frame's
   `forget_proof_level`, and the root's level 1 kept across restarts
-  (`solve.cc:279-288`), without which later passes' backtracks are not RUP.
+  (`solve.cc:287-296`), without which later passes' backtracks are not RUP.
   Always `rup`, even at `Inferences` and `Backtracking`, where the backtrack
   clauses it uses are themselves asserted.
 - **Reason** — none; the clause is the conclusion.
@@ -748,8 +753,8 @@ run directly from scratch directories.
   `disjunctive_2d_test` proof; the other suites were not counted. Nothing in the
   suite is known to approach the tens of thousands of nogoods of a long
   benchmark run, which is where the cost is (below).
-- **A store grown other than at a restart**, which failed and is no longer
-  reachable from outside `innards` (#1393).
+- **A store grown other than at a restart**, which failed, and which since
+  #1393 only the internal, unsupported `innards` API can do.
 
 **The end-to-end differential** (`tmp/fd-nogoods/nogoods/e2e/e2e.cc`): random
 CSPs of three to seven variables over intervals or holey value lists, with
@@ -922,8 +927,9 @@ Restart use:
   objective bound unchanged (#1390). The answers are right.
 - **A restart scale of 0 is refused** by `luby()`, which throws; the
   examples, the MiniCP benchmarks and `fzn-glasgow` treat `--restarts=0` as
-  off, and the XCSP3 solver aborts with the exception. It used to hang through
-  every front end's `--timeout` (#1391).
+  off, and the XCSP3 solver refuses it as a usage error. It used to hang through
+  the `--timeout` of every front end that passed 0 to `luby()`, which
+  `fzn-glasgow` never did (#1391).
 - **Store conflicts do not inform dom/wdeg** on the refined path, and the
   refined and scan paths branch differently under it (#1392). The scope fix
   removes that cause; the paths still charge some failures to different
@@ -947,9 +953,10 @@ Anything else, which would need work first:
 
 - **A nogood added to a store during search** is enforced only at the next
   root propagation on the refined path, and is not in the proof on either path,
-  so the scan path's proof is rejected. The store is now in `innards`, so only
-  the restart loop can do this, and it adds at restart boundaries after
-  deriving the clause (#1393).
+  so the scan path's proof is rejected. The store is internal since #1393, so
+  the restart loop is the only supported caller, and it adds at restart
+  boundaries after deriving the clause; user code can still reach it through
+  `innards`, unsupported, and would meet the same failures.
 - **A posted store under the default brancher** can give a different tree on
   the refined path than on the scan path, since the refined one adds nothing to
   degree (#1392).
@@ -1022,7 +1029,7 @@ Anything else, which would need work first:
 
    Under optimisation and in a decision run no learned line is moved to core,
    and under optimisation the objective bound is imposed at every node
-   (`solve.cc:100-112`): forgetting every nogood, with a `del` of each line,
+   (`solve.cc:100-113`): forgetting every nogood, with a `del` of each line,
    gave the right optimum or verdict in all 3,441 and 212 restarting runs, and
    every proof verifies at `Off`.
 
@@ -1044,7 +1051,7 @@ Anything else, which would need work first:
 8. **An audit-lane row for the learned store**, and one for a `≠` literal over a
    holey wide variable on the fixed form. Small.
 9. **Correct the stale text** listed under [Developer
-   commentary](#developer-commentary) (done by #1396, open, except the
+   commentary](#developer-commentary) (done by #1396, except the
    `tsp` table in `refined-triggers.md`, which is not re-measured).
 
 ## Prior art
@@ -1113,7 +1120,7 @@ Anything else, which would need work first:
 - **What the refined path chose, against these.** One propagator for the whole
   store, every restart's nogoods in it, and the restart unwind records every
   refuted sibling on the abandoned path, with no depth limit
-  (`solve.cc:245-275`); each clause is watched on two literals of its own (one
+  (`solve.cc:253-283`); each clause is watched on two literals of its own (one
   once it is unit at first sight), not structured on the path; literals `=`,
   `≠`, `≥`, `<`, `∈` and `∉` over variables, views and constants, where a
   learned `x ≠ v` or `x ∉ I` comes from a kept first sibling. Each watch is the
@@ -1157,20 +1164,20 @@ Anything else, which would need work first:
 
 - `nogoods.hh:74-79`, `:95-102` and `nogoods.cc:131-133`: the learned store
   "stays coarse until ... stage C-2" (#335); it has been refined since the
-  commit that wrote them. Corrected by #1396, open.
+  commit that wrote them. Corrected by #1396.
 - `nogoods.hh:20-24`: "initialises a newly added nogood's watches lazily on its
   next fire" is the scan path's behaviour; the refined path does so only at a
-  root propagation. Corrected by #1396, open.
+  root propagation. Corrected by #1396.
 - `nogoods.hh:53`, and `restarts-nogoods-weighting.md:163` and `:168`: the
   literals are listed as `=` / `≠` / `≥` / `≤`; the fourth operator is `<` (and
-  the two range operators are missing). All corrected by #1396, open.
+  the two range operators are missing). All corrected by #1396.
 - `nogoods.cc:370-374`: "A nogood may hold x == v, which a hole in x
   falsifies"; holes matter through `x ≠ v` and `x ∉ I` literals.
   `optional-interior-pruning.md:52-54` repeats the `x == v` reason, and
   `:301-307` says a nogood holds the negations of the path's decisions and that
   `smallest_in`'s right branch puts `x == v` in one; it holds the kept decisions,
   and that right branch is the dropped negative decision. All corrected by
-  #1396, open.
+  #1396.
 - `restarts.hh:23-26`: restarts with all-solution enumeration are "rejected at
   runtime (gcs::solve_with throws UnimplementedException)";
   `difference_constraints_test.cc:1132-1134` says the same. `solve.hh:133-134`
@@ -1178,17 +1185,16 @@ Anything else, which would need work first:
   Both are stale: enumeration with restarts is supported, and `solve.cc` throws
   nothing. `fzn_glasgow.cc:371-373`'s help and `minizinc/glasgow.msc.in:10`'s
   flag text (and the generated `.msc` files) say "find-one / optimisation only".
-  All corrected by #1396, open.
+  All corrected by #1396.
 - `restarts.hh:18-20` ("eventually exceed any tree's size") and
   `restarts-nogoods-weighting.md:67-69` ("Completeness holds because the cutoff
-  grows without bound"): not at scale 0 (#1391). Both corrected by #1396,
-  open.
+  grows without bound"): not at scale 0 (#1391). Both corrected by #1396.
 - `solve.cc:45-47`: "`RestartCutoffHit` is unused here and is produced once the
-  restart loop lands"; it is produced and used. Corrected by #1396, open.
+  restart loop lands"; it is produced and used. Corrected by #1396.
 - `solve_test.cc:338-341` and `constraints.md:419-422`: "a refined-watch literal
   puts its variable in the propagator's scope" holds for `Triggers::refined`,
   not for `ctx.watch`; `solve_test`'s differential agrees because the learned
-  store's degree shift is uniform. Both corrected by #1396, open.
+  store's degree shift is uniform. Both corrected by #1396.
 - `restarts-nogoods-weighting.md`: the code map's
   `gcs/constraints/nogoods.{hh,cc}`
   and `gcs/constraints/nogoods_test.cc` are now under `nogoods/`; entailment is
@@ -1198,15 +1204,14 @@ Anything else, which would need work first:
   exists (`value_order::reject_random_interval`, tested in `solve_test.cc:226`),
   PR #303 merged on 2026-06-16, and a learned `x ∉ I` reaches the proof; the
   "not-a-plain-condition guard" is now `solve.cc:266-270`, which skips only
-  proof-scaffolding literals. All corrected by #1396, open.
+  proof-scaffolding literals. All corrected by #1396.
 - `refined-triggers.md:18`, `:229` and `:481` cite `gcs/constraints/nogoods.cc`,
   now under `nogoods/`. `:233-236` says the scan path is "used by the
   growable-store constructor only when `GCS_LEARNED_NOGOODS_SCAN` is set";
   that constructor defaults to scan (`nogoods.hh:103`), and it is `solve_with`
   that picks refined. `:245-247`: catch-up at "`propagate(nullopt)`, depth 0,
   which the restart loop re-enters once per pass"; under optimisation the root
-  is seeded by the objective bound instead (#1390). All corrected by #1396,
-  open.
+  is seeded by the objective bound instead (#1390). All corrected by #1396.
 - `restarts-nogoods-weighting.md` and `refined-triggers.md`: "semantics-preserving
   (identical tree, nogoods and proof)". For the learned store, satisfaction and
   enumeration give the same tree and the same learned nogoods on both paths under
@@ -1214,7 +1219,7 @@ Anything else, which would need work first:
   `langford --restarts=1 --prove 7` both paths take 527 recursions and learn the
   same 109 nogoods, and the proofs are 26,705 and 26,661 lines, the inference
   lines differing with the propagation order. Optimisation differs in the tree
-  too (#1390 and #1392). Both notes' wording is corrected by #1396, open.
+  too (#1390 and #1392). Both notes' wording is corrected by #1396.
   The `tsp --restarts=10000`
   table in `refined-triggers.md` is from 2026-07 and was not re-measured as
   such; the figures under [CPU performance](#cpu-performance) are a different

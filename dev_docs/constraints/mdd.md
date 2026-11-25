@@ -75,7 +75,7 @@ An assignment is accepted when, starting at node 0 of layer 0, every
 after `vars[n − 1]` is in `accepting_terminals`. Node 0 of layer 0 is the root;
 there is no separate "true" node, and any subset of the last layer can accept.
 
-The constructor (`mdd.cc:438–454`) checks that `nodes_per_layer` has `n + 1`
+The constructor (`mdd.cc:448–486`) checks that `nodes_per_layer` has `n + 1`
 entries and starts with 1, that `layer_transitions` has `n` layers and each has
 exactly `nodes_per_layer[i]` node maps, and every transition value against
 `±(2⁶⁰ − 1)` (`require_bounded`, since #1215). Since #1333 it also checks that
@@ -1054,8 +1054,9 @@ VeriPB rejects it (#1329).
 
 ### Next steps
 
-1. **Refuse the zero-variable unsatisfiable diagram, and validate node
-   indices** (#1329 and #1333). In `prepare()`, when `n = 0` and 0 is not
+1. **Done**: the zero-variable unsatisfiable diagram is refused (#1329, by
+   #1366) and node indices are validated (#1333, by #1476). What was proposed:
+   in `prepare()`, when `n = 0` and 0 is not
    accepting, set a flag and still return `true`, so that `define_proof_model`
    writes the rows the contradiction is RUP against, and install the
    contradiction from `install_propagators` with
@@ -1063,8 +1064,8 @@ VeriPB rejects it (#1329).
    `element.cc:191–194`, `In` and `Table` do; return `false` only when 0 is
    accepting. The fact-check built both placements: the empty accepting list
    then gives no solution, `VERIFIED UNSATISFIABLE` at `Off` and accepted at
-   `Definitions`, `Links` and `Inferences`. In the constructor, every target and terminal in
-   range. Tiny; buys a wrong answer and a crash. Add both shapes to
+   `Definitions`, `Links` and `Inferences`; and, in the constructor, every
+   target and terminal checked against its layer. Both shapes are in
    `mdd_test`.
 2. **Fix the MiniZinc binding's shapes** (#1336): post a contradiction for
    `L = 0` or `N = 0`; drop every edge whose source level is outside `1..L`,

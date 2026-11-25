@@ -433,9 +433,10 @@ namespace gcs::innards
          * mention has been set up -- in a solve, after
          * Problem::create_state_for_new_search and before
          * Problem::create_propagators. Calling set_objective or preserve after
-         * this throws. The objective line is always written over a variable's
-         * own bits, deviewed, with the view's constant as the objective's
-         * constant (see objective_linear_form).
+         * this throws. The objective line is written over a variable's own
+         * bits, deviewed, with the view's constant as the objective's
+         * constant; a constant objective has no variable, and its line is the
+         * constant alone (see objective_linear_form).
          *
          * Optional: finalise() does it on your behalf (with everything still
          * buffered, and the objective and preserve list set at any point) if

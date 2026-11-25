@@ -63,11 +63,10 @@ namespace gcs
          * MustHold is `v1 = v2`, MustNotHold is `v1 != v2`, `If{c}` is
          * `c -> v1 = v2`, `NotIf{c}` is `c -> v1 != v2`, and `Iff{c}` is
          * `c <-> v1 = v2` (a NotEqualsIff stores the negated condition). The
-         * `neq` constructor
-         * argument only chooses how an `Iff` describes itself; it is not exposed
-         * here because reading it as a polarity is wrong whenever it disagrees
-         * with the condition, as it does for the `.scp` reader's unreified
-         * `not_equals` (#1381).
+         * `neq` constructor argument only chooses how an `Iff` describes
+         * itself; it is not exposed here because reading it as a polarity is
+         * wrong whenever it disagrees with the condition, as it does for the
+         * `.scp` reader's unreified `not_equals` (#1381).
          * @{
          */
         [[nodiscard]] auto left_variable() const -> IntegerVariableID

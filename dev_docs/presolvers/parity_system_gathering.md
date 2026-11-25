@@ -165,7 +165,7 @@ What each front end posts, for when one of them gets a switch:
 | | `xor` inside an expression | `ParityOdd` over the arguments and an auxiliary `not_r`, with `r + not_r = 1` as a `LinearEquality` (`:1588–1602`) | the `ParityOdd` row, yes. The link `r ⊕ not_r = 1` is a linear equality, which the scan does not read, so `r` is never joined to the row |
 | `gcspy` | `post_xor` | `ParityOdd` | n/a, no presolver plumbing |
 | `.scp` | `parity` | `ParityOdd` | yes |
-| | `equals` / `not_equals` | `ReifiedEquals{x, y, MustHold or MustNotHold, false}` (`scp_reader.cc:263`, `:480`) | yes (a `not_equals` was lifted with the wrong polarity until #1381 was fixed) |
+| | `equals` / `not_equals` | `ReifiedEquals{x, y, MustHold or MustNotHold, false}` (`scp_reader.cc:302`, `:517-519`) | yes (a `not_equals` was lifted with the wrong polarity until #1381 was fixed) |
 
 Through the local switch (see [Detection](#detection-and-its-failure-modes)),
 both MiniZinc 2.9.7 and 2.10.1 deliver the same donors to the scan on the two

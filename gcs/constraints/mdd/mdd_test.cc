@@ -161,6 +161,10 @@ auto run_malformed_tests() -> bool
 
     // One node per layer, both values to node 0, as the base shape.
     mdd("target past the next layer", true, {{{{0_i, 0L}, {1_i, 3L}}}, {{{0_i, 0L}, {1_i, 0L}}}}, {1, 1, 1}, {0});
+    // Exactly one past the last node, so that a check of > where >= is meant
+    // does not pass (#1482).
+    mdd("target at the next layer's node count", true, {{{{0_i, 0L}, {1_i, 1L}}}, {{{0_i, 0L}, {1_i, 0L}}}}, {1, 1, 1}, {0});
+    mdd("terminal at the last layer's node count", true, {{{{0_i, 0L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {0, 1});
     mdd("negative target other than -1", true, {{{{0_i, -2L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {0});
     mdd("terminal past the last layer", true, {{{{0_i, 0L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {0, 5});
     mdd("negative terminal", true, {{{{0_i, 0L}}}, {{{0_i, 0L}}}}, {1, 1, 1}, {-1});

@@ -117,7 +117,7 @@ so a domain declared wider is accepted.
   `circuit_empty_sat` chain case check it). Until #1307 it crashed: see
   [Robustness](#robustness-and-limits).
 - **A repeated variable** in two slots cannot be all different, and is
-  answered with a contradiction at the root (#1047, `circuit.cc:55–61`). Two
+  answered with a contradiction at the root (#1047, `circuit.cc:50–65`). Two
   slots pinned to the same **constant** are left to the propagators.
 
 **`SubCircuit(succ)`**: `succ` is a permutation of `0..n-1`, and the nodes
@@ -638,7 +638,7 @@ for the size.
 
 **Idempotence.** `Circuit`'s `Prevent` alternates the value consistent pass
 and the chain fold until a fold fixes no successor
-(`circuit_prevent.cc:110–115`), so a re-run finds nothing, and claims it. The
+(`circuit_prevent.cc:124–129`), so a re-run finds nothing, and claims it. The
 claim held under the engine's checker (`GCS_CHECK_IDEMPOTENT_CLAIMS=1`) on
 2,000 random instances, full search each, and under every test that uses
 `solve_for_tests`. Nothing else claims. `SubCircuit`'s main propagator says
@@ -782,7 +782,8 @@ inference (and so a copy of the whole successor list per node) by the root
 all-different checking each newly fixed successor against every other one fixed
 in the same call. #1453's fix builds the reason once per pass and indexes the
 waiting values past 16 of them, and the ring is now linear: 0.13 s at 160,000
-nodes under `SCC`, and 0.06 s at 80,000 under `Prevent` (from 7.5 s). The
+nodes under `SCC`, and 0.06 s at 80,000 under `Prevent`, which took 7.5 s with
+only the root pass fixed (main was not measured there). The
 constructors' duplicate-variable check was quadratic too, which showed on a
 ring with two-valued successors (9.0 s at 80,000 before search, now 0.30 s): it
 now sorts. Proofs are byte-identical.
@@ -947,7 +948,7 @@ written; they are cited per rule as history, not as lanes.
 
 - **Infers** — a contradiction, at the root.
 - **Fires when** — the constructor finds the same non-constant variable in two
-  slots, in either class (`circuit.cc:55–61`, `subcircuit.cc:974–980`); the
+  slots, in either class (`circuit.cc:50–65`, `subcircuit.cc:972–987`); the
   root contradiction is installed instead of every propagator.
 - **Strength** — `GAC` on this shape: there is no solution.
 - **Algorithm** — sort a copy of the non-constant successors and look for
@@ -1013,9 +1014,9 @@ written; they are cited per rule as history, not as lanes.
 - **Infers** — `succ[e] ≠ s` for a chain of fixed edges from `s` to `e` with
   fewer than `n − 1` edges.
 - **Fires when** — `Prevent`, when a newly fixed edge is folded in
-  (`circuit_prevent.cc:67–82`, the inference at `:78`); `SCC`, in its
+  (`circuit_prevent.cc:81–96`, the inference at `:92`); `SCC`, in its
   from-scratch small-cycle pass after the component check
-  (`circuit_base.cc:118–132`, the inference at `:127`).
+  (`circuit_base.cc:132–146`, the inference at `:141`).
 - **Strength** — `partial`. Francis and Stuckey's *prevent*.
 - **Algorithm** — `Prevent`: `O(1)` per folded edge, but each pass also
   scans the whole list of unfolded nodes, `O(n)`, after the value consistent
@@ -1055,7 +1056,7 @@ written; they are cited per rule as history, not as lanes.
 - **Infers** — `succ[e] = s` for a chain of fixed edges from `s` to `e` that
   visits every node.
 - **Fires when** — as rule 4, when the chain has `n − 1` edges
-  (`circuit_prevent.cc:85`, `circuit_base.cc:130`).
+  (`circuit_prevent.cc:99`, `circuit_base.cc:144`).
 - **Strength** — `partial`.
 - **Algorithm** — as rule 4.
 - **Why it is true** — `e` must have a successor, every value but `s` is
@@ -1080,7 +1081,7 @@ written; they are cited per rule as history, not as lanes.
 
 - **Infers** — a contradiction.
 - **Fires when** — a fixed edge closes a chain of fewer than `n` nodes into a
-  cycle (`circuit_prevent.cc:58–64`, `circuit_base.cc:104–109`).
+  cycle (`circuit_prevent.cc:72–78`, `circuit_base.cc:118–123`).
 - **Strength** — `checker` on the closed part.
 - **Algorithm** — as rule 4.
 - **Why it is true** — a cycle on fewer than `n` nodes.

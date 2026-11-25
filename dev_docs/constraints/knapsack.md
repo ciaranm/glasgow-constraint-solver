@@ -293,25 +293,25 @@ reifications and row cancellations are written over each view's own terms. 400
 random enumerations per strategy with items drawn from plain, `x + c`, `−x + c`
 and constants all verify ([Tests](#tests)).
 
-Totals may be any kind with proofs off, and at every assertion level above
-`Off`. **With proofs on at `AssertionLevel::Off`, the default and what
-`--prove` gives, a constant or a view total throws `UnimplementedException`**
-the first time a cap-exceeded or lower-bound `pol` names its bound
-(`add_bound_p_term_to`, `knapsack.cc:95–105`; `add_bound_p_term`,
-`knapsack_upfront.cc:513–522`; both are reached only from the `Off` paths).
-That is #1229, filed 2026-10-03, which says "with proofs on" without the level,
-and is now fixed: the helpers add a view's bound literal through
+Totals may be any kind, with proofs on or off and at every assertion level.
+**Until #1229 was fixed, with proofs on at `AssertionLevel::Off`, the default
+and what `--prove` gives, a constant or a view total threw
+`UnimplementedException`** the first time a cap-exceeded or lower-bound `pol`
+named its bound. #1229, filed 2026-10-03, said "with proofs on" without the
+level. The helpers that name that bound (`add_bound_p_term_to`,
+`knapsack.cc:127`; `add_bound_p_term`, `knapsack_upfront.cc:517`; both are
+reached only from the `Off` paths) now add a view's bound literal through
 `PolBuilder::add_for_literal`, as for a plain variable, and skip a constant,
 whose term the row folded into its degree. (The bound term turns out not to be
 load-bearing in `PerCall`: with it dropped for every kind of total, 400 random
 proofs still verify, because the RUP under the reason that follows each `pol`
 has the total's bound anyway. It is kept for the plain variable, unchanged, and
-now added for a view the same way.)
-This audit adds that MiniZinc reaches it whenever a capacity or a profit is a
-parameter and some such `pol` fires, which is nearly always (not, for example,
-for all-zero weights and `W = 0`): `knapsack(w, p, x, 6, P)` with `--prove`
-ends in `=====ERROR=====` at `knapsack.cc:101` (`fe/prove/wpar.mzn`), and with
-`GCS_ASSERTION_LEVEL=inferences` the same run is `UNDER ASSERTIONS` with its
+added for a view the same way.)
+This audit found that MiniZinc reached the throw whenever a capacity or a
+profit was a parameter and some such `pol` fired, which was nearly always (not,
+for example, for all-zero weights and `W = 0`): `knapsack(w, p, x, 6, P)` with
+`--prove` ended in `=====ERROR=====` (`fe/prove/wpar.mzn`), and with
+`GCS_ASSERTION_LEVEL=inferences` the same run was `UNDER ASSERTIONS` with its
 one solution. Both corpus models pass a fixed profit. The fact-check's sweep
 with constant and view totals found 24 of 300 `PerCall` and 35 of 300 `Upfront`
 runs throwing at `Off`, and none of 600 at `Inferences`.

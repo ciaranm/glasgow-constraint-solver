@@ -259,9 +259,10 @@ namespace gcs::test_innards
      * constructors cannot rebuild.
      * read_scp does not promise that every *instance* round-trips -- a shape
      * the public constructors cannot rebuild would not, though none exists
-     * today -- so a caller has to hand this an instance that can round-trip, with variables under names of its own choosing. In exchange,
-     * anything thrown from here is a finding about the writer rather than a
-     * limitation of the probe.
+     * today -- so a caller has to hand this an instance that can round-trip,
+     * with variables under names of its own choosing. In exchange, anything
+     * thrown from here is a finding about the writer rather than a limitation
+     * of the probe.
      */
     inline auto check_scp_round_trip_solutions(
         const std::string & proof_name, const std::vector<std::string> & variable_names, const std::set<std::vector<int>> & expected) -> void

@@ -2067,6 +2067,14 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
+    // RestartSchedule::luby() refuses a scale of 0 with an exception, which
+    // would end the run in an abort (#1391, #1482): a usage error, so say so.
+    if (options_vars.contains("restarts") && options_vars["restarts"].as<unsigned long long>() == 0) {
+        cerr << "Error: --restarts needs a conflict scale of at least 1" << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
+
     auto start_time = steady_clock::now();
 
     Problem problem;
@@ -2138,6 +2146,17 @@ auto main(int argc, char * argv[]) -> int
     auto model_done_duration = duration_cast<microseconds>(steady_clock::now() - start_time);
     cout << "d MODEL BUILD TIME " << (model_done_duration.count() / 1'000'000.0) << "s" << endl;
 
+    // Before the timeout thread starts: returning with it running would
+    // destroy a joinable std::thread, which terminates.
+    auto brancher = brancher_from_string(options_vars["branch"].as<string>(), problem);
+    if (! brancher) {
+        cerr << "Error: unknown --branch value " << options_vars["branch"].as<string>() << endl;
+        return EXIT_FAILURE;
+    }
+
+    auto restarts =
+        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
+
     optional<CurrentState> saved_solution;
 
     signal(SIGINT, &sig_int_or_term_handler);
@@ -2168,15 +2187,6 @@ auto main(int argc, char * argv[]) -> int
             abort_flag.store(true);
         });
     }
-
-    auto brancher = brancher_from_string(options_vars["branch"].as<string>(), problem);
-    if (! brancher) {
-        cerr << "Error: unknown --branch value " << options_vars["branch"].as<string>() << endl;
-        return EXIT_FAILURE;
-    }
-
-    auto restarts =
-        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
 
     auto stop_timeout_thread = [&]() {
         if (timeout_thread.joinable()) {

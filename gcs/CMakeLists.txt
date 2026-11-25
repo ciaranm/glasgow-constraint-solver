@@ -1463,6 +1463,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(vc_all_different_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME vc_all_different_test COMMAND $<TARGET_FILE:vc_all_different_test>)
 
+    add_executable(vc_all_different_index_test constraints/all_different/vc_all_different_index_test.cc)
+    target_link_libraries(vc_all_different_index_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME vc_all_different_index COMMAND $<TARGET_FILE:vc_all_different_index_test>)
+
     add_executable(hole_wakes_test constraints/hole_wakes_test.cc)
     target_link_libraries(hole_wakes_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME hole_wakes_test COMMAND $<TARGET_FILE:hole_wakes_test>)

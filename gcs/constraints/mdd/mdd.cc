@@ -556,7 +556,7 @@ auto MDD::install_propagators(Propagators & propagators) -> void
     // triggers and only removes values, so it could never fail here. prepare() still
     // returned true, so the OPB has the accepting row, and with the root the only
     // node of layer 0 and not accepting, that row is `0 >= 1`: the contradiction is
-    // RUP. (A terminal other than 0 would be out of range, which is #1333.)
+    // RUP. (The constructor refuses any other terminal, which would be out of range.)
     if (_vars.empty()) {
         if (find(_accepting_terminals, 0L) == _accepting_terminals.end())
             propagators.install_initial_contradiction(constraint_id(), constraint_type(),

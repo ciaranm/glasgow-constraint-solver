@@ -436,6 +436,10 @@ auto run_malformed_tests() -> bool
         "target past the states", true, 2, {{{0_i, 1}, {1_i, 7}}, {{0_i, 0}}}, {{1, 7}, {0, -1}}, {{{0_i, {1}}, {1_i, {7}}}, {{0_i, {0}}}}, {0});
     all_forms("negative target other than -1", true, 2, {{{0_i, -2}}, {}}, {{-2}, {}}, {{{0_i, {-2}}}, {}}, {0});
     all_forms("final state past the states", true, 2, {{{0_i, 1}}, {{0_i, 0}}}, {{1}, {0}}, {{{0_i, {1}}}, {{0_i, {0}}}}, {0, 5});
+    // Exactly one past the last state, so that a check of > where >= is meant
+    // does not pass (#1482).
+    all_forms("target at num_states", true, 2, {{{0_i, 1}, {1_i, 2}}, {{0_i, 0}}}, {{1, 2}, {0, -1}}, {{{0_i, {1}}, {1_i, {2}}}, {{0_i, {0}}}}, {0});
+    all_forms("final state at num_states", true, 2, {{{0_i, 1}}, {{0_i, 0}}}, {{1}, {0}}, {{{0_i, {1}}}, {{0_i, {0}}}}, {0, 2});
     all_forms("negative final state", true, 2, {{{0_i, 1}}, {{0_i, 0}}}, {{1}, {0}}, {{{0_i, {1}}}, {{0_i, {0}}}}, {-1});
     all_forms("no states", true, 0, {}, {}, {}, {});
     all_forms("more rows than states", true, 1, {{{0_i, 0}}, {{0_i, 0}}}, {{0}, {0}}, {{{0_i, {0}}}, {{0_i, {0}}}}, {0});
