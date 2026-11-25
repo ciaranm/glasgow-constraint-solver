@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/propagators.hh>
 
+#include <optional>
 #include <util/enumerate.hh>
 #include <utility>
 
@@ -92,6 +93,19 @@ auto gcs::innards::circuit::prevent_small_cycles(const vector<IntegerVariableID>
     auto known_ends = vector<long>{};
     auto chain_lengths = vector<long>{};
 
+    // One reason for every inference this pass makes, built on the first: it
+    // copies the whole successor list, so building one per inference was
+    // quadratic when a pass closes or forbids many chains at once, as on a large
+    // fixed ring (#1453). Built lazily so that a pass inferring nothing pays
+    // nothing. It is materialised against the state at each inference all the
+    // same.
+    std::optional<Reason> reason_storage;
+    auto shared_reason = [&]() -> const Reason & {
+        if (! reason_storage)
+            reason_storage = generic_reason(succ);
+        return *reason_storage;
+    };
+
     for (auto var : unassigned) {
         for (const auto & val : state.each_value_immutable(var)) {
             auto j0 = val.raw_value;
@@ -105,7 +119,7 @@ auto gcs::innards::circuit::prevent_small_cycles(const vector<IntegerVariableID>
                     if (j == j0) {
                         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             output_cycle_to_proof(succ, j0, length, pos_var_data, state, *logger);
-                        inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
+                        inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, shared_reason());
                     }
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;
@@ -124,10 +138,10 @@ auto gcs::innards::circuit::prevent_small_cycles(const vector<IntegerVariableID>
             auto justf = [&](const ReasonLiterals &) {
                 output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
             };
-            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf, ThenRUP::Yes, hints::Circuit{owner}}, generic_reason(succ));
+            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf, ThenRUP::Yes, hints::Circuit{owner}}, shared_reason());
         }
         else {
-            inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
+            inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{hints::Circuit{owner}}, shared_reason());
         }
     }
 }
