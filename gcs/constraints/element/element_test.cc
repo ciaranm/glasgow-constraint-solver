@@ -281,7 +281,7 @@ auto run_element2d_constant_test(bool proofs, const string & mode, const ViewWra
 
 // Dup-variable test: Element with the same handle in several array
 // positions, or the result var aliasing an array entry. Consistency
-// isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+// isn't checked on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_element_test(bool proofs, const string & label, const vector<pair<int, int>> & unique_array_domains, const vector<int> & array_positions,
     pair<int, int> idx_range, int result_position_in_unique) -> void
 {

@@ -16,18 +16,14 @@ namespace gcs::innards::signed_multiply
 {
     /**
      * \brief Everything one signed multiplication x * y = z carries between
-     * its cake encoding and its propagation: the operand handles, their
-     * initial bounds (the factor-bound justifications cite the initial-domain
-     * rows for the untightened side of a refuted range), and the slot-keyed
-     * encoding handles, empty when proofs are off.
+     * its cake encoding and its propagation: the operand handles, and the
+     * slot-keyed encoding handles, empty when proofs are off.
      *
      * \ingroup Innards
      */
     struct Data
     {
         IntegerVariableID x = 0_c, y = 0_c, z = 0_c;
-        Integer x_init_lo{0}, x_init_hi{0};
-        Integer y_init_lo{0}, y_init_hi{0};
         /// Which multiplication of a chain sharing a constraint id this is; unset when the
         /// constraint owns just the one.
         std::optional<long long> link{};
@@ -38,16 +34,15 @@ namespace gcs::innards::signed_multiply
     };
 
     /**
-     * \brief Capture the operand handles and their initial bounds, which the
-     * propagation needs whether or not there are proofs. `link` disambiguates one
-     * multiplication of a chain sharing a constraint id (Power's base^k).
+     * \brief Capture the operand handles, which the propagation needs whether
+     * or not there are proofs. `link` disambiguates one multiplication of a
+     * chain sharing a constraint id (Power's base^k).
      *
      * This is prepare()'s half; emit_encoding() is define_proof_model()'s.
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto make_data(const State & initial_state, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z,
-        std::optional<long long> link = std::nullopt) -> Data;
+    [[nodiscard]] auto make_data(IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, std::optional<long long> link = std::nullopt) -> Data;
 
     /**
      * \brief Emit cake's multiplication encoding for x * y = z -- two magnitude

@@ -88,7 +88,7 @@ auto run_regular_test(bool proofs, const ViewWrapConfig & view_cfg, const string
 // Dup-variable test: Regular with the same handle at several positions.
 // Each position is processed independently by the DFA; aliasing forces
 // those positions to take the same letter. Consistency isn't checked
-// on dup runs; see tmp/duplicate_var_audit.md.
+// on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_regular_test(bool proofs, const string & label, const vector<pair<int, int>> & unique_domains, const vector<int> & positions,
     long num_states, vector<unordered_map<Integer, long>> transitions, vector<long> final_states) -> void
 {

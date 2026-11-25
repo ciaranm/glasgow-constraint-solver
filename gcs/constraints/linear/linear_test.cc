@@ -303,7 +303,7 @@ auto run_linear_reif_test_gac(bool full_reif, bool proofs, const string & mode, 
 // Dup-variable test: Linear with the same handle in two terms. The
 // audit predicts the propagator coalesces via tidy_up_linear and the
 // PB encoding sums coefficients in normal form. Consistency isn't
-// checked on dup runs; see tmp/duplicate_var_audit.md.
+// checked on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 template <typename Constraint_>
 auto run_dup_linear_test(bool proofs, const string & mode, pair<int, int> a_range, pair<int, int> b_range, const vector<int> & coeffs_a_then_b,
     int rhs, const std::function<auto(int, int)->bool> & compare) -> void

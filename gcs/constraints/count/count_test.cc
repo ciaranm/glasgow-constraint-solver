@@ -92,7 +92,7 @@ auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, p
 
 // Dup-variable test: Count with the same handle appearing in several
 // array positions. Each occurrence is counted independently. Consistency
-// isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+// isn't checked on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_count_test(
     bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, int voi_const, pair<int, int> result_range) -> void
 {

@@ -38,7 +38,7 @@ namespace gcs::innards::hints
         b.add(*plus.pol_line);
 
         // Constants in WPBSum are baked into the OPB sum_line directly (see
-        // emit_inequality_to.cc:58-60), so a reason literal whose variable is a
+        // emit_inequality_to.cc:77, the constant case), so a reason literal whose variable is a
         // ConstantIntegerVariableID already contributes to sum_line and doesn't
         // need (or have) a pol-side defining line. Issue #166.
         for (size_t i = 0; i < 2; ++i) {

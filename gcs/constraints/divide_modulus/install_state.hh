@@ -15,8 +15,8 @@ namespace gcs::innards::divide_modulus
      * \brief A non-negative magnitude STATE variable equal to |v|, channelled to v
      * by cake's <letter>ge0/<letter>lt0 channel (four half-reified rows
      * @c[id][<letter>{ge0,lt0}_{ge,le}]) and carrying axis-<axis> free magnitude
-     * bits x[id][<axis>_*][bin]. mult_bc multiplies these magnitudes, so its
-     * operands are always non-negative.
+     * bits x[id][<axis>_*][bin]. The bit-product grid multiplies these
+     * magnitudes, so its operands are always non-negative.
      *
      * The variable and its bit count are allocated by prepare(), so the
      * propagation runs with or without proofs; the four line handles are filled in

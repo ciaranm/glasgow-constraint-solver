@@ -154,7 +154,7 @@ auto run_negative_wildcard_table_test(
 // Dup-variable test: NegativeTable with the same handle in several
 // positions. Forbidden tuples whose dup positions disagree are
 // vacuously satisfied (the underlying assignment is impossible).
-// Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+// Consistency isn't checked on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_negative_table_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, SimpleTuples forbidden)
     -> void
 {

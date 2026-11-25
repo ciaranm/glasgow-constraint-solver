@@ -112,7 +112,7 @@ namespace
     // Dup-variable test: Cumulative with the same start handle for two
     // tasks. The two tasks share a start time, so their heights add at
     // every time point inside their (possibly different) durations.
-    // Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+    // Consistency isn't checked on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
     auto run_dup_cumulative_test(bool proofs, const vector<pair<int, int>> & unique_start_ranges, const vector<int> & positions,
         const vector<int> & lengths, const vector<int> & heights, int capacity) -> void
     {

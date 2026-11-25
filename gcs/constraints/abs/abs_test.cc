@@ -69,7 +69,7 @@ auto run_abs_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, pai
 }
 
 // Dup-variable test: Abs(x, x) forces x = abs(x), i.e. x >= 0.
-// Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+// Consistency isn't checked on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_abs_test(bool proofs, pair<int, int> x_range) -> void
 {
     print(cerr, "abs dup {} {}", x_range, proofs ? " with proofs:" : ":");

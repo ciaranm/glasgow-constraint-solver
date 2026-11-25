@@ -516,7 +516,7 @@ auto run_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 // Dup-variable test: Lex with the same handle appearing across the two
 // arrays. LexLess(xs, xs) is UNSAT; LexLessEqual(xs, xs) is tautology;
 // {x, y} <=lex {x, z} reduces to y <= z. Consistency isn't checked on
-// dup runs; see tmp/duplicate_var_audit.md.
+// dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 template <LexVariant V>
 auto run_dup_lex_test(bool proofs, const string & label, const vector<pair<int, int>> & unique_domains, const vector<int> & left_positions,
     const vector<int> & right_positions) -> void

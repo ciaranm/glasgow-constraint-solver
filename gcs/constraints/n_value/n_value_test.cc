@@ -71,7 +71,7 @@ auto run_n_value_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int,
 // Dup-variable test: NValue with the same handle in several array
 // positions. Distinct-value count is unaffected by duplicates (set
 // semantics). Consistency isn't checked on dup runs; see
-// tmp/duplicate_var_audit.md.
+// dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_n_value_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, pair<int, int> result_range)
     -> void
 {

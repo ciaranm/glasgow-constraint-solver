@@ -52,7 +52,7 @@ namespace
     // Dup-variable test: Disjunctive with the same start handle for two
     // tasks. Two positive-length tasks sharing a start ⇒ UNSAT (they
     // overlap by construction). Consistency isn't checked on dup runs;
-    // see tmp/duplicate_var_audit.md.
+    // see dev_docs/constraints.md (the new-constraint checklist, item 7).
     auto run_dup_disjunctive_test(bool proofs, const string & mode, bool strict, const vector<pair<int, int>> & unique_start_ranges,
         const vector<int> & positions, const vector<int> & lengths) -> void
     {

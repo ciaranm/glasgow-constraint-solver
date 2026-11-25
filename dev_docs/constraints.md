@@ -150,8 +150,8 @@ moved onto the setter (`.with_consistency()`, or `.with_algorithm()` for
 `Circuit`'s `circuit::SCC`/`circuit::Prevent`).
 
 A compound constraint should emit one flat `@c[id][role]` OPB block and
-install one propagator, reusing the exposed machinery (`mult_bc::
-define_encoding` / `mult_bc::propagate`, the `linear_stages` helpers,
+install one propagator, reusing the exposed machinery (the
+`signed_multiply` and `product_enc` encoders, the `linear_stages` helpers,
 `propagate_linear`, `install_tabulation`) rather than installing child
 constraint objects — see the arithmetic family for the pattern, and
 issue #448 for why. Two contracts to know: `propagate_linear` signals

@@ -731,7 +731,7 @@ namespace
 
         // The quotient filter, in both directions, justified by refuting the
         // excluded range against whichever chain established the violated
-        // side of the interval (thesis Procedures 7.6/7.7, no sign cases:
+        // side of the interval (thesis Procedures 7.7/7.8, no sign cases:
         // both operands are magnitudes).
         auto filter_one = [&](SimpleIntegerVariableID target, Integer t_lo, Integer t_hi, SimpleIntegerVariableID other, Integer o_lo,
                               Integer o_hi) -> void {
@@ -1206,7 +1206,7 @@ namespace
         auto recover_q = [](Integer auxv, Integer xv, Integer yv) -> Integer { return ((xv >= 0_i) != (yv >= 0_i)) ? -auxv : auxv; };
 
         // x is a function of the others, pinned by unit propagation forwards
-        // through the stages -- but only on the modulus path (divide has no
+        // through the id_* rows -- but only on the modulus path (divide has no
         // aux to enumerate) and only when x has a fixed sign (for x spanning
         // zero, r = 0 leaves x = +/-|q||y| ambiguous). Its sign then fixes
         // the product's sign: x = sign(x)|q||y| + r. q is a function of the
@@ -1286,8 +1286,8 @@ namespace
     // cake's Zge0/Zlt0 channel) and absy = |y| (channelled by Yge0/Ylt0) are the
     // grid operands; cake's rem_* rows range 0 <= x - w < |y| over the grid sum and x
     // directly (rem_pos gated [x>=0], rem_neg gated [x<1]), so no remainder is
-    // materialised at all. The exposed quotient's sign is pinned off the five sgn_*
-    // clauses by RUP in the propagator. The tabulation enumerates only x, y, q; a
+    // materialised at all. The exposed quotient's sign is pinned off the sgn_*
+    // clauses by RUP in the propagator (propagate_quotient_sign says which). The tabulation enumerates only x, y, q; a
     // rejected leaf pins magq/absy by unit propagation from the assigned q, y and the
     // rem rows refute it.
     //
@@ -1355,16 +1355,17 @@ namespace
             // aux, axis-0 free magnitude) and the divisor magnitude |y| (absy, pinned to |y| by
             // cake's Yge0/Ylt0 channel) multiply through the bit-product grid. The identity
             // splits on sign(x): r = x - Sum off id_pos_* (gated [x>=0]) and r = x + Sum off
-            // id_neg_* (gated [x<0]); the range/sign rows bound 0 <= r < |y| (x>=0) or
+            // id_neg_* (gated [x<1]); the range/sign rows bound 0 <= r < |y| (x>=0) or
             // -|y| < r <= 0 (x<0). Both grid operands are non-negative, so the quotient
             // filtering needs no signed reasoning. The product w = |q||y| exists nowhere:
             // the propagator computes its interval locally from the magnitudes and from
             // x and r through the identity rows, and the justifications cite those rows
             // and the grid directly.
             //
-            // r and the operands are the plain underlying *aout.var / *a*.var, not view
-            // wrappers: the identity inferences propagate the exposed r off the wide grid
-            // interval, and deviewing that defeats the reverse unit propagation.
+            // r and the operands are the handles as given, views included (native
+            // since 4bed929e), not their underlying variables: the identity inferences
+            // propagate the exposed r off the wide grid interval, and deviewing that
+            // would defeat the reverse unit propagation.
             auto y_eff = y, x_eff = x, r_eff = out;
             auto q_eff = st.aux; // the free quotient magnitude
 
@@ -1388,7 +1389,7 @@ namespace
             model.add_labelled_constraint(owner, "nonzero", WPBSum{} + 1_i * ya.ge1 + 1_i * ya.lt0 >= 1_i);
 
             // r = x - |q||y|, split on sign(x): id_pos_* (gated [x>=0], r = x - Sum) and
-            // id_neg_* (gated [x<0], r = x + Sum -- since for x < 0 the quotient product
+            // id_neg_* (gated [x<1], r = x + Sum -- since for x < 0 the quotient product
             // q*y has sign(x), i.e. q*y = -Sum).
             st.data->id_pos_ge = model.add_labelled_constraint(owner, "id_pos_ge", neg_product + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.ge0_gate);
             st.data->id_pos_le = model.add_labelled_constraint(owner, "id_pos_le", product_sum + -1_i * x_eff + 1_i * r_eff >= 0_i, xa.ge0_gate);
@@ -1396,7 +1397,7 @@ namespace
             st.data->id_neg_le = model.add_labelled_constraint(owner, "id_neg_le", product_sum + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.lt1_gate);
 
             // |r| < |y| = absy: rng_hi (r < absy) and rng_lo (r > -absy), plus the r-sign
-            // rows (r takes x's sign; sgn_pos gated [x>=0], sgn_neg gated [x<0]). They feed
+            // rows (r takes x's sign; sgn_pos gated [x>=0], sgn_neg gated [x<1]). They feed
             // stages built in install_propagators(), which must exist proofs-off too.
             st.rng_hi = model.add_labelled_constraint(owner, "rng_hi", WPBSum{} + -1_i * r_eff + 1_i * absy >= 1_i);
             st.rng_lo = model.add_labelled_constraint(owner, "rng_lo", WPBSum{} + 1_i * r_eff + 1_i * absy >= 1_i);

@@ -13,10 +13,6 @@
 #include <string>
 #include <vector>
 
-namespace gcs::innards
-{
-}
-
 namespace gcs::innards::product_enc
 {
     /**

@@ -633,13 +633,18 @@ the dispatch type and carries the `static constexpr name`; `emit_justification(D
 `hint_sexpr(Data) -> SExpr`. The substance — witness, tiers, what `def` holds — is
 unaffected.)*
 
-### `plus` (today: `plus.cc:55–110`)
+### `plus` (as it was: `plus.cc:55–110`)
 
-Today each of the 6 bound rules calls `inference.infer(logger, lit,
+*(Since implemented, in the current surface: `hints::Plus` carries the `pol` line,
+and `emit_justification(ProofLogger &, const Plus &, const ReasonLiterals &)` in
+`plus_minus/plus.cc` is the `emit_justification` below. What follows describes the
+code as it was when this was written.)*
+
+Then each of the 6 bound rules called `inference.infer(logger, lit,
 justify(Conclude::GE|LE), [=]{ return Reason{op1_bound, op2_bound}; })`, and the
-`JustifyExplicitlyThenRUP` lambda captures `[c, sum_line, logger]`, picks
-`sum_line.first`/`.second` by direction, builds a `PolBuilder` from that line plus
-`reason().at(0)`/`.at(1)`, and emits at `ProofLevel::Temporary`.
+`JustifyExplicitlyThenRUP` lambda captured `[c, sum_line, logger]`, picked
+`sum_line.first`/`.second` by direction, built a `PolBuilder` from that line plus
+`reason().at(0)`/`.at(1)`, and emitted at `ProofLevel::Temporary`.
 
 ```cpp
 // --- in the plus namespace ---

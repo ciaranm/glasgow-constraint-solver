@@ -70,8 +70,8 @@ namespace
         ChannelBounds, // channel v1's live sign branches' bounds to its slot magnitude
         GridLower,     // subprocedure 7.1: grid_sum >= lb|x| * lb|y| on the positive branches
         GridUpper,     // subprocedure 7.2: grid_sum <= ub|x| * ub|y|, called twice to exercise the W-line cache
-        ProductBounds, // procedure 7.5 end to end: both bounds on z via the sign-case driver
-        FactorUpper,   // procedures 7.6/7.7: justify x <= q_hi by refuting the excluded range
+        ProductBounds, // procedure 7.6 end to end: both bounds on z via the sign-case driver
+        FactorUpper,   // procedures 7.7/7.8: justify x <= q_hi by refuting the excluded range
         SquareBounds,  // aliased grid (both slots one variable): z >= 0 probe + driver square bounds
     };
 

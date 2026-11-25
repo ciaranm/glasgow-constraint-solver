@@ -25,16 +25,13 @@ using std::vector;
 
 namespace pj = gcs::innards::product_justify;
 
-auto gcs::innards::signed_multiply::make_data(
-    const State & initial_state, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, optional<long long> link) -> Data
+auto gcs::innards::signed_multiply::make_data(IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, optional<long long> link) -> Data
 {
     Data data;
     data.x = x;
     data.y = y;
     data.z = z;
     data.link = link;
-    std::tie(data.x_init_lo, data.x_init_hi) = initial_state.bounds(x);
-    std::tie(data.y_init_lo, data.y_init_hi) = initial_state.bounds(y);
 
     return data;
 }
@@ -46,8 +43,10 @@ auto gcs::innards::signed_multiply::emit_encoding(ProofModel & model, const Stat
     // operand slot (axis 0 -> "X", 1 -> "Y", a fresh proof-only magnitude
     // each, even for a repeated operand), the bit-product grid, the
     // result channel pinning |z| to the grid sum, and the six sign
-    // clauses (all entailed for non-negative operands, but cake always
-    // emits them, so the labels resolve in the chain).
+    // clauses. cake always emits all six, so the labels resolve in the chain.
+    // They are not redundant even for non-negative operands: with x = 2 and
+    // y = 3, z = -6 satisfies both magnitude channels, the grid and the
+    // result channel, and only sgn_pp excludes it.
     product_enc::LinkNaming naming{data.link};
     data.chan_x = product_enc::emit_magnitude_channel(model, initial_state, constraint_id, data.x, 0, "X", naming);
     data.chan_y = product_enc::emit_magnitude_channel(model, initial_state, constraint_id, data.y, 1, "Y", naming);
@@ -113,7 +112,7 @@ namespace
     }
 
     // Justify the bounds on z that are actually moving (thesis Justification
-    // Procedure 7.5): derive each live sign case's product bound through the
+    // Procedure 7.6): derive each live sign case's product bound through the
     // grid, channel to z, and resolve the cases; then restate the bound atoms,
     // which the caller's infer_all applies. need_lower/need_upper say which
     // ones the caller is inferring: a direction that is not being inferred
@@ -186,7 +185,7 @@ namespace
                 RUPProofRule{closer_hints(*lower_red, d.z >= prod_lo)}, WPBSum{} + 1_i * (d.z >= prod_lo) >= 1_i, ProofLevel::Current, reason);
     }
 
-    // Justify one factor bound (thesis Justification Procedures 7.6/7.7):
+    // Justify one factor bound (thesis Justification Procedures 7.7/7.8):
     // assume the refuted excluded range for the target, derive each live sign
     // case's product bound, clash it with whichever of z's actual bounds it
     // violates, and resolve the cases into the new bound on the target.
@@ -339,7 +338,7 @@ auto gcs::innards::signed_multiply::propagate(Data & d, const State & state, aut
     // Only ask for the bounds that will actually move, and tell the
     // justification which they are: infer_all emits the steps once for the
     // batch, so a bound left out of the batch is a whole direction of the
-    // Procedure 7.5 derivation not written. These tests mirror the tracker's
+    // Procedure 7.6 derivation not written. These tests mirror the tracker's
     // own (z <= prod_hi is already true exactly when z_hi <= prod_hi), but
     // nothing rests on them agreeing: naming a bound that does not move would
     // only re-derive a line that is already a unit, and leaving out one that

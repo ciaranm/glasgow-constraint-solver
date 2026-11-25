@@ -13,11 +13,16 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <print>
+#include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -31,7 +36,9 @@ using std::max;
 using std::optional;
 using std::pair;
 using std::prev;
+using std::print;
 using std::size_t;
+using std::string_view;
 using std::vector;
 using std::ranges::sort;
 using std::ranges::upper_bound;
@@ -404,9 +411,23 @@ namespace
 auto gcs::innards::default_interval_pairs_threshold() -> size_t
 {
     static const size_t threshold = []() -> size_t {
-        if (const char * e = std::getenv("GCS_INTERVAL_PAIRS_THRESHOLD"))
-            return std::strtoull(e, nullptr, 10);
-        return 1024; // see the header
+        constexpr size_t default_threshold = 1024; // see the header
+        const char * e = std::getenv("GCS_INTERVAL_PAIRS_THRESHOLD");
+        if (! e || ! *e)
+            return default_threshold;
+
+        // The whole string must be a non-negative count that fits: strtoull
+        // would read a malformed value as 0 (always fall back) and a negative
+        // one as a huge count (never fall back). As GCS_ASSERTION_LEVEL does,
+        // ignore anything else with a warning.
+        string_view value{e};
+        size_t parsed = 0;
+        auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+        if (error != std::errc{} || end != value.data() + value.size()) {
+            print(stderr, "Ignoring unrecognised GCS_INTERVAL_PAIRS_THRESHOLD value '{}'\n", value);
+            return default_threshold;
+        }
+        return parsed;
     }();
     return threshold;
 }

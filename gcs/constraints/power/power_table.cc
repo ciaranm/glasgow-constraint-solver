@@ -62,8 +62,6 @@ auto PowerTable::prepare(Propagators & propagators, State & initial_state, Proof
     vector<vector<Integer>> permitted;
     for (const auto & v1 : initial_state.each_value_immutable(_base))
         for (const auto & v2 : initial_state.each_value_immutable(_exponent)) {
-            if (! initial_state.in_domain(_exponent, v2))
-                continue;
             auto r = checked_integer_power(v1, v2);
             if (r && initial_state.in_domain(_result, *r))
                 permitted.push_back(vector{underlying_value_of(_base, v1), underlying_value_of(_exponent, v2), underlying_value_of(_result, *r)});

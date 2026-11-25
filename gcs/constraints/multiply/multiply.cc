@@ -170,7 +170,7 @@ auto Multiply::prepare(Propagators & propagators, State & initial_state, ProofMo
     // exact square and square-root hull filtering (issue #232).
     auto u1 = *a1.var, u2 = *a2.var;
 
-    _data = make_shared<signed_multiply::Data>(signed_multiply::make_data(initial_state, _v1, _v2, _result));
+    _data = make_shared<signed_multiply::Data>(signed_multiply::make_data(_v1, _v2, _result));
 
     // Tabulation for GAC: enumerate over the distinct underlying variables,
     // mapping values back through the affine forms. The auxiliary variables

@@ -87,7 +87,7 @@ auto run_at_most_one_test(
 // Dup-variable test: AtMostOne with the same handle in several array
 // positions. {x, x, ...} forces x != val (otherwise two occurrences
 // equal val). Consistency isn't checked on dup runs; see
-// tmp/duplicate_var_audit.md.
+// dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_at_most_one_test(
     Variant variant, bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, pair<int, int> val_range) -> void
 {
