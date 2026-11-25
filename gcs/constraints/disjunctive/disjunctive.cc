@@ -13,9 +13,12 @@
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
+
+#include <util/overloaded.hh>
 
 #include <algorithm>
 #include <array>
@@ -521,6 +524,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // the search state can move.
             guarded = make_shared<map<tuple<size_t, long long, long long, long long, long long, long long>, window_energy::GuardedWindowEnergy>>(),
             floors = make_shared<map<size_t, ProofLine>>(), escapes = make_shared<map<size_t, ProofLine>>(),
+            presence_atoms = make_shared<map<size_t, optional<ProofLine>>>(),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Every inference that can fail reports it through the tracker's
             // non-throwing path and returns at once: a push that empties a
@@ -699,6 +703,38 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     .first->second;
             };
 
+            // An optional task's separation clauses say it is absent with the
+            // atom `presence = 0`, and its activity flags say it is present
+            // with `presence = 1`. For a presence declared over exactly
+            // {0, 1}, those are one bit and its negation, so the bridge below
+            // cancels them by adding the two up. For any other declaration
+            // they are two separately defined atoms --- `{1}` from a value
+            // list, say, which is a variable over [1, 1], or a view whose
+            // underlying variable's range is not {0, 1} --- and adding them up
+            // cancels nothing (#1411). This is the line that does: the two
+            // atoms cannot both hold, which is RUP from their definitions. A
+            // fact about the variable alone, so kept on the same terms as the
+            // escape rows. nullopt when the atoms are already complementary,
+            // so that the everyday case's proof is unchanged.
+            auto presence_atoms_exclusive = [&](size_t i) -> optional<ProofLine> {
+                if (auto found = presence_atoms->find(i); found != presence_atoms->end())
+                    return found->second;
+                auto & tracker = logger->names_and_ids_tracker();
+                auto xliteral_of = [&](const ProofLiteral & lit) -> optional<XLiteral> {
+                    return overloaded{                                                      //
+                        [](const TrueLiteral &) -> optional<XLiteral> { return nullopt; },  //
+                        [](const FalseLiteral &) -> optional<XLiteral> { return nullopt; }, //
+                        [&](const auto & cond) -> optional<XLiteral> { return tracker.find_xliteral_for(cond); }}
+                        .visit(simplify_literal(tracker, lit));
+                };
+                auto absent = xliteral_of(*presence[i] == 0_i), present = xliteral_of(*presence[i] == 1_i);
+                optional<ProofLine> line;
+                if (! (absent && present && *absent == ! *present))
+                    line = logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * (*presence[i] != 0_i) + 1_i * (*presence[i] != 1_i) >= 1_i, rules.overload_vocabulary_at);
+                return presence_atoms->emplace(i, line).first->second;
+            };
+
             // The same fact for a task whose length is declared from zero, where
             // it is not a model fact at all: the escape is false only because
             // the search has since raised the length, which the reason says.
@@ -808,7 +844,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // The flag's own forward row says the flag implies the
                 // presence, so adding it trades that literal for another copy
                 // of `~flag`, and saturating puts the doubled flag back at one:
-                // the same two-literal clause a mandatory pair lands on.
+                // the same two-literal clause a mandatory pair lands on. Where
+                // `~present` and `present` are not one atom's two polarities,
+                // the trade needs the line saying they are exclusive as well
+                // (presence_atoms_exclusive, #1411).
                 //
                 // Once per presence *variable*, not per task. Two tasks posted
                 // with the same presence put `2 ~present` in the clause, which
@@ -820,6 +859,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         continue;
                     if (const auto & row = activity_flag(r, t).implies_present) {
                         pol.add(*row);
+                        if (auto exclusive = presence_atoms_exclusive(r))
+                            pol.add(*exclusive);
                         optional_pair = true;
                     }
                 }
@@ -1109,6 +1150,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         folds->clear();
                         floors->clear();
                         escapes->clear();
+                        presence_atoms->clear();
                         guarded->clear();
                     }
 
@@ -1288,6 +1330,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         folds->clear();
                         floors->clear();
                         escapes->clear();
+                        presence_atoms->clear();
                         guarded->clear();
                     }
 
@@ -1477,6 +1520,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         folds->clear();
                         floors->clear();
                         escapes->clear();
+                        presence_atoms->clear();
                         guarded->clear();
                     }
 
@@ -2884,6 +2928,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                     folds->clear();
                                     floors->clear();
                                     escapes->clear();
+                                    presence_atoms->clear();
                                 }
 
                                 // (1) The vocabulary: a flag per (task, time)
