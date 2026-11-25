@@ -22,7 +22,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::make_shared;
-using std::make_unique;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -71,10 +70,16 @@ Nogoods::Nogoods(shared_ptr<NogoodStore> store, vector<IntegerVariableID> trigge
 {
 }
 
+auto gcs::innards::nogoods_over_learned_store(shared_ptr<NogoodStore> store, vector<IntegerVariableID> trigger_vars, bool refined) -> Nogoods
+{
+    return Nogoods{move(store), move(trigger_vars), refined};
+}
+
 auto Nogoods::clone() const -> unique_ptr<Constraint>
 {
     // Share the live store; copy the trigger list; preserve the trigger mode.
-    return make_unique<Nogoods>(_store, _trigger_vars, _refined);
+    // Not make_unique: the store-sharing constructor is private.
+    return unique_ptr<Nogoods>{new Nogoods{_store, _trigger_vars, _refined}};
 }
 
 auto Nogoods::define_proof_model(ProofModel & model, const State &) -> void
