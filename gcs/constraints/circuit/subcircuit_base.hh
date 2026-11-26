@@ -68,9 +68,11 @@ namespace gcs::innards::subcircuit
      * "Every value is somebody's successor" is not in the encoding -- the all-different
      * rows are a pairwise clique, which says at most one variable takes a value and nothing
      * about at least one -- so it has to be derived by pigeonhole over the clique
-     * inequalities recover_am1_from_pairs merges out of those rows. That derivation is O(n) rows per
-     * value and the at-most-ones are shared between values, so it is worth doing once at
-     * ProofLevel::Top and keeping: a proof line stays valid at every later node, and
+     * inequalities recover_am1_from_pairs merges out of those rows. That derivation is
+     * O(n²) lines per value: each value's at-most-one is a pairwise RUP per pair of
+     * variables, folded by recover_am1_from_pairs, and only the closing at-least-one pol
+     * has O(n) terms. Each value's at-most-one is cached and reused by every pigeonhole
+     * that needs it, so it is worth doing once at ProofLevel::Top and keeping: a proof line stays valid at every later node, and
      * re-deriving it would only bloat the log. Held by shared_ptr and mutated through it,
      * as circuit_scc.cc's caches are.
      */

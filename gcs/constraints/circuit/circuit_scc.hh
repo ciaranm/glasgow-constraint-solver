@@ -21,9 +21,6 @@ namespace gcs
         bool prune_root = true;
         bool prune_skip = true;
         bool fix_req = true;
-        bool prune_within = true;
-        bool prove_using_dominance = false;
-        bool enable_comments = true;
         bool prove_am1_by_contradiction = true;
         bool short_reasons = true;
     };

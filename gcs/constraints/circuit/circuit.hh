@@ -107,12 +107,6 @@ namespace gcs
         auto with_prune_skip(std::optional<bool> enable = true) -> Circuit &;
         /// SCC-only: fix required (back-)edges. No-op under circuit::Prevent.
         auto with_fix_req(std::optional<bool> enable = true) -> Circuit &;
-        /// SCC-only: prune impossible edges within a subtree. No-op under circuit::Prevent.
-        auto with_prune_within(std::optional<bool> enable = true) -> Circuit &;
-        /// SCC-only: prove pruning by a dominance argument rather than reachability. No-op under circuit::Prevent.
-        auto with_prove_using_dominance(std::optional<bool> enable = true) -> Circuit &;
-        /// SCC-only: emit explanatory proof comments. No-op under circuit::Prevent.
-        auto with_enable_comments(std::optional<bool> enable = true) -> Circuit &;
         /// SCC-only: prove at-most-one position facts by contradiction. No-op under circuit::Prevent.
         auto with_prove_am1_by_contradiction(std::optional<bool> enable = true) -> Circuit &;
         /// SCC-only: reify a short "reason" flag rather than citing the full reason each time. No-op under circuit::Prevent.

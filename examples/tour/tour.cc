@@ -108,7 +108,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(Circuit{succ}.with_algorithm(circuit::Prevent{}));
     }
     else if (options_vars["propagator"].as<string>() == "scc") {
-        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}).with_enable_comments(false));
+        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}));
     }
     else {
         p.post(Circuit{succ});

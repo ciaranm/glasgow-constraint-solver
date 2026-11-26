@@ -7,8 +7,7 @@
 > **Open issues** filed by this audit: #1306 (with `with_prune_skip(false)`, VeriPB can reject the
 > `SCC` proof, because two rules' certificates need prune skip to have run;
 > fix open as #1367),
-> #1318 (three of `Circuit`'s setters do nothing, and several `SubCircuit`
-> comments are stale), #1319 (a question: a one-node `circuit` answers
+> #1319 (a question: a one-node `circuit` answers
 > differently from MiniZinc's own decomposition). Already open and touching
 > this family: #1228 (`with_required_node()` rejects an anchor whose own index
 > is an interior hole), #833 (the large-domain policy), #868 (cross-solver
@@ -16,7 +15,9 @@
 > lanes), #364 (incrementality survey). Filed since: #1326 (`SubCircuit`'s
 > pigeonhole grows with a wide-declared successor's declared width; see
 > [Known limitations](#known-limitations)).
-> **Fixed since the audit**: #1327 (`Circuit`'s `SCC` walk recursed once per
+> **Fixed since the audit**: #1318 (three of `Circuit`'s setters did nothing,
+> and several `SubCircuit` comments were stale), by removing the setters and
+> correcting the comments; #1327 (`Circuit`'s `SCC` walk recursed once per
 > level and overflowed the native stack on large instances; see
 > [Robustness](#robustness-and-limits)), by #1440; #1307 (a `Circuit` over an empty array
 > crashed), by #1439; #1317 (the `SCC` propagator built its
@@ -263,13 +264,12 @@ clique rows under the same ID; `opb/circuit_5.opb` against `circuit_gac_5.opb`).
 | `with_fix_req` | on | yes |
 | `with_prove_am1_by_contradiction` | on | yes: at-most-ones by proof by contradiction (`pbc`), else by a clique of pairs |
 | `with_short_reasons` | on | yes: one reified flag stands for the reason |
-| `with_prune_within` | on | **no**: nothing in `circuit_scc.cc` reads it |
-| `with_prove_using_dominance` | off | **no** |
-| `with_enable_comments` | on | **no**: comments are written either way |
 
-The three unread ones are documented in `circuit.hh` as doing something
-(#1318). Francis and Stuckey's *prune within* exists for
-`Circuit` in the thesis (JP 6.6) but not in this propagator.
+Three more, `with_prune_within`, `with_prove_using_dominance` and
+`with_enable_comments`, were documented in `circuit.hh` as doing something,
+but nothing read them, so they were removed (#1318). Francis and Stuckey's
+*prune within* exists for `Circuit` in the thesis (JP 6.6) but not in this
+propagator.
 
 **`SubCircuit`'s `SCC` knobs**: `with_prune_root()` and `with_prune_within()`,
 both off, both ignored without `subcircuit::SCC` and an anchor. They change
@@ -1895,8 +1895,7 @@ different harness. They are not re-measured here.
   out of a vector-built domain (#1228); the automatic anchor search misses the
   same nodes, and MiniZinc set-domain holes, silently, and so builds the
   larger unanchored encoding and runs `subcircuit::SCC` as `Prevent`.
-- **`Circuit`'s `with_prune_within()`, `with_prove_using_dominance()` and
-  `with_enable_comments()` do nothing** (#1318).
+
 - **A `SubCircuit` successor declared wide makes `SCC` proofs grow with the
   declared width**, during search, though propagation is unaffected
   (#1326; [Interval efficiency](#interval-efficiency),
@@ -1926,9 +1925,9 @@ different harness. They are not re-measured here.
    finding as `smart_table`'s. Add a lane running this family at
    `GCS_ASSERTION_LEVEL=Inferences` with a check that no asserted clause is
    falsified by a later `solx` (`probes/assertcheck.py` is one).
-6. **Remove or implement the three dead `Circuit` setters, and fix the stale
-   `SubCircuit` comments** (#1318). Removing is an
-   API change; implementing prune within means JP 6.6.
+6. **Done** (#1318): the three dead `Circuit` setters are removed, and the
+   stale `SubCircuit` comments are fixed. Implementing prune within for
+   `Circuit` would mean JP 6.6.
 7. **Decide the one-node semantics** (#1319): either make
    `fzn_circuit.mzn` return `false` at one node, as the standard library
    does, or record the divergence as deliberate; and have the XCSP3 binding

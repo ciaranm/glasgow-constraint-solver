@@ -65,9 +65,6 @@ Stats run_circuit_problem(
             .with_prune_root(options.prune_root)
             .with_prune_skip(options.prune_skip)
             .with_fix_req(options.fix_req)
-            .with_prune_within(options.prune_within)
-            .with_prove_using_dominance(options.prove_using_dominance)
-            .with_enable_comments(options.enable_comments)
             .with_prove_am1_by_contradiction(options.prove_am1_by_contradiction)
             .with_short_reasons(options.short_reasons));
 
@@ -128,10 +125,7 @@ auto main(int argc, char * argv[]) -> int
             ("no-prune-root", "SCC inference")                                             //
             ("no-prune-skip", "SCC inference")                                             //
             ("no-fix-req", "SCC inference")                                                //
-            ("no-prune-within", "SCC inference")                                           //
             ("no-prove-am1-contradiction", "SCC optimisation")                             //
-            ("prove-using-dominance", "SCC inference")                                     //
-            ("enable-comments", "SCC inference")                                           //
             ("short-reasons", "Use redundance to reify reasons in proofs to save space."); //
 
         options_vars = command_options.parse(argc, argv);
@@ -153,9 +147,6 @@ auto main(int argc, char * argv[]) -> int
         ! options_vars.contains("no-prune-root"),
         ! options_vars.contains("no-prune-skip"),
         ! options_vars.contains("no-fix-req"),
-        ! options_vars.contains("no-prune-within"),
-        false,
-        options_vars.contains("enable_comments"),
         ! options_vars.contains("no-prove-am1-contradiction"),
         options_vars.contains("short-reasons"),
     };

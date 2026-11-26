@@ -119,7 +119,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(Circuit{succ}.with_algorithm(circuit::Prevent{}));
     }
     else {
-        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}).with_enable_comments(false));
+        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}));
     }
 
     for (unsigned i = 0; i < n; ++i)

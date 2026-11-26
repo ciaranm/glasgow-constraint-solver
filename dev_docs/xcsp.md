@@ -519,8 +519,7 @@ their own conventions. Two real cases:
   XCSP3-core allows isolated vertices via self-loops and asks for
   "exactly one circuit", so `<circuit>` is `SubCircuit` with a tour size
   of at least two — which is what the binding now posts (#167, #788).
-  `Circuit` is consequently unreachable from XCSP3: it is a MiniZinc,
-  C++ and `.scp` constraint only. The size-carrying forms pass their
+  `Circuit` is consequently unreachable from XCSP3: it is a MiniZinc, C++, `gcspy` and `.scp` constraint only. The size-carrying forms pass their
   size straight to `with_tour_size()`, and all three forms are checked
   against ACE by `xcsp_circuit`, `xcsp_circuit_size` and
   `xcsp_circuit_size_var`.

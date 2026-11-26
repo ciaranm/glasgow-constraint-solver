@@ -105,12 +105,7 @@ auto main(int argc, char * argv[]) -> int
 
                 post_constraints(p, nodes, instance.domains);
 
-                p.post(Circuit{nodes}
-                        .with_algorithm(circuit::SCC{})
-                        .with_fix_req(fix_req)
-                        .with_prune_root(prune_root)
-                        .with_prune_within(false)
-                        .with_prune_skip(false));
+                p.post(Circuit{nodes}.with_algorithm(circuit::SCC{}).with_fix_req(fix_req).with_prune_root(prune_root).with_prune_skip(false));
 
                 auto label = instance.name + " fix_req=" + to_string(fix_req) + " prune_root=" + to_string(prune_root);
                 auto proof_name = proofs ? make_optional("circuit_prune_skip_off_test_" + to_string(instance_index) + to_string(fix_req) +
