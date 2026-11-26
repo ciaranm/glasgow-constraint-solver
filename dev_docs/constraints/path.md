@@ -1179,11 +1179,11 @@ Not a next step: the cardinality row is implied, but it is item 1's lemma and
 occasionally prunes, so it stays.
 
 **Out-of-stack documentation fixes this audit found.**
-`connectivity-proofs.md`'s family table gives `DPath` "the end is selected" but
+`connectivity-proofs.md`'s family table gave `DPath` "the end is selected" but
 not `Path`, which has the same `endin<v>` rows (`path.cc:86–87`). Its "These
-are not GAC" paragraph names cycle closure as the concrete gap; for `Path` and
-`DPath` the larger one is the missing degree lower bound. Both corrected by
-#1396, open.
+are not GAC" paragraph named cycle closure as the concrete gap; for `Path` and
+`DPath` the larger one is the missing degree lower bound. #1396 corrected
+both.
 
 ## Prior art
 

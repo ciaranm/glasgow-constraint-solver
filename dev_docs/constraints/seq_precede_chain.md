@@ -60,8 +60,7 @@ places: "for every positive value `v` … `v − 1` must appear earlier", which
 for `v = 1` would demand a 0 first; and, there and in `seq_precede_chain.cc`,
 that `v` needs "`v` distinct earlier positions", where it is `v − 1`. The
 implementation, the MiniZinc reading and the brute-force oracle this audit used
-all let 1 appear first; it is the comment that is wrong (corrected by
-#1396, open).
+all let 1 appear first; it was the comment that was wrong, until #1396 corrected it.
 
 - **An empty array:** true; nothing installed.
 - **No domain reaching 1:** true; nothing installed, not even a clamp.
@@ -447,9 +446,9 @@ array length, in terms.
    The forcing rule, which this constraint needed most, since symmetry
    breaking on a set partition is where a backwards search meets it, landed
    in #1145; it makes each pair GAC over distinct variables, not the chain.
-2. **Correct the class comment** (done by #1396, open): `v = 1` needs
-   nothing, and `v` needs `v − 1` earlier positions, not `v` (header and
-   `seq_precede_chain.cc`). Trivial; not worth an issue.
+2. **Done** (#1396): correct the class comment. `v = 1` needs nothing,
+   and `v` needs `v − 1` earlier positions, not `v` (header and
+   `seq_precede_chain.cc`).
 3. **Give the clamp a hint that names the constraint,** or label the rows as
    cake does. Small, and only for a reconstructor's benefit.
 

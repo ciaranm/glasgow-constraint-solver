@@ -145,9 +145,9 @@ z = min_{0 ≤ i < j < p} D[x_i, x_j]        and, with R,   D[x_i, x_j] ≥ R_ij
 [^scpmode]: `read_min_distance` (`scp_reader.cc:957`) posts at the default,
     `ForwardBound`, whatever wrote the file, as the regular variants do; a
     `PairSupportMatch` model read back from its `.scp` propagates differently.
-    Its comment calls `Z` "a lower bound on the pairwise distance between the
-    chosen sites", which is incomplete rather than wrong: `Z` is the greatest
-    such bound, the minimum itself (corrected by #1396, open).
+    Its comment called `Z` "a lower bound on the pairwise distance between the
+    chosen sites", which was incomplete rather than wrong: `Z` is the greatest
+    such bound, the minimum itself. #1396 corrected it.
 
 [^cake]: `cake_pb_cp` has had a `min_distance` rule since CakeML `930601d6`
     (CakePB `develop-cp` `62bdc7f`), asked for in #1417; before that it printed

@@ -119,10 +119,9 @@ Degenerate cases:
     right. It also passes `ns` and `es` through a comprehension. fzn-glasgow
     reads the call at `fzn_glasgow.cc:969–977` through `edges_from_endpoints`,
     which every graph binding shares and which rejects a negative endpoint. The
-    stdlib's `fzn_dag_reif` is an `abort`. The file's comment (line 6) says it
-    shifts "as fzn_subgraph.mzn does", but there is no such file: the shift it
-    means is in `fzn_subgraph_enum.mzn`. That is an out-of-stack comment fix
-    (corrected by #1396, open).
+    stdlib's `fzn_dag_reif` is an `abort`. The file's comment (line 6) said it shifts "as fzn_subgraph.mzn does",
+    but there is no such file: the shift it means is in
+    `fzn_subgraph_enum.mzn`. #1396 corrected the comment.
 
 [^xdag]: XCSP3 has no acyclicity constraint.
 
@@ -1042,10 +1041,10 @@ Glasgow Subgraph Solver uses to certify connected maximum common subgraph
   decomposition (8 and 12 nodes with proofs, the corpus without). Its figures
   are #918's, not re-taken here, except the one under
   [CPU performance](#cpu-performance). Three details do not match this
-  audit. It says the `dag_mutation_*` lanes keep "the first two" of its four
+  audit. It said the `dag_mutation_*` lanes keep "the first two" of its four
   unsound variants honest, which would be a missing path edge and a flipped
   conclusion; the lanes are a missing path edge and a missing subgraph
-  endpoint (corrected by #1396, open). Its `maximum-dag` times do not
+  endpoint (corrected by #1396). Its `maximum-dag` times do not
   reproduce, though its node counts
   do. And its dense table's 18,288 rows for a 20-node, 380-edge component are
   more than the constraint alone writes (16,781): see

@@ -1179,7 +1179,7 @@ novelty is assessed once, in [`regular.md`'s Prior art](regular.md#prior-art);
   the nonogram); and `MDD` has no `with_proof_strategy` setter, which the note
   says all four constraints expose (and contradicts itself on later). For `MDD`
   the scaffold is backward chains and static dead lines only. All corrected by
-  #1396, open.
+  #1396.
 - [`regular.md`](regular.md): `Regular`, whose graph code `mdd.cc` copies, and
   whose audit found the same per-node copy cost.
 - [`large-domains.md`](../large-domains.md): the encoding-growth survey and

@@ -1599,6 +1599,6 @@ per search (about four for megane, per the code's comment), so `Auto` never
 reaches its 32-wake decision, and there a lazily built compact table pays even
 for so few wakes.
 It is also 5–15% behind forced compact on six of the thirteen `srch_*`
-instances. The doc comment is stale (corrected by #1396, open), and the
+instances. The doc comment was stale until #1396 corrected it, and the
 decision rule, which gates on wake count, cannot see Renault's case at all: few
 wakes, each over a very large live set. Filed as #1118.

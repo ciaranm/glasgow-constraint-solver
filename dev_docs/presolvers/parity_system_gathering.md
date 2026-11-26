@@ -192,10 +192,10 @@ The default differs from `DifferenceLogic`'s on purpose. Its
 `disabling_lifted_donors()` ships off. The header gives the reason: a donor
 row with one literal left becomes a unit row of the reduced system, so the
 system infers whatever the donor would have. That is an argument about
-strength. The header goes on to a cost claim, that a gathered donor "is then
-pure overhead on every wake" (`.hh:181–185`; `parity-system.md` says the same,
-under "Donors are retired by default"), and this audit's measurements
-contradict it (both corrected by #1389, open). Retiring changes which
+strength. The header went on to a cost claim, that a gathered donor "is then
+pure overhead on every wake" (`.hh:181–185`; `parity-system.md` said the same,
+under "Donors are retired by default"), which this audit's measurements
+contradict; #1389 corrected both. Retiring changes which
 propagator explains each inference, and it is not a saving in general. Across
 the shapes measured, the retired proof
 ranged from about 6% smaller to quadratically larger
@@ -226,8 +226,7 @@ model where parity dominates, it prunes nothing and costs four times as much.
   (#310; checked here with `ParityOdd{in_range(x, 1, 3), y}`).
 - **Boolean donors**: both operands may be variables, views or constants, as
   long as their bounds **in the state the presolver sees** lie within `[0, 1]`
-  (`within_a_bit`, `parity_system_gathering.cc:159–168`). The header says
-  "declared domain" (corrected by #1396, open), but the code reads
+  (`within_a_bit`, `parity_system_gathering.cc:159–168`). The header said "declared domain" until #1396 corrected it, but the code reads
   `initial_state.bounds`, and the root
   initialisers have already run by then. So `x ∈ −3..1` narrowed to `0..1` by
   `Abs`'s root initialiser is gathered (`narrowed_abs_*` fixtures), and so is
@@ -1476,9 +1475,8 @@ yet portable to cake's encoding.
   eligibility rules.
 - [`parity-system.md`](../parity-system.md): the long design note. Its "The
   presolver" half covers the two donor families, components, why donors are
-  retired by default (its claim that a gathered donor is "pure overhead" is
-  contradicted here, under [Options](#options), and corrected by #1389,
-  open), the tripwire and strength tables, and the API the presolver needed.
+  retired by default (its claim that a gathered donor was "pure overhead", contradicted here
+  under [Options](#options), was corrected by #1389), the tripwire and strength tables, and the API the presolver needed.
   §2 derives the slack rows from the chain, and "What mutation testing says"
   has the seven mutations.
 - [`difference_logic.md`](difference_logic.md): the other presolver that can

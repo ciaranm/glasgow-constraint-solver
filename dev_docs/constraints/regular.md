@@ -1615,38 +1615,37 @@ here.
   note (command lines, no figures) for `nonogram`. Against the code at
   `86caad24` it is wrong in these places, for an out-of-stack fix:
   - it says the OPB is identical across all three strategies (`Bacchus` names
-    its flags and labels its rows differently; corrected by #1396, open);
+    its flags and labels its rows differently; corrected by #1396);
   - it says the choice "never changes the inferences drawn or the solutions
     found" (`Bacchus` accepts an empty sequence whose start is not final,
     #1329);
   - it says `Bacchus`'s backtrack RUPs close by unit propagation (not without
     three kinds of unit clause, #1331);
   - it says `Upfront`'s scaffold is emitted "only if proof logging is enabled",
-    leaving out that it is also only at `Off` (#1332; corrected by #1396,
-    open);
+    leaving out that it is also only at `Off` (#1332; corrected by #1396);
   - it says `Bacchus`'s per-call propagator "is passed `logger = nullptr`"
     (it is passed the logger, `regular_bacchus.cc:209`; corrected by
-    #1396, open);
+    #1396);
   - it says the graph is built "once in `prepare()`" and that each call
     "builds the per-call support graph" (it is built at the first call and
-    then maintained, `regular.cc:308-309`; corrected by #1396, open);
+    then maintained, `regular.cc:308-309`; corrected by #1396);
   - it counts `Bacchus`'s incoming at-least-ones as one per `(i+1, q')` and
     its variable-support ones as one per `(i, v)` with `v` in the initial
     domain (each is skipped when no transition exists, `regular_bacchus.cc:414`,
     `:432`, and the second runs over the OPB alphabet);
   - it calls the sibling classes internal, while their headers are installed
-    and the audit lane posts them (corrected by #1396, open);
+    and the audit lane posts them (corrected by #1396);
   - its Cost section says the canonical run's "flags and lines grow as `n`
     times the live edges per layer"; that holds for the flags, but the
     per-root-value lemmas and rows are `L_i · |D_i|` lines whatever the edges,
     and the at-most-one is not linear in the edges either, as the note's
     next sentence, the live states times the edges into them, correctly says
     (see [Initialisation](#initialisation-and-global-data); corrected by
-    #1396, open).
+    #1396).
 
   And `regular.hh:103-104` says `Bacchus` "requires every such set to have at
   most one member", where an empty set is refused too (`regular.cc:563`;
-  corrected by #1396, open).
+  corrected by #1396).
 - [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md):
   the cost model shared with `MDD`, `Knapsack` and `BinPacking` (and with
   [`mdd.md`](mdd.md), [`knapsack.md`](knapsack.md) and
@@ -1658,7 +1657,7 @@ here.
   permanent scaffold (`red ≈ 28–48` flags), does not hold on nonograms, where
   `Upfront`'s scaffold has no `red` lines and is 66,680 of 85,553 lines (see
   [Options](#options)); the conclusion survives, on line count. Corrected by
-  #1396, open, in "Why each lands where it does"; its predictive rule still
+  #1396, in "Why each lands where it does"; its predictive rule still
   files `Regular` as a narrow diagram with a small scaffold.
 - [`justification-techniques.md`](../justification-techniques.md): Theorems
   2.6 and 3.2, which every step here leans on.

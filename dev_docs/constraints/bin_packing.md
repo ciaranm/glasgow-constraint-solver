@@ -722,7 +722,7 @@ exercised. The test's comment (`bin_packing_test.cc:160–164`) gets the
 mechanism wrong: it says the two shapes' rows cannot be written, but the rows
 are written and verify (under `BC`); what throws is `GAC`'s Stage 3, its
 diagram for "star" and its `Top` flags at `Off` for "pinned" (corrected by
-#1396, open).
+#1396).
 
 ### Interval efficiency
 
@@ -2031,7 +2031,7 @@ independent check `CHECK.txt`).
       per-bin GAC without the commitment caveat, and names the removed
       `bounds_only` and `upfront_proof` constructor flags (six places) where
       the API is `with_consistency` and `with_proof_strategy` (all corrected by
-      #1396, open; its two Stage 4 claims, at `:390–391` and `:395–397` on
+      #1396; its two Stage 4 claims, at `:390–391` and `:395–397` on
       main at `86caad24`, are corrected by #1359 (open), which also adds to
       "Where the work goes", at `:445–447` there, that the shave's necessary
       condition passes nearly every free item where `DELTA` is 0, #1358);
@@ -2043,7 +2043,7 @@ independent check `CHECK.txt`).
       two strategies draw the same inferences and differ only in the proof;
       `:369–370` says
       `emit_bin_scaffolding` "Mirrors knapsack.cc", where the function now
-      lives in `knapsack_upfront.cc:177` (all corrected by #1396, open; the
+      lives in `knapsack_upfront.cc:177` (all corrected by #1396; the
       Stage 4 comments at `:1821–1826` and `:1594–1597` are corrected by #1359
       (open), which also adds #1358's caveat to the shave's necessary condition
       at `:1645–1650`);
@@ -2054,14 +2054,14 @@ independent check `CHECK.txt`).
       Stage 3 code path: 60 s against 0.1 ms in [Interval
       efficiency](#interval-efficiency)), and `:37–38` and `:181–182` that it
       never changes the inferences (it changes them within a call, not the
-      fixpoint), all corrected by #1396, open; `:124–125` speaks of "joint
+      fixpoint), all corrected by #1396; `:124–125` speaks of "joint
       chains", which `k = 1` does not have;
     - `bin_packing_test.cc:228–233` says Stage 3 achieves per-bin GAC and
       strengthens only the load form's load pruning (it prunes items' value
       `b` too), and `:160–164` says the edge-of-range shapes' rows cannot be
       written with a proof, where the rows are written and verify and the
       throws come from `GAC`'s Stage 3 ([Overflow](#robustness-and-limits)).
-      Both corrected by #1396, open.
+      Both corrected by #1396.
 
 ## Prior art
 
@@ -2134,8 +2134,8 @@ joint-only case.
   (Stage 1, the checker it started as, is superseded), Stage 3's two proof
   strategies and the argument for why `PerCall`'s RUPs close, the hand-run
   mutation results for Stage 3 and Stage 4, Stage 4's derivation in full, and
-  its benchmark tables from the #995 and #209 era. Some of its text is stale
-  (next step 12; corrected by #1396 and #1359, both open).
+  its benchmark tables from the #995 and #209 era. Some of its text was stale
+  (next step 12; corrected by #1396 and #1359).
 - [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md):
   upfront against per-call for `Regular`, `MDD`, `Knapsack` and `BinPacking`,
   and why this family's per-call strategy wins both axes.

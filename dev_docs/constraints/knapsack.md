@@ -218,8 +218,8 @@ profit})`.
     decomposes every global it does not map and names Knapsack as future work.
 [^sexpr]: `constraint_type()` is `"knapsack"` whatever the strategy, so an
     `Upfront` constraint's `.scp` reads back as `PerCall`; the strategy is not
-    part of the model. `dev_docs/knapsack.md` still says the keyword is
-    `knapsack_upfront` (corrected by #1396, open).
+    part of the model. `dev_docs/knapsack.md` said the keyword was `knapsack_upfront`, until
+    #1396 corrected it.
 [^reif]: Glasgow's `mznlib` has no `fzn_knapsack_reif`, so the standard
     library's reified decomposition into linear equalities is used.
 
@@ -481,9 +481,9 @@ stay `none`. Both cases run `PerCall`, since the reader posts the default.
 instances (two rows over three items, and the `holes` and `backward` shapes of
 the catalogue; `chain/up_*`).
 
-Two comments in that `CMakeLists.txt` are stale: line 587 says knapsack "does
-not chain", and lines 640–646 describe the labels as `@c[_1<row>][le]`, which
-neither the solver nor cake writes. Both corrected by #1396, open.
+Two comments in that `CMakeLists.txt` were stale: line 587 said knapsack "does
+not chain", and lines 640–646 described the labels as `@c[_1<row>][le]`, which
+neither the solver nor cake writes. Both corrected by #1396.
 
 ### Proof-time state
 
@@ -1408,7 +1408,7 @@ not produced in practice, a filed issue rather than a gap in a derivation
     `knapsack_upfront.cc:75–76` says the cap is intersected with the totals,
     which `compute_caps` deliberately does not do; `knapsack.hh:25–26` and
     `knapsack_upfront.hh:25` repeat the superseded 3.6–18× and 3–6× figures.
-    #1396 (open) corrects all of these (the benchmark table by marking it as
+    #1396 corrected all of these (the benchmark table by marking it as
     dated and pointing here), except that `dev_docs/knapsack.md:48–69` (on
     main at `86caad24`) still speaks of "both classes" and two constructors
     "on each class", and still gives the general constructor as XCSP3's.
@@ -1461,7 +1461,7 @@ far as this audit knows they are unpublished; they are described in
   static diagram, the not-intersected caps, the phantoms and their two closing
   cases, the `Top` scaffolding line by line, and the `DeadCache`. Its
   strategy-comparison figures predate this audit's (marked as dated by
-  #1396, open).
+  #1396).
 - [`decision-diagram-proof-strategies.md`](../decision-diagram-proof-strategies.md):
   upfront against per-call for `Regular`, `MDD`, `Knapsack` and `BinPacking`,
   the displacement-against-cost-per-line model that explains why `PerCall` is
