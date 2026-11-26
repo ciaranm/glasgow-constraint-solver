@@ -153,10 +153,17 @@ suite; turning them off is what makes the tests enumerate fully, as the two
 default-GCC Ubuntu CI lanes do.
 
 `GCS_WERROR` is a CI lane rather than a normal build setting: GCC's warning
-baseline has been zero since #710, whereas clang and Apple Clang each still
-have a few hundred pre-existing warnings, so only the `ubuntu-26.04` default-GCC
-lane can afford `-Werror`. Build with it before pushing if you want to know
-what that lane will say.
+baseline has been zero since #710, so only the `ubuntu-26.04` default-GCC lane
+can afford `-Werror`. Build with it under GCC before pushing if you want to
+know what that lane will say. Clang 21 warns at three sites, all
+`-Wunused-lambda-capture` on `array_has_nonconstants` in
+`gcs/constraints/element/element.cc` (`:360`, `:600`, `:714` at the time of
+writing; 36 warning lines over the whole tree, from their instantiations).
+They are kept on purpose (#759): each capture is read only in a branch that an
+`if constexpr` discards for a constant array, and deleting it breaks the
+variable-array instantiation. So a local clang `-DGCS_WERROR=ON` build is
+expected to stop on `element.cc`, and that says nothing about your branch.
+Apple Clang's count has not been re-measured.
 
 ## Which wrapper runs which test
 

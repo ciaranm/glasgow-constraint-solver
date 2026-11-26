@@ -714,7 +714,9 @@ and the sweep reads the rule switches it tests into locals once instead of
 through a reference on every window. Together that was 0.94x the instructions
 and 0.95x the cycles, with proofs byte-identical. Even out of line, the phase is
 still sensitive: lifting two certificates out of their justifications, so that a
-second rule could share them, cost it +2% again. Measure with `instructions:u`
+second rule could share them, cost it about +3.5% cycles again (+1.0%
+instructions) on RCPSP with no optional tasks, as #1125 measured (the sharing
+itself was left out of #1125). Measure with `instructions:u`
 over several instances, serially, with glibc's malloc thresholds pinned
 (`GLIBC_TUNABLES=glibc.malloc.mmap_threshold=33554432:glibc.malloc.trim_threshold=4294967295`,
 since heap history otherwise changes how often per-node state is mapped and
