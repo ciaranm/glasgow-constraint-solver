@@ -77,8 +77,9 @@ Two checks enforce it, between them covering everything that writes a `.scp`:
   XCSP3 tests have their own wrappers, which do not read the `.scp` back. That binary
   exits **2** for an unknown keyword, **3** for a shape it cannot rebuild (see
   below) and **1** for any other read failure, and everything but 0 and 3 fails
-  the test. A 3 prints a `note:` line, and `regex-nondeterministic` is the one
-  lane that takes that branch, pinned by matching the note. Its path comes from `build/scp_solver_path`, which
+  the test. A 3 prints a `note:` line. No lane takes that branch today, and
+  `regex-nondeterministic`, which took it until #1335, now fails on the note.
+  The binary's path comes from `build/scp_solver_path`, which
   CMake generates beside the binaries, so no `add_test` registration needed
   changing; the check simply skips outside a build tree. This lane matters
   because some constraints are only ever posted by an example — `LexSmartTable`

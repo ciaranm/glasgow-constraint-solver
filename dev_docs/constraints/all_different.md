@@ -1100,7 +1100,13 @@ states every Hall variable's domain already. Not filed; recorded here and in
   variable, and nothing else.
 - **Algorithm** — collect the newly fixed variables by swap-and-pop from the
   unassigned list, then a worklist that cascades through variables this fixes.
-  `O(n)` per fixed variable. The non-throwing `infer_not_equal_or_stop`, because
+  `O(n)` per fixed variable. Each fixed variable taken off the worklist is
+  also checked against the fixed values still waiting on it, since two of
+  them may clash: by a scan while at most 16 are waiting, and past that by an
+  index from each waiting value to its positions, which keeps a call that
+  fixes a whole scope linear (#1453). Both find the same clash, so the reason
+  and the proof are the same either way; `vc_all_different_index_test` reaches
+  both on an unsatisfiable scope. The non-throwing `infer_not_equal_or_stop`, because
   this propagator fails about once per node in circuit-style models and the
   throw was a large per-node cost.
 - **Why it is true** — two variables that must differ cannot both be `v`.

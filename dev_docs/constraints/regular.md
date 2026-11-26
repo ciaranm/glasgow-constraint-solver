@@ -148,7 +148,7 @@ contiguous.
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
 | `Regular`, deterministic | ✓ `fzn_regular` → `glasgow_regular`[^mznreg] | ✓ `regular` | ?[^gcspy] | ✓ `regular` | wrong answers when `q0 ≠ 1`[^q0] |
-| `Regular`, non-deterministic | `decompose`[^mznnfa] | ✓ `regular` (#1204) | ?[^gcspy] | written ✓, read `frontend gap` (#1335) | |
+| `Regular`, non-deterministic | `decompose`[^mznnfa] | ✓ `regular` (#1204) | ?[^gcspy] | ✓ `regular` (read back since #1335) | |
 | `Regular`, regex | ✓, as a deterministic `fzn_regular`[^mznrx] | n/a | ?[^gcspy] | written as the compiled automaton | gcs's own regex compiler is C++ only |
 | alphabet not starting at 1 | `decompose`[^mznset] | ✓ | ?[^gcspy] | ✓ | |
 | reified | `unsupported` (2.9.7); ✓ via `glasgow_regular` (2.10.1)[^mznreif] | n/a | ? | n/a | no reified class; 2.10.1 reaches #1328 |

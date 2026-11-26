@@ -57,8 +57,8 @@ auto main(int argc, char * argv[]) -> int
     // Regular constraint for the language given by 00*11*00* + 2*
     if (options_vars.contains("nondeterministic")) {
         // "Contains a 1", guessing which 1: state 0 has two edges on 1. The
-        // .scp it writes is one read_scp cannot rebuild, which is what the
-        // regex-nondeterministic test is for (see run_test_and_verify.bash).
+        // regex-nondeterministic test reads its .scp back, which read_scp
+        // rebuilds through Regular's set-valued constructor (#1335).
         p.post(Regular{x, ". * 1 .*"});
     }
     else if (options_vars.contains("regex")) {

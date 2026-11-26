@@ -464,8 +464,11 @@ accepts a presence with a wider domain, bounding it to 1 by a row
   - one `l_i ≥ declared lb` RUP per variable-duration task, and one `¬zw_i`
     RUP.
   - one `¬[p_i = 0] ∨ ¬[p_i = 1]` RUP per variable-presence task whose two
-    atoms are not one bit's two polarities, which is any presence not
-    declared over exactly `{0, 1}` (a variable over `{1}`, say, or a view).
+    atoms are not one bit's two polarities. That is decided by the literals
+    the tracker resolves the two atoms to (`find_xliteral_for`), not by the
+    declaration: a variable over `{1}`, say, gets the line, and so does a view
+    whose atoms resolve to separate literals, but a view whose atoms resolve
+    to one literal's two polarities, such as `1 − x` over `{0, 1}`, does not.
     The bridges cancel the separation clause's `[p_i = 0]` against the
     activity flag's `[p_i = 1]`, and without this line nothing cancels for
     such a presence, so the fold's pin was rejected (#1411).
@@ -1398,8 +1401,12 @@ Facts that hold for every rule:
     hold an optional task. Whether any proof emits the network depends on the
     seed. Its `declared_present` and `declared_present_mixed` fixtures post
     presences as variables declared over `{1}`, whose `= 0` and `= 1` atoms
-    are separate; every proof lane of both is rejected without #1411's
-    exclusivity line.
+    are separate. Without #1411's exclusivity line, `declared_present_mixed`
+    is rejected under all 18 proof lanes, and is the fixture that
+    discriminates under every rule set; `declared_present` is rejected under
+    the other 8 of its 18, and verifies without the line under `overload`,
+    `overload_sorting`, `overload_temporary`, `published_nfnl` and
+    `set_precedences`, strict and non-strict.
 
   The mutation lanes are `disjunctive_optional_mutation_{emit_nothing,
   wrong_task, one_too_far}`.
