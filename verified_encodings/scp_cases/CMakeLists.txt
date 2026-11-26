@@ -186,7 +186,7 @@ add_scp_chain_test(nvalue_unsat  none)
 # the positive nvalue cases above.
 add_scp_chain_test(nvalue_neg_sat none)
 
-# none (chain-only): reified equality, all four modes of ReifiedEquals -- the b[...]
+# strict: reified equality, all four modes of ReifiedEquals -- the b[...]
 # family's reified consumer (#354). cake's encode_equal (-iff) splits the equality
 # into @c[id][le]/@c[id][ge] half-reified on the condition, adds per-side selectors
 # b[id][gt]/b[id][lt] half-implying the strict comparisons (cake's gtv/ltv via
@@ -352,7 +352,8 @@ add_scp_chain_test(lex_greater_equal_iff_sat  none)
 add_scp_chain_test(lex_less_than_iff_sat      none)
 add_scp_chain_test(lex_less_equal_iff_sat     none)
 
-# none (chain-only): global cardinality. The solver's writer already emits cake's
+# none (chain-only), but for the one strict case at the end: global
+# cardinality. The solver's writer already emits cake's
 # keywords (bounds/gac globalcardinality[closed]) over (vars)(values)(counts);
 # the encoding is the per-value count constraint Sum_i (x_i = values[j]) =
 # counts[j] (the closed forms add an at-least-one over the cover values per
@@ -386,15 +387,15 @@ add_scp_chain_test(global_cardinality_gac_closed_sat none)
 # involved, so the #358 coefficient above does not arise.
 add_scp_chain_test(gcc_closed_out_of_bounds_sat     strict)
 
-# none (chain-only): the reified linear forms. cake reads the reification as a
-# leading (var op value) triple on lin_equals / lin_less_equal, exactly as the
-# writer emits it; these are the fully-reified (_iff) shapes, so both directions
-# of the biconditional are defined and enumeration exercises both. The unreified
-# lin_* cases above are strict, and so are lin_less_equal_iff and the reified linear
-# (not-)equalities (lin_equals_if is the le / ge halves alone), which are written as the reified equals family above is: the
-# le / ge halves on the condition, selectors b[id][gt] / b[id][lt] with @b[id][..][r]
-# halves (and [f] halves for lin_not_equals_iff and lin_not_equals_if), and
-# @c[id][al1]. lin_strict_lt_edge_iff stays none for its {0,1} condition variable
+# strict, but for one case: the reified linear forms. cake reads the
+# reification as a leading (var op value) triple on lin_equals / lin_less_equal,
+# exactly as the writer emits it; the _iff shapes define both directions of the
+# biconditional, and enumeration exercises both. lin_less_equal_iff and the
+# reified linear (not-)equalities are written as the reified equals family above
+# is: the le / ge halves on the condition, selectors b[id][gt] / b[id][lt] with
+# @b[id][..][r] halves (and [f] halves for lin_not_equals_iff and
+# lin_not_equals_if), and @c[id][al1]; lin_equals_if is the le / ge halves
+# alone. lin_strict_lt_edge_iff stays none for its {0,1} condition variable
 # (#1193).
 add_scp_chain_test(lin_equals_if_sat       strict)
 add_scp_chain_test(lin_equals_iff_sat      strict)
@@ -430,7 +431,8 @@ add_scp_chain_test(regular_narrow_domain_sat none)
 add_scp_chain_test(regular_nfa_sat           none)
 add_scp_chain_test(regular_nfa_ambiguous_sat none)
 
-# none (chain-only): disjunctive / disjunctive2d. The tasks [start, start+length)
+# strict or none, case by case --
+# disjunctive / disjunctive2d. The tasks [start, start+length)
 # (resp. rectangles [x,x+w) x [y,y+h)) pairwise do not overlap. The solver's
 # before flags are named to match cake -- x[id][i_j][bf] (the "task i finishes
 # before task j" ordering), x[id][i_j][bx]/[by] (the per-axis 2D orderings),
@@ -489,7 +491,8 @@ add_scp_chain_test(disjunctive2d_optional_sat        none)
 add_scp_chain_test(disjunctive2d_optional_unsat      none)
 add_scp_chain_test(disjunctive2d_strict_optional_sat none)
 
-# none (chain-only): cumulative. Tasks [start, start+length) each occupy `height`
+# strict or none, case by case --
+# cumulative. Tasks [start, start+length) each occupy `height`
 # of a shared resource; at every time point the total height of active tasks is at
 # most `cap` (lengths, heights and cap may each be a variable or a constant). Both
 # sides write the start-checkpoint encoding (#780): per ordered pair (j, i) of
@@ -538,10 +541,10 @@ add_scp_chain_test(cumulative_unsat            none)
 # conjunct of each sact flag, which is the solver's encoding, under the same names
 # and labels. Stays none for #1193: the presences are {0,1} variables, whose bound
 # rows differ, which is the only difference on the sat case; the unsat case's {0,1}
-# starts add the 0-versus-1 coefficient on an implied half, as cumulative has. sat is the #1417 example, with a variable length
-# and one constant presence; unsat has two present length-2 tasks starting at 0 or
-# 1, which always share time 1, over capacity 1, beside a third with a variable
-# presence.
+# starts add the 0-versus-1 coefficient on an implied half, as cumulative has.
+# sat is the #1417 example, with a variable length and one constant presence;
+# unsat has two present length-2 tasks starting at 0 or 1, which always share
+# time 1, over capacity 1, beside a third with a variable presence.
 add_scp_chain_test(cumulative_optional_sat   none)
 add_scp_chain_test(cumulative_optional_unsat none)
 
@@ -624,7 +627,8 @@ add_scp_chain_test(smart_table_in_set_gap_unsat   none)
 add_scp_chain_test(lex_smart_table_empty_right_sat   none)
 add_scp_chain_test(lex_smart_table_empty_left_unsat  strict)
 
-# none (chain-only): three more cake-ready globals whose writers already emit
+# strict or none, case by case --
+# three more cake-ready globals whose writers already emit
 # cake_pb_cp's shape, so they are one reader function away from the chain.
 #   all_different_except (vars) (excluded) -- pairwise distinct, except that any
 #     number of variables may share an excluded value (the empty excluded list is
@@ -679,7 +683,8 @@ add_scp_chain_test(among_out_of_bounds_sat     strict)
 add_scp_chain_test(symmetric_all_different_sat    none)
 add_scp_chain_test(symmetric_all_different_unsat  none)
 
-# none (chain-only): element_2d -- result = array[i - off_i][j - off_j] over a
+# strict or none, case by case --
+# element_2d -- result = array[i - off_i][j - off_j] over a
 # two-dimensional array. cake reads the array as a list of rows ((row) ...) and
 # the solver writes that shape, so it is one reader away (the 1-D element was
 # already covered). Like 1-D element it reifies the per-entry equality on the
@@ -756,7 +761,8 @@ add_scp_chain_test(seq_precede_chain_unsat          none)
 add_scp_chain_test(knapsack_sat    none)
 add_scp_chain_test(knapsack_unsat  none)
 
-# none (chain-only): sort (y = x sorted non-decreasing). cake_pb_cp and the solver
+# strict or none, case by case --
+# sort (y = x sorted non-decreasing). cake_pb_cp and the solver
 # now share the encoding exactly: a non-decreasing chain @c[id][<i>], pairwise
 # stable before flags x[id][ip_i][bf], a proof-only stable rank pos[i] built as the
 # bit-sum of cake's flag bits v[id][i_b][pos] (so the OPB carries no eq/ge ladder),

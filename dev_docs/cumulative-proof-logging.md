@@ -538,8 +538,9 @@ combinations.
 
 **The before, after and active lemmas are hinted RUPs** (`start_flag_lemma`,
 `active_flag_lemma`). Unhinted, each propagated over the whole live database,
-and on generated RCPSP they were most of the checking time: hinting them took
-pair 01 of the CPAIOR set from 33 s to 11 s. `before_{i,t}` cites a reason
+and on generated RCPSP they were most of the checking time: hinting them,
+together with Linear's bound pushes (#1466 measured the two commits together),
+took pair 01 of the CPAIOR set from 33 s to 11 s. `before_{i,t}` cites a reason
 literal on `s_i` that bounds it by `t` from above, turned into a bound on the
 start's bits by its atom's definition, then the flag's own half `(s_i ≤ t) →
 before`: two opposite bounds over one bit sum, which unit propagation refutes

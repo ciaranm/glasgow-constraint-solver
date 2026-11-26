@@ -6,9 +6,9 @@ inference, each restating a reason of 10–30 literals. A justification can
 instead ask for those lines to name a single flag that stands for the reason.
 That makes the proof smaller and quicker to write. On Cumulative it also makes
 the proof quicker to check, and on MinMax it leaves the check where it was. That
-does not hold everywhere, which is why this is opt-in. This note covers what is written, why the deletions are safe,
-the rules for a justification that opts in, and the measurements behind the
-current opt-ins.
+does not hold everywhere, which is why this is opt-in. This note covers what is
+written, why the deletions are safe, the rules for a justification that opts
+in, and the measurements behind the current opt-ins.
 
 ## The call
 
@@ -36,7 +36,7 @@ an unhinted RUP, which reaches `f` through the reverse line.
 | line | handling |
 |---|---|
 | unhinted `rup`, `a`, at the guard's temporary level, under exactly its reason | names `f` |
-| hinted `rup`, same | names `f`. Its hints are prefixed with the root units the definition left out, then the forward line, so that propagating `f` sets every literal before the line's own hints are reached. |
+| hinted `rup`, same | names `f`. Its hints gain the root units the definition left out and the forward line, without which propagation cannot get from `f` to the reason's literals. They are put ahead of the line's own hints, but VeriPB uses the hints as a set, so only their presence matters. |
 | `ia` | keeps the whole reason, because it is checked term by term against the line it cites, and that is usually a definition or a model row with no `f` in it |
 | current level, or a deeper temporary level | keeps the whole reason |
 | while `KeepAssumedReasonLiterals` is alive | keeps the whole reason |
@@ -97,8 +97,8 @@ literals:
 A variant that shared one flag across inferences had `2017_rel2onto` go from
 376 s to 836 s at 0.78 of the size.
 
-On a prefix of the hitori proof the 2× slowdown reproduces exactly, and these
-changes did not remove it:
+The hitori slowdown (1.62× on the whole proof) reproduces on a prefix of it,
+and these changes did not remove it:
 
 - removing the deletions
 - asserting the definitions instead of checking them
@@ -162,7 +162,9 @@ byte-identical proofs.
 | `2024_aircraft-disassembly` | 1.00 | 1.00 | 244 s → 238 s |
 
 So MinMax buys proof size, and the check stays where it was. That is enough
-to opt in.
+to opt in. This table and the Cumulative one above come from separate check
+runs, so compare before and after within a table only: the same Cumulative-only
+arm checked `2011_cyclic-rcpsp` in 41.6 s in the first and 48.6 s here.
 
 **Measured, but not opted in.** Element was measured the same way, opted in
 together with MinMax. Its proofs shrink, but its check is never faster, and
