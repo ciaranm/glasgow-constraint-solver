@@ -29,8 +29,11 @@ namespace gcs
      * implementation from the shape of its arguments:
      *
      *   - a constant operand collapses the whole thing to a linear equality;
-     *   - two variable operands use bounds consistent multiplication over the
-     *     actual handles, views and aliases included: a square (x * x = y,
+     *   - two variable operands use interval multiplication over the actual
+     *     handles, views and aliases included: the result is cut to the hull
+     *     of the operands' products, and each operand by a quotient rule that
+     *     is sound but not exact (it can leave an unsupported endpoint), so
+     *     this is not bounds consistency in general. A square (x * x = y,
      *     views too) gets exact square and square-root hull filtering on the
      *     true relation, and a result aliasing an operand works directly;
      *   - requesting consistency::Tabulated, or leaving the default

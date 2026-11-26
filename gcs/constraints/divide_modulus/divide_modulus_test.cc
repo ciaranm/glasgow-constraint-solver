@@ -345,8 +345,9 @@ auto main(int argc, char * argv[]) -> int
                 bool force_gac = holds_alternative<consistency::Tabulated>(level);
                 bool is_bc = holds_alternative<consistency::BC>(level);
 
-                // Small enough that Auto tabulates (the enumeration tree
-                // includes the auxiliary quotient/remainder slot).
+                // Small enough that Auto tabulates (for Modulus the enumeration
+                // tree includes the auxiliary quotient magnitude; Divide's
+                // enumerates only x, y and q).
                 run_divmod_test(proofs, is_div, level, ! is_bc, {0, 2}, {1, 2}, {-1, 2});
                 run_divmod_test(proofs, is_div, level, ! is_bc, {-2, 0}, {1, 2}, {-2, 0});
 
@@ -371,8 +372,8 @@ auto main(int argc, char * argv[]) -> int
                 run_divmod_test(proofs, is_div, level, force_gac, {-6, -1}, {-3, 3}, {-6, 6});
 
                 // Dividend spanning zero (xlo < 0 < xhi): both the x >= 0 and x < 0
-                // remainder rows and w-stages are live, gated on sign(x). No remainder
-                // is materialised (the rem rows range x - w directly), so the
+                // remainder rows are live, gated on sign(x). No remainder is
+                // materialised (the rem rows range x minus the grid sum directly), so the
                 // tabulation enumerates only x, y, q; BC exercises the propagation proof.
                 run_divmod_test(proofs, is_div, level, force_gac, {-6, 6}, {1, 3}, {-6, 6});
                 run_divmod_test(proofs, is_div, level, force_gac, {-5, 5}, {-3, 3}, {-5, 5});

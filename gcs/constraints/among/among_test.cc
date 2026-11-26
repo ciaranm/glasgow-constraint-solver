@@ -95,7 +95,7 @@ auto run_among_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, p
 // Dup-variable test: Among with the same handle appearing in several
 // array positions. Each occurrence is counted independently (so a fixed
 // duplicated variable contributes its membership multiple times). See
-// tmp/duplicate_var_audit.md.
+// dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_among_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, const vector<int> & voi,
     pair<int, int> result_range) -> void
 {

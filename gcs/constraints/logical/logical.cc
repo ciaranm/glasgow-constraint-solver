@@ -4,6 +4,7 @@
 #include <gcs/constraints/logical/hints.hh>
 #include <gcs/constraints/logical/logical.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/environment.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -458,15 +459,11 @@ namespace
 
 auto gcs::innards::default_clause_watch_threshold() -> size_t
 {
-    static const size_t threshold = []() -> size_t {
-        if (const char * e = std::getenv("GCS_CLAUSE_WATCH_THRESHOLD"))
-            return std::strtoull(e, nullptr, 10);
-        // Watching overtook the scan between 64 and 192 literals on the
-        // clause_watch_bench set covers, depending on the instance, and 128
-        // keeps the worst of them near break-even. See
-        // dev_docs/refined-triggers.md.
-        return 128;
-    }();
+    // Watching overtook the scan between 64 and 192 literals on the
+    // clause_watch_bench set covers, depending on the instance, and 128 keeps
+    // the worst of them near break-even. See dev_docs/refined-triggers.md. A
+    // malformed override is ignored with a warning.
+    static const size_t threshold = non_negative_count_from_environment("GCS_CLAUSE_WATCH_THRESHOLD", 128);
     return threshold;
 }
 

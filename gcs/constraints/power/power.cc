@@ -110,7 +110,7 @@ auto Power::prepare(Propagators & propagators, State & initial_state, ProofModel
     // chain-verifying.) define_proof_model() emits the encoding blocks.
     _links = make_shared<vector<signed_multiply::Data>>();
     auto add_link = [&](long long link, IntegerVariableID a, IntegerVariableID b, IntegerVariableID product) {
-        _links->emplace_back(signed_multiply::make_data(initial_state, a, b, product, link));
+        _links->emplace_back(signed_multiply::make_data(a, b, product, link));
     };
 
     if (! a1.var) {

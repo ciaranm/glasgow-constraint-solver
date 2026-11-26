@@ -201,7 +201,7 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 // Dup-variable test: SeqPrecedeChain with the same handle in several
 // array positions. A duplicated occurrence still must satisfy the chain;
 // taking the same value at two positions just means "earliest v" lands
-// at the first. See tmp/duplicate_var_audit.md.
+// at the first. See dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_seq_precede_chain_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
 {
     print(cerr, "seq_precede_chain dup domains={} positions={}{}", unique_domains, positions, proofs ? " with proofs:" : ":");

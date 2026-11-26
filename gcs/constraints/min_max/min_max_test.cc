@@ -88,7 +88,7 @@ auto run_min_max_test(bool proofs, const ViewWrapConfig & view_cfg, bool min, va
 
 // Dup-variable test: Min/Max with the same handle in several array
 // positions, or the result var aliasing an array entry. Consistency
-// isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+// isn't checked on dup runs; see dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_min_max_test(bool proofs, bool min, const string & label, const vector<pair<int, int>> & unique_domains,
     const vector<int> & array_positions, int result_position_in_unique, pair<int, int> result_range) -> void
 {

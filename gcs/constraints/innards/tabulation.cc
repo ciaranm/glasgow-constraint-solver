@@ -1,12 +1,14 @@
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/exception.hh>
 #include <gcs/expression.hh>
+#include <gcs/innards/environment.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
@@ -233,11 +235,11 @@ auto gcs::innards::reify_tabulation(const ReificationCondition & reif, Tabulatio
 
 auto gcs::innards::default_tabulation_threshold() -> long long
 {
-    static const long long threshold = []() -> long long {
-        if (const char * e = std::getenv("GCS_TABULATION_THRESHOLD"))
-            return std::strtoll(e, nullptr, 10);
-        return 100; // default: a guess, see the header
-    }();
+    // 100 by default: a guess, see the header. A malformed override is ignored
+    // with a warning, and one past long long is clamped (it already means
+    // "always tabulate").
+    static const long long threshold = static_cast<long long>(
+        std::min<unsigned long long>(non_negative_count_from_environment("GCS_TABULATION_THRESHOLD", 100), std::numeric_limits<long long>::max()));
     return threshold;
 }
 

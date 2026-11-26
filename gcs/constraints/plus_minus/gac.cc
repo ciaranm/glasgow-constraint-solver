@@ -2,6 +2,7 @@
 #include <gcs/constraints/plus_minus/gac.hh>
 #include <gcs/constraints/plus_minus/hints.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/environment.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/large_domain_guard.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -403,11 +404,8 @@ namespace
 
 auto gcs::innards::default_interval_pairs_threshold() -> size_t
 {
-    static const size_t threshold = []() -> size_t {
-        if (const char * e = std::getenv("GCS_INTERVAL_PAIRS_THRESHOLD"))
-            return std::strtoull(e, nullptr, 10);
-        return 1024; // see the header
-    }();
+    // 1024: see the header. A malformed value is ignored with a warning.
+    static const size_t threshold = non_negative_count_from_environment("GCS_INTERVAL_PAIRS_THRESHOLD", 1024);
     return threshold;
 }
 

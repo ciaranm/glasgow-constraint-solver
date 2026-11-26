@@ -1,6 +1,9 @@
+#include <gcs/innards/environment.hh>
 #include <gcs/innards/large_domain_guard.hh>
 
+#include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -24,11 +27,11 @@ LargeDomainGuardTripped::LargeDomainGuardTripped(const char * what_was_too_big, 
 
 auto gcs::innards::large_domain_guard_limit() -> long long
 {
-    static const long long limit = []() -> long long {
-        if (const char * e = std::getenv("GCS_LARGE_DOMAIN_GUARD_LIMIT"))
-            return std::strtoll(e, nullptr, 10);
-        return 100000; // see the header for why this sits where it does
-    }();
+    // 100000 by default: see the header for why this sits where it does. A
+    // malformed override is ignored with a warning, and one past long long is
+    // clamped.
+    static const long long limit = static_cast<long long>(std::min<unsigned long long>(
+        non_negative_count_from_environment("GCS_LARGE_DOMAIN_GUARD_LIMIT", 100000), std::numeric_limits<long long>::max()));
     return limit;
 }
 

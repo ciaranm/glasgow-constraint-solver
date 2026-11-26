@@ -378,11 +378,13 @@ autotuner) without recompiling. Each is read once, on first use.
 * ``GCS_LINEAR_INCREMENTAL_THRESHOLD``: the number of terms at or above which a linear equality
   uses the incremental propagator, which folds instantiated terms out of the sum at the cost of
   some backtrackable bookkeeping (default: 8). The test suite runs in both modes by setting
-  this.
+  this. A value that is not a whole non-negative number is ignored with a warning, as for the
+  other thresholds below.
 
 * ``GCS_CLAUSE_WATCH_THRESHOLD``: the number of literals at or above which a clause (an ``Or``, or
   an ``And`` whose reification is fixed false) watches two of its literals rather than scanning
   them all on every wake (default: 128). The test suite runs the logical constraints with it at 0.
+  A malformed value is ignored with a warning.
 
 * ``GCS_PROPAGATOR_STATS``: adds a per-constraint-type propagator breakdown to the statistics ---
   how many constraints of each type there are, how many propagators they installed, and how many
@@ -400,7 +402,8 @@ autotuner) without recompiling. Each is read once, on first use.
   this (default: 100). A variable that is functionally determined by the others (say, the result
   of an arithmetic constraint) is left out of the product, since its level of the enumeration is
   skipped. Bigger values give stronger propagation on more constraints, at the cost of set-up
-  work and proof size that grow with the domain sizes.
+  work and proof size that grow with the domain sizes. A malformed value is ignored with a
+  warning.
 
 Navigating the Source Code
 ==========================

@@ -165,8 +165,8 @@ auto run_all_same_test(bool proofs, const MultiplyConsistency & level, pair<int,
     check_results(proof_name, expected, actual);
 }
 
-// Constant operands: c * v = r, v * c = r, c1 * c2 = r, and a constant result
-// v1 * v2 = c.
+// Constant operands: c * v = r, v * c = r, c * c = r (with v unconstrained),
+// and a constant result v1 * v2 = c.
 auto run_constant_test(
     bool proofs, const MultiplyConsistency & level, const string & shape, int constant, pair<int, int> v_range, pair<int, int> r_range) -> void
 {
@@ -185,6 +185,10 @@ auto run_constant_test(
     else if (shape == "vc") {
         build_expected(expected, [&](int a, int b) { return a * constant == b; }, v_range, r_range);
         p.post(Multiply{v, constant_variable(Integer{constant}), r}.with_consistency(level));
+    }
+    else if (shape == "cc") {
+        build_expected(expected, [&](int, int b) { return constant * constant == b; }, v_range, r_range);
+        p.post(Multiply{constant_variable(Integer{constant}), constant_variable(Integer{constant}), r}.with_consistency(level));
     }
     else if (shape == "result") {
         build_expected(expected, [&](int a, int b) { return a * b == constant; }, v_range, r_range);
@@ -258,16 +262,19 @@ auto main(int argc, char * argv[]) -> int
 
         for (const auto & level : levels) {
             bool is_bc = holds_alternative<consistency::BC>(level);
-            // Small domains: Auto tabulates (3 * 3 * 9 = 81 <= threshold) and GAC
-            // is forced, so both are GAC; BC is checked for soundness only.
+            // Small domains: Auto tabulates (the tree is the operands' 3 * 3 = 9,
+            // the result being determined by them, <= threshold) and GAC is
+            // forced, so both are GAC; BC is checked for soundness only.
             run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 9});
             run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {1, 2}, {-4, 4}, {view_offset(0), view_offset(0), view_offset(0)});
 
-            // Views, negatives, zero. 5 * 3 * 5 = 75 <= threshold.
+            // Views, negatives, zero. At most 5 * 3 = 15 <= threshold.
             run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {0, 2}, {-2, 2}, {view_offset(2), view_neg_offset(1), view_offset(-1)});
             run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 5}, {view_neg(), view_offset(0), view_neg_offset(2)});
 
-            // Aliased shapes, small: 7 * 10 = 70 and similar.
+            // Aliased shapes, small: a result that is not an operand is
+            // determined, so most enumerate x alone (7); a result aliasing an
+            // operand is not, and xyx's 7 * 7 = 49 is the largest tree.
             run_alias_test(proofs, level, ! is_bc, "xxy", {-3, 3}, {0, 9});
             run_alias_test(proofs, level, ! is_bc, "xyx", {-2, 4}, {-3, 3});
             run_alias_test(proofs, level, ! is_bc, "yxx", {-3, 3}, {-2, 2});
@@ -276,10 +283,12 @@ auto main(int argc, char * argv[]) -> int
             run_alias_test(proofs, level, ! is_bc, "shifted pair", {-3, 3}, {-2, 8});
             run_all_same_test(proofs, level, {-2, 2});
 
-            // Constants fold to a linear equality.
+            // A constant operand folds to a linear equality; a constant
+            // result does not.
             run_constant_test(proofs, level, "cv", 3, {-4, 4}, {-12, 12});
             run_constant_test(proofs, level, "vc", -2, {-4, 4}, {-8, 8});
             run_constant_test(proofs, level, "vc", 0, {-4, 4}, {-2, 2});
+            run_constant_test(proofs, level, "cc", -3, {-2, 2}, {-12, 12});
             run_constant_test(proofs, level, "result", 6, {-8, 8}, {-8, 8});
         }
 
@@ -296,9 +305,11 @@ auto main(int argc, char * argv[]) -> int
         run_multiply_test(proofs, consistency::Auto{}, false, {-10, 10}, {-10, 10}, {-100, 100});
         run_multiply_test(proofs, consistency::Auto{}, false, {2, 20}, {-8, 8}, {-160, 160}, {view_offset(0), view_offset(1), view_offset(0)});
         // A wide product with a small operand: the quotient estimate for the small operand can
-        // fall outside its bit-encoding, so filter_quotient reports an inconsistent (empty)
-        // quotient range on an infeasible node. Regression for a prove_quotient_bounds crash on
-        // that empty range (the bound is then trivially entailed by the operand's own bounds).
+        // fall outside its bit-encoding, so the quotient filter (quotient_filter, then
+        // filter_factor in signed_multiply.cc; filter_quotient before the arithmetic rewrite)
+        // reports an inconsistent (empty) quotient range on an infeasible node. Regression for
+        // a crash in the old prove_quotient_bounds on that empty range (the bound is then
+        // trivially entailed by the operand's own bounds).
         run_multiply_test(proofs, consistency::Auto{}, false, {-120, 120}, {-5, 5}, {-620, 620});
         run_multiply_test(proofs, consistency::Auto{}, false, {-350, 350}, {-3, 3}, {-1100, 1100});
         run_alias_test(proofs, consistency::Auto{}, false, "xxy", {-12, 12}, {0, 144});

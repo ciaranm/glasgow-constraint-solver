@@ -115,7 +115,7 @@ auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector
 // `totals`). Two vars positions sharing a handle should be equivalent
 // to one position with summed coefficients; the PB encoding sums by
 // coefficient in normal form. Consistency isn't checked on dup runs;
-// see tmp/duplicate_var_audit.md.
+// see dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_knapsack_test(bool proofs, const string & label, pair<int, int> valrange, const vector<pair<int, int>> & unique_var_domains,
     const vector<int> & positions, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & totals_bounds) -> void
 {

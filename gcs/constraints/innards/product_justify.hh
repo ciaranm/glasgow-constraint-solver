@@ -42,7 +42,7 @@ namespace gcs::innards::product_justify
      * \brief As derive_operand_bound, but under an assumed atom rather than
      * the reason: `[v>=b] => v >= b` (or the upper-bound mirror), the atom
      * kept in `cases`. This is how the factor-bound justifications assume the
-     * refuted excluded range (thesis Procedures 7.6/7.7): the driver's
+     * refuted excluded range (thesis Procedures 7.7/7.8): the driver's
      * negated goal supplies the atom as a unit.
      *
      * \ingroup Innards
@@ -171,7 +171,9 @@ namespace gcs::innards::product_justify
      * separate zero cases). Never a search. premise_by_pattern is indexed by
      * bitmask over dims, bit k set meaning dim k's negative branch; its size
      * must be 2^dims.size(). Returns the derived reified conclusion line;
-     * the inferred literal itself then follows by the caller's ThenRUP.
+     * the inferred literal itself then follows by the caller's closing step:
+     * Divide and Modulus pass ThenRUP::Yes, and Multiply passes ThenRUP::No
+     * and emits its own hinted closer.
      *
      * \ingroup Innards
      */

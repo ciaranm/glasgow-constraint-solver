@@ -40,10 +40,11 @@ namespace gcs
      * it, so no result reaches -2 ^ 62 (see dev_docs/integer-ranges.md).
      *
      * A constant exponent dispatches structurally: 0 and 1 are linear
-     * equalities, k >= 2 becomes a chain of Multiply constraints over
-     * auxiliary variables (with the auxiliaries' ranges clamped by the
-     * result's, so a hopeless chain fails rather than overflowing), a negative
-     * or enormous exponent becomes a small case analysis on the base. Under
+     * equalities; 2 <= k <= 62 becomes, inside this one constraint, a chain
+     * of k - 1 signed multiplication links over auxiliary variables (with the
+     * auxiliaries' ranges clamped by the result's, so a hopeless chain fails
+     * rather than overflowing); a negative exponent, or one above 62, becomes
+     * a small case analysis on the base. Under
      * consistency::Auto with small domains, or consistency::Tabulated, the whole
      * relation is additionally tabulated in-proof. A variable exponent falls
      * back on innards::PowerTable, the one remaining table-in-the-OPB

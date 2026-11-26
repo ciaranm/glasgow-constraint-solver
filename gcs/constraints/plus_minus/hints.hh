@@ -71,7 +71,9 @@ namespace gcs::innards::hints
      *
      * Nothing beyond the subhint: the emission is a lambda at the call site, and
      * an external justifier gets the run from the asserted literal and the other
-     * two variables' domains from the reason, which states each of them exactly.
+     * two variables' domains from the reason. That states each of them exactly,
+     * except under the fallback for too many interval pairs, where one of them
+     * is stated by its hull (plus_minus/gac.cc).
      *
      * \ingroup Innards
      */

@@ -169,7 +169,7 @@ auto run_all_for_variant(bool proofs, const ViewWrapConfig & view_cfg) -> void
 // handle in two adjacent positions. Non-strict variants are tautological
 // at the dup point (x <= x / x >= x); strict variants are UNSAT
 // (x < x / x > x). Consistency isn't checked on dup runs; see
-// tmp/duplicate_var_audit.md.
+// dev_docs/constraints.md (the new-constraint checklist, item 7).
 template <IncVariant V>
 auto run_dup_inc_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
 {

@@ -105,8 +105,8 @@ auto run_power_var_exp_test(bool proofs, pair<int, int> base_range, pair<int, in
 }
 
 // A structurally constant exponent, which dispatches on its value: linear for
-// 0 and 1, a Multiply chain for small positive, a case analysis for negative
-// or enormous ones. The wraps invert the underlying domain, so the VISIBLE
+// 0 and 1, a chain of signed multiplication links for 2 to 62, a case analysis
+// for negative or enormous ones. The wraps invert the underlying domain, so the VISIBLE
 // domains stay base_range / result_range and the expected solution set is the
 // same under every wrap -- only the constraint-side encoding differs, which is
 // what the view sweep is for.
@@ -314,8 +314,9 @@ auto main(int argc, char * argv[]) -> int
 
         for (const auto & level : levels) {
             bool is_bc = holds_alternative<consistency::BC>(level);
-            // Constant exponents: 0 and 1 (linear), 2 and 3 (chain; the k = 2
-            // case is an aliased Multiply), negative (case analysis), and
+            // Constant exponents: 0 and 1 (linear), 2 and 3 (a chain of
+            // signed multiplication links; for k = 2 the one link is a native
+            // square), negative (case analysis), and
             // enormous (case analysis on base in {-1, 0, 1}).
             run_power_const_exp_test(proofs, level, ! is_bc, {-3, 3}, 0, {0, 2});
             run_power_const_exp_test(proofs, level, ! is_bc, {-3, 3}, 1, {-3, 3});

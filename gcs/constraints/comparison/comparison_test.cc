@@ -221,7 +221,7 @@ auto run_reif_binary_comparison_test(bool proofs, const string & mode, const Vie
 
 // Dup-variable test: post a binary comparison with the same handle in
 // both slots. Consistency isn't checked on dup runs; see
-// tmp/duplicate_var_audit.md.
+// dev_docs/constraints.md (the new-constraint checklist, item 7).
 template <typename Constraint_>
 auto run_dup_binary_comparison_test(bool proofs, const string & mode, pair<int, int> x_range, const function<auto(int)->bool> & is_satisfying) -> void
 {

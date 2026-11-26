@@ -117,12 +117,16 @@ what makes a variable **chain-portable**.
 For a pure proof helper (a magnitude, a rank, a witness) that is naturally
 `create_proof_only_integer_variable_in_proof`. The wrinkle that motivated
 `register_state_variable_bits_in_proof`: an auxiliary that must *also* drive
-propagation. `Divide`/`Modulus` reuse `mult_bc::propagate`, which reads
-`state.bounds(w)` on the product `w = q·y` — so `w` needs real state — yet cake's
-divide OPB has no `w`, so `w`'s encoding must be in-proof-only. That is the
-`(has state, not in OPB)` cell, and neither `set_up_integer_variable` (state but in
-OPB) nor `create_proof_only_integer_variable_in_proof` (in-proof but no state)
-provides it.
+propagation. `Divide` and `Modulus` filter the magnitudes `|q|` and `|y|` (for
+`Modulus`, `|q|` is the free quotient magnitude), so those need real state, yet
+cake's divide and modulus OPBs have no variables for them, only the magnitude bits
+their channel rows name. That is the `(has state, not in OPB)` cell, and neither
+`set_up_integer_variable` (state but in OPB) nor
+`create_proof_only_integer_variable_in_proof` (in-proof but no state) provides it.
+Registered with a `CakeBitNaming`, the bits are cake's own `x[id][axis_*][bin]`
+(`product_enc::emit_magnitude_channel`). The first user was the product
+`w = q·y` that `mult_bc::propagate` read, before #448's rewrite (`5c61f920`)
+removed both.
 
 ## Footguns for an in-proof-encoded state variable
 

@@ -780,7 +780,7 @@ add_scp_chain_test(sort_unsat  none)
 add_scp_chain_test(arg_sort_sat    none)
 add_scp_chain_test(arg_sort_unsat  none)
 
-# multiply: MultiplyBC's bit-product proof conformed to cake's magnitude-bit-product
+# multiply: Multiply's bit-product proof conformed to cake's magnitude-bit-product
 # encoding (fresh x[id][axis_i][bin] magnitude flags, reified sign atoms, product
 # channelled to |Z|). The signed cases exercise cake's four sign-gated magnitude
 # rows per operand and the six sign clauses: the propagator picks the negative rows
@@ -800,22 +800,25 @@ add_scp_chain_test(multiply_square_unsat  none)
 add_scp_chain_test(multiply_result_alias_sat none)
 
 # divide: truncated division x = q*y + r, |r| < |y|, sign(r) = sign(x). The
-# proof emits cake's divide OPB (|Q| axis-0 and |Y| axis-1 magnitude channels, a
-# reified product-bit block, remainder rows gated on sign(x), and the five
-# division sign clauses); the internal product w = |q||y| and remainder r = x - w
-# are proof-only state vars reintroduced in-proof via introduce_bits_of. Only the
-# a non-negative dividend takes this path (the use_cake guard needs x's lower
-# bound >= 0); the divisor and quotient may take either sign. The signed_sat case
-# has a zero-spanning divisor, and signed_unsat is contradictory (x>0, y>0 forces
-# q>=0 but q<0) -- both exercise the magnitude-bounded product w = |q||y| that
-# lets mult_bc bound the non-negative w without a false negative range. A signed
-# (strictly negative) dividend takes a second cake path (divide_neg_*): both mult
-# operands are the non-negative magnitudes |q| and |y|, so mult_bc divides w by the
-# non-negative |y| (dividing by the signed divisor was the x<0 blocker), and the
-# exposed quotient's sign is pinned off the sgn_* clauses directly. The neg_yspan
-# case flips sign(q) with a zero-spanning divisor; neg_negneg forces q>=0; neg_unsat
-# is contradictory. none, not strict, for the same #358 lazy-vs-eager operand-ladder
-# reason as multiply.
+# proof emits cake's divide OPB: |Q| axis-0 and |Y| axis-1 magnitude channels,
+# the bit-product grid over those two magnitudes, remainder rows ranging x minus
+# the grid sum gated on sign(x) (rem_pos on [x>=0], rem_neg on [x<1]), and the
+# five division sign clauses. No product and no remainder is materialised: the
+# propagator works on the magnitudes and the grid sum, and the exposed quotient's
+# sign is pinned off the sgn_* clauses. Every sign of every operand takes this
+# one path. divide_sat / divide_unsat have a non-negative dividend; signed_sat a
+# zero-spanning divisor, and signed_unsat is contradictory (x>0, y>0 forces q>=0
+# but q<0). The divide_neg_* cases have a strictly negative dividend: neg_yspan
+# flips sign(q) with a zero-spanning divisor, neg_negneg forces q>=0, and
+# neg_unsat is contradictory.
+#
+# none, not strict, for divide and modulus alike. Every case chain-verifies, and
+# opbdiff's strict (and aux) comparison fails on two benign classes only
+# (2026-11-25, cake CakeML 930601d6, #1066): cake defines the i[V][eq0] atom
+# (@i[V][eq0][f], [r]) for operands whose eq0 we never define; and where an
+# operand's declared domain is non-negative, a row whose [v >= 0] term is vacuous
+# carries coefficient 1 from us and 0 from cake (the shared atom definition, and
+# the constraint's own Zlt0_ge / Ylt0_ge), as in multiply's none cases.
 add_scp_chain_test(divide_sat             none)
 add_scp_chain_test(divide_unsat           none)
 add_scp_chain_test(divide_signed_sat      none)
@@ -824,11 +827,10 @@ add_scp_chain_test(divide_neg_sat         none)
 add_scp_chain_test(divide_neg_yspan_sat   none)
 add_scp_chain_test(divide_neg_negneg_sat  none)
 add_scp_chain_test(divide_neg_unsat       none)
-# A dividend spanning zero (divide_span_*) takes a third cake path: both the x>=0
-# and x<0 remainder rows and w-stages are live (gated on sign(x)), and no remainder
-# is materialised (cake's rem_* rows range x-w directly, and a rejected (x,y,q) leaf
-# refutes off them once magq/absy/w are pinned by the assigned q,y) -- so there is no
-# |r| aux and no proof-only |x|. span_yspan spans BOTH operands; span_unsat has |q| too big.
+# A dividend spanning zero (divide_span_*) has both the x>=0 and the x<1
+# remainder rows live, and a rejected (x,y,q) leaf refutes off them once the
+# magnitudes are pinned by the assigned q and y. span_yspan spans BOTH operands;
+# span_unsat has |q| too big.
 add_scp_chain_test(divide_span_sat        none)
 add_scp_chain_test(divide_span_yspan_sat  none)
 add_scp_chain_test(divide_span_unsat      none)
@@ -837,16 +839,16 @@ add_scp_chain_test(divide_span_unsat      none)
 # modulus OPB leaves the quotient a FREE axis-0 magnitude (no i[Q], no channel):
 # the exposed r reads its identity r = x - |q||y| off the id_pos rows and 0 <= r <
 # |y| off rng_*, while the quotient magnitude |q| is a state variable whose own
-# cake-named bits ARE that magnitude. Requires a non-negative dividend (x >= 0), but
-# ANY-sign divisor: the divisor magnitude |y| is a second magnitude state variable
-# (absy) pinned to |y| by cake's Yge0/Ylt0 channel, so mult_bc multiplies the two
-# non-negative magnitudes with no signed reasoning; the tabulation recovers the signed
-# quotient. big_sat widens the bit counts and fixedy_sat fixes the divisor. The
-# signed_* cases exercise a fixed-negative / zero-spanning / larger / unsat divisor.
-# A signed DIVIDEND (x < 0) works too: x is not a mult operand, so only the identity/
-# range/sign stages mirror (r = x + w and r <= 0 gated [x<0]); signed_dividend / negneg /
-# fully_signed exercise x < 0, both operands negative, and both spanning zero. none, for
-# the same #358 reason as divide.
+# cake-named bits ARE that magnitude. The divisor magnitude |y| is a second
+# magnitude state variable (absy) pinned to |y| by cake's Yge0/Ylt0 channel, and
+# the bit-product grid multiplies the two non-negative magnitudes with no signed
+# reasoning; the tabulation recovers the signed quotient. The identity splits on
+# sign(x): r = x - Sum gated [x>=0] and r = x + Sum gated [x<1], with the range
+# and sign rows bounding r. big_sat widens the bit counts and fixedy_sat fixes
+# the divisor. The signed_* cases exercise a fixed-negative / zero-spanning /
+# larger / unsat divisor; signed_dividend / negneg / fully_signed exercise x < 0,
+# both operands negative, and both spanning zero. none, for the same two benign
+# opbdiff classes as divide.
 add_scp_chain_test(modulus_sat                  none)
 add_scp_chain_test(modulus_unsat                none)
 add_scp_chain_test(modulus_big_sat              none)

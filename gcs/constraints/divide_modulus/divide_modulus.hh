@@ -38,9 +38,10 @@ namespace gcs
      *
      * Internally this decomposes as x = quotient * y + r with |r| < |y| and r
      * taking the sign of x (which is what pins truncation: the identity alone
-     * does not determine the quotient uniquely for negative operands), with
-     * the multiplication going through Multiply's dispatch, so a constant
-     * divisor becomes an entirely linear decomposition. Under
+     * does not determine the quotient uniquely for negative operands). The
+     * product is taken over the magnitudes |quotient| * |y|, and the proof
+     * encodes it as cake_pb_cp's bit-product grid for every shape, a constant
+     * divisor included. Under
      * consistency::Auto with small domains, or consistency::Tabulated, the whole
      * relation is additionally tabulated, with the table derived in-proof so
      * the OPB encoding is unchanged by the choice. Bounds consistency here is

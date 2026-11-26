@@ -197,7 +197,7 @@ auto run_dynamic_fallback_test() -> void
 // (or all three) slots. Consistency is intentionally not checked: a
 // GAC algorithm for distinct variables doesn't generally yield GAC
 // under aliasing, and fixing it per-constraint is out of scope.
-// See tmp/duplicate_var_audit.md.
+// See dev_docs/constraints.md (the new-constraint checklist, item 7).
 namespace
 {
     struct AliasV1V2

@@ -184,7 +184,7 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 
 // Dup-variable test: ValuePrecede with the same handle in several array
 // positions. Duplicate occurrences are independent positions; the chain
-// just gates which values can appear where. See tmp/duplicate_var_audit.md.
+// just gates which values can appear where. See dev_docs/constraints.md (the new-constraint checklist, item 7).
 auto run_dup_value_precede_test(bool proofs, const vector<int> & chain, const vector<pair<int, int>> & unique_domains, const vector<int> & positions)
     -> void
 {

@@ -1414,10 +1414,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
         }
         else if (op == "multiply") {
             // (label multiply v1 v2 result): v1 * v2 = result. Flat shape matching
-            // cake_pb_cp. Written by both Multiply and a directly-posted
-            // the signed multiply innards; reposting as Multiply resolves to the
-            // same encoding for the plain three-distinct-variables shape that it
-            // accepts.
+            // cake_pb_cp. Only Multiply writes it, and reposting as Multiply gives
+            // the same encoding for every shape it accepts, repeated variables and
+            // views included.
             if (terms.size() != 5)
                 throw ScpReadError{"multiply takes (label multiply v1 v2 result)"};
             post_constraint(problem,
