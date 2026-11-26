@@ -307,9 +307,9 @@ no `mdd` keyword; the CakePB developers have one in progress, which reads the
 `.scp` term below. Against their small cases the rows above are theirs, up to
 labels: the flag names and the alphabet (the declared domain, with no row for
 an edge outside it) were both changed to match after they reported the
-mismatches. The `.scp` writer's `mdd` term is GCS's own grammar (`mdd.cc:557–595`: the variables,
+mismatches. The `.scp` writer's `mdd` term is GCS's own grammar (`mdd.cc:602–640`: the variables,
 `nodes_per_layer`, per layer and node a sorted `(symbol target)` list, and the
-terminals), and `gcs/scp_reader.cc:914–947` reads it back; `scp_reader_test` checks
+terminals), and `gcs/scp_reader.cc:944–985` reads it back; `scp_reader_test` checks
 an enumeration and a write, read, write round trip.
 
 ### Proof-time state

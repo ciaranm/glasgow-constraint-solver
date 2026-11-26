@@ -730,7 +730,8 @@ Facts that hold for every rule:
   - the overload check: its window's starts and presences, and no
     durations (#1299).
 
-  It is per run, not per value, and not guarded on `want_reasons()`. An
+  It is per run, not per value, and, like everything else here, built only
+  when `want_reasons()` (#1299). An
   undecided presence is left out, because it has no fact to state. At
   `7e1c4178` every rule's reason was every start, plus durations, plus every
   present task's presence.

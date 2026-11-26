@@ -448,8 +448,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   between any two of `p` selected sites, from Lagerkvist's p-dispersion
   propagators: one definitional encoding with a min-attained ladder, and five
   propagation modes from a checker to the conflict-matching bound, every
-  inference certified, though over positions declared wider than 100 values
-  the matching bound's proof can be rejected (#1224, fix open as #1362);
+  inference certified (the matching bound's proof over positions declared
+  wider than 100 values was fixed by #1362, for #1224);
   [`min-distance-proofs.md`](../min-distance-proofs.md)
   stays as the long note. Library and `.scp` only; it chains through
   `cake_pb_cp`, strictly, since #1417. Partial by design: forward checking or pairwise arc consistency on
@@ -1034,7 +1034,7 @@ variant](TEMPLATE.md#the-presolver-variant).
         skipped reified donors and found about a quarter of them, about
         129,000, to be differences. Those fixed 13,016 conditions at the root
         (#1373).
-      - That prototype depends on #1371.
+      - That prototype meets #1371's limit, which #1403 kept as a throw.
     - In-range weights near `2⁶⁰`, from eight heavy edges, make the installed
       machinery throw on models the donors answer. From MiniZinc that turns
       `=====UNSATISFIABLE=====` into `=====ERROR=====` (#1371). The

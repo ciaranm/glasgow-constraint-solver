@@ -390,13 +390,14 @@ transition (see [Proof-time state](#proof-time-state)).
 
 ### Cake conformity
 
-Three chain cases, all `none`: `regular_sat` (a parity automaton),
-`regular_unsat` (an unreachable accepting state) and `regular_ternary_sat` (a
-sum-mod-3 automaton over `0..2`)
-(`verified_encodings/scp_cases/CMakeLists.txt:372-386`). They chain-verify
+Six chain cases, all `none`: `regular_sat` (a parity automaton),
+`regular_unsat` (an unreachable accepting state), `regular_ternary_sat` (a
+sum-mod-3 automaton over `0..2`), `regular_narrow_domain_sat` (since #1409,
+below), and since #1335 the two non-deterministic ones below
+(`verified_encodings/scp_cases/CMakeLists.txt:406-431`). They chain-verify
 because the state flags carry cake's names; they stay `none` because the
 transition literals are spelt over the lazy bit encoding where cake uses eager
-`=` literals (the case comment's #358). All three cases are deterministic.
+`=` literals (the case comment's #358). The first four are deterministic.
 
 Checked by hand at `86caad24` (`cake_pb_cp x.scp`, `veripb
 --force-checked-deletion --elaborate`, `cake_pb_cp x.scp x.core`;
@@ -419,7 +420,7 @@ Divergences:
   cake encodes; the `regular_narrow_domain_sat` chain case covers it.
 - **`Bacchus` does not chain** whenever there is a transition row to cite: its
   proofs cite the `@c[id][fwd…]` labels, which cake's OPB lacks
-  (`regular_bacchus.cc:448-460` says so of the labels); its flags carry
+  (`regular_bacchus.cc:503-510` says so of the labels); its flags carry
   cake's `x[id][…][st]` names. An empty sequence
   chain-verifies, since nothing is cited (`chain1.txt`, `empty_acc_b`). The
   `.scp` it writes is the same `regular` term, and re-solving it picks

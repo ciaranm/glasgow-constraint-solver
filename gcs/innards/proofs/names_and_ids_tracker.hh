@@ -380,7 +380,8 @@ namespace gcs::innards
          * this call exists to avoid.
          *
          * So **pass the values the pol names for this variable that it can still
-         * take**, and no more. Two bounds meet here. A value the pol names but this
+         * take**, and no more --- unless the pol divides, below. Two bounds meet
+         * here. A value the pol names but this
          * call omits leaves that pol term with nothing to cancel against; that is
          * safe when the variable cannot take the value (its term is zero under the
          * reason anyway) and broken otherwise, which is why the filter must be the
@@ -394,7 +395,8 @@ namespace gcs::innards
          * take is merely wasted --- it costs a term here and a cell in the partition
          * --- and callers whose value set is much bigger than one variable's domain
          * (a Hall set, a global cover, a union of domains) should filter it out with
-         * `state.in_domain`. Every current caller does.
+         * `state.in_domain`. Every current caller does, except MinDistance's
+         * matching bound, which must name the values it cannot take as well.
          *
          * The residue is then exactly the complement of the domain, which is exactly
          * what the reason states; that correspondence is what makes the line's
