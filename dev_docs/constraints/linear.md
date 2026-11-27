@@ -461,7 +461,7 @@ the sum as a constant (`verified_encodings/scp_cases/CMakeLists.txt:53-60`,
   variable's `≥ 0`, is named by neither the push's `pol` nor its reason, so
   the bound pushes never introduce it (#1055). Before #1055 they named every
   term's current bound (#1035). **The other rules were not trimmed**: the
-  not-equals (rules 6 and 7, `propagate.cc:879`, `:893`) and the reified
+  not-equals (rules 6 and 7, `propagate.cc:874`, `:888`) and the reified
   forms' undecided verdicts (rules 8–12, `linear_inequality.cc:305`,
   `linear_equality.cc:470`) use `generic_reason` over every variable, so on
   four 0/1 variables `LinearNotEquals` and `LinearEqualityIff` still
@@ -725,7 +725,7 @@ width (#1091).
    Since #1055 a bound push leaves out a term still at its declared bound
    when its bits imply that bound, when its boundary pin is already a unit, or,
    above `AssertionLevel::Links`, when it would have been pinned
-   (`order_literal_holds_at_top`, `propagate.cc:65-106`). The not-equals and
+   (`order_literal_holds_at_top`, `propagate.cc:85-112`). The not-equals and
    the reified forms' undecided verdicts still name every variable's domain
    (`generic_reason`). Before #1055, every
    term's bound went in, and the reasons' problem was that **triviality**,

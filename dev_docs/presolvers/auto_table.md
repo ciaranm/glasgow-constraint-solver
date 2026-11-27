@@ -150,10 +150,10 @@ follow, and the brute-force probe checks both:
   internal auxiliaries (`Divide`, `Modulus`, `Power`, `ArgSort` and
   `SmartTable` allocate them), fixing the scope does not fix the auxiliaries,
   so this rests on the constraint's own propagation deciding it. The
-  tabulated constraints' selector (`tabulation.cc:179`) is one more such
+  tabulated constraints' selector (`tabulation.cc:181`) is one more such
   auxiliary: decided by the scope only on the proof side, and left
   unnarrowed in the `State`, but no propagator reads it
-  (`tabulation.cc:182-183`), so it cannot keep a refuted tuple alive. The
+  (`tabulation.cc:185-186`), so it cannot keep a refuted tuple alive. The
   bound held on all four constraints the fact-check tried, with the scope
   over every user variable:
   the tuple count equalled the brute-force solution count for `Divide` (65),

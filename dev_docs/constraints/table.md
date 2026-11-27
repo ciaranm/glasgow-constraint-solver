@@ -350,7 +350,7 @@ certifies against them (see [What licenses rules 2–5](#inference-catalogue)).
 **#1115 never affected the other tables:** `AutoTable`, whose tuples are distinct
 full assignments with `red` lines reifying each selector value both ways
 (`auto_table.cc:71-82`); the tabulated constraints, whose rows are disjoint
-(`tabulation.cc:95-160`); and `NegativeTable`, which has no auxiliary and
+(`tabulation.cc:97-162`); and `NegativeTable`, which has no auxiliary and
 verifies with duplicated or overlapping forbidden rows.
 
 **`NegativeTable`**, one clause per forbidden tuple:

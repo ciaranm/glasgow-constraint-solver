@@ -232,8 +232,8 @@ What each tag installs:
   at most 100, which counts the enumeration tree's leaves; with its interior
   nodes the derivation can write up to about twice as many lines. It is
   overridable once per process by `GCS_TABULATION_THRESHOLD`
-  (`tabulation.cc:234-242`), and the largest-domained variable that the others
-  determine is left out of the product (`tabulation.cc:244-267`). In practice:
+  (`tabulation.cc:236-244`), and the largest-domained variable that the others
+  determine is left out of the product (`tabulation.cc:246-269`). In practice:
   - `Plus` / `Minus`: only when two positions alias, and every aliased shape
     has a determined variable to leave out. The budget is `|D(x)|` for
     `x + y = x`, `min(|D(x)|, |D(r)|)` for `x + x = r`, and 1 for `x + x = x`.
@@ -258,9 +258,9 @@ What each tag installs:
   observed; #724 asks for the decision to be reported.
 - **`Dynamic`** re-decides at every step of every call: an exact step
   combines `|intervals(o1)|·|intervals(o2)|` pairs, and past 1024 it prunes
-  against the other operand's hull instead (`gac.cc:365-380`). 1024 is
+  against the other operand's hull instead (`gac.cc:366-381`). 1024 is
   `default_interval_pairs_threshold()`, overridable by
-  `GCS_INTERVAL_PAIRS_THRESHOLD` (`gac.cc:404-412`); the header's rationale is
+  `GCS_INTERVAL_PAIRS_THRESHOLD` (`gac.cc:405-410`); the header's rationale is
   that no #192 model where GAC paid ever exceeded 289.
 - **No option changes the OPB.** The tabulation is derived inside the proof
   (`tabulation.hh:119-128`); the encoding is the same under every tag.
@@ -346,7 +346,7 @@ argument's `BinEnc`, with constants folded into the degree:
 ```
 
 **`Multiply`**, `x · y = z`, cake_pb_cp's signed encoding
-(`product_encoding.cc`, `signed_multiply.cc:42-57`), in emission order:
+(`product_encoding.cc`, `signed_multiply.cc:39-56`), in emission order:
 
 - **A magnitude channel per operand slot**: a proof-only bit vector
   `BinEnc(|x|)` over `[0, max(|lb x|, |ub x|)]` of the initial bounds, with no
@@ -530,7 +530,7 @@ are always the verbose ones and the two cannot drift apart that way.
 - **Tabulation, at the root**: per accepted tuple two `red` lines introducing
   a selector literal, and per node of the enumeration tree one backtrack RUP,
   at `ProofLevel::Current`. **Skipped entirely at the assertion levels**
-  (`tabulation.cc:102, 163, 172`), so a hints-only proof has no selectors.
+  (`tabulation.cc:104, 163, 172`), so a hints-only proof has no selectors.
 - **Everything else is `Temporary`**, deleted by range when the justification
   ends.
 - **Naming, for an external tool**: every row above is found from the
@@ -595,7 +595,7 @@ until a pass infers nothing:
   one pass per value** (#1068).
 - The interval propagator's single exact pass is already the fixpoint over
   distinct variables, because a survivor of each step keeps its support
-  through the later steps (`gac.cc:53-62`). It repeats only when positions
+  through the later steps (`gac.cc:54-63`). It repeats only when positions
   alias or a step fell back to a hull. Under aliasing that is also one pass
   per value on `Plus{x, y, x}` (#1068).
 - `Multiply`, `Power` and `Divide` / `Modulus` loop until
@@ -850,7 +850,7 @@ under an explicit `Tabulated`.
      `LargeDomainIterationCounter`. The repeat loop under aliasing is not, and
      it too can take one pass per value (#1068).
    - **The tabulation initialiser** walks values (`each_value_mutable`,
-     `tabulation.cc:142`) by design, bounded by 100 leaves under
+     `tabulation.cc:144`) by design, bounded by 100 leaves under
      `Auto` and unbounded under `Tabulated` (#880). The extensional
      propagator's support scan is per value; it is the table family's.
    - **`PowerTable`** walks `D(base) × D(exponent)` with no budget (#845).
@@ -864,7 +864,7 @@ under an explicit `Tabulated`.
    - **`Plus` / `Minus` interval**: one literal per interval of two domains,
      per run, guarded by `want_reasons()`. But the lists are **rebuilt for
      every removed run of a step**, although they are the same for all of that
-     step's runs, and they include holes that no lemma uses (`gac.cc:340-347`).
+     step's runs, and they include holes that no lemma uses (`gac.cc:341-348`).
      So the finding work is `O(runs × (k_Y + k_Z))` per step.
 3. **Proof.** No per-value line on any bounds or interval path:
    - `Plus` / `Minus`: at most `2·(interior intervals) + 2` lemmas per removed
@@ -1038,7 +1038,7 @@ Facts that hold across the family:
 - **Proof technique** — `pol` then `RUP`, ours (no published procedure;
   `large-domains.md` states it). The lemmas are `pol`s, each saturated into a
   clause, at `Temporary`, each "one of the bounds propagator's six rules,
-  stated at an interval's endpoints" (`gac.cc:214-232`); one RUP then closes
+  stated at an interval's endpoints" (`gac.cc:215-233`); one RUP then closes
   the conclusion. Not a `RUP sequence`: the lemmas are cutting-planes lines,
   not RUP steps. For a removed run of `X`, each interval of `Y` defines a window
   of `Z`, the third variable. Then there is an optional prefix lemma, in which
@@ -1047,7 +1047,7 @@ Facts that hold across the family:
   window, and `Z` pushes `Y` past the interval. An optional suffix lemma
   pushes `Z` past its far bound. `X` itself is never pushed; its run is the
   conclusion. The closing RUP walks `Y` upwards through the reason's hole
-  literals. `Y` is the operand with fewer intervals (`gac.cc:238-316`). The emitter
+  literals. `Y` is the operand with fewer intervals (`gac.cc:239-317`). The emitter
   checks that every lemma's conditions contradict its half and throws
   otherwise.
 - **Reason** — `Y`'s and `Z`'s domains, stated exactly as the lists the
@@ -1143,7 +1143,7 @@ Facts that hold across the family:
   minimum at the endpoint of least magnitude.
 - **Proof technique** — `ia`, `pol`, `hinted RUP` and `proof by contradiction`,
   by thesis Justification Procedure 7.6, cake flavour
-  (`signed_multiply.cc:123-187`):
+  (`signed_multiply.cc:122-186`):
   1. four operand-bound lines, each an `ia` citing the bound atom's
      definition, or a RUP for a constant or a primitive atom;
   2. per live sign pattern (at most four; a square's mixed patterns are dead):
@@ -1953,7 +1953,7 @@ Facts that hold across the family:
 | `plus_minus_constraint_dynamic_fallback` | the same binary with `GCS_INTERVAL_PAIRS_THRESHOLD=0`, so every step falls back |
 | `plus_mutation_control`, `plus_mutation_{lemmas,hole_lemmas,window_holes}` | the interval propagator's derivation; see [sum-interval-prune](#rule-sum-interval-prune) |
 | `multiply_constraint` (`multiply_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | `Auto`, `BC` and `Tabulated` over small boxes, views, negatives and zero; six aliasing shapes; constant operands and a constant result; wide `Auto` rows; eight random forced-`BC` boxes, four with random view wraps; one forced `Tabulated` box. GAC checked at every node except under `BC`, on the wide rows, on the constant-operand rows and on `x · x = x`, which use plain `solve_for_tests` under every tag |
-| `power_constraint` (`power_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | a variable exponent, including negative exponents; `k ∈ {0, 1, 2, 3, −2, 100, −3}` under each tag; views at `k = 2, 3`; `x^2 = x`; pinned `9^18` (`9^19` until #1214 moved it inside the range, `power_test.cc:340-345` at `0a5b4ec6`), `10^20`, `0^0` and `0^−2` |
+| `power_constraint` (`power_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | a variable exponent, including negative exponents; `k ∈ {0, 1, 2, 3, −2, 100, −3}` under each tag; views at `k = 2, 3`; `x^2 = x`; pinned `9^18` (`9^19` until #1214 moved it inside the range, `power_test.cc:341-346` at `0a5b4ec6`), `10^20`, `0^0` and `0^−2` |
 | `divide_modulus_constraint` (`divide_modulus_test`), `…_view_mixed`, `…_view_mixed_late` (since #1208) | both classes over signs and aliasing shapes (`x op x = y`, `x op y = x`, `y op x = x`), seeded random rows, and constant-slot, zero-divisor and two-constant rows; GAC checked where tabulation promises it, solutions only on the bounds propagator. **Since #1081**, for both classes under `BC`: seven root-hull fixtures over sign-open or weakly signed operands (eight for `Divide`), each checking that the root bounds are exactly the relation's hull; and four fixtures with a weakly signed dividend and a constant divisor, checking the result's bounds (the harness's `BC`, which is `bounds(Z)`) at every node |
 | `product_bounds` | every `product_bounds.hh` function, exhaustively over small ranges, with the quotient filter's known inexactness pinned; since #1079, the saturating corners too |
 | `wide_product` (since #1079) | #1064's shapes for all four product classes, without proofs, each solution checked against a direct listing |

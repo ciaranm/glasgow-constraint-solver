@@ -104,7 +104,7 @@ Four things to know before touching it.
 
 **`Circuit(succ)`**, `n = |succ|`: `succ` is a permutation of `0..n-1` whose
 single cycle visits every node. Values are 0-based; each successor's domain
-is narrowed to `0..n-1` before search (`define_bound`, `circuit.cc:126–132`),
+is narrowed to `0..n-1` before search (`define_bound`, `circuit.cc:119–125`),
 so a domain declared wider is accepted.
 
 - **`n = 1`**: `[0]`, the self loop, is the one solution, deliberately (#254;
@@ -667,7 +667,7 @@ back edges per node visited, and re-walks every chain in
 region-allocated arrays. `SubCircuit` walks the fixed edges from scratch every call (a
 comment says so and calls the incremental fold the obvious next step), and
 its `SCC` arm rebuilds both reachability walks every call. A comment on
-`with_prune_root()` (`subcircuit.hh:197–201`) records that the plain walk,
+`with_prune_root()` (`subcircuit.hh:199–205`) records that the plain walk,
 without shaving, was already 87–98% of all propagation time on the Challenge
 `subcircuit` families, a figure from #788's development and not re-measured
 here. Until #1317, `Circuit` `SCC` also materialised a whole-scope reason on

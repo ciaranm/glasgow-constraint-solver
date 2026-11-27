@@ -471,7 +471,7 @@ interior-value and terminal `pol`s (rules 3 to 6). The labels are cake's, by
 ### Cake conformity
 
 Two chain cases, `knapsack_sat` and `knapsack_unsat`, both `none`
-(`verified_encodings/scp_cases/CMakeLists.txt:647–648`); both pass the full
+(`verified_encodings/scp_cases/CMakeLists.txt:761–762`); both pass the full
 workflow-2 chain at `86caad24` (`tmp/fd-dd/knapsack/chain/`). The family's four
 rows are label for label and term for term the rows cake writes (in a different
 term order); `opbdiff --match-labels` differs only on the shared 0/1 variable

@@ -226,7 +226,7 @@ model where parity dominates, it prunes nothing and costs four times as much.
   (#310; checked here with `ParityOdd{in_range(x, 1, 3), y}`).
 - **Boolean donors**: both operands may be variables, views or constants, as
   long as their bounds **in the state the presolver sees** lie within `[0, 1]`
-  (`within_a_bit`, `parity_system_gathering.cc:159–168`). The header said "declared domain" until #1396 corrected it, but the code reads
+  (`within_a_bit`, `parity_system_gathering.cc:166–169`). The header said "declared domain" until #1396 corrected it, but the code reads
   `initial_state.bounds`, and the root
   initialisers have already run by then. So `x ∈ −3..1` narrowed to `0..1` by
   `Abs`'s root initialiser is gathered (`narrowed_abs_*` fixtures), and so is
@@ -694,8 +694,8 @@ These facts hold for every entry:
   one. **Before #1381 was fixed it was not true when `_neq` disagreed with the
   condition**, because the polarity was read from `_neq`. The constraint's
   meaning is its condition: `MustHold` is `x = y` and `MustNotHold` is `x ≠ y`
-  (`equals.cc:404–418`, the propagators, and `constraint_type()`). `_neq` only
-  describes it (`equals.cc:386–392`, #865). `Equals` is `(MustHold, false)`
+  (`equals.cc:405–419`, the propagators, and `constraint_type()`). `_neq` only
+  describes it (`equals.cc:386–393`, #865). `Equals` is `(MustHold, false)`
   and `NotEquals` is `(MustNotHold, true)`, so both agree. But the public
   constructor's default builds `(MustNotHold, false)`, and so does `read_scp`
   for every `not_equals` (`scp_reader.cc:300`). Such a donor was lifted as an
