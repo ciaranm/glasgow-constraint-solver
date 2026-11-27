@@ -14,16 +14,21 @@
 % difference-shaped and must not lift either way --- before the rewrite the
 % presolver declines them for their coefficients, afterwards for being a negated
 % view, which is the same decision.
+%
+% Every row must bind somewhere in 0..4. MiniZinc 2.11.0 drops rows that the
+% domains alone already satisfy, and the lanes pin all eight (#1495). The sign
+% comments give 2.9.7's flattening; 2.11.0 writes the sixth row as [-1, 1] over
+% (t[1], t[6]), and all four patterns still appear either way.
 array[1..6] of var 0..4: t;
 
 constraint t[1] - t[2] <= 3;   % [1, -1]
 constraint t[2] - t[3] <= -2;  % [1, -1]
 constraint t[3] - t[4] >= -1;  % [-1, 1]
 constraint t[4] - t[5] >= -2;  % [-1, 1]
-constraint t[5] - t[6] <= 4;   % [1, -1]
-constraint t[6] - t[1] <= 7;   % [1, -1]
+constraint t[5] - t[6] <= 3;   % [1, -1]
+constraint t[6] - t[1] <= 3;   % [1, -1]
 constraint t[1] + t[2] <= 4;   % [1, 1], not difference-shaped
-constraint -t[3] - t[4] <= 3;  % [-1, -1], not difference-shaped
+constraint -t[3] - t[4] <= -1; % [-1, -1], not difference-shaped
 
 solve satisfy;
 
