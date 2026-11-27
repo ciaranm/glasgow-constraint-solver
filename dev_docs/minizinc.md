@@ -189,7 +189,11 @@ not indexed from 1, so such a predicate wants one.
 The graph redefinitions shift their edge endpoints by `min(index_set(ns))` for
 the same reason, and need the same guard, but its polarity is the constraint's
 meaning on an empty graph rather than `true` by habit. `dag` and the
-four-argument `subgraph` hold with no nodes, so theirs is `then true` (#1303).
+four-argument `subgraph` hold with no nodes, so theirs is
+`then forall (e in index_set(es)) (not es[e])` (#1303): that is `true` through
+`dag` and `subgraph`, whose asserts refuse an edge when there are no nodes, and
+on a direct `fzn_` call it leaves out the edges, whose endpoints are not nodes,
+as the standard library's own `fzn_dag` and `fzn_subgraph` read them.
 The rooted ones --- `reachable`, `tree`, `path` and their directed forms ---
 need a selected root, so they are false with no nodes: a `then true` copied into
 them turns the empty graph into a wrong solution (#1305).

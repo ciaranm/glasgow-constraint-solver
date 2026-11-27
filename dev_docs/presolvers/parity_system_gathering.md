@@ -613,7 +613,8 @@ operands.
    width. There is no width gate, since nothing is chosen by width.
 4. **Audit lane.** No row in `gcs/large_domain_audit_test.cc` posts the
    presolver. The parity family's one row there is `ParityOdd`,
-   `NoWidePosition`, over `{0, 1}` variables. What no test varies, through this
+   `NoWidePosition`, over `0..10⁹` variables since #1302 (`{0, 1}` ones
+   before), each read as `v ≠ 0`. What no test varies, through this
    entry point: a gathered row over a wide variable, which the harness here
    reached (`wide_neq0`, `holey`, `wide_two_atoms`) and the in-tree test reaches
    only in `wide_domains`; a gathered system of more than six variables in the

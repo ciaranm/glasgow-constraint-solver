@@ -822,7 +822,7 @@ time and is a `Clean` row.
 | `AllDifferent/VC` | `Clean` | the unassigned scan |
 | `AllDifferentExcept` | `KnownTrip` | the same value set, with the excluded values filtered |
 | `AllDifferentExcept/duplicate` | `Clean` | the forcing, over a wide repeated variable with a narrow partner; trips before #1004 |
-| `SymmetricAllDifferent` | `NoWidePosition` | nothing: the range is `n` values |
+| `SymmetricAllDifferent` | `Clean` (three rows) | `define_bound` trimming entries declared over `0..10⁹`, over `±(2⁶⁰ − 1)` and over a holey wide set to the `n` indices; `NoWidePosition` over `0..3` until #1302 |
 
 And two rows in `TEST_CASE("Large domain proof sizes")`, which runs in the
 ordinary suite. `AllDifferent/confined`, three variables confined to two values

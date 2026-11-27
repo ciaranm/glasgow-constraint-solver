@@ -456,8 +456,9 @@ removed with the rest of the out-of-range values (`reachable_test`'s
   `dsteiner` and `d_weighted_spanning_tree` wrappers, error the same way
   (`tree.md`, `path.md`); `Path` throws before its child is installed, so it
   needs its own fix (#1305, which covers all three). `dag` and four-argument `subgraph` have
-  a different defect with the opposite answer: an empty instance is
-  satisfiable and the mznlib flattens it to a wrong UNSAT (#1303). No test posts an empty node set.
+  had a different defect with the opposite answer: an empty instance is
+  satisfiable and the mznlib flattened it to a wrong UNSAT (#1303, fixed by
+  #1363). No test posts an empty node set for this family.
 - *No edges, one node, self loops, parallel edges:* handled, and covered by the
   random checks below and by `reachable_test`'s `single` case.
 - *A repeated variable in `ns`:* sound, not GAC, and not even failure-complete
@@ -524,19 +525,20 @@ is cut to the node numbers before any of this runs.
    encoding](#opb-encoding)). What a line *costs to check* is proportional to the
    encoding, `Θ(n(n + |E|))` rows, which is the family's real proof cost; see
    [Proof performance](#proof-performance).
-4. **The audit lane.** Two rows, `Reachable` and `DReachable`, pinned
-   `NoWidePosition`: a path of three nodes, `ns` and `es` `0..1`, and a root over
-   `0..2` (`large_domain_audit_test.cc:822–831`). They vary nothing: the root is
+4. **The audit lane.** At `86caad24`, two rows, `Reachable` and `DReachable`,
+   pinned `NoWidePosition`: a path of three nodes, `ns` and `es` `0..1`, and a
+   root over `0..2` (`large_domain_audit_test.cc:822–831` there). They varied
+   nothing: the root was
    never declared wide, never a view, never holey. The wide root is this audit's
    probe: `views.cc`, modes `wide` (a root over `±10⁹`) and `widev` (an offset
    view over `0 .. 2·10⁹`), linked against a `GCS_LARGE_DOMAIN_GUARD` build
    (limit 100,000; `gcs-fd-small-am1-patch-wt/build-guard`, at `c9ceea25`, where
    `gcs/constraints/reachable/` is identical to `86caad24`'s), enumerates both
    spellings with proofs and does not trip
-   (`tmp/fd-graph/reachable/guard/`). At `86caad24` the rows are pinned
-   `NoWidePosition`. PR #1302 (open) pins them `Clean`, as the safer choice,
-   with wide-declaration rows for every index-valued position, this root
-   among them, and its guarded run trips nothing. The lane is registered as a ctest
+   (`tmp/fd-graph/reachable/guard/`). At `86caad24` the rows were pinned
+   `NoWidePosition`. #1302 pinned them `Clean`, as the safer choice, with
+   wide-declaration rows for every index-valued position, this root among
+   them, and its guarded run tripped nothing. The lane is registered as a ctest
    only under `-DGCS_LARGE_DOMAIN_GUARD=ON` (`gcs/CMakeLists.txt:212–214`), which
    no CI lane sets (#920).
 
@@ -1103,7 +1105,9 @@ time move apart here; see [Proof performance](#proof-performance).
 - **`examples/hitori`**: `hitori-propagator` and `hitori-propagator-no-cuts`
   solve the size-4 generated instance with proofs and verify them; the only
   lanes where the propagator meets an instance-sized graph with an open root.
-- **Audit lane:** the two `NoWidePosition` rows above, which are registered as
+- **Audit lane:** six `Clean` rows since #1302, `Reachable` and `DReachable`
+  with wide, full-range and holey roots (two `NoWidePosition` rows before),
+  which are registered as
   a test only when the guard is on, and no CI lane turns it on (#920).
 
 **Runtime caps.** No lane sets or clears one. The default caps (300 solutions,
@@ -1476,10 +1480,10 @@ counterpart here: every `reachable` assertion carries its reason.
      All corrected by #1396.
 5. **The audit lane's pin.** A wide root, plain or as an offset view,
    enumerates without tripping the guard (see [Interval
-   efficiency](#interval-efficiency)). PR #1302 (open) re-pins this family's
-   rows, with every other index-valued position's, `Clean` with
+   efficiency](#interval-efficiency)). **Done** by #1302, which re-pinned
+   this family's rows, with every other index-valued position's, `Clean` with
    wide-declaration rows, as the safer choice until data argue otherwise; its
-   guarded run trips nothing. The lane still runs only with the guard on
+   guarded run tripped nothing. The lane still runs only with the guard on
    (#920).
 6. **The checking cost itself** is the encoding's, `Θ(n(n + |E|))` rows taxing
    every line. VeriPB's label groups are the route `proof-benchmarks.md`

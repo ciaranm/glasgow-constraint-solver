@@ -2377,7 +2377,8 @@ Ranked by what they buy against what they cost.
    `__int128` (Ciaran, 2026-10-06). The sites still throw, now with a message
    naming the quantities, `integer_ranges_test` pins each, and
    `integer-ranges.md` records the exception. Revisit if an application meets
-   the limit. #1292's fifth site has no lane yet (#1300, open, adds one).
+   the limit. #1292's fifth site, the published not-first / not-last
+   sweep's, is pinned too since #1300, with a twin just inside the limit.
 3. **Count the elastic and knapsack conflicts** in
    `GCS_SCHEDULING_RULE_STATS` (#1236). **Done by #1273**, as two rows of
    their own, `overload_elastic` and `overload_knapsack`, listed in
@@ -2429,14 +2430,12 @@ Ranked by what they buy against what they cost.
     the time-indexed block" and "Nothing cites these yet"
     (`cumulative.cc:1015-1050`), both from before the flip. **Done by #1265**
     for all three, the `cumulative.hh` comment included, merged after
-    `0a5b4ec6` (`86caad24`). Still open on `main`, in `gcs/CMakeLists.txt`,
-    which #1265 did not touch, are two comments that #1301 (open) rewrites:
-    the comment above
-    `add_cumulative_test_with_recovery`, which still says "no solve and no
-    .scp can select it" (`:325-326`) after #1278 corrected its twin at
-    `:276-278`; and "Mutation lanes do not get the arm … The one exception is
-    registered by hand below" (`:280-285`), though nine mutation lanes have
-    `_recovering` twins (four already at `7e1c4178`).
+    `0a5b4ec6` (`86caad24`). Two more, in `gcs/CMakeLists.txt`, which #1265
+    did not touch, were rewritten by #1301: the comment above
+    `add_cumulative_test_with_recovery`, which said "no solve and no .scp can
+    select it" after #1278 corrected its twin, and "Mutation lanes do not get
+    the arm … The one exception is registered by hand below", though nine
+    mutation lanes have `_recovering` twins (four already at `7e1c4178`).
 
 Out of this document but found here:
 

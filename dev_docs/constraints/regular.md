@@ -4,12 +4,12 @@
 > default, and `proof_strategy::PerCall`, and the regular-expression form);
 > benchmarking only (`proof_strategy::Bacchus`) ·
 > **Audited** 2026-10-10 at `86caad24` ·
-> **Open issues** filed by this audit: #1328 (MiniZinc's `regular` with a
-> start state other than 1 gets wrong answers; fix open as #1361), #1329
-> (`Bacchus` accepts an empty sequence whose start state is not final; shared
-> with `MDD`), #1331 (`Bacchus`'s proofs are rejected because its scaffold
-> leaves out three kinds of unit clause from the published encoding; #1366,
-> open, fixes #1329 and #1331), #1332 (above
+> **Fixed since the audit**: #1328 (MiniZinc's `regular` with a start state
+> other than 1 got wrong answers; fixed by #1361), #1329 (`Bacchus` accepted
+> an empty sequence whose start state is not final; shared with `MDD`) and
+> #1331 (`Bacchus`'s proofs were rejected because its scaffold left out three
+> kinds of unit clause from the published encoding), both fixed by #1366 ·
+> **Open issues** filed by this audit: #1332 (above
 > `AssertionLevel::Off`, `Upfront`'s solution lines are rejected for an
 > unambiguous non-deterministic automaton), #1330 (the root scaffolding
 > `Regular` writes at every level is rejected above `Links` for a sequence
@@ -65,21 +65,22 @@ Four things to know before touching it.
   the seed-1 half (about 6,000 automata) found none either. A repeated variable
   loses generalised arc consistency (163 of
   3,000 instances), but never a solution.
-- **Two wrong answers: one through MiniZinc, one under an opt-in strategy.**
-  Through MiniZinc, a `regular` whose start state is not state 1 is translated
-  into a different automaton, so `fzn-glasgow` loses solutions or reports
-  non-solutions (#1328); no Challenge model reaches it, but an
-  enum-typed start state does, and so does a reified `regular` on MiniZinc
-  2.10.1, which rewrites it into a plain one with the same start state. And
-  `Bacchus` over an empty sequence reports the empty word as
-  accepted even when state 0 is not final (#1329).
-- **Three shapes of rejected proof.** `Bacchus` writes no proof per pruning
-  and relies on unit propagation over its root encoding, which is not complete
-  without three kinds of unit clause the published encoding has and this one
-  leaves out (a state with no outgoing transition, one with no incoming
-  transition, a non-final last-layer state): 7 of 1,300 random proofs here and
-  63 of 10,000 in the fact-check's sweep are rejected at `Off`, some with a
-  single final state (#1331). `Upfront` omits the statically dead
+- **Two wrong answers, both fixed: one through MiniZinc, one under an
+  opt-in strategy.** Through MiniZinc, a `regular` whose start state is not
+  state 1 was translated into a different automaton, so `fzn-glasgow` lost
+  solutions or reported non-solutions (#1328, fixed by #1361); no Challenge
+  model reaches it, but an enum-typed start state did, and so did a reified
+  `regular` on MiniZinc 2.10.1, which rewrites it into a plain one with the
+  same start state. And `Bacchus` over an empty sequence reported the empty
+  word as accepted even when state 0 is not final (#1329, fixed by #1366).
+- **Three shapes of rejected proof, one fixed.** `Bacchus` writes no proof
+  per pruning and relies on unit propagation over its root encoding, which is
+  not complete without three kinds of unit clause the published encoding has
+  and which this one left out until #1366 (a state with no outgoing
+  transition, one with no incoming transition, a non-final last-layer state):
+  7 of 1,300 random proofs here and 63 of 10,000 in the fact-check's sweep
+  were rejected at `Off`, some with a single final state (#1331). `Upfront`
+  omits the statically dead
   state lines above `Off`, which an unambiguous non-deterministic automaton's
   solution lines need, so the default strategy's proofs fail at the assertion
   levels on 6 of 100 random NFAs (#1332). And the root scaffolding
@@ -128,8 +129,8 @@ the alphabet start at 0 or 1, or be
 contiguous.
 
 - **Empty sequence:** accepted exactly when state 0 is final (#254), under
-  `Upfront` and `PerCall`. `Bacchus` accepts it whatever the final states are
-  (#1329).
+  `Upfront` and `PerCall`, and since #1366 under `Bacchus` too, which
+  accepted it whatever the final states were (#1329).
 - **No final states, or none reachable:** unsatisfiable, detected at the root.
 - **A repeated variable** is allowed and means the same value at every
   position it occupies; see [Robustness and limits](#robustness-and-limits).
@@ -147,22 +148,25 @@ contiguous.
 
 | C++ class | MiniZinc / FlatZinc | XCSP3 | CPMpy | SCP `s_expr` | Notes |
 |---|---|---|---|---|---|
-| `Regular`, deterministic | ✓ `fzn_regular` → `glasgow_regular`[^mznreg] | ✓ `regular` | ?[^gcspy] | ✓ `regular` | wrong answers when `q0 ≠ 1`[^q0] |
+| `Regular`, deterministic | ✓ `fzn_regular` → `glasgow_regular`[^mznreg] | ✓ `regular` | ?[^gcspy] | ✓ `regular` | wrong answers when `q0 ≠ 1` until #1361[^q0] |
 | `Regular`, non-deterministic | `decompose`[^mznnfa] | ✓ `regular` (#1204) | ?[^gcspy] | ✓ `regular` (read back since #1335) | |
 | `Regular`, regex | ✓, as a deterministic `fzn_regular`[^mznrx] | n/a | ?[^gcspy] | written as the compiled automaton | gcs's own regex compiler is C++ only |
 | alphabet not starting at 1 | `decompose`[^mznset] | ✓ | ?[^gcspy] | ✓ | |
-| reified | `unsupported` (2.9.7); ✓ via `glasgow_regular` (2.10.1)[^mznreif] | n/a | ? | n/a | no reified class; 2.10.1 reaches #1328 |
+| reified | `unsupported` (2.9.7); ✓ via `glasgow_regular` (2.10.1)[^mznreif] | n/a | ? | n/a | no reified class; 2.10.1 reached #1328 |
 | `cost_regular` | `decompose` (standard library) | n/a | ? | n/a | no cost variant; #653 |
 
 [^mznreg]: `minizinc/mznlib/fzn_regular.mzn` hands `x`, `Q`, `S`, the
     flattened `d`, `q0` and `F` to `glasgow_regular` unshifted (#803), and
-    `fzn_glasgow.cc:1195-1235` keys the table by the symbols `1..S`, maps state
-    `k` to `k − 1`, drops FlatZinc's failing state 0, and swaps `q0` with state
-    1 so that the start is state 0.
+    `fzn_glasgow.cc:1195-1247` keys the table by the symbols `1..S`, drops
+    FlatZinc's failing state 0, and renumbers the states by one permutation,
+    applied alike to the rows, the targets and `F`: `q0` to 0, state 1 to
+    `q0 − 1`, and every other `k` to `k − 1`, which for `q0 = 1` is the plain
+    shift. A start state outside `1..Q` is refused with an error (#1361).
 
-[^q0]: The swap is applied to the transition targets only, not to the row
-    index or to `F`, so for `q0 ≠ 1` the automaton gcs builds is a different
-    one (#1328). Measured against Gecode on MiniZinc 2.9.7 and
+[^q0]: Until #1361 the swap was applied to the transition targets only, not
+    to the row index or to `F`, so for `q0 ≠ 1` the automaton gcs built was a
+    different one (#1328). The audit's measurements of it follow. Measured
+    against Gecode on MiniZinc 2.9.7 and
     2.10.1 (`tmp/fd-dd/regular/mzn/diff.sh`): five shapes disagree, among them
     `q0 = 2` of 3 (5 solutions against gcs's 2, one of them wrong), the
     four-argument enum form with the start state `B` of `{A, B, C}`, and an
@@ -174,8 +178,12 @@ contiguous.
     agreement. The fact-check's random sweep (120 models, both versions) found
     every `q0 = 1` model agreeing and 46 of 53 `q0 ≠ 1` models disagreeing. All
     20 Challenge models in the 285-model flattened corpus that post
-    `glasgow_regular` pass `q0 = 1`. The half-swap dates from the handler's
-    first version (`1dfe6366`, 2024-04-10).
+    `glasgow_regular` pass `q0 = 1`. The half-swap dated from the handler's
+    first version (`1dfe6366`, 2024-04-10). #1361's permutation leaves every
+    `q0 = 1` model's `.opb` and `.pbp` byte-identical, and its lanes
+    `minizinc-regularstart`, `-regularstartempty`, `-regularstartemptynot` and
+    `-regularreifstart-fzn` post the disagreeing shapes, the reified one as
+    2.10.1's flattening in JSON FlatZinc.
 
 [^mznnfa]: `regular_nfa` has no gcs override; the standard library's
     `fzn_regular_nfa` decomposes it into one state variable per position and
@@ -208,8 +216,8 @@ contiguous.
     variable, passing `q0` unchanged, which reaches `glasgow_regular`
     (`reif.mzn` flattens to `glasgow_regular` with 4 states and `q0 = 1`).
     With `q0 = 1` Gecode and gcs agree (`reif.mzn`); with `q0 = 2`
-    (`reif_q0.mzn`) both find 8 solutions, but different ones: #1328's bug
-    on a second route.
+    (`reif_q0.mzn`) both found 8 solutions, but different ones until #1361:
+    #1328's bug on a second route.
 
 [^gcspy]: `gcspy` binds nothing in this family, so CPMpy cannot post it
     natively. Whether CPMpy decomposes `Regular` before it reaches `gcspy` was
@@ -300,7 +308,8 @@ each position's tracked bounds, views and constants included
 
 `None.` There is no reified class. MiniZinc 2.10.1 rewrites `regular_reif`
 into a plain `regular` over a larger automaton, which reaches
-`glasgow_regular` (and #1328 when `q0 ≠ 1`); 2.9.7 refuses it. A native reified
+`glasgow_regular` (and reached #1328 when `q0 ≠ 1`, until #1361); 2.9.7
+refuses it. A native reified
 form would want its own
 encoding (the state flags half-reified on the condition) and is not obviously
 worth it: no Challenge model posts one.
@@ -488,26 +497,29 @@ pattern. #1317 (`Circuit`) records a flag defined on every call too, but at
 with `Regular`'s case.
 
 **`Bacchus`, at the root, written as real steps at every assertion level**
-(`regular_bacchus.cc:337-436`), so rejected at `Inferences` and
+(`regular_bacchus.cc:371-488`), so rejected at `Inferences` and
 `Backtracking` for a sequence variable declared as a range whose bounds unit
 propagation cannot recover from its bits (such as `1..2`, `-1..2` or `-5..9`),
 or a view whose own range is such a range (such as `x' + 1` over `x' ∈ 0..1`); a
 variable declared from a value list is not affected (#1330):
 for every transition `(i, q, v)`, a flag `t[i][q][v] ⇔ x_i = v ∧ s[i][q] ∧
 s[i+1][δ(q, v)]` by redundance (`f[k][t<i>q<q>v<v>]`), then one `pol` adding
-the labelled transition row to the flag's reverse half, then three families of
-at-least-ones by RUP: out of each `(i, q)`, into each `(i+1, q')` that has an
-incoming transition, and supporting each `(i, v)` that some state reads. All
-at `Top`, never deleted. Nothing during search. **Three kinds of line the
-published encoding has are missing** (EP 5.2; #215): the outgoing at-least-one
-of a state with no outgoing transition, which would be the unit `¬s[i][q]`
-(skipped, `regular_bacchus.cc:390-391`); the incoming one of a state with no
-incoming transition (skipped, `:414`); and the last layer's `¬s[n][q]` for
-non-final `q`. Without them unit propagation does not reach GAC, and the
-prunings `Bacchus` leaves to the next backtrack are not always re-derived
-(#1331). A fourth is skipped too, the variable-support at-least-one of a
-symbol no state reads, which would be the unit `x_i ≠ v` (`:432`); no proof
-is known to need it (#1368).
+the labelled transition row to the flag's reverse half, then, by RUP and in
+this order, the last layer's unit `¬s[n][q]` for each non-final `q` (`:432`),
+an outgoing at-least-one out of every `(i, q)` (`:436-450`), an incoming one
+into every `(i+1, q')` (`:452-469`), and a variable-support one for each
+`(i, v)` that some state reads (`:471-487`). An outgoing or incoming line with
+no transition to name is the unit `¬s[i][q]`. All at `Top`, never deleted.
+Nothing during search. Until #1366 **three kinds of line the published
+encoding has were missing** (EP 5.2; #215): the outgoing and incoming units,
+and the last layer's. Without them unit propagation does not reach GAC, and
+the prunings `Bacchus` leaves to the next backtrack were not always
+re-derived (#1331). A fourth is still skipped, the variable-support
+at-least-one of a symbol no state reads, which would be the unit `x_i ≠ v`
+(`:484`); no proof is known to need it (#1368). The outgoing lines, the units
+included, need the variable's bound pins, so above `Links` they meet #1330
+like the rest of the scaffold. [`dev_docs/regular.md`](../regular.md) gives
+each line's RUP argument and why the order matters.
 
 **The canonical run** (`emit_regular_canonical_run`, `canonical_run.cc:176-370`;
 derivation in [`regular.md`](../regular.md), "Ambiguous automata"), over the
@@ -728,10 +740,11 @@ and the XCSP3 check has negative symbols. FlatZinc numbers symbols `1..S`, and
 **Degenerate shapes.**
 
 - *Empty sequence:* correct under `Upfront` and `PerCall` (#254's special case,
-  `regular.cc:290-300`, which `contradiction()`s when 0 is not final); wrong
-  under `Bacchus`, which has no such case (#1329): a
-  root-strength sweep finds a solution-count mismatch on 319 and 325 of 3,000
-  instances at seeds 1 and 2, every one with `n = 0`.
+  `regular.cc:290-300`, which `contradiction()`s when 0 is not final), and
+  since #1366 under `Bacchus` too (`regular_bacchus.cc:344-355`, an initial
+  contradiction). Before that `Bacchus` had no such case and was wrong (#1329):
+  a root-strength sweep found a solution-count mismatch on 319 and 325 of
+  3,000 instances at seeds 1 and 2, every one with `n = 0`.
 - *One variable, all fixed, no final state, unreachable finals:* covered by
   `regular_test` (#254), under every strategy for most of them.
 - *A repeated variable* is sound and loses generalised arc consistency: each
@@ -740,8 +753,8 @@ and the XCSP3 check has negative symbols. FlatZinc numbers symbols `1..S`, and
   only after branching (`deg.cc rep_xx`, 3 recursions, 0 solutions). Root GAC
   failures over 3,000 random instances with repeats (`regcheck … alias`, seed
   3): 163 deterministic under `Upfront` and under `PerCall`, 146
-  non-deterministic under `Upfront` (and 488 under `Bacchus`, of which 325 are
-  #1329's empty sequences). The per-node check fails too: 208 of 1,267
+  non-deterministic under `Upfront` (and 488 under `Bacchus`, of which 325
+  were #1329's empty sequences, since fixed). The per-node check fails too: 208 of 1,267
   checked nodes deterministic, 201 of 1,491 non-deterministic. Never a lost
   solution. `regular_test`'s duplicate runs check enumeration only.
 - *Out-of-range state numbers and `num_states = 0`:* undefined behaviour
@@ -965,8 +978,10 @@ row and the exactly-one.
 
 - **Infers** — a contradiction.
 - **Fires when** — `vars` is empty and state 0 is not final, on the first call
-  (`regular.cc:290-300`, `regular_legacy.cc:300-310`). `Upfront` and
-  `PerCall`. **`Bacchus` has no such rule** and accepts the empty word
+  (`regular.cc:290-300`, `regular_legacy.cc:300-310`), under `Upfront` and
+  `PerCall`; under `Bacchus`, since #1366, as an initial contradiction
+  justified by RUP with `hints::RegularBacchus` (`regular_bacchus.cc:344-355`).
+  Before #1366 `Bacchus` had no such rule and accepted the empty word
   (#1329).
 - **Strength** — `GAC` (there is nothing else to prune): checked by
   `regular_test`'s `empty seq rejected` and `empty seq accepted`, and by the
@@ -1092,12 +1107,13 @@ row and the exactly-one.
     per-value lines carry nothing. Argued, not measured.
   - *`Bacchus`:* `not logged`, by design (`NoJustificationNeeded`): Bacchus
     (CP 2007) shows unit propagation on his encoding achieves GAC, so the
-    next backtrack line's RUP re-derives every pruning. **This tree's encoding
-    lacks three kinds of published unit clause** (a state with no outgoing
-    transition, one with no incoming transition, a non-final last-layer state;
-    see [Proof-time state](#proof-time-state)), so the re-derivation can fail
-    and VeriPB rejects the backtrack line, with one final state as well as
-    several (#1331).
+    next backtrack line's RUP re-derives every pruning. **Until #1366 this
+    tree's encoding lacked three kinds of published unit clause** (a state
+    with no outgoing transition, one with no incoming transition, a non-final
+    last-layer state; see [Proof-time state](#proof-time-state)), so the
+    re-derivation could fail and VeriPB rejected the backtrack line, with one
+    final state as well as several (#1331). #1366's sweep of the fact-check's
+    generator then found no rejection at `Off`, `Definitions` or `Links`.
 - **Reason** — the generic reason over the scope, per run; at the root, the
   root domains. Not minimal. Under `PerCall`, assembled every call when a
   logger or the tracker will read it, and converted to one `Reason` per call
@@ -1145,11 +1161,10 @@ row and the exactly-one.
   terms, 118,223 with three and 194,542 with four, `f` included), and two
   `red` lines per call for `f`, at `Current` since #1465. Measured shares are under [Proof
   performance](#proof-performance).
-- **Gaps** — `None` under `Upfront` and `PerCall` at `Off`. Under `Bacchus`,
-  rejected re-derivations wherever the backtracks are real RUPs, which is up
-  to `Links` (`proof_logger.cc:427` asserts them only from `Inferences`), and
-  at one shape a rejected scaffold RUP at every level (#1331).
-  Above `Off`, `Upfront`'s solution lines for an unambiguous NFA (#1332), and
+- **Gaps** — `None` at `Off`, under every strategy since #1366 (before it,
+  `Bacchus` had rejected re-derivations wherever the backtracks are real
+  RUPs, up to `Links`, and at one shape a rejected scaffold RUP at every
+  level; #1331). Above `Off`, `Upfront`'s solution lines for an unambiguous NFA (#1332), and
   above `Links` the every-level root scaffolding for a variable
   whose bounds unit propagation cannot recover (#1330): the
   scaffold's gaps rather than this rule's. The propagator
@@ -1225,8 +1240,10 @@ solves there, 40 with proofs, in 0.75 s; `regular_legacy_test` 50 (25),
   regex and NFA shapes' domains (`0..1`, `0..2`, `1..3`, `{1, 3}`) run only
   at `Off`.
 - **`Bacchus` with an empty sequence**, or with an instance that needs one of
-  the missing unit clauses (#1329 and #1331). Two of its seven shapes have two
-  final states; neither needs one.
+  the unit clauses it used to leave out, until #1366 (#1329 and #1331):
+  `regular_bacchus_test` now has both empty-sequence cases, #1331's one-final
+  and two-final counterexamples over a value-list and a range-declared
+  variable, and the fact-check's seed 2833, two states with no transitions.
 - **Search over a declared domain wider than the alphabet** (#1339).
 - **A long, narrow sequence** (#1351): every sequence in the three test
   binaries is a few positions long, so no test runs a cascade deep enough to
@@ -1239,8 +1256,11 @@ solves there, 40 with proofs, in 0.75 s; `regular_legacy_test` 50 (25),
   side; a cost regression wants an instruction count, not a pass/fail test.
 - **A canonical run over a wide layer**: every ambiguous shape in the tests
   has a handful of live states per layer.
-- **A start state other than 1 through MiniZinc** (#1328): `regex.mzn` and
-  `nurses.mzn` both use `q0 = 1`, and no test uses the enum form.
+- **A start state other than 1 through MiniZinc** (#1328), until #1361:
+  `regex.mzn` and `nurses.mzn` both use `q0 = 1`. #1361's four lanes add
+  `q0` second and last of three, `q0` the only final state, the enum form,
+  empty sequences either way round, and a reified `regular` as 2.10.1
+  flattens it.
 - Out-of-range state numbers are covered by `regular_test`'s malformed
   cases (#1333).
 - **Holey initial domains** for the per-node GAC check: none of the tests has
@@ -1399,14 +1419,18 @@ here.
 
 ### Proof-logging gaps
 
-- **`Bacchus`: rejected re-derivations** when a pruning rests on a state that
-  one of the three missing unit clauses would rule out: 7 of 1,300 random
-  proofs here, 63 of 10,000 in the fact-check's sweep, some with a single final
-  state; rejected wherever the backtracks are real RUPs (`Off`,
-  `Definitions`, `Links`), and one of the fact-check's seeds (2833) at a
-  scaffold RUP at every level (#1331). By design it logs no pruning; the published encoding's
-  unit clauses would make that sound, and with all three patched in the
-  fact-check's sweep has no rejection.
+- **`Bacchus`: rejected re-derivations, fixed by #1366.** When a pruning
+  rested on a state that one of the three missing unit clauses would rule
+  out, the backtrack's RUP failed: 7 of 1,300 random proofs here, 63 of
+  10,000 in the fact-check's sweep, some with a single final state; rejected
+  wherever the backtracks are real RUPs (`Off`, `Definitions`, `Links`), and
+  one of the fact-check's seeds (2833) at a scaffold RUP at every level
+  (#1331). By design it logs no pruning; #1366 writes the published
+  encoding's unit clauses, which make that sound, and its sweep over value-list
+  and range-declared variables has no rejection up to `Links`. At
+  `Inferences` over range-declared variables the new no-outgoing units meet
+  #1330 (below) like the rest of the scaffold: 18 proofs there are newly
+  rejected and 9 newly accepted, of about 2,100 rejected either way.
 - **`Upfront` above `Off`: rejected solution lines** for a non-deterministic,
   unambiguous automaton, because the static dead lines are skipped (#1332).
   6 of 100 random NFAs at `Inferences`. `PerCall` had none at any level in the
@@ -1431,12 +1455,9 @@ here.
 
 ### Known limitations
 
-- **Through MiniZinc, a `regular` whose start state is not the first state
-  gives wrong answers,** including any enum-typed automaton whose start is not
-  the first enum value, and on MiniZinc 2.10.1 a reified `regular` (#1328).
-- **`Bacchus` accepts an empty sequence** whose start state is not final
-  (#1329), and its proofs can be rejected (#1331). It is a benchmarking
-  option; no front end selects it.
+- **`Bacchus` is a benchmarking option**; no front end selects it. Its
+  scaffold still leaves out the variable-support unit for a symbol no state
+  reads (#1368), which no proof is known to need.
 - **A repeated variable propagates less than it could** (each position is
   independent); no solution is lost.
 - **Wide declared domains do not install**: the OPB is per value (#841), and so
@@ -1467,10 +1488,9 @@ here.
 
 ### Next steps
 
-0. **Fix the MiniZinc start state** (#1328). Apply one permutation to rows,
-   targets and `F`, or prepend a fresh start state copying `q0`'s row; add a
-   `minizinc/tests` case with `q0 ≠ 1`, one with the enum form and one
-   reified. Small, and the only wrong answer a front end reaches.
+0. **Fix the MiniZinc start state** (#1328). **Done** by #1361: one
+   permutation applied to rows, targets and `F`, with lanes for `q0 ≠ 1`,
+   the enum form and the reified form.
 1. **Give `Upfront` the static dead lines at every level for an NFA**
    (#1332): call `emit_regular_static_dead_states` from `Upfront`'s
    initialiser for a non-deterministic, unambiguous automaton when the level
@@ -1481,14 +1501,10 @@ here.
    domain collapse, so above `Links` it needs #1330's pins (as `PerCall`'s
    copy of it already does). Add an `Inferences` run of the NFA cases to
    `regular_test`.
-2. **Repair `Bacchus`** (#1329 and #1331): #254's empty-sequence check, and
-   the three unit clauses of the published encoding (#215): `¬s[i][q]` for a
-   state with no outgoing transition, the same for one with no incoming
-   transition, and `¬s[n][q]` for a non-final state. Small, but above `Links`
-   the first of them is a domain collapse that needs the boundary pins of
-   #1330 (or `Bacchus`'s scaffold gated to `Off`). Or retire the strategy,
-   which no front end selects; the design note
-   [`regular.md`](../regular.md) keeps it for #200.
+2. **Repair `Bacchus`** (#1329 and #1331). **Done** by #1366: #254's
+   empty-sequence check, and the three unit clauses of the published encoding
+   (#215). Above `Links` the no-outgoing unit is a domain collapse that needs
+   #1330's boundary pins, as the rest of the scaffold does.
 3. **Make the cascade iterative** (#1351, shared with `MDD`): an explicit
    worklist for `decrement_outdeg` and `decrement_indeg` in all three copies,
    keeping `Upfront`'s orders, a node's dead line before its parents' going
@@ -1576,7 +1592,8 @@ here.
   133–147) gives the clausal encoding with transition variables on which unit
   propagation achieves GAC; `proof_strategy::Bacchus` derives it in the proof
   from the natural encoding, as McIlree's Encoding Procedure 5.2 states it and
-  #215 specified it, but without three of its kinds of unit clause (#1331).
+  #215 specified it; until #1366, without three of its kinds of unit clause
+  (#1331).
 - **Certification.** McIlree and McCreesh (*Proof Logging for Smart Extensional
   Constraints*, CP 2023, LIPIcs 280, 26:1–26:17) certified `Regular` for the
   first time, and McIlree's thesis (*Pseudo-Boolean Proof Logging for
@@ -1617,10 +1634,11 @@ here.
   - it says the OPB is identical across all three strategies (`Bacchus` names
     its flags and labels its rows differently; corrected by #1396);
   - it says the choice "never changes the inferences drawn or the solutions
-    found" (`Bacchus` accepts an empty sequence whose start is not final,
-    #1329);
+    found" (`Bacchus` accepted an empty sequence whose start is not final,
+    #1329; true since #1366);
   - it says `Bacchus`'s backtrack RUPs close by unit propagation (not without
-    three kinds of unit clause, #1331);
+    three kinds of unit clause, #1331; true since #1366, which also gives each
+    scaffold line's RUP argument there);
   - it says `Upfront`'s scaffold is emitted "only if proof logging is enabled",
     leaving out that it is also only at `Off` (#1332; corrected by #1396);
   - it says `Bacchus`'s per-call propagator "is passed `logger = nullptr`"

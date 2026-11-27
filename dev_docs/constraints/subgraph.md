@@ -2,9 +2,10 @@
 
 > **Maturity** production ·
 > **Audited** 2026-10-09 at `86caad24` ·
-> **Open issues** filed by this audit: #1303 (the four-argument MiniZinc
-> spelling over an empty node set is reported unsatisfiable; one issue with the
-> same line in `fzn_dag.mzn`; fix open as #1363), #1311 (every call rescans
+> **Fixed since the audit**: #1303 (the four-argument MiniZinc spelling over
+> an empty node set was reported unsatisfiable; one issue with the same line
+> in `fzn_dag.mzn`), by #1363 ·
+> **Open issues** filed by this audit: #1311 (every call rescans
 > every edge, so the
 > class is slower than the two clauses per edge it replaces). Also touching
 > this family: #1309 (the engine's propagator install was quadratic in the
@@ -85,8 +86,8 @@ even if another constraint would cut it to `0..1`.
     `min(index_set(ns))`. Both call `glasgow_subgraph`, which
     `fzn_glasgow.cc:978–984` posts after `edges_from_endpoints` (shared with the
     other graph families) has refused a negative endpoint. Over an empty node
-    array the four-argument override gives the wrong answer: see [Robustness and
-    limits](#robustness-and-limits) and #1303.
+    array the four-argument override gave the wrong answer until #1363: see
+    [Robustness and limits](#robustness-and-limits) and #1303.
 
 [^xsub]: XCSP3-core has no subgraph constraint.
 
@@ -113,11 +114,11 @@ model:
 
 | Shape | Glasgow | Gecode (the stdlib decomposition) |
 |---|---|---|
-| four-argument form, no nodes (`m10`, `m17`) | `=====UNSATISFIABLE=====`, from MiniZinc itself | 2 solutions |
+| four-argument form, no nodes (`m10`, `m17`) | `=====UNSATISFIABLE=====`, from MiniZinc itself, until #1363; now 2 solutions | 2 solutions |
 | six-argument form, an endpoint of 0 (`m11`) | `=====ERROR=====`: "subgraph has a negative edge endpoint" | 5 solutions |
 | six-argument form, an endpoint of `N + 1` (`m16`) | `=====ERROR=====`: "Subgraph has an edge endpoint that is not a node" | 5 solutions |
 
-The first is a wrong answer (#1303). In the other two the stdlib reads the
+The first was a wrong answer (#1303, fixed by #1363). In the other two the stdlib reads the
 out-of-range `ns` entry as undefined, which MiniZinc's relational semantics turns into `false`,
 so the edge is forced out; its documentation asks for endpoints in `1..N`, but
 only the four-argument spelling asserts it. Through Glasgow they are errors,
@@ -306,16 +307,19 @@ are refused, and a negative endpoint is refused by the `.scp` reader and by
 
 - *No edges:* nothing installed; tested (`empty`).
 - *No nodes:* in C++ and `.scp`, fine with no edges. Through MiniZinc's
-  four-argument spelling, **wrong**: `fzn_subgraph_enum.mzn:10` computes
-  `min(index_set(ns))`, undefined on an empty set, MiniZinc turns that into
-  `false`, and the model flattens to `bool_eq(false, true)`: `UNSATISFIABLE`
-  where the answer has solutions, on both MiniZinc versions. No proof is
-  written, since the solver never sees the constraint. The six-argument spelling
-  has no `min` and is right. `fzn_dag.mzn` has the same line and the same wrong
-  answer, and the two are one defect, fixed by a guard in each file. The
-  shifting overrides of other families (`fzn_circuit.mzn`, `fzn_inverse.mzn`
-  and others) guard it with `if length(x) = 0 then true else …`. Filed as
-  #1303. The rooted graph families have a **different** defect with the
+  four-argument spelling, **wrong until #1363**: `fzn_subgraph_enum.mzn`
+  computed `min(index_set(ns))`, undefined on an empty set, MiniZinc turned
+  that into `false`, and the model flattened to `bool_eq(false, true)`:
+  `UNSATISFIABLE` where the answer has solutions, on both MiniZinc versions.
+  No proof was written, since the solver never saw the constraint. The
+  six-argument spelling has no `min` and is right. `fzn_dag.mzn` had the same
+  line and the same wrong answer, and the two were one defect (#1303), fixed
+  by #1363 with a guard in each file,
+  `if length(ns) = 0 then forall (e in index_set(es)) (not es[e])`: `true`
+  through `subgraph`, whose asserts refuse an edge with no nodes, and the edges
+  left out on a direct call. `minizinc-subgraph-empty` tests it. The shifting
+  overrides of other families (`fzn_circuit.mzn`, `fzn_inverse.mzn` and
+  others) guard with `if length(x) = 0 then true else …`. The rooted graph families have a **different** defect with the
   opposite answer: an empty `reachable`, `tree` or `path` is unsatisfiable,
   because the root must be a selected node. Their int spellings give
   `=====ERROR=====` from a C++ `prepare()` throw, where the answer is
@@ -355,8 +359,8 @@ offset of `±2⁴⁰` verifies (`proofs/constopb/big.cc`).
    three nodes over plain `0..1` variables (`large_domain_audit_test.cc:794`).
    There is no axis to vary: every position is 0/1 by contract, and the only
    wide thing a position can be is a view of a two-valued variable with a large
-   offset, which is a value range, not a width. PR #1302 (open), which re-pins
-   index-valued positions in other families `Clean`, leaves this row
+   offset, which is a value range, not a width. #1302, which re-pinned
+   index-valued positions in other families `Clean`, left this row
    `NoWidePosition`, since a selector must be `0..1`. The lane is registered as a
    ctest only under `-DGCS_LARGE_DOMAIN_GUARD=ON`, which no CI lane sets (#920),
    so in CI it is built and never run.
@@ -709,9 +713,6 @@ the propagator infers the same with proofs on and off.
 
 ### Known limitations
 
-- **A MiniZinc `subgraph(from, to, ns, es)` with no nodes is reported
-  unsatisfiable** (#1303). The six-argument spelling, the `.scp`
-  reader and the C++ API are right.
 - **It is slower than posting the two implications per edge**, by 1.6 times on a
   MiniZinc model and by a factor that grows with the graph when most of it is
   decided (#1311).
@@ -724,10 +725,9 @@ the propagator infers the same with proofs on and off.
 
 ### Next steps
 
-1. **Guard the empty node array in `fzn_subgraph_enum.mzn`**, as the other
-   shifting overrides do: `if length(ns) = 0 then true else … endif`, and add a
-   `minizinc/tests/` case with no nodes. One line; fixes a wrong answer. The same
-   line in `fzn_dag.mzn` is part of the same issue, #1303. **Do not copy the guard into the
+1. **Guard the empty node array in `fzn_subgraph_enum.mzn`.** **Done** by
+   #1363 (#1303), with `fzn_dag.mzn`'s and a `minizinc/tests/` case for
+   each. **Do not copy the guard into the
    rooted `_enum` overrides** (`fzn_reachable_enum.mzn`, `fzn_tree_enum.mzn`,
    `fzn_path_enum.mzn` and their directed forms): there `then true` would turn
    an accidentally right `UNSATISFIABLE` into a wrong satisfiable answer. Their

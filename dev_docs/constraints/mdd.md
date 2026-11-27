@@ -2,11 +2,11 @@
 
 > **Maturity** production ·
 > **Audited** 2026-10-10 at `86caad24` ·
-> **Open issues** filed by this audit: #1329 (a zero-variable diagram with an
-> empty accepting list reports solutions; filed with `RegularBacchus`'s twin;
-> fix open as #1366),
-> #1333 (the constructor did not check node indices; with `Regular`'s; fixed),
-> #1336
+> **Fixed since the audit**: #1329 (a zero-variable diagram with an empty
+> accepting list reported solutions; filed with `RegularBacchus`'s twin;
+> fixed by #1366) and #1333 (the constructor did not check node indices; with
+> `Regular`'s; fixed by #1476) ·
+> **Open issues** filed by this audit: #1336
 > (six kinds of MiniZinc shape the binding gets wrong), #1338 (the graph is
 > deep-copied at every search node; with `Regular`'s), #1339 (a wide declared
 > domain leaves one empty map entry per value for the rest of the search; with
@@ -44,10 +44,11 @@ Four things to know before touching it.
   accepted, each at the one level it was run at (6,600 at `Off`, 800 at each
   of `Definitions`, `Links` and `Inferences`); the 421 others are the first
   finding. Of 800 more at `Backtracking`, the 56 rejected are that finding's.
-- **A diagram over no variables with an empty accepting list reports
-  solutions** (#1329). Nothing propagates, since the propagator only removes
-  values. VeriPB rejects the proof. Only the C++ API and the `.scp` reader can
-  post it; MiniZinc's binding throws on the same shape instead (#1336).
+- **A diagram over no variables with an empty accepting list reported
+  solutions** until #1366 (#1329). Nothing propagated, since the propagator
+  only removes values, and VeriPB rejected the proof. Only the C++ API and the
+  `.scp` reader can post it; MiniZinc's binding throws on the same shape
+  instead (#1336). It is now an initial contradiction.
 - **It is 75 to 94 times Gecode's instructions at equal node and solution
   counts** (#1338). The graph is a nest of hash containers held as
   backtrackable state, and
@@ -86,7 +87,9 @@ used to be accepted and never read; they are now refused.
 
 - **No variables:** `nodes_per_layer = {1}`, and the empty sequence is accepted
   exactly when 0 is accepting. With node indices in range that means an empty
-  accepting list is unsatisfiable, and GCS reports solutions for it (#1329).
+  accepting list is unsatisfiable, which since #1366 GCS reports as an
+  initial contradiction (`mdd.cc:554-565`); before, it reported solutions
+  (#1329).
   An out-of-range terminal used to give the same wrong answer with proofs off
   and undefined behaviour with proofs on; the constructor now refuses it
   (#1333).
@@ -202,7 +205,7 @@ domains through `State` only, so a view is an ordinary operand. The proof
 handles views: the forward chains name each operand's own equality literal, and
 the random sweep's `view` and `bigview` shapes (`x + c` and `−x` at random
 positions) have every proof accepted at the level it was run at, apart from
-#1329's zero-variable cases.
+#1329's zero-variable cases (since fixed).
 
 ### Reification
 
@@ -501,9 +504,9 @@ XCSP3 models use values from −3 to 9, and `multilabel.mzn` negative labels.
 
 **Degenerate shapes.**
 
-- *No variables:* wrong when the accepting list is empty (#1329). The random
-  sweep produced 1,618 such instances, and every wrong solution set in it was
-  one.
+- *No variables:* wrong when the accepting list was empty, until #1366
+  (#1329). The random sweep produced 1,618 such instances, and every wrong
+  solution set in it was one.
 - *A single variable, constants, all-fixed sequences:* covered by the sweep.
 - ***A repeated variable keeps the solutions but loses generalised arc
   consistency.*** The diagram reads each position as if it were a separate
@@ -668,7 +671,7 @@ support (#1352); `MDD`'s finds the one target by `find_transition`
   the `big` shapes; distinct variables, views (`x + c`, `−x`), and transitions
   on values outside every domain. No failure at any of 73,723 nodes of 30,000
   instances, and every solution set right apart from #1329's zero-variable
-  cases. This document's fact-check ran an independent checker
+  cases (since fixed). This document's fact-check ran an independent checker
   (`tmp/fd-dd/factcheck/mdd/core/sweep/fc.cc`, seeds 100 to 115, with `−x + c`
   views, constants, empty layers and a second `MDD` over the same variables):
   no failure at 185,246 nodes. `mdd_test` also checks generalised arc
@@ -836,8 +839,9 @@ solutions.
 
 **What the tests do not cover.**
 
-- **No variables**, which is #1329. (Node indices out of range, #1333, are
-  covered by `mdd_test`'s malformed cases.)
+- **No variables** (#1329), until #1366 added `mdd_test`'s two zero-variable
+  cases. (Node indices out of range, #1333, are covered by `mdd_test`'s
+  malformed cases.)
 - **Holey initial domains**: every tested domain is an interval.
 - **Views, repeated variables and constants**: none tested.
 - **Any assertion level but `Off`.** The audit's sweep ran `Definitions`,
@@ -867,7 +871,8 @@ solutions.
 - in review (fataepyc-09, 2026-10-16; `tmp/fd-codex-1015/mdd/backtracking/`),
   the same probe at `Backtracking`, seed 61, 200 each of the plain, view,
   alias and big shapes: 744 of 800 accepted, and the 56 rejected are all
-  zero-variable instances, as many as gave a wrong solution set (#1329).
+  zero-variable instances, as many as gave a wrong solution set (#1329,
+  since fixed).
 
 This document's fact-check ran its own checker
 (`tmp/fd-dd/factcheck/mdd/core/sweep/fc.cc`):
@@ -994,7 +999,8 @@ every lemma carries the whole scope's reason while the forward chains need only
 the layers in question, a minimal reason would shrink both the lemmas and the
 removals ([Next steps](#next-steps)).
 
-**Assertion levels.** On the random sweep, every proof but #1329's is
+**Assertion levels.** On the random sweep, every proof but #1329's (since
+fixed) is
 accepted at whichever of `Definitions`, `Links` and `Inferences` it was run at
 (800 runs each, above; and 6,400 each in the fact-check), and at `Backtracking`
 (800 runs, in review), where the family writes nothing and only the backtracks
@@ -1022,13 +1028,12 @@ per-call strategy is not in the tree.
 ### Proof-logging gaps
 
 `None` in the inferences: every removal is justified at `Off`, and the
-propagator is the same with proofs on or off. But a zero-variable diagram with
-an empty accepting list is a wrong answer that the proof cannot justify, and
-VeriPB rejects it (#1329).
+propagator is the same with proofs on or off. Until #1366 a zero-variable
+diagram with an empty accepting list was a wrong answer that the proof could
+not justify, and VeriPB rejected it (#1329).
 
 ### Known limitations
 
-- **An `MDD` over no variables can report solutions it should not** (#1329).
 - **MiniZinc's `mdd` with an empty `x`, a second node at level 1, a node at a
   level outside `1..L+1`, or no nodes gives an error or undefined behaviour**
   (#1336).
@@ -1054,7 +1059,7 @@ VeriPB rejects it (#1329).
 
 ### Next steps
 
-1. **Done**: the zero-variable unsatisfiable diagram is refused (#1329, by
+1. **Done**: the zero-variable unsatisfiable diagram is a contradiction (#1329, by
    #1366) and node indices are validated (#1333, by #1476). What was proposed:
    in `prepare()`, when `n = 0` and 0 is not
    accepting, set a flag and still return `true`, so that `define_proof_model`

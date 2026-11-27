@@ -175,9 +175,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   fixed: a constant in `GlobalCardinality`'s array (#1046, found by the
   `inverse` audit; #1187), aliasing in `GlobalCardinality` and `Count` (#1191,
   #1197, #1201) and a view registered by a later constraint (#1200).
-  Re-audited 2026-10-08. Two bugs found after that are open: `Count` with `n`
-  and `y` one variable can lose solutions (#1304), and `Among` with `n` among
-  its positions can write proofs VeriPB rejects (#1308).
+  Re-audited 2026-10-08. Two bugs found after that are fixed: `Count` with `n`
+  and `y` one variable could lose solutions (#1304, fixed by #1364), and
+  `Among` with `n` among its positions could write proofs VeriPB rejected
+  (#1308, fixed by #1365).
 - [`linear.md`](linear.md) — `LinearEquality`, `LinearNotEquals`,
   `LinearLessThanEqual`, `LinearGreaterThanEqual` and their reified forms:
   twelve named classes over two base classes and one bound sweep, and the
@@ -598,10 +599,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   root taken out and restricted to the input's strongly connected components.
   It is generalised arc consistent by downward closure, and 10,000 random
   graphs found no unsupported value. Repeated variables lose that, but no
-  solutions. The audit's findings: through MiniZinc, an **empty node set is
-  unsatisfiable**, because `fzn_dag.mzn` takes `min` of an empty index set,
+  solutions. The audit's findings: through MiniZinc, an **empty node set was
+  unsatisfiable**, because `fzn_dag.mzn` took `min` of an empty index set,
   which its sibling files guard (#1303, and the four-argument `subgraph`
-  has the same defect). The propagator rebuilds everything on every call and
+  had the same defect; both fixed by #1363). The propagator rebuilds everything on every call and
   searches edges that cannot close a cycle; two changes that keep every
   inference cut 29% of the instructions on `maximum-dag` `25_04` (#1310).
   Installing any one-propagator constraint was quadratic in its trigger count,
@@ -618,9 +619,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   on 24,000 random instances). Its rows and its propagation loop are copied,
   not shared, into `Reachable` and `Dag`; nothing calls this class, and no corpus
   model posts it. The audit found a wrong answer in the front end: the
-  four-argument MiniZinc spelling over an empty node array computes the minimum
-  of an empty index set and comes out unsatisfiable, as `fzn_dag.mzn` does
-  (#1303). And the class costs more than the decomposition it stands in for:
+  four-argument MiniZinc spelling over an empty node array computed the
+  minimum of an empty index set and came out unsatisfiable, as `fzn_dag.mzn`
+  did (#1303, fixed by #1363). And the class costs more than the decomposition it stands in for:
   every call rescans every edge, so a 5×5 grid model through MiniZinc takes
   11.0 s against the stdlib clauses' 6.9 s on the same nodes, and a path of
   10,000 edges with 12 undecided is 9.4 times slower; a candidate with one
@@ -680,9 +681,10 @@ variant](TEMPLATE.md#the-presolver-variant).
   (#1307, by #1439), and a large one under the default `SCC`, whose recursive
   walk overflowed an 8 MiB stack from about 7,700 nodes (#1327, by #1440). A one-node
   `circuit` is satisfiable where MiniZinc's own
-  decomposition says not (#1319); and with prune skip switched off VeriPB can
-  reject the `SCC` proof, because two of its published certificates assume the
-  skip edges are already pruned (#1306). Until #1317 (fixed by #1438), the
+  decomposition says not (#1319); and with prune skip switched off VeriPB
+  could reject the `SCC` proof, because two of its published certificates
+  assume the skip edges are already pruned (#1306), until #1367 had the proof
+  derive those edges' absence without pruning them. Until #1317 (fixed by #1438), the
   default `SCC` propagator built a whole-scope reason on every call with
   proofs off (up to 14% of the instructions, at equal recursion and
   propagation counts), and with proofs a short-reason flag on every call
@@ -700,11 +702,12 @@ variant](TEMPLATE.md#the-presolver-variant).
   Generalised arc consistent on distinct variables under every strategy
   (brute-forced at the root over 12,000 random automata with holes, and per
   node over about 6,000). The audit found two wrong answers and three shapes of
-  rejected proof: through MiniZinc a start state other than 1 builds a
-  different automaton (#1328; enum-typed models, and reified ones on 2.10.1,
-  reach it); `Bacchus` accepts an empty sequence whose start is not final
-  (#1329), and its proofs are rejected because its scaffold leaves out three
-  kinds of published unit clause (#1331); above `Off` the default strategy
+  rejected proof: through MiniZinc a start state other than 1 built a
+  different automaton (#1328, fixed by #1361; enum-typed models, and reified
+  ones on 2.10.1, reached it); `Bacchus` accepted an empty sequence whose
+  start is not final (#1329), and its proofs were rejected because its
+  scaffold left out three kinds of published unit clause (#1331), both fixed
+  by #1366; above `Off` the default strategy
   omits the static dead lines an unambiguous NFA's solution lines need
   (#1332); and the scaffolding `Regular` writes at every level is rejected at
   `Inferences` and `Backtracking` for a variable declared as a range whose
@@ -737,8 +740,8 @@ variant](TEMPLATE.md#the-presolver-variant).
   run at, `Off` or one of the four assertion levels, since a deterministic
   diagram leaves no flag unassigned on a solution. The audit found a wrong
   answer through the C++ API and the `.scp` reader: a diagram over no
-  variables with an empty accepting list reports solutions, and VeriPB rejects
-  the proof (#1329). Node indices were not validated (a crash, #1333, now refused), and
+  variables with an empty accepting list reported solutions, and VeriPB
+  rejected the proof (#1329, fixed by #1366). Node indices were not validated (a crash, #1333, now refused), and
   MiniZinc's binding errors on six kinds of valid shape, including nodes at
   levels outside `1..L+1`, and reads past two vectors whenever N = 0 (#1336).
   It is 75 to 94 times Gecode's instructions on nonograms at equal node and
@@ -796,9 +799,9 @@ variant](TEMPLATE.md#the-presolver-variant).
   every assertion level but `Links`, where the generic #1210 (commented on)
   rejects some runs with range-declared variables. The audit found one
   wrong-answer route, in a front end: XCSP3's single-`<condition>` form
-  constrains bins no item can take, so it proves satisfiable instances
-  `UNSATISFIABLE` and loses solutions (7 of 400 against ACE and a brute
-  force; #1345). MiniZinc errors on item domains reaching outside the bins,
+  constrained bins no item can take, so it proved satisfiable instances
+  `UNSATISFIABLE` and lost solutions (7 of 400 against ACE and a brute
+  force; #1345, fixed by #1360). MiniZinc errors on item domains reaching outside the bins,
   on `var opt` models over 1-based bins and on negative load lower bounds,
   all of which its own definition constrains away, and XCSP3 aborts on
   negative sizes, limits and loads, variable loads included (#1347, the

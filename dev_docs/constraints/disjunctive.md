@@ -260,7 +260,7 @@ detection's summed recursions are 0.984× the sweep detection's (median
 The set rule is off pending #762. #1243 and #1244 changed the measured value
 of the set rule and of edge-finding, and #1275 has fixed both, but the
 design note's tables, which predate it, have not been re-taken; #1301
-(open) labels them as predating #1275.
+labelled them as predating #1275.
 
 The last four fields only change the proof, never the inferences.
 `overload_max_window` does change the inferences: it declines conflicts, with
