@@ -76,6 +76,14 @@ namespace
         const ProofLine_ & proof_line, const AllVars_ & all_vars, const Reason & reason, const Owner_ & owner, const IncMustHold_ & inc_must_hold,
         const State & state, Inference_ & inference, ProofLogger * const logger) -> PropagatorState
     {
+        // Idempotence (#1043, item 4): the MustHold arm forwards the sweep's
+        // claim, for the reason install_reified_dispatcher gives: a decided
+        // condition stays decided, so the immediate re-run takes this arm again
+        // on exactly the domains this run left. inc_must_hold is advanced by
+        // this arm alone, on its own handle. propagate_linear_not_equals never
+        // claims, and the other arms do not either. A condition or a repeated
+        // term on a variable of the sum makes a duplicate trigger, so install
+        // ignores the claim.
         return overloaded{
             [&](const evaluated_reif::MustHold & reif) {
                 // we now know the condition definitely holds, so it's a linear equality

@@ -6,13 +6,13 @@
 > #1035 (#1055) and the integer-range PRs (#1214, #1215, #1220) ·
 > **Open issues** filed by this audit: #1034 (the incremental propagator's
 > state is a heap allocation per slot per node), #1042 (the reified equality
-> ignores its bounds), #1043 (tidying, items 4 and 5 left). Filed from review:
+> ignores its bounds). Filed from review:
 > #1091 (an equality's fixpoint can take a number of sweeps linear in the
 > domain width). Already open and touching this family: #868 (cross-solver),
 > #310 (a range-literal reification condition cannot be written into the
 > model), and #1225, filed since by the integer-range audit (the same condition
 > throws with proofs on). **Fixed since the audit**: #1032, #1033, #1035,
-> #1036, #1043's first three items, #1103 (filed from review: under
+> #1036, #1043 (tidying; items 1–3 by #1075, 4 and 5 later), #1103 (filed from review: under
 > `Tabulated`, a released form built a table), and #1298 (filed from the
 > 2026-10-08 re-audit: every reified inequality threw on a partial sum or a
 > maximum that only its undecided check computes); see
@@ -31,7 +31,7 @@ first pass got wrong.
 | #1032, XCSP3 `<sum>` with `ne` | #1074 | the translation posts `LinearNotEquals` directly, so the frontend cell is ✓ and two new lanes cover the escaping shapes; the known limitation and next step are gone |
 | #1033, constant-condition `If` forms | #1077 | a constant condition is resolved per form, and a false one on `If`/`NotIf` releases the constraint ([Semantics](#semantics)); `linear_constant_test` has a row for each form and constant |
 | #1036, `gcspy`'s `≥` binding | #1073 | it posts `LinearGreaterThanEqualIff`, and `post_linear_less_equal_iff` is registered at last; Python tests exist, but CI does not run them |
-| #1043, tidying | #1075, **items 1–3 only** | the dead `pair<bool, …>` branches are gone, and the two comments are corrected (rule 8, [Options](#options)); item 4 (the idempotence-claim disagreement) and item 5 (folding `linear-slack-waking.md` in) are still open |
+| #1043, tidying | #1075 (items 1–3), then items 4 and 5 | the dead `pair<bool, …>` branches are gone, and the two comments are corrected (rule 8, [Options](#options)); the dispatcher now forwards an enforce arm's idempotence claim, as the equality already did (item 4); `linear-slack-waking.md` is folded into [Developer commentary](#slack-based-waking) (item 5) |
 | #1035, trivial reason literals | #1055, **open** at the time | nothing yet; done in [Re-audit, 2026-10-08](#re-audit-2026-10-08) |
 
 **Corrected from review**, not from a fix:
@@ -285,7 +285,8 @@ covering set. It wakes only when a covering term's contributing bound moves,
 through refined watches, instead of on every bound. It is designed to make
 identical inferences again, and the lanes that force it on pass and verify.
 The design and measurements are in [Developer
-commentary](#developer-commentary). On the corpus, turning it on at the
+commentary](#developer-commentary), under [Slack-based
+waking](#slack-based-waking). On the corpus, turning it on at the
 recommended 128 terms changed nothing measurable.
 
 None of the three changes the OPB model.
@@ -504,7 +505,7 @@ has 8 terms or more, which doubles the slots #1034 is about on
 | incremental sweep (`propagate_linear_incremental`) | `on_bounds`, every term | derived: none | 1–4 | at or above the threshold | **claims it** | only for an empty sum, via the stateless path |
 | slack-watched sweep | `scope_only`, plus refined watches on covering terms' bounds | **declared** none (`holes_affect_propagation = {}`) | 1, 3, 4 | an inequality decided at install, if slack is on | no: returns `Enable` so the watches can wake it | no |
 | not-equals (`propagate_linear_not_equals`) | `on_instantiated`, every term (#807) | derived: none | 6, 7 | equality decided false | not claimed | yes, once it has acted |
-| reified inequality (dispatcher) | the enforce direction's triggers ∪ `c` | derived | 1, 3, 4, 8, 9 | an undecided inequality | stripped: the dispatcher does not pass the sweep's claim on | on a verdict |
+| reified inequality (dispatcher) | the enforce direction's triggers ∪ `c` | derived | 1, 3, 4, 8, 9 | an undecided inequality | forwards the sweep's claim once the condition is decided (#1043; stripped before) | on a verdict |
 | reified equality, undecided | `on_change`, every term; `c` | derived: yes | 10–12 undecided; 1–3 once decided true; 6, 7 once decided false | an undecided equality | forwards the sweep's claim when decided true | on acting |
 | equality, constant row | initialiser | — | 5 | a fixed equality with no terms | — | — |
 | `Tabulated` | `install_tabulation`'s | the extensional family's | 13 | `with_consistency(Tabulated{})`, unless the form is released (#1108) | as `table.md` | as `table.md` |
@@ -524,14 +525,25 @@ Before it, 100 lanes ran with the checker silently off (#1056), but
 MiniZinc and 6,178 XCSP3 instances found no false claim. The slack-watched form
 cannot claim it, since a coarse re-wake would defeat the watches.
 
-**The two reified classes disagree about passing the claim on.** When the
-condition is undecided at install, the shared dispatcher strips an enforced
-sweep's `EnableButIdempotent`, because a re-run also re-tests the condition and
-"nobody has audited that interplay yet". The equality's hand-written undecided
-branch returns the sweep's claim unchanged once the condition is decided true.
-The harness's re-run check has not caught a problem in the `eq_if` and
-`eq_iff` lanes, but the two classes should agree (#1043, item 4); see [Next
-steps](#next-steps).
+**Both reified classes pass the claim on.** When the condition is undecided at
+install, the equality's hand-written undecided branch has always returned the
+sweep's claim once the condition is decided true. The shared dispatcher, which
+the inequality goes through, used to strip it, because a re-run also re-tests
+the condition and "nobody had audited that interplay". #1043 (item 4) did, with
+a critical review on the Fable model: a decided condition literal stays decided
+as domains shrink, so the immediate re-run takes the same arm and calls the
+same enforce function on the domains this run left; the condition reaches only
+reasons and proof lines; the undecided and deactivated arms never claim; and a
+condition on a variable of the sum makes a duplicate trigger, so install
+ignores the claim. The dispatcher now forwards it, and both code sites carry
+that audit note. Of the dispatcher's users only the reified inequality's
+enforce arms claim (comparison, equals and lex never do). Evidence: a probe
+counted thousands of forwarded claims in each of `le_if`, `le_iff`, `ge_iff`
+and `le_notif`, in both propagation modes, all passing
+`GCS_CHECK_IDEMPOTENT_CLAIMS`; a mutation that claimed without enforcing made
+the checker abort in `le_if`, `le_iff` and `ge_iff`, so the check reaches this
+path; and `linear_test` run directly, so uncapped, passes in every mode, both
+propagation modes and three seeds.
 
 **Holes affect.** Two arms observe holes. The undecided reified equality asks,
 once one term is left, whether the value that would satisfy the equality is in
@@ -1473,12 +1485,11 @@ Ranked by what they buy for what they cost. The audit's first three (#1032,
      cannot drift back to `bounds(Z)` unnoticed;
    - a #1091-shaped equality at several widths, in both arms, with proofs on
      and off.
-6. **Tidying**, the rest of #1043 (#1075 did items 1–3):
-   - decide whether the equality's undecided branch should strip the sweep's
-     idempotence claim, as the dispatcher does for the inequality (item 4);
-   - fold `linear-slack-waking.md` into this document's commentary (item 5).
-     That also means updating the comment in `propagate.cc` that cites it, so
-     it waits for a non-docs change.
+6. **Tidying**, the rest of #1043 (#1075 did items 1–3). **Done**: the two
+   reified classes now agree, both forwarding the claim (item 4; see
+   [Propagator inventory](#propagator-inventory)), and
+   `linear-slack-waking.md` is folded into [Developer
+   commentary](#slack-based-waking) (item 5).
 7. **#1042 — a bounds check in the undecided reified equality.** Cheap, and it
    would remove the one-failure probe case, but the corpus shows no benefit.
 8. **#310**, for the range-literal condition. It is the solver-wide gap, not
@@ -1501,10 +1512,6 @@ until then it divided by the changed variable's coefficient to close by RUP).
 
 ## Further reading
 
-- [`linear-slack-waking.md`](../linear-slack-waking.md): the slack-waking design,
-  why it ships off, and why an incremental cover does not help. Measured with
-  `benchmarks/linear_slack_bench`, `slack_watch` and `wake_cost`. Due to be
-  folded in here; see Next steps.
 - [`justification-techniques.md`](../justification-techniques.md): why a
   general linear row is outside Theorem 2.9, and so needs JP 3.15.
 - [`reification.md`](../reification.md) and the reified dispatcher's header:
@@ -1549,3 +1556,149 @@ produce the same solutions, not ones known to search the same tree.
 all of them trivially true. Trimming justifications would not have touched
 that; trimming reasons did both. #1055 did it: those assertions now average
 6.5 literals, and that proof is 474 MB.
+
+### Slack-based waking
+
+*Folded in from `dev_docs/linear-slack-waking.md` (#1043), which was written
+with the feature in July 2026 (#507: `73f39e3d`, 2026-07-13, and the
+follow-ups to `3c1091e8` the same day). Its measurements are from then, on
+whatever machine #507 used, and were not re-taken for this document; do not
+set them beside the [CPU performance](#cpu-performance) table's figures.*
+
+`ReifiedLinearInequality` normally wakes on every bound change of every term
+(`on_bounds` triggers) and then sweeps. For a long constraint most of those
+wakes cannot propagate anything: the constraint is quiet until the slack
+`value - min_possible` drops below the largest per-term potential. Slack-based
+waking uses the refined-watch API to wake only when a *covering* subset of the
+terms moves — the pseudo-Boolean "watch enough to cover the slack" scheme.
+
+#### The scheme
+
+For `Sum(coeff_i x_i) <= value`, after the forward sweep reaches its fixpoint:
+
+- each term's **potential** is `|coeff_i| * (ub_i - lb_i)` — the most it can still
+  raise the lower sum (positive coefficients contribute via their lower bound,
+  negative via their upper);
+- at the fixpoint every potential is `<= slack`, so with
+  `margin = slack - max_potential (>= 0)` we watch the largest potentials down
+  until the unwatched ones sum to within the margin. Then no combination of
+  unwatched moves can drop the slack below `max_potential`, so none can enable a
+  propagation, and none can violate the constraint — only a *watched* term's
+  min-contribution bound moving can, and that is exactly the literal watched
+  (`x_i >= lb_i + 1` for a positive coefficient, `x_i <= ub_i - 1` for a negative
+  one). See `rearm_linear_slack_watches` in `constraints/linear/propagate.cc`.
+
+The sweep only ever *tightens* the opposite bound to the one it watches (a
+positive-coefficient term is written on its upper bound, watched on its lower),
+so a propagator never fires its own watch. Only the wake condition changes: the
+inferences, search tree, and proof are exactly the coarse propagator's, woken
+only when a covering term moves. `linear_test`'s internal veripb check passes on
+the slack path (the `linear_constraint_*_slack` ctest variants force it on).
+
+#### Integration
+
+Only the direction that is *decided at install* — an unconditional inequality,
+or a half-reified one already fixed — takes the slack path; it bypasses the
+reified dispatcher and installs the sweep directly with `scope_only` triggers
+(so degree/adjacency still see the variables — see [`refined-triggers.md`](../refined-triggers.md) and
+issue #506) plus dynamically-armed refined watches (#505's `clear_watches` +
+`watch`). The genuinely-undecided reified case, and equality, keep the coarse
+path.
+
+#### When it is worth it — measured
+
+`benchmarks/linear_slack_bench` posts long, loose `Sum <= budget` constraints with
+mismatched coefficients and enumerates to a solution cap; the tree is identical
+whichever path runs, so it isolates per-node propagator cost. Toggle with
+`GCS_LINEAR_INCREMENTAL_THRESHOLD` / `GCS_LINEAR_SLACK_WATCH_THRESHOLD`.
+
+Representative run (`--vars 400 --budget-num 85 --cap 5000`), incremental vs slack:
+
+| sumlen | incremental | slack   | props (inc → slack) |
+|-------:|------------:|--------:|--------------------:|
+|     60 |     ~0.02 s |  ~0.02 s | ~100k → ~60k        |
+|    100 |     0.033 s | 0.031 s | 133k → 10k          |
+|    200 |     0.061 s | 0.022 s | 344k → **437**      |
+|    300 |     0.104 s | 0.027 s | 530k → 900          |
+
+So the wall-clock win is real but **confined to very long, genuinely loose
+inequalities** (roughly `sumlen >= ~128`), where it reaches 2.8–3.9x. The catch,
+and why this is not on by default:
+
+- **Wake count is not the bottleneck the incremental propagator has.** The
+  incremental sweep folds instantiated terms, so its per-wake cost is already
+  tiny; cutting the wake *count* by 6–20x buys nothing when each saved wake was
+  nearly free. Slack only wins once the constraint is long enough that even the
+  folded sweep, run once per bound event, costs more than slack's rare wakes.
+- **The per-wake re-arm is `O(n log n)`** (sort the potentials, clear, re-arm the
+  cover). On a constraint that turns *tight* during search — waking often — this
+  loses badly (measured ~5x slower than incremental at `sumlen 200`, budget 55%).
+- The install-time covering-set-size heuristic (`linear_slack_cover_size`)
+  estimates from the *initial* bounds, which does not predict a constraint that
+  is loose at the root but tight in parts of the tree. A generous cover cap (50%)
+  admits such constraints and loses; a tight cap (**15%**, the default) admits
+  only the constraints that stay loose throughout and win.
+
+#### Defaults and how to enable
+
+- `GCS_LINEAR_SLACK_WATCH_THRESHOLD` — minimum term count; default
+  `SIZE_MAX`, i.e. **off**. Recommended opt-in value: `128`.
+- `GCS_LINEAR_SLACK_WATCH_COVER_PERCENT` — maximum covering-set size as a
+  percentage of the term count; default `15`.
+
+It ships off because the win is narrow (constraints with 128+ terms are rare) and
+a mis-engagement loses on a frequently-waking constraint.
+
+#### Incremental covering-set maintenance — explored, does not help
+
+The obvious next step is to stop rebuilding the cover from scratch each wake.
+Down a branch the slack only falls and potentials only shrink, so the cover only
+ever needs to *grow*: re-arm the watches that fired and top the cover up along a
+term order fixed at install (by initial potential), reading the watched set back
+from the (backtrack-consistent) watch index — no sort, no clear, and nothing
+extra to trail. This was prototyped and measured (identical trees, proofs still
+verify). **It does not close the cliff, and makes the tight case worse:**
+
+| case (sumlen 200, vars 400) | rebuild | incremental | inc. propagator |
+|---|---:|---:|---:|
+| loose (budget 85%) | 0.023 s / 437 wakes | 0.023 s / 437 | 0.061 s |
+| tight (budget 55%) | 0.46 s / 97k wakes | **1.10 s / 309k** | 0.062 s |
+
+Two things this taught us:
+
+- **The cliff is driven by wake *count*, not the sort.** A tight constraint
+  genuinely needs a large cover, so it wakes often, and each wake pays the refined
+  watch machinery plus an `O(n)` sweep — already more than the incremental
+  propagator's cheap folded coarse wake. A refined-watch wakeup is itself about
+  **8x** the cost of a coarse-trigger wakeup (≈38 ns vs ≈4.5 ns for equivalent
+  both-bounds coverage, measured by `benchmarks/wake_cost`: identical tree, identical
+  wake count, trivial propagator body) — the extra going on `test_literal`
+  evaluation, the payload inbox, and the backtrackable watch-index edits that the
+  static coarse triggers do not need. That ~33 ns surcharge is not a rounding error
+  against the body: a whole propagation of the folded incremental sweep is only
+  ~30 ns at 15 terms rising to ~60 ns at 200 (nearly flat — it folds out
+  instantiated terms), while the stateless sweep runs ~44 ns at 15 terms to ~460 ns
+  at 200 (~2 ns/term) (`benchmarks/linear_prop_cost`). So per surviving wake,
+  slack-waking pays the dear refined mechanism *and* the unfolded stateless sweep —
+  roughly `38 + 280 ns` at 120 terms against the incremental propagator's
+  `4.5 + 43 ns`, about 6–7x — which is why it has to eliminate the vast majority of
+  wakes to break even. No cover bookkeeping changes that; slack-waking is
+  fundamentally a wake-*elimination* technique that only wins when wakes are rare
+  (loose constraints), where far fewer, dearer wakes still beat many cheap ones.
+- **A sort-free cover is a non-minimal cover.** The rebuild's per-wake sort by
+  *current* potential buys the *minimal* cover; a fixed initial-potential order
+  watches large-initial-but-now-small terms and misses small-initial-but-still-
+  large ones, so it covers with *more* watches → 3x the wakes here. Keeping the
+  cover minimal needs current-potential selection, i.e. the sort — there is no
+  sort-free minimal cover, and the refined-watch API offers only add and
+  clear-all, no remove-one, so even "un-watch the stale ones" reduces to a rebuild.
+
+So the rebuild (current implementation) is the better simple version, and the
+right mitigation for the cliff is the engagement heuristic *not* turning slack on
+for tight constraints — which the 15% cover cap already does. A folded per-wake
+sweep (`propagate_linear_incremental` instead of the stateless one) would cut the
+`O(n)` sweep cost, but only helps in *deep* search (where the active set is small)
+and does nothing for the refined-watch per-wake overhead, so it is unlikely to
+move slack-waking into the tight regime; it is not worth the two-backtrackable-
+structures integration on this evidence. Tracked as the open direction for #507,
+but de-prioritised by these measurements.
