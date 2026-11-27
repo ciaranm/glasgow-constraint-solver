@@ -176,7 +176,7 @@ reverse, in the code: they share no propagator and no position encoding.
 
 [^xsub]: No size: `SubCircuit` with a fresh size variable over `2..n`.
     Constant or variable size: `SubCircuit` with that size, plus
-    `size ≥ 2` (`xcsp_glasgow_constraint_solver.cc:784–810`). A non-zero
+    `size ≥ 2` (`xcsp_glasgow_constraint_solver.cc:804–830`). A non-zero
     `startIndex` is `s UNSUPPORTED`, as it is for ACE ("unimplemented case for
     circuit"). A one-node `<circuit>` with no size is also `s UNSUPPORTED`
     ("variable has lower bound > upper bound": the size variable would be

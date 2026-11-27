@@ -157,12 +157,12 @@ What each front end posts, for when one of them gets a switch:
 | | two-term `int_lin_eq` / `int_lin_ne` with unit coefficients | `Equals` / `NotEquals`, possibly over an offset view (`:690–712`) | only if both operands' bounds are within `{0, 1}` |
 | | two-argument `bool_xor` | `NotEquals` (`:864–872`) | yes, but neither MiniZinc version emits it: `flatzinc_builtins.mzn` declares only the three-argument form. A top-level `a xor b` flattens to `bool_not`, and an explicit `constraint bool_xor(a, b)` to `bool_xor(a, b, true)`, which is posted as `EqualsIff{a, b, 1 ≠ 1}` and skipped as reified (Detection, item 2) |
 | | three-argument `bool_xor`, `bool_eq_reif`, `int_eq_reif`, `int_ne_reif` | `EqualsIff` (`:611–616`, `:776–781`, `:864–870`) | no: `skipped_reified` (#983's comment of 2026-09-21) |
-| XCSP3 | top-level `xor(...)` | `ParityOdd` (`xcsp_glasgow_constraint_solver.cc:1832–1838`) | yes |
-| | top-level `eq`, `ne`, `iff` | `Equals` / `NotEquals` (`:1743–1760`, `:1851–1858`) | yes, over `{0, 1}` operands |
-| | a condition `(eq, …)` / `(ne, …)` | `Equals` / `NotEquals` (`:1242`, `:1245`) | yes, over `{0, 1}` operands |
-| | any other top-level intension | `Equals{r, 1}` over its reified 0/1 result (`:1863`) | yes, and every such row shares the constant atom `1 = 0`, so they all join one component (Detection, item 7) |
-| | `not(...)` inside an expression | `a + r = 1` as a `LinearEquality` (`:1444–1448`) | no: a linear equality is not read |
-| | `xor` inside an expression | `ParityOdd` over the arguments and an auxiliary `not_r`, with `r + not_r = 1` as a `LinearEquality` (`:1588–1602`) | the `ParityOdd` row, yes. The link `r ⊕ not_r = 1` is a linear equality, which the scan does not read, so `r` is never joined to the row |
+| XCSP3 | top-level `xor(...)` | `ParityOdd` (`xcsp_glasgow_constraint_solver.cc:1921–1927`) | yes |
+| | top-level `eq`, `ne`, `iff` | `Equals` / `NotEquals` (`:1833–1850`, `:1940–1948`) | yes, over `{0, 1}` operands |
+| | a condition `(eq, …)` / `(ne, …)` | `Equals` / `NotEquals` (`:1331`, `:1334`) | yes, over `{0, 1}` operands |
+| | any other top-level intension | `Equals{r, 1}` over its reified 0/1 result (`:1952`) | yes, and every such row shares the constant atom `1 = 0`, so they all join one component (Detection, item 7) |
+| | `not(...)` inside an expression | `a + r = 1` as a `LinearEquality` (`:1533–1537`) | no: a linear equality is not read |
+| | `xor` inside an expression | `ParityOdd` over the arguments and an auxiliary `not_r`, with `r + not_r = 1` as a `LinearEquality` (`:1677–1691`) | the `ParityOdd` row, yes. The link `r ⊕ not_r = 1` is a linear equality, which the scan does not read, so `r` is never joined to the row |
 | `gcspy` | `post_xor` | `ParityOdd` | n/a, no presolver plumbing |
 | `.scp` | `parity` | `ParityOdd` | yes |
 | | `equals` / `not_equals` | `ReifiedEquals{x, y, MustHold or MustNotHold, false}` (`scp_reader.cc:302`, `:517-519`) | yes (a `not_equals` was lifted with the wrong polarity until #1381 was fixed) |

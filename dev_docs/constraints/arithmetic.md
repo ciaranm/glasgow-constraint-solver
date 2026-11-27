@@ -182,7 +182,7 @@ Degenerate shapes, per class:
     models posts `int_plus`. Nothing posts `Minus`.
 [^xplus]: The XCSP3 intension walker posts `add` and `sub` as
     `LinearEquality`s into auxiliary results
-    (`xcsp_glasgow_constraint_solver.cc:1386-1409`); it never posts either
+    (`xcsp_glasgow_constraint_solver.cc:1476-1499`); it never posts either
     class.
 [^cplus]: CPMpy's upstream GCS interface, as copied on 2026-09-23. Every
     comparison whose left-hand side is a `sum` is caught first and posted as a
@@ -197,7 +197,7 @@ Degenerate shapes, per class:
 [^xdiv]: The intension walker gives `div` and `mod` an auxiliary result over
     `[−M, M]`, with `M` the largest magnitude of the dividend's bounds for
     `div` and of the divisor's for `mod`
-    (`xcsp_glasgow_constraint_solver.cc:1526-1541`). So an XCSP3 `div`'s
+    (`xcsp_glasgow_constraint_solver.cc:1616-1632`). So an XCSP3 `div`'s
     quotient always spans zero, and a `div` whose dividend's domain contains 0
     is the shape of #1065. Since #1081 a dividend in `[0, n]` (or `[−n, 0]`)
     pins the quotient's sign once the divisor's is decided; one that spans

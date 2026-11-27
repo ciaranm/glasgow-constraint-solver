@@ -162,7 +162,7 @@ profit})`.
     or `P` arrives as an integer literal, which `arg_as_var` makes a constant,
     which #1229 crashed with proofs on at `AssertionLevel::Off` until it was
     fixed. `knapsacktest.mzn` is the one test.
-[^xcsp]: `buildConstraintKnapsack` (`xcsp_glasgow_constraint_solver.cc:820–845`)
+[^xcsp]: `buildConstraintKnapsack` (`xcsp_glasgow_constraint_solver.cc:840–865`)
     creates an auxiliary total per condition, posts the two-row `Knapsack`, and
     posts each `<condition>` on its auxiliary (`le`, `lt`, `eq`, `ge`, `gt`,
     `ne`, an interval, or a variable operand; a set is reported unsupported).

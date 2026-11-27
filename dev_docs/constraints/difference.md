@@ -115,7 +115,7 @@ Degenerate cases, each checked:
     produces a half-reified donor, because `minizinc/mznlib/` declares no
     `*_imp` predicate ([`comparison.md`](comparison.md)'s [^imp]) and XCSP3's
     binding turns a top-level `imp` into an unreified `Or` over a fully
-    reified comparison (`xcsp_glasgow_constraint_solver.cc:1841-1849`; the
+    reified comparison (`xcsp_glasgow_constraint_solver.cc:1930-1938`; the
     `*If` row of `comparison.md`'s frontend table).
 [^cpmpy]: CPMpy has no such global, and `gcspy` binds no
     `DifferenceConstraints` (no hit for `difference` anywhere under `python/`).

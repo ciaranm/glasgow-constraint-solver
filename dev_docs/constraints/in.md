@@ -133,7 +133,7 @@ constructors, `In(var, vars)` and `In(var, vals)`, leave one list empty.
     (`:1080`), which posts `In`. `xcsp/tests/sum_not_equals.xml` has one, `0 3`.
 
 [^xin]: `in(x, {…})` and `notin` in an intension go to a unary `Table` and
-    `NegativeTable` (`xcsp_glasgow_constraint_solver.cc:1809–1824`), not here.
+    `NegativeTable` (`xcsp_glasgow_constraint_solver.cc:1898–1913`), not here.
 
 [^member]: `fzn_member_int.mzn` and `fzn_member_bool.mzn` call the builtins,
     and `fzn_glasgow.cc:1185–1188` posts `In{var, vars}`. A `par` array
