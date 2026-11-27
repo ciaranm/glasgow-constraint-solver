@@ -1446,19 +1446,25 @@ standing regression test.
       (see the `adjacent_find` site in
       `all_different/gac_all_different.cc` and
       `install_clique_duplicate_contradiction_initialiser` in
-      `all_different/encoding.cc`).
+      `all_different/encoding.cc`). `NotEquals`, `LessThan`,
+      `GreaterThan`, `Circuit` and `Inverse` take this route too: they
+      used to throw, until #1047 found front ends legitimately posting
+      the shape (MiniZinc whenever a model equates two arguments, XCSP3
+      through intension), so an aliased post is now unsatisfiable rather
+      than an error (`circuit/circuit_dup_test.cc`).
     - **Throw `InvalidProblemDefinitionException`** at construction
       when alias has no meaningful semantics, the propagator path is
-      unsafe, or the proof encoding can't tolerate it. The Bucket A
-      family — `NotEquals`, `LessThan`, `GreaterThan`, `Circuit`,
-      `Inverse`, `innards::MultiplyBC` (via `Multiply`), `SmartTable` `BinaryEntry` — uses this.
+      unsafe, or the proof encoding can't tolerate it. `SmartTable`'s
+      `BinaryEntry` with both ends on one underlying variable is the
+      remaining user of this pattern. (`Multiply` used to throw as
+      well, through `innards::MultiplyBC`; it now handles aliases, the
+      `xxy`, `xyx` and `xxx` shapes in `multiply_test.cc`.)
       By convention the check is gated on
       `! is_constant_variable(...)` so two slots pinned to the same
       constant remain a well-formed (if often trivially infeasible)
       model. Test with a `try { ... } catch (const
       InvalidProblemDefinitionException &) { ... }` block (see
-      `circuit/circuit_dup_test.cc`,
-      `smart_table_dup_test.cc` for the small-binary pattern).
+      `smart_table/smart_table_dup_test.cc`).
 
    The threshold for "alias" depends on the constraint. For most
    constraints, the structural variant `operator==` is the right
@@ -1483,8 +1489,8 @@ standing regression test.
    over a contiguous slice of the sorted cover, the GAC arm gives each
    entry its own value node — and a repeated value doubled the demand
    for it, losing solutions and emitting an inference VeriPB rejected
-   (#922). It took the same three-way choice and the same answer as a
-   Bucket A alias: `InvalidProblemDefinitionException` at construction,
+   (#922). It took the same three-way choice and the same answer as an
+   aliased `BinaryEntry`: `InvalidProblemDefinitionException` at construction,
    `sort` plus `adjacent_find` as `AllDifferent` does it. And while you
    are there, check the sizes of argument lists that are indexed against
    each other: the same constructor let `values` and `counts` differ in

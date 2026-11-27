@@ -267,7 +267,14 @@ override throws an uncaught `runtime_error`, so `main()` catches
 parser might throw on, and
 `InvalidProblemDefinitionException` for a constraint whose constructor
 rejects what a valid instance posted (#1047): both are reported as
-`s UNSUPPORTED`, since the instance is not at fault.
+`s UNSUPPORTED`, since the instance is not at fault. A rejection that
+waits for the domains, in a constraint's `prepare()`, happens inside
+`solve_with()` instead, and the same two exceptions are reported the same
+way there; any other gcs exception from the solve is reported as
+`s UNKNOWN` with the error on a `c` line, our failure rather than the
+instance's. Every path stops the timeout thread first, since destroying it
+while joinable terminates (`xcsp_cumulative_negative_length` and its
+`_timeout` lane, #1493).
 
 Constraint forms we *partially* support get the same treatment for
 the unsupported cases — e.g. `noOverlap` outside the 1D / 2D

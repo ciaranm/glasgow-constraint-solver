@@ -104,7 +104,7 @@ Four things to know before touching it.
 
 **`Circuit(succ)`**, `n = |succ|`: `succ` is a permutation of `0..n-1` whose
 single cycle visits every node. Values are 0-based; each successor's domain
-is narrowed to `0..n-1` before search (`define_bound`, `circuit.cc:126–132`),
+is narrowed to `0..n-1` before search (`define_bound`, `circuit.cc:119–125`),
 so a domain declared wider is accepted.
 
 - **`n = 1`**: `[0]`, the self loop, is the one solution, deliberately (#254;
@@ -176,7 +176,7 @@ reverse, in the code: they share no propagator and no position encoding.
 
 [^xsub]: No size: `SubCircuit` with a fresh size variable over `2..n`.
     Constant or variable size: `SubCircuit` with that size, plus
-    `size ≥ 2` (`xcsp_glasgow_constraint_solver.cc:784–810`). A non-zero
+    `size ≥ 2` (`xcsp_glasgow_constraint_solver.cc:804–830`). A non-zero
     `startIndex` is `s UNSUPPORTED`, as it is for ACE ("unimplemented case for
     circuit"). A one-node `<circuit>` with no size is also `s UNSUPPORTED`
     ("variable has lower bound > upper bound": the size variable would be
@@ -667,7 +667,7 @@ back edges per node visited, and re-walks every chain in
 region-allocated arrays. `SubCircuit` walks the fixed edges from scratch every call (a
 comment says so and calls the incremental fold the obvious next step), and
 its `SCC` arm rebuilds both reachability walks every call. A comment on
-`with_prune_root()` (`subcircuit.hh:197–201`) records that the plain walk,
+`with_prune_root()` (`subcircuit.hh:199–205`) records that the plain walk,
 without shaving, was already 87–98% of all propagation time on the Challenge
 `subcircuit` families, a figure from #788's development and not re-measured
 here. Until #1317, `Circuit` `SCC` also materialised a whole-scope reason on
@@ -1447,8 +1447,9 @@ solver's, and their soundness is argued in **Why it is true** and in the note.
   `m` the non-constant successors, plus `recover_am1_from_pairs`' induction,
   and the first at-least-one pulls in `n − 1` of them, so `O(n²)` lines per
   value and `O(n³)` in all; only the final at-least-one `pol` has `O(n)`
-  terms. The comment at `subcircuit_base.hh:71` says "O(n) rows per value",
-  which is the `pol`, not the derivation. Each successor's at-least-one line in
+  terms. The comment at `subcircuit_base.hh:71-74` says the same: it used to
+  say "O(n) rows per value", which is the `pol`, not the derivation, until
+  #1489 corrected it. Each successor's at-least-one line in
   the pigeonhole has a term per value of its **declared** range, so a
   successor declared wide makes the proof grow linearly in the declared width
   during search (see [Interval efficiency](#interval-efficiency), point 3;

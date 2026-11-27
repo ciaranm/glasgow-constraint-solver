@@ -403,7 +403,7 @@ Six chain cases, all `none`: `regular_sat` (a parity automaton),
 `regular_unsat` (an unreachable accepting state), `regular_ternary_sat` (a
 sum-mod-3 automaton over `0..2`), `regular_narrow_domain_sat` (since #1409,
 below), and since #1335 the two non-deterministic ones below
-(`verified_encodings/scp_cases/CMakeLists.txt:406-431`). They chain-verify
+(`verified_encodings/scp_cases/CMakeLists.txt:407-432`). They chain-verify
 because the state flags carry cake's names; they stay `none` because the
 transition literals are spelt over the lazy bit encoding where cake uses eager
 `=` literals (the case comment's #358). The first four are deterministic.

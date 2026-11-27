@@ -394,8 +394,8 @@ change what `consistency::Auto` sees.
   lie in `±(2⁶⁰ − 1)`. Since #1215 so must the value in every literal and in
   the reification or condition, one past the top included, because `x ≤ v` is
   stored as `x < v + 1`. The four classes' literal constructors check this and
-  throw `IntegerOverflow` otherwise (`logical.cc:483-484` and the like, at
-  `86caad24`); the variable constructors go through them.
+  throw `IntegerOverflow` otherwise (`logical.cc:480-481` and the like); the
+  variable constructors go through them.
   `integer_ranges_test` checks an `Or` literal and an `AndIf` condition at
   both ends.
 - **Overflow.** The `pos` / `neg` rows carry the coefficient `n`, the number of

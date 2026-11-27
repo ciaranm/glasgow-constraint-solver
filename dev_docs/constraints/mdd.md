@@ -76,7 +76,7 @@ An assignment is accepted when, starting at node 0 of layer 0, every
 after `vars[n − 1]` is in `accepting_terminals`. Node 0 of layer 0 is the root;
 there is no separate "true" node, and any subset of the last layer can accept.
 
-The constructor (`mdd.cc:448–486`) checks that `nodes_per_layer` has `n + 1`
+The constructor (`mdd.cc:448–484`) checks that `nodes_per_layer` has `n + 1`
 entries and starts with 1, that `layer_transitions` has `n` layers and each has
 exactly `nodes_per_layer[i]` node maps, and every transition value against
 `±(2⁶⁰ − 1)` (`require_bounded`, since #1215). Since #1333 it also checks that

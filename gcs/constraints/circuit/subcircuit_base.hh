@@ -72,9 +72,9 @@ namespace gcs::innards::subcircuit
      * O(n²) lines per value: each value's at-most-one is a pairwise RUP per pair of
      * variables, folded by recover_am1_from_pairs, and only the closing at-least-one pol
      * has O(n) terms. Each value's at-most-one is cached and reused by every pigeonhole
-     * that needs it, so it is worth doing once at ProofLevel::Top and keeping: a proof line stays valid at every later node, and
-     * re-deriving it would only bloat the log. Held by shared_ptr and mutated through it,
-     * as circuit_scc.cc's caches are.
+     * that needs it, so it is worth doing once at ProofLevel::Top and keeping: a proof
+     * line stays valid at every later node, and re-deriving it would only bloat the log.
+     * Held by shared_ptr and mutated through it, as circuit_scc.cc's caches are.
      */
     struct SCCProofCache
     {

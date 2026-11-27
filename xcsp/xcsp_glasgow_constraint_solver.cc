@@ -2231,13 +2231,37 @@ auto main(int argc, char * argv[]) -> int
                 .restarts = restarts},
             options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt, &abort_flag);
     }
+    // Each of these must stop the timeout thread before returning, since
+    // destroying it while it is joinable terminates.
     catch (const innards::IntegerOverflow & e) {
         // Arithmetic during search over in-range values that does not fit, which
-        // an arithmetic constraint may report (dev_docs/integer-ranges.md). The
-        // timeout thread must be stopped before it is destroyed.
+        // an arithmetic constraint may report (dev_docs/integer-ranges.md).
         stop_timeout_thread();
         cout << "s UNSUPPORTED" << endl;
         cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const InvalidProblemDefinitionException & e) {
+        // A constraint rejecting, once the domains are known, what the instance
+        // posted (say, a cumulative length that may be negative): unsupported,
+        // as the same rejection at parse time is (#1047, #1493).
+        stop_timeout_thread();
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const UnimplementedException & e) {
+        stop_timeout_thread();
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const MessageException & e) {
+        // Anything else is our failure rather than the instance's, but it is
+        // still reported rather than left to abort (#1493).
+        stop_timeout_thread();
+        cout << "s UNKNOWN" << endl;
+        cout << "c error: " << e.what() << endl;
         return EXIT_FAILURE;
     }
 

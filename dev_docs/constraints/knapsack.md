@@ -162,7 +162,7 @@ profit})`.
     or `P` arrives as an integer literal, which `arg_as_var` makes a constant,
     which #1229 crashed with proofs on at `AssertionLevel::Off` until it was
     fixed. `knapsacktest.mzn` is the one test.
-[^xcsp]: `buildConstraintKnapsack` (`xcsp_glasgow_constraint_solver.cc:820–845`)
+[^xcsp]: `buildConstraintKnapsack` (`xcsp_glasgow_constraint_solver.cc:840–865`)
     creates an auxiliary total per condition, posts the two-row `Knapsack`, and
     posts each `<condition>` on its auxiliary (`le`, `lt`, `eq`, `ge`, `gt`,
     `ne`, an interval, or a variable operand; a set is reported unsupported).
@@ -471,7 +471,7 @@ interior-value and terminal `pol`s (rules 3 to 6). The labels are cake's, by
 ### Cake conformity
 
 Two chain cases, `knapsack_sat` and `knapsack_unsat`, both `none`
-(`verified_encodings/scp_cases/CMakeLists.txt:647–648`); both pass the full
+(`verified_encodings/scp_cases/CMakeLists.txt:761–762`); both pass the full
 workflow-2 chain at `86caad24` (`tmp/fd-dd/knapsack/chain/`). The family's four
 rows are label for label and term for term the rows cake writes (in a different
 term order); `opbdiff --match-labels` differs only on the shared 0/1 variable
