@@ -463,10 +463,11 @@ are always the verbose ones and the two cannot drift apart that way.
   `multiply_square_sat` byte-match and run `strict`, and the other five differ
   only by the second class, on `[v ≥ 0]` terms and on order literals at a
   bound, which their comment now says. For `Divide` and `Modulus`, #1066's
-  tidying re-ran all 23 cases in `strict` and `aux` (2026-11-25, same cake):
-  every one chain-verifies, and every difference is one of the two classes
-  (each case has the four `eq0` definition rows of the first), so they stay
-  `none` and their comment now says why.
+  tidying re-ran all 23 cases in `strict`, and two of them in `aux`
+  (2026-11-25, same cake): every one chain-verifies, and every difference is
+  one of the two classes (each case has the four `eq0` definition rows of the
+  first, which `aux` does not excuse either), so they stay `none` and their
+  comment now says why.
 - **The chain never isolates `Multiply`'s bounds proofs.** All seven
   `multiply` cases are tiny, so under the default `Auto` they tabulate, and
   the bounds propagator runs beside a GAC table. Whether any bounds inference

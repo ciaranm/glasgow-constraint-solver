@@ -1447,8 +1447,9 @@ solver's, and their soundness is argued in **Why it is true** and in the note.
   `m` the non-constant successors, plus `recover_am1_from_pairs`' induction,
   and the first at-least-one pulls in `n − 1` of them, so `O(n²)` lines per
   value and `O(n³)` in all; only the final at-least-one `pol` has `O(n)`
-  terms. The comment at `subcircuit_base.hh:71` says "O(n) rows per value",
-  which is the `pol`, not the derivation. Each successor's at-least-one line in
+  terms. The comment at `subcircuit_base.hh:71-74` says the same: it used to
+  say "O(n) rows per value", which is the `pol`, not the derivation, until
+  #1489 corrected it. Each successor's at-least-one line in
   the pigeonhole has a term per value of its **declared** range, so a
   successor declared wide makes the proof grow linearly in the declared width
   during search (see [Interval efficiency](#interval-efficiency), point 3;
