@@ -1025,7 +1025,7 @@ is wide was one that could not survive it.
 `gcs/large_domain_audit_test.cc` now carries a second table, twenty rows: every
 value order against a fixed variable order, and every variable order against a
 fixed value order, so a row names one heuristic and nothing else. It needs no
-stopping rule of its own — `solve_with_state()` calls `branch_generator.begin()`
+stopping rule of its own — the search calls the brancher's `begin()`
 *before* the trace callback, and `begin()` runs the value order up to its first
 `co_yield`, so the existing "stop at the root" probe has already made exactly one
 branching decision by the time it returns.

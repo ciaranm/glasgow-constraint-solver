@@ -15,8 +15,8 @@ the restart cutoff is "infinite", no weighting observer is attached, and no
 Code map (cited throughout):
 
 - `gcs/restarts.{hh,cc}` — `RestartSchedule` (the cutoff sequence).
-- `gcs/solve.cc` — the restart driver loop and `solve_with_state` recursion,
-  including reduced-nld extraction.
+- `gcs/solve.cc` — the restart driver loop and the depth-first search
+  (`DepthFirstSearch`), including reduced-nld extraction.
 - `gcs/solve.hh` — `SolveCallbacks::restarts`.
 - `gcs/variable_weighting.{hh,cc}` — `WeightingState`, `VariableWeighting` and
   the concrete schemes.
@@ -27,9 +27,11 @@ Code map (cited throughout):
 
 ## The restart loop
 
-A single recursive depth-first search, `solve_with_state` in `solve.cc`, serves
+A single depth-first search, `DepthFirstSearch` in `solve.cc`, serves
 all three modes (decision, enumeration, optimisation) with and without restarts
-— there is no duplicated search loop. The mechanism is a three-valued return:
+— there is no duplicated search loop. It keeps the path from the root on a
+stack of its own rather than recursing, so how deep it can go is limited by
+memory, not by the call stack (#1085). The mechanism is a three-valued return:
 
 ```cpp
 enum class SearchResult { Complete, Stop, RestartCutoffHit };
@@ -42,17 +44,17 @@ root, but we are *not* done". It replaces the old `bool` (`Complete`=true,
 `Stop`=false) and mirrors the Glasgow Subgraph Solver's searcher.
 
 A `RestartState` (conflicts seen this pass, the cutoff, an enabled flag) is
-threaded through the recursion. The cutoff is checked at node entry; the conflict
+shared by every node. The cutoff is checked at node entry; the conflict
 counter is incremented on every dead end (a propagator wipeout *or* an objective
-bound failure). When the budget is spent the node returns `RestartCutoffHit`,
-which propagates up frame by frame to the root.
+bound failure). When the budget is spent the node finishes with `RestartCutoffHit`,
+which propagates up node by node to the root.
 
 The driver in `solve_with` is then just:
 
 ```cpp
 do {
     restart.conflicts_since_restart = 0;
-    search_result = solve_with_state(0, ..., restart, nogood_store.get(), {}, ...);
+    search_result = search.run_pass();
     if (search_result == SearchResult::RestartCutoffHit) {
         ++stats.restarts;
         for (auto & observer : propagators.conflict_observers())
@@ -181,7 +183,7 @@ literals carries straight over to arbitrary `=`/`≠`/`≥`/`<`/`∈`/`∉` lite
   the growable, **engine-owned** backing store. When restarts are enabled,
   `solve_with` installs one empty `Nogoods` over the store
   (`innards::nogoods_over_learned_store`) before the model is
-  finalised, holds the store, and threads a `NogoodStore*` into the recursion.
+  finalised, holds the store, and hands a `NogoodStore*` to the search.
   It is not user-posted, and is in `innards` so that it cannot be (#1393): a
   nogood added anywhere but a restart boundary, after its derivation, is
   either never armed or enforced without a proof. For parallel each thread
@@ -224,12 +226,12 @@ first (`x==v` then `x!=v`, or `x<=v` then `x>v`), so descending into it is a
 sibling's own recorded nogood re-derives it on the next pass.
 
 This is threaded as a `reduced_prefix` (a `vector<IntegerVariableCondition>` of
-the kept positive decisions) passed down the recursion. A descended sibling is a
+the kept positive decisions) passed down from each node to its children. A descended sibling is a
 droppable negative iff it is the second sibling and equals the negation of the
 first:
 
 ```cpp
-bool negative_flip = sibling_index == 1 && first_sibling && guess == ! *first_sibling;
+bool negative_flip = node.sibling_index == 1 && node.first_sibling && guess == ! *node.first_sibling;
 ```
 
 This is robust across literal kinds: `!(x<=v)` is `{GreaterEqual, v+1}` = `x>v`,
@@ -253,7 +255,7 @@ Deeper nogoods drop more negatives, so the shrink grows with restart depth.
 reaches the proof like any other literal. `value_order::reject_random_interval`
 branches that way (`solve_test.cc` covers it). The extraction's guard against a
 sibling that is not a plain condition now skips only proof-scaffolding literals
-(`solve.cc:266-270`).
+(`solve.cc:444-448`).
 
 ## The proof lifecycle
 
@@ -289,7 +291,7 @@ Three things are non-obvious:
    conflict (a genuine dead end or an excluded solution), which makes the plain nld
    nogood for it RUP, exactly like a real refutation's. That nogood stops a later
    pass re-entering and re-counting, so each solution is found, counted, and
-   `solx`'d exactly once. This is why `solve_with_state` can keep searching past a
+   `solx`'d exactly once. This is why the search can keep searching past a
    solution while restarting, with no special blocking clause.
 
 ## Testing

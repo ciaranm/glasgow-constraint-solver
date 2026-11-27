@@ -99,7 +99,7 @@ clone's `run` once. A caller that passes no stats block still gets one.
 
 **When it runs.** As every presolver does: after `create_propagators`, after
 the proof model is finalised, and after the posted constraints' initialisers
-(`solve.cc:373`). Nothing has propagated yet. If an initialiser refuted the
+(`solve.cc:571`). Nothing has propagated yet. If an initialiser refuted the
 model, no presolver runs. After `run` returns, `solve_with` initialises
 whatever it installed before the next presolver runs (`:377-397`). This one
 installs no initialiser. `choose_optional_interior_pruning()` runs after the
@@ -812,7 +812,7 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
   - **The subproblem's own `a` lines carry that search's results.** At
     `Definitions`, `Links` and `Inferences` its propagation stays in the
     proof as assertions, and is never deleted: presolvers run at the
-    logger's initial proof level 0 (`solve.cc:377-378`,
+    logger's initial proof level 0 (`solve.cc:575-576`,
     `proof_logger.cc:179`), above `Off` the subproblem enters no level
     (`auto_table.cc:46`, `:99`), and the main search forgets only deeper
     ones. At `Backtracking` no inference is written. Once those lines are
@@ -899,7 +899,7 @@ selector introduced, a cover derived, a propagator installed, and a refutation.
   scope that propagation leaves standing.
 - **Posts.** Nothing. `run` returns `false`, `solve_with` skips the search
   and `choose_optional_interior_pruning()`, and concludes unsatisfiable
-  (`solve.cc:378-381`, and the `else` branch after the search).
+  (`solve.cc:576-579`, and the `else` branch after the search).
 - **Derived mode.** n/a.
 - **Why it is true.** The cover with no disjuncts is the empty clause: every
   assignment of the scope was refuted by propagation somewhere in the

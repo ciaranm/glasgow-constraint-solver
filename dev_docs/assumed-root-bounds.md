@@ -11,8 +11,8 @@ lines, and the one rule a justification writer has to follow.
 ## The call
 
 The logger does not try to work out what "the root" means. The search tells it
-so, with `ProofLogger::assume_current_bounds(state)`. `solve_with_state` in
-`gcs/solve.cc` makes that call at depth 0, after propagation succeeds. That
+so, with `ProofLogger::assume_current_bounds(state)`. `DepthFirstSearch::enter_node()`
+in `gcs/solve.cc` makes that call at depth 0, after propagation succeeds. That
 point has three relevant properties:
 
 - **No guesses.** The call throws if any guess is active. VeriPB has no

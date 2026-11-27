@@ -84,7 +84,7 @@ Five things to know before touching it.
 `ParitySystemGathering{stats}` is a `Presolver`. `Problem::add_presolver`
 clones it, and `solve_with` runs it after `create_propagators`, after the proof
 model is finalised, and **after the root initialisers have run**
-(`solve.cc:373–378`). Then it runs the initialisers that it installed
+(`solve.cc:571–576`). Then it runs the initialisers that it installed
 (`:391`), and only after the last presolver does it call
 `choose_optional_interior_pruning()` (`:407`). `run` never returns `false`, so
 the presolver never refutes a model itself. A contradiction it makes visible
@@ -556,7 +556,7 @@ scratch.
 pair.
 
 **What it observes.** Its pass runs before `choose_optional_interior_pruning()`
-(`solve.cc:407`), so what it installs is counted. Nothing is added or lost, but
+(`solve.cc:605`), so what it installs is counted. Nothing is added or lost, but
 the observations move from one constraint to another:
 
 - **The system's sensitivity is the donors'.** Its triggers are `add_trigger_for`
@@ -1027,7 +1027,7 @@ The summary line separates the cases:
   added; or root initialisation failed, so no presolver ran (`p5-evidence`:
   `Abs{v, v − 2}` gives no block); or an earlier presolver returned `false`,
   or the initialisers an earlier presolver installed failed, so no later one
-  ran (`solve.cc:378–393`; the fact-check's probe, an `AutoTable` over an
+  ran (`solve.cc:576–591`; the fact-check's probe, an `AutoTable` over an
   unsatisfiable scope added first, gives no block).
 
 That three-way split holds for the printed `Stats` only. **A caller's own block
@@ -1358,7 +1358,7 @@ elimination, which runs before any unit is inferred.
 - **Quadratic in the XOR structure's size** (#1380; #1309's engine term is
   fixed by #1442), and the pass
   cannot be stopped: `Presolver::run` takes no abort flag (`presolver.hh:32`;
-  `solve.cc:378` passes none), so an abort flag, and so any `--timeout`, does
+  `solve.cc:576` passes none), so an abort flag, and so any `--timeout`, does
   not reach it (#816).
   6.69 s at 32,000 two-row components is spent before any limit is checked.
 - **Not chain-portable for equality-type literals over `{0, 1}` variables**

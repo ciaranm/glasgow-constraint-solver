@@ -506,13 +506,13 @@ inference. Concretely:
   eventually arrive on all our toolchains they will improve the cold-path
   vocabulary, not change this rule.)
 - **Watch for invisible copies.** Copying a `std::function` deep-copies
-  every capture. The archetype was `solve_with_state`: the expression
+  every capture. The archetype was the search in `solve.cc`: the expression
   `callbacks.branch ? callbacks.branch : <default>` materialised a copy of
   the branch callback — and of everything the composed heuristics captured,
   including a vector of all the branch variables — at every search node, and
   rebuilt the entire default heuristic per node when no callback was set.
   The fix is the shape to reuse: resolve the callback once before search
-  starts, then invoke the lvalue in the recursion.
+  starts, then invoke the lvalue at each node.
 - **Copy semantics are part of a closure's interface.** Because a
   `std::function` may be copied at any time, mutable state captured into one
   must sit behind a `shared_ptr` so every copy aliases it (the RNG sharing

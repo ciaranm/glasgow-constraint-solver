@@ -101,7 +101,7 @@ Four things to know before touching it.
 
 **When it runs.** `run` comes after `create_propagators` and after the proof
 model is finalised. The posted constraints' initialisers have run by then
-(`solve.cc:373`), but nothing has propagated yet. If those initialisers
+(`solve.cc:571`), but nothing has propagated yet. If those initialisers
 already refuted the model, no presolver runs at all. After `run` returns,
 `solve_with` initialises what it installed before the next presolver runs
 (`:383–395`).
@@ -760,7 +760,7 @@ trail.
 optional-interior-pruning pair.
 
 **What it observes.** Its pass runs before
-`choose_optional_interior_pruning()` (`solve.cc:406–407`), so what it installs
+`choose_optional_interior_pruning()` (`solve.cc:604–605`), so what it installs
 is counted.
 
 - **Nodes.** The installed propagator triggers on their bounds only, so it
@@ -1419,7 +1419,7 @@ presolver on and off, under the default heuristic, measures this as well as
 the propagation. Their tables compare cleanly for different reasons:
 - `examples/rcpsp` branches in order by default (`--branch in-order`);
 - `difference_chain` uses the default `dom_then_deg`
-  (`difference_chain.cc:438–449`, `solve.cc:423`), but every variable there is
+  (`difference_chain.cc:438–449`, `solve.cc:620`), but every variable there is
   a node, so every degree goes up by the same one.
 
 **The wrong line, soundly derived.** There is no `ia` pin, because the
