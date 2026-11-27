@@ -666,8 +666,8 @@ literal in the clause names.
   except in `run_search_holes_test`.
 - **`scp_chain_all_equal_{sat,unsat}`:** see [Cake
   conformity](#cake-conformity).
-- **MiniZinc:** `allequaltest.mzn`, three variables over `1..3`, compared
-  against the reference solver; and since #1180 `allequalsearchholes.mzn`
+- **MiniZinc:** `all_equal/basic.mzn`, three variables over `1..3`, compared
+  against the reference solver; and since #1180 `all_equal/search_holes.mzn`
   (lane `minizinc-allequal-search-holes`, `minizinc/CMakeLists.txt:497`, with
   `--fzn-count 1 glasgow_all_equal_int` and `--reference-std`), which is this
   document's `mzn/small3.mzn`: 8 solutions, where the bug gave 9.

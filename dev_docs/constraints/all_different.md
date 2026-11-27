@@ -154,7 +154,7 @@ The degenerate cases, where the frontends and the tests disagree most often:
     as `alldifferent_except(vs, {0})`, which reaches `fzn_alldifferent_except`,
     so a model gets `AllDifferentExcept{vars, {0}}` and never the
     `AllDifferentExceptZero` class. Checked on the flattened model of
-    `minizinc/tests/alldifferentexceptzero.mzn`: its one constraint is
+    `minizinc/tests/all_different/except_zero.mzn`: its one constraint is
     `glasgow_all_different_except_int`.
 
 [^sym]: Until #997, `fzn_symmetric_all_different(x) =
@@ -179,9 +179,9 @@ The degenerate cases, where the frontends and the tests disagree most often:
     it. Every row above now agrees with the default solver, and so does an
     index set starting at −2 — checked against a hand-written standard-library
     decomposition instead, since Gecode's native `inverse` errors on a negative
-    offset. `minizinc/tests/symmetricalldifferentoffset.mzn`, over `array[0..3]`
+    offset. `minizinc/tests/symmetric_all_different/offset.mzn`, over `array[0..3]`
     and `array[2..5]`, fails on the old front end; the 1-based
-    `symmetricalldifferent.mzn`, the only test before it, never could. See
+    `symmetric_all_different/basic.mzn`, the only test before it, never could. See
     [Known limitations](#known-limitations) for what the proof did with it.
 
 ### Options

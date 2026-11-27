@@ -139,8 +139,8 @@ except the empty graph. Degenerate shapes:
     count, `2E` more subgraph rows, the in-degree rows, and the directed
     forcing's search per candidate root, which is the dearer one (unmeasured
     here).
-    `minizinc/tests/treetest.mzn` and `dtreetest.mzn` (nodes indexed `2..5`) and
-    `steinertest.mzn` each carry a `--fzn-pattern` guard that the builtin was
+    `minizinc/tests/tree/basic.mzn` and `tree/dtree.mzn` (nodes indexed `2..5`) and
+    `tree/steiner_tree.mzn` each carry a `--fzn-pattern` guard that the builtin was
     reached.
 
 [^xcsp]: XCSP3-core has no tree constraint.

@@ -125,7 +125,7 @@ only the four-argument spelling asserts it. Through Glasgow they are errors,
 not wrong answers. The six-argument form with a non-1-based `from` is a stdlib
 assertion failure for every solver alike (`m14`).
 
-`minizinc/tests/subgraphtest.mzn` (four nodes indexed from 2) is the registered
+`minizinc/tests/subgraph/basic.mzn` (four nodes indexed from 2) is the registered
 lane, with `--fzn-pattern glasgow_subgraph`, so it cannot pass against the
 decomposition. Run by hand at `86caad24`, it passes on both MiniZinc versions and
 its proof verifies (49 solutions).
@@ -518,7 +518,7 @@ corruption per rule rejected on one fixture each.
   consistency.
 - **Views** in any test. The audit's sweeps cover them (above).
 - **An empty node array through MiniZinc's four-argument spelling**, which is
-  the shape that gives the wrong answer. `subgraphtest.mzn` has four nodes.
+  the shape that gives the wrong answer. `subgraph/basic.mzn` has four nodes.
 - **Large graphs.** The biggest tested graph has three edges, so nothing in the
   suite would notice the per-call cost.
 - **Real instances:** none ported; there is none to port.

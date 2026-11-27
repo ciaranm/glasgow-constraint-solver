@@ -60,7 +60,7 @@ Four things to know before touching it.
   index: `x[p[j]−offset] = x[p[j+1]−offset] ⇒ p[j] < p[j+1]`. The offset
   defaults to 0. `p` is a permutation for every `n`, including `n = 1`, as
   MiniZinc documents; MiniZinc's own decomposition leaves `p` free when `n = 1`,
-  which `argsortshapes.mzn` notes and avoids. Different lengths throw.
+  which `arg_sort/shapes.mzn` notes and avoids. Different lengths throw.
 - **A repeated variable** is accepted: `Sort{(a, a), (b, c)}` means `b = c = a`.
 
 ### Concrete constraints and frontend coverage
@@ -82,7 +82,7 @@ Four things to know before touching it.
     binding passes `min(index_set(x))` as the offset, and guards the empty
     case. Getting this wrong was #987, a wrong answer on arrays not indexed
     from 1 that the certified chain verified, because the chain starts at the
-    `.scp`. `argsortoffset.mzn` and `argsortshapes.mzn` (from #1006) pin it: `x`
+    `.scp`. `arg_sort/offset.mzn` and `arg_sort/shapes.mzn` (from #1006) pin it: `x`
     indexed from −3, from 0, from 100 and by an enum, repeated variables, and
     the function form over one element. `fzn_arg_sort_int.mzn` also includes the
     stdlib's reified decomposition explicitly, since a reified call cannot
@@ -651,8 +651,8 @@ as rule 5, mirrored.
   deliberately, since `x` and `p` are not `bounds(Z)`.
 - **`scp_chain_{sort,arg_sort}_{sat,unsat}`:** see [Cake
   conformity](#cake-conformity).
-- **MiniZinc:** `sorttest.mzn`, `argsorttest.mzn`, `argsortoffset.mzn`,
-  `argsortreif.mzn`, `argsortshapes.mzn`.
+- **MiniZinc:** `sort/basic.mzn`, `arg_sort/basic.mzn`, `arg_sort/offset.mzn`,
+  `arg_sort/reif.mzn`, `arg_sort/shapes.mzn`.
 - **Audit lane:** the `Sort` and `ArgSort` rows.
 
 **Runtime caps.** No lane sets or clears one, and the default caps never fire:
@@ -682,7 +682,7 @@ while the proofs were written; neither is in the tree.
   share no variable).
 - **`ArgSort` with repeated variables, offsets other than 0 and 1, or `p`
   domains wider than the index range,** in C++; MiniZinc's
-  `argsortshapes.mzn` covers all three (a repeat, offsets −3 and 100, wider
+  `arg_sort/shapes.mzn` covers all three (a repeat, offsets −3 and 100, wider
   `p`). **Holey initial `p` domains** are untested everywhere. Holes in `p`
   do arise during search, from `ArgSort`'s own propagators and from the test
   brancher: an `ArgSort` with `x` of length three in `0..3` and `p` in `0..2`

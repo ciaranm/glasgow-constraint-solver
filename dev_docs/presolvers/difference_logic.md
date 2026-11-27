@@ -1332,9 +1332,9 @@ re-measured, and every proof verifies:
 | `difference_chain`, fixpoint | `--mode fixpoint` | 250 edges |
 | `examples/rcpsp` | `--size 12 --seed 3 --max-lag-density 0.3 --variant presolved` | 27 edges over 13 nodes; 7 redundant edges dropped; optimum 14 |
 | `examples/rcpsp`, machine as conditional edges | `--size 10 --seed 5 --machine-fraction 0.7 --machine difference --variant presolved` | 89 edges over 11 nodes, 72 half-reified; 14 redundant edges dropped; 9 conditions fixed over 2 rounds; optimum 20 in 3,000 recursions, against 3,172 with `--simplify off` and decomposed |
-| `minizinc/tests/differencelogic.mzn` | the `minizinc-differencelogic` lane | `differenceLogicEdgesLifted=4`, `ComparisonEdgesLifted=4`, `Nodes=4`, `SkippedNotTwoTerms=1`, `SkippedCoefficients=1`, `PropagatorInstalled=1`, `SimplifyRan=1` |
+| `minizinc/tests/linear/difference_logic.mzn` | the `minizinc-differencelogic` lane | `differenceLogicEdgesLifted=4`, `ComparisonEdgesLifted=4`, `Nodes=4`, `SkippedNotTwoTerms=1`, `SkippedCoefficients=1`, `PropagatorInstalled=1`, `SimplifyRan=1` |
 | `xcsp/tests/difference_logic.xml` | the `xcsp_difference_logic` lane | 4 edges, 0 from comparisons, 4 nodes, 1 not two terms, 0 uncitable rows, propagator installed, simplification ran |
-| `minizinc/tests/twotermlinle.mzn` | the `minizinc-two-term-lin-le-difference-logic` lane, under `GCS_PROPAGATOR_STATS=calls` | `differenceLogicEdgesLifted=6`, `ComparisonEdgesLifted=6`, and `propagatorCallsLessEqualConstraints=8` |
+| `minizinc/tests/linear/two_term_le.mzn` | the `minizinc-two-term-lin-le-difference-logic` lane, under `GCS_PROPAGATOR_STATS=calls` | `differenceLogicEdgesLifted=6`, `ComparisonEdgesLifted=6`, and `propagatorCallsLessEqualConstraints=8` |
 
 **On real models.** The 2024 and 2025 MiniZinc Challenge instances were run
 with `fzn-glasgow --difference-logic -s` and a 20 s limit that includes
@@ -1938,7 +1938,7 @@ literature.
     - `minizinc/fzn_glasgow.cc:375–380`, the option comment;
     - `minizinc/CMakeLists.txt:277–281` ("The zero says all four arrived as
       `int_lin_le`", above a pin of `ComparisonEdgesLifted=4`);
-    - the header of `minizinc/tests/differencelogic.mzn`;
+    - the header of `minizinc/tests/linear/difference_logic.mzn`;
     - [`minizinc.md`](../minizinc.md):232–238.
   - **In this stack, wrong rather than stale, and now corrected.**
     [`comparison.md`](../constraints/comparison.md)'s lead, its `[^lin]`

@@ -160,16 +160,19 @@ The general recipe (see `gcs/constraints/lex/lex.cc` and the
    `array[int] of set of int`. Add a new `ExtractedData` member to
    store the parsed values and a matching `arg_as_*` helper.
 
-4. **Add small test instances** in `minizinc/tests/<name>.mzn`. Each
+4. **Add small test instances** in `minizinc/tests/<global>/`, the
+   directory for the global or family (make one if it is new). Each
    should call the user-facing predicate (`lex_less`, not
    `fzn_lex_less_int`), `solve satisfy;`, and emit either an
    `ENUMSOL:`-prefixed enumeration line or an `OPTSOL:`-prefixed
    optimisation line. Keep the solution count small — see *Testing*
    below.
 
-5. **Add `add_test` lines** in `minizinc/CMakeLists.txt`, one per
-   `.mzn` test, all set to `SKIP_RETURN_CODE 66` (which means
-   "MiniZinc isn't installed, skip").
+5. **Register each test** in that directory's `CMakeLists.txt` with
+   `gcs_minizinc_test(<ctest name> <model> <enumeration> <doproofs> ...)`,
+   defined in `minizinc/CMakeLists.txt`, which also sets
+   `SKIP_RETURN_CODE 66` ("MiniZinc isn't installed, skip"). A new
+   directory needs an `add_subdirectory` line there too.
 
 ### Pass the index set of an array whose values are indices
 
@@ -411,6 +414,13 @@ MiniZinc 2.9.7:
 | `symmetric_all_different`, empty array | `UNSATISFIABLE` (wrong) | right |
 | `inverse` or `symmetric_all_different` over an index set with negative values | `Int::channel: Number out of limits` | right |
 | `inverse` on arrays of different lengths | `Int::channel: Sizes of argument arrays mismatch` | right |
+| `circuit`, `diffn`, `bin_packing` or `bin_packing_capa` over no items | `UNSATISFIABLE` or an error (wrong) | right |
+| `global_cardinality_low_up(_closed)` with a negative lower bound | too few solutions, or `UNSATISFIABLE` (wrong) | right |
+| `all_different` over `var bool`, MiniZinc 2.10 and later | `Type error: integer literal expected` | right |
+
+The last three rows came from the #1006 lanes, which skip the default
+solver for them, and hold on 2.9.7, 2.10.1 and 2.11.0 unless the row says
+otherwise.
 
 The empty cases come from Gecode's `fzn_inverse` taking `min` of an
 empty index set. `-G std` hands Gecode the standard library's
@@ -509,7 +519,7 @@ predicate, three readings.
 `Reachable` and with the tree and path family. The consequences to know:
 
 * a differential test that enumerates `dag` against MiniZinc's default solver
-  will disagree, and the disagreement is expected. `minizinc/tests/dagtest.mzn`
+  will disagree, and the disagreement is expected. `minizinc/tests/dag/basic.mzn`
   posts `subgraph` alongside `dag`, which makes both readings the documented one
   without weakening what the lane checks — the `--fzn-pattern glasgow_dag` guard
   still insists our builtin ran;
@@ -526,7 +536,7 @@ free. `ArgSort` follows the documentation, so `arg_sort(x, p)` with
 `x : array[7..7]` and `p : array[1..1] of var 5..9` has 3 solutions for Glasgow
 and 15 for every solver that uses the decomposition. The stdlib's own function
 form, `p = arg_sort(x)`, declares `p` over `index_set(x)`, where the two
-agree, and `minizinc/tests/argsortshapes.mzn` tests the single element that way.
+agree, and `minizinc/tests/arg_sort/shapes.mzn` tests the single element that way.
 
 The general lesson is the one the previous section states, plus a check it does
 not: read the `fzn_` body, not only the doc comment, and when they disagree say
@@ -576,14 +586,19 @@ order, that's where to plumb it through.
 
 ```
 minizinc/fzn_glasgow.cc                main FlatZinc → C++ dispatcher
-minizinc/CMakeLists.txt                builds fzn-glasgow + ctest entries
+minizinc/CMakeLists.txt                builds fzn-glasgow; gcs_minizinc_test and friends
 minizinc/glasgow.msc.in                template for the generated solver definitions
 minizinc/glasgow-for-debugging.msc     dummy executable for manual debugging
 minizinc/mznlib/                       per-predicate overrides
 minizinc/mznlib/redefinitions.mzn      include "nosets.mzn" entry point, plus global overloads the stdlib lacks
 minizinc/mznlib/redefinitions-2.0.mzn  per-MiniZinc-version overrides
-minizinc/tests/                        per-test .mzn instances
+minizinc/tests/<global>/               one directory per global or family: its .mzn
+                                       instances, hand-written JSON .fzn inputs, and a
+                                       CMakeLists.txt registering their lanes
+minizinc/tests/models/                 whole small problems rather than one global
+minizinc/tests/reader/                 JSON-only lanes for the FlatZinc reader itself
 minizinc/run_minizinc_test.bash        cross-solver diff + VeriPB harness
+minizinc/run_fzn_json_test.bash        runs a hand-written JSON .fzn against expected output
 minizinc/run_installed_msc_test.bash   checks the installed solver definition
 ```
 
@@ -601,12 +616,13 @@ minizinc/run_installed_msc_test.bash   checks the installed solver definition
    it.
 3. Add C++ dispatch branches in `fzn_glasgow.cc`. Coalesce int+bool
    variants when they map to the same C++ class.
-4. Add small `.mzn` tests in `minizinc/tests/`. Keep solution counts
-   small; one test per constraint variant rather than one test with
-   all variants. Do not name one after a stdlib file (`alldifferent.mzn`):
-   MiniZinc warns about it whenever it runs from `tests/`.
-5. Add `add_test` lines in `minizinc/CMakeLists.txt` with
-   `SKIP_RETURN_CODE 66`, and a `--fzn-pattern` or `--fzn-count` guard.
+4. Add small `.mzn` tests in `minizinc/tests/<global>/`. Keep solution
+   counts small; one test per constraint variant rather than one test
+   with all variants. Do not name one after a stdlib file
+   (`alldifferent.mzn`, `subcircuit.mzn`, `steiner.mzn`): MiniZinc warns
+   about it whenever it runs from that directory.
+5. Add `gcs_minizinc_test` lines in the directory's `CMakeLists.txt` with
+   an `OPTIONS --fzn-pattern` or `--fzn-count` guard.
 6. Add a lane over the shapes in *Testing the shapes a front end gets
    wrong*, and check a reified call to the global flattens.
 7. Run `ctest -R minizinc-<your-name>` to verify; check that the

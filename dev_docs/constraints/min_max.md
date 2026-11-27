@@ -867,8 +867,8 @@ The shapes below are for `max`; `min` mirrors them.
 - **`scp_reader_test`** counts the solutions of `array_min` and `array_max`.
 - **`scp_chain_array_{min,max}_sat` and `scp_chain_array_min_unsat`:** see
   [Cake conformity](#cake-conformity).
-- **MiniZinc:** `arrayintminmax.mzn` (`array_int_minimum`/`maximum`, with
-  `alldifferent`) and `minmax.mzn` (`int_min`/`int_max`), both optimisation.
+- **MiniZinc:** `arithmetic/array_min_max.mzn` (`array_int_minimum`/`maximum`, with
+  `alldifferent`) and `arithmetic/min_max.mzn` (`int_min`/`int_max`), both optimisation.
 - **XCSP3:** `minimum.xml`, `maximum.xml`.
 - **Python:** `test_min` and `test_max` in `python_test.py`, which no ctest
   runs (#1078).
@@ -901,7 +901,7 @@ else runs to completion.
   weaker than `bounds(Z)`.
 - **Width.** Every tested domain is at most 16 wide, and the audit lane does
   not vary holes, a narrow result or proofs.
-- **`Min` and `Max`** as classes: only through MiniZinc's `minmax.mzn`, and as
+- **`Min` and `Max`** as classes: only through MiniZinc's `arithmetic/min_max.mzn`, and as
   two-entry arrays in the fixed and random shapes.
 - **Real instances:** none ported.
 

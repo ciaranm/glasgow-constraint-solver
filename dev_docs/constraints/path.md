@@ -144,8 +144,8 @@ Second, each output's status marker: `==========` (search complete),
 solutions and the `UNSATISFIABLE` line, so a run that errored or was cut off
 after printing every solution would have passed it. The marker check was run
 on the audit's own outputs, and again independently over all 20 models plus
-the repository's `boundeddpathtest.mzn` on both versions
-(`tmp/fd-graph/factcheck/path/mzn/`, `tmp/fd-graph/factcheck2/path/mzn/`). `boundeddpathtest.mzn` optimises, so it
+the repository's `path/bounded_dpath.mzn` on both versions
+(`tmp/fd-graph/factcheck/path/mzn/`, `tmp/fd-graph/factcheck2/path/mzn/`). `path/bounded_dpath.mzn` optimises, so it
 is not counted below. The models were:
 
 - the `int` spelling, with a self loop and a parallel edge;
@@ -154,7 +154,7 @@ is not counted below. The models were:
 - endpoints declared wider than `1..N` (`var −1..6`);
 - `start` and `end` the same variable;
 - `bounded_path` and `bounded_dpath` in both spellings;
-- the repository's own `pathtest.mzn` and `dpathtest.mzn`;
+- the repository's own `path/basic.mzn` and `path/dpath.mzn`;
 
 each for `path` and `dpath` where it applies. On every one of these 16, all
 three solvers' runs are complete and their solution sets agree, on both

@@ -161,7 +161,7 @@ profit})`.
     `Knapsack` throws on a negative lower bound instead (#1337). A fixed `W`
     or `P` arrives as an integer literal, which `arg_as_var` makes a constant,
     which #1229 crashed with proofs on at `AssertionLevel::Off` until it was
-    fixed. `knapsacktest.mzn` is the one test.
+    fixed. `knapsack/basic.mzn` is the one test.
 [^xcsp]: `buildConstraintKnapsack` (`xcsp_glasgow_constraint_solver.cc:840–865`)
     creates an auxiliary total per condition, posts the two-row `Knapsack`, and
     posts each `<condition>` on its auxiliary (`le`, `lt`, `eq`, `ge`, `gt`,
@@ -1093,7 +1093,7 @@ assertions are 62 to 72% of all the proof's assertions under either strategy
   through the two-total constructor.
 - **`scp_chain_knapsack_sat`, `_unsat`:** see [Cake
   conformity](#cake-conformity).
-- **MiniZinc:** `knapsacktest.mzn` (four 0/1 items, maximise profit), with a
+- **MiniZinc:** `knapsack/basic.mzn` (four 0/1 items, maximise profit), with a
   proof.
 - **XCSP3:** none.
 - **Audit lane:** the one `KnownTrip` row.
