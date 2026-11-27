@@ -256,7 +256,7 @@ and their defaults:
 
 **Every rule below `profile_overload` runs inside the overload sweep**, which
 is gated on `overload`, a constant capacity, and at least one eligible task
-(`cumulative.cc:2520`). With `overload` off, edge-finding, not-first / not-last
+(`cumulative.cc:2528`). With `overload` off, edge-finding, not-first / not-last
 and the elastic rungs never run whatever their own flags say. On a
 library-level replica of `Bl2019`
 (`tmp/fd-sched/factcheck/cumulative/rules/bl.cc`, re-run), `overload` off with
@@ -452,8 +452,8 @@ Labels other code actually cites:
 
 | Label / key | Rows | Cited by |
 |---|---|---|
-| `scap_<j>` (`checkpoint_row_role`) | the checkpoint rows | the checkpoint recovery; the run steps of time-table pushes and presence falsification (#1285, `cumulative.cc:3715-3722`, `3801`, `4138-4143`); and `cake_pb_cp`'s chain, which resolves our citations against its OPB by these labels |
-| `sb` / `sa` / `sact` keys `(i, j)`, `scc` keys `(i, j, k)` | the pairwise flags | the recovery; the same run steps' `sb` / `sa` / `sact` (#1285, `cumulative.cc:3723-3773`); cake (same names) |
+| `scap_<j>` (`checkpoint_row_role`) | the checkpoint rows | the checkpoint recovery; the run steps of time-table pushes and presence falsification (#1285, `cumulative.cc:3723-3730`, `3809`, `4146-4151`); and `cake_pb_cp`'s chain, which resolves our citations against its OPB by these labels |
+| `sb` / `sa` / `sact` keys `(i, j)`, `scc` keys `(i, j, k)` | the pairwise flags | the recovery; the same run steps' `sb` / `sa` / `sact` (#1285, `cumulative.cc:3731-3781`); cake (same names) |
 | `cb` / `ca` / `cact` keys `(i, t)`, `cc` keys `(i, t, k)` | per-time flags, **proof-only** under the shipped encoding | every rule; derived Cumulatives and `Disjunctive2D` by key |
 | `cap` (`capacity_row_family`) | the deriver of recovered `C_t` | derived Cumulatives (`find_or_derive_line_in_family`) |
 | `<i>_<t>_cge` (`contribution_ge_row_role`) | a variable height's "contribution ≥ height" row, published as a **derived** line under the shipped encoding | the energy rules; `recover_constant_argument_row` |
@@ -743,15 +743,15 @@ truth.
   entry point posted and derived Cumulatives and `Disjunctive2D`'s projections
   all share, rethrows the exception as "Cumulative: a load or an energy does
   not fit in an Integer. …", keeping the original operation in brackets
-  (`cumulative.cc:1478-1497`). Write `B = 2⁶⁰ − 1`. Three of the first four
+  (`cumulative.cc:1484-1503`). Write `B = 2⁶⁰ − 1`. Three of the first four
   sites throw on **feasible** single-task instances, and every repro below
   throws the new message at `0a5b4ec6`:
-  - `mand_prefix` (#1223, `cumulative.cc:2524`): one task of length 9, height
+  - `mand_prefix` (#1223, `cumulative.cc:2532`): one task of length 9, height
     `B`, capacity `B`, start a *variable* with domain `{0}` throws `9223372036854775800 +
     1152921504606846975`, and at length 8 it solves. With
     `constant_variable(0_i)` as the start, it solved at `7e1c4178`, as #1223
     notes (not re-run). #1223's own repro uses nine unit tasks;
-  - the candidate energy `p × h` (`cumulative.cc:2569`): one task of length 9,
+  - the candidate energy `p × h` (`cumulative.cc:2577`): one task of length 9,
     height `B`, capacity `B`, start in `[0, 100]` throws `9 *
     1152921504606846975`;
   - the overload sweep's `supply = capacity × width` (`cumulative.cc:2949`),
@@ -760,14 +760,14 @@ truth.
     `1099511627776 * 8388609`, and at `[0, 2²²]` it solves. With heights and
     capacity `B`, a window of 9 slots is enough: two unit tasks with starts
     in `[0, 8]` throw `* 9`, and in `[0, 7]` they solve;
-  - the profile `mand_load[t] += lb(h)` (`cumulative.cc:2437`): nine
+  - the profile `mand_load[t] += lb(h)` (`cumulative.cc:2445`): nine
     overlapping height-`B` tasks at capacity `B` throw instead of reporting
     UNSAT. Eight report UNSAT, and the proof verifies;
   - **a fifth, added by #1292, only when the published detection runs**
     (`not_first_not_last` and `not_first_not_last_published` both on, with
     `overload` and a constant capacity).
     The published sweep checks `total energy + 2 × capacity × horizon` once,
-    so that it can run in plain arithmetic (`cumulative.cc:2709`). That is
+    so that it can run in plain arithmetic (`cumulative.cc:2717`). That is
     about twice the window sweep's largest supply, so with the rule on the
     limit is lower: two unit tasks of height `B` at capacity `B` throw once
     their starts span `[0, 3]`, where the default rules solve up to `[0, 7]`.
@@ -814,7 +814,7 @@ axis the four questions are answered on.
    - **The time-table bound scans** walk time points, not starts, since
      #1285: a blocked time `t` rules out every start whose window reaches it,
      so the lb scan jumps to `t + 1` and the ub scan to `t − d_j`
-     (`cumulative.cc:3898-3902`, `4187-4191`). Each visits every time point
+     (`cumulative.cc:3906-3910`, `4195-4199`). Each visits every time point
      it crosses once, `O(width + d_j)` per task per call, where it was
      `O(width × d_j)` (#705, item 1). A single push over a blocked prefix of
      `H/2` took 333 ms at `H = 10⁶` and `d = 1` at `7e1c4178` (proofs off).
@@ -824,16 +824,16 @@ axis the four questions are answered on.
    - **The height rule's sliding minimum**, per present task of variable
      height, `O(width + d_j)`, stopping at the first placement with room for
      `ub(h_j)`. It is skipped without a scan when `ub(h_j)` fits on top of the
-     largest mandatory load anywhere (`cumulative.cc:4022-4046`).
+     largest mandatory load anywhere (`cumulative.cc:4030-4054`).
    - **The chain construction for a push now runs only with a logger**
-     (#1285). The chains (`cumulative.cc:4057`, `4115`, `4158`, `4203`), the
-     (TTOC) `pins` vector (`3209-3230`) and the overflow's `contributing`
-     list (`2070-2080`) are each built only when there is a proof to write.
+     (#1285). The chains (`cumulative.cc:4065`, `4123`, `4166`, `4211`), the
+     (TTOC) `pins` vector (`3544-3565`) and the overflow's `contributing`
+     list (`2463-2473`) are each built only when there is a proof to write.
      Before #1285 all three were built with proofs off too, at `O(steps × n)`
      extra for a long push. The published rule's `theta` is now built at each
      firing whether or not there is a logger, because the firing re-checks
      the set's own figures against the condition before anything is pushed
-     (`cumulative.cc:2871-2886`).
+     (`cumulative.cc:2879-2894`).
    - **The derived makespan initialiser's candidate scan**, on a derived
      constraint that names a makespan: once, at the root, every time point
      from `rows_lo` up to `min(ub(M), last window end)`, at `O(n)` each, with
@@ -1049,11 +1049,11 @@ Facts true of every rule:
   under the other tasks' compulsory parts.
 - **Algorithm** — scans time points upward from `lb(s_j)`, and a blocked
   time `t` moves the candidate start to `t + 1`, until a window
-  `[s, s + lb(d_j))` has no blocked time (#1285, `cumulative.cc:3898-3902`).
+  `[s, s + lb(d_j))` has no blocked time (#1285, `cumulative.cc:3906-3910`).
   That is `O((new_lb − lb) + lb(d_j))` time points; at `7e1c4178` it tested
   every start over the task's length, `O((new_lb − lb) × lb(d_j))` (#705).
   Then, with a logger only, it builds the chain (`build_lb_chain`,
-  `cumulative.cc:3970-4001`). At each step it takes whichever reaches
+  `cumulative.cc:3978-4009`). At each step it takes whichever reaches
   further, the run winning a tie:
   - a **per-time step**: the **largest** blocked `t` in
     `[running, running + lb(d_j) − 1]`, jumping past it;
@@ -1075,7 +1075,7 @@ Facts true of every rule:
   - pin `j` active at `t` under the reason **extended by** `s_j ≤ t`, which
     with the running bound puts `j` at `t`. Each of its lines carries the
     negation `[s_j ≥ t+1]` as a disjunct, so it reads
-    `[s_j ≥ t+1] ∨ active_j,t` (`pin_pushed`, `cumulative.cc:2115`);
+    `[s_j ≥ t+1] ∨ active_j,t` (`pin_pushed`, `cumulative.cc:2123`);
   - one `pol` adds them to `C_t`, dominated by `(load − capacity)·[s_j ≥
     t+1]`;
   - except at the last step, one `RUP` deposits `s_j ≥ t + 1` under the reason
@@ -1086,7 +1086,7 @@ Facts true of every rule:
   `sb_{i,j}` and `sa_{i,j}` against the bounds that put `i` before and still
   running, all at `h_i`, plus `j`'s diagonal term where one was minted. What
   is left is dominated by `[s_j ≥ hi]` (`emit_chain_step`,
-  `cumulative.cc:3791-3849`; the design note's "Run steps"). The wrapping RUP
+  `cumulative.cc:3799-3857`; the design note's "Run steps"). The wrapping RUP
   closes the last step. Ours, from the design note's derivations.
 - **Reason** — whole-scope. Minimally, `j`'s lower bound and the
   contributors' bounds at each blocked time or run.
@@ -1122,8 +1122,8 @@ Facts true of every rule:
 - **Strength** — `partial`: time-table consistency on `ub(s_j)`.
 - **Algorithm** — the mirror. The scan walks down from the top of
   `ub(s_j)`'s window, and a blocked `t` moves the candidate to `t − lb(d_j)`
-  (`cumulative.cc:4187-4191`). The chain, built inline with a logger only
-  (`3874-3900`), takes the further of a per-time step, the **smallest**
+  (`cumulative.cc:4195-4199`). The chain, built inline with a logger only
+  (`4208-4235`), takes the further of a per-time step, the **smallest**
   blocked `t` in `[running, running + lb(d_j) − 1]` turned into
   `s_j ≤ t − lb(d_j)`, and a run step down to the latest start among the
   tasks it cites, taken by earliest latest start.
@@ -1193,7 +1193,7 @@ New since the audit (#1284, for #1239).
 - **Fires when** — `time_table` on (default), `j`'s height is not a constant,
   `j` is known present, `lb(d_j) ≥ 1`, `lb(h_j) < ub(h_j)`, `ub(h_j)` does not
   fit on top of the largest mandatory load anywhere, and
-  `lb(h_j) ≤ bound < ub(h_j)` (`cumulative.cc:4022-4082`). Below `lb(h_j)`
+  `lb(h_j) ≤ bound < ub(h_j)` (`cumulative.cc:4030-4090`). Below `lb(h_j)`
   nothing fits at all, and the lb push says so as a contradiction. Counted as
   the `time_table_height` row; `already_true` counts a scan that lowers
   nothing. A task whose length may be zero and an undecided optional task
@@ -1318,7 +1318,7 @@ New since the audit (#1284, for #1239).
 - **Gaps** — None. A pin claiming load the arithmetic never used would be
   accepted: the reason context is contradictory by then, and every RUP under
   it is vacuous. So the pin set is kept exactly to what `F` counted, by
-  construction (`cumulative.cc:3536-3557`, built only with a logger since
+  construction (`cumulative.cc:3544-3565`, built only with a logger since
   #1285), and no lane can check it.
 - **Tightness** — Not shown separately. The `overload` lanes run with the
   profile on.
@@ -1613,7 +1613,7 @@ New since the audit (#1284, for #1239).
 - **Fires when** — `not_first_not_last`, `not_first_not_last_published` and
   `overload` on, and a constant capacity. The published flag switches
   `not_first_not_last`'s detection to this one, and does nothing on its own
-  (`cumulative.cc:2682`). Then, for **any** set `Ω` of eligible present tasks
+  (`cumulative.cc:2690`). Then, for **any** set `Ω` of eligible present tasks
   other than `j`, `e(Ω) + h_j · (min(ect_j, lct(Ω)) − est(Ω)) >
   C · (lct(Ω) − est(Ω))` over `Ω`'s own window `[est(Ω), lct(Ω))`, while
   `lb(s_j) < ECT(Ω)`. `j` may lie inside that window. Until #1292 it was
@@ -1634,7 +1634,7 @@ New since the audit (#1284, for #1239).
   instances a brute force over every `Ω` finds no missed root push except
   six involving a `{0, 1}` start, which no window rule takes.
 - **Algorithm** — its own sweep before the window loop
-  (`cumulative.cc:2654-2910`), not the window loop. What `Ω` claims depends
+  (`cumulative.cc:2662-2918`), not the window loop. What `Ω` claims depends
   only on its energy, `est`, `lct` and `ECT`, so the sets worth asking about
   are fixed by an `est` floor, an `lct` ceiling and an `ect` floor. The
   condition is linear in the `est` floor, so for each `ect` floor (from the
@@ -2241,7 +2241,7 @@ family's headline cost.
 
   A hints-only proof with a presolver on is therefore unusable today, on the
   encoding that ships.
-  - Lifting that one gate is not enough. With `cumulative.cc:1221` changed to
+  - Lifting that one gate is not enough. With `cumulative.cc:1227` changed to
     `if (! logger)`, `inferred_cumulative_presolver_test --seed=1` at
     `Inferences` still fails, at `rup 1 i[h3][ge1] >= 1`: a variable height's
     order literal is cited and never defined at that level, which is #1210's
