@@ -86,7 +86,7 @@ the two-value chain.
 The set-valued forms (`value_precede_set`, `value_precede_chain_set`) do not
 apply: the solver has no set variables. Positions matter here but no value is
 an index, so an array indexed from something other than 1 cannot be
-mistranslated; `valueprecede.mzn` and `valueprecedechain.mzn` cover the glue.
+mistranslated; `value_precede/basic.mzn` and `value_precede/chain.mzn` cover the glue.
 
 ### Options
 
@@ -567,7 +567,7 @@ decision's own scan.
   GAC.
 - **`scp_chain_value_precede_{sat,nonexact_sat,unsat}`:** see [Cake
   conformity](#cake-conformity).
-- **MiniZinc:** `valueprecede.mzn`, `valueprecedechain.mzn`.
+- **MiniZinc:** `value_precede/basic.mzn`, `value_precede/chain.mzn`.
 - **XCSP3:** `precedence.xml`.
 - **Audit lane:** the `ValuePrecede` row.
 

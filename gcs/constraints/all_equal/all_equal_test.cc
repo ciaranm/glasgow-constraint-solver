@@ -364,7 +364,7 @@ auto run_disable_test(bool proofs, const string & label, const vector<vector<int
 // is known to reach it. The harness's random branching might not, so this one
 // solves with its own. Each instance came from a random search over models of
 // this shape (the first two) or is the MiniZinc model in
-// minizinc/tests/allequalsearchholes.mzn (the third).
+// minizinc/tests/all_equal/search_holes.mzn (the third).
 auto run_search_holes_test(bool proofs, const string & label, const vector<pair<int, int>> & domains, const vector<pair<int, int>> & not_equals,
     const vector<tuple<int, int, int>> & sum_at_most, const vector<int> & all_equal, const vector<int> & branch_order) -> void
 {

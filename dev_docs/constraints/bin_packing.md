@@ -178,7 +178,7 @@ initial lower bound is negative, or a capacity is negative.
     `sum(load) = sum(w)`; the redefinition drops both. An item whose domain
     reaches outside the load array's index set, or a load declared with a negative lower bound, then
     throws from `prepare()` and the run ends in `=====ERROR=====` where Gecode
-    and Chuffed solve (#1347). Tests: `binpackingloadtest.mzn` (the only one
+    and Chuffed solve (#1347). Tests: `bin_packing/load.mzn` (the only one
     of the load form).
 [^mzncapa]: `fzn_bin_packing_capa.mzn:23–27` passes `min(index_set(c))` as the
     offset, and `fzn_bin_packing.mzn:11–19` builds a capacity array over
@@ -188,7 +188,7 @@ initial lower bound is negative, or a capacity is negative.
     item whose domain reaches outside the capacity array's index set errors
     (#1347); `fzn_bin_packing`
     cannot meet that, since its bins are the items' own range. Tests:
-    `binpackingtest.mzn`, `binpackingoffsettest.mzn` (non-1-based capacities
+    `bin_packing/basic.mzn`, `bin_packing/offset.mzn` (non-1-based capacities
     and the single-capacity form).
 [^xcond]: `buildConstraintBinPacking` (`xcsp_glasgow_constraint_solver.cc:687–743`)
     takes the bins to be the values the items' domains contain, `v_min..v_max`
@@ -1551,8 +1551,8 @@ procedures in turn, and one is guaranteed to succeed.
 - **`hole_wakes_test`:** a hole in a load wakes `Upfront`'s Stage 3 (#966).
 - **`integer_ranges_test`:** refusal of a size and a capacity past the range.
 - **`scp_reader_test`:** both forms enumerate, and round-trip.
-- **MiniZinc:** `binpackingtest.mzn`, `binpackingoffsettest.mzn` (offsets,
-  single capacity) and `binpackingloadtest.mzn` (the load form), with proofs.
+- **MiniZinc:** `bin_packing/basic.mzn`, `bin_packing/offset.mzn` (offsets,
+  single capacity) and `bin_packing/load.mzn` (the load form), with proofs.
 - **XCSP3:** `xcsp/tests/bin_packing.xml` (constant `<limits>`).
 - **Audit lane:** the one `Clean` row.
 

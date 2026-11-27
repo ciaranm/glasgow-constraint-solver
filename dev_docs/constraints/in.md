@@ -955,7 +955,7 @@ Facts shared by every rule:
 - **`scp_chain_in_*`:** the seven cases under [Cake
   conformity](#cake-conformity).
 - **MiniZinc:**
-  - `membertest.mzn` (`member` over three `var 1..4`) against the reference
+  - `member/basic.mzn` (`member` over three `var 1..4`) against the reference
     solver;
   - `minizinc-emptysetin`, hand-written JSON FlatZinc for `set_in` with the
     empty set.

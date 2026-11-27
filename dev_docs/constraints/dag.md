@@ -88,7 +88,7 @@ Chuffed's native `dag` has 4, since it also requires weak connectivity
 of the graph family. [`minizinc.md`](../minizinc.md) ("... and the
 decomposition may not match the documentation either") gives the
 consequences for testing. A differential test has to post `subgraph`
-alongside, as `minizinc/tests/dagtest.mzn` does.
+alongside, as `minizinc/tests/dag/basic.mzn` does.
 
 Degenerate cases:
 
@@ -767,7 +767,7 @@ under assertions.
   and the control `dag_mutation_none` under `run_test_and_verify.bash`, on one
   fixture. All three behave as expected at `86caad24`. Which line each lane
   breaks is in rules 2 and 4.
-- **`minizinc-dag`**: `dagtest.mzn`, two triangles sharing a node plus a spur,
+- **`minizinc-dag`**: `dag/basic.mzn`, two triangles sharing a node plus a spur,
   nodes indexed from 2, with `subgraph` posted alongside. It is differentially
   enumerated against MiniZinc's default solver, with `--fzn-pattern
   glasgow_dag` insisting the builtin ran. The proof verifies (461 solutions)

@@ -25,7 +25,7 @@ Doxyfile
 # run_minizinc_test.bash's intermediates. It writes them into the working
 # directory, which is the build tree under ctest but the source root on a hand
 # run -- which is how twelve of them reached the root once. Anchored at the root,
-# because minizinc/tests/json/ and xcsp/tests/expected/ hold tracked .fzn and
+# because minizinc/tests/<global>/ and xcsp/tests/expected/ hold tracked .fzn and
 # .sols files that these patterns must not swallow.
 /*.fzn
 /*.glasgow.out

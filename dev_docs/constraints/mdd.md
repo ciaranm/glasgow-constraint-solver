@@ -823,7 +823,7 @@ support (#1352); `MDD`'s finds the one target by `find_transition`
   when it is on the path. Seeded (`--seed=N`).
 - **`scp_reader_test`**: `read_scp: mdd enumerates correctly`, and the write,
   read, write round trip.
-- **MiniZinc:** `minizinc-mdd` runs `tests/mddtest.mzn`, the XCSP3 reference
+- **MiniZinc:** `minizinc-mdd` runs `tests/mdd/basic.mzn`, the XCSP3 reference
   example, against MiniZinc's default solver, with proofs. No `--fzn-pattern`.
 - **XCSP3:** `xcsp_mdd`, `tests/mdd.xml`, against ACE's cached solutions, with
   proofs.

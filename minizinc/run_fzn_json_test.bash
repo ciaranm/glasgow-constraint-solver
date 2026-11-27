@@ -6,9 +6,10 @@
 # set, which MiniZinc rewrites to `false`), so they cannot be reached from a
 # .mzn model.
 #
-# Usage: run_fzn_json_test.bash <fzn-glasgow> <minizincdir> <testname>
-# Reads   <minizincdir>/tests/json/<testname>.fzn       (JSON FlatZinc input)
-# against <minizincdir>/tests/json/<testname>.expected  (sorted solver output)
+# Usage: run_fzn_json_test.bash <fzn-glasgow> <input.fzn> <testname>
+# Reads   <input.fzn>                    (JSON FlatZinc input)
+# against <input>.expected beside it     (sorted solver output)
+# and names its scratch files in the working directory after <testname>.
 
 set -euo pipefail
 
@@ -17,20 +18,19 @@ set -euo pipefail
 . "$(dirname "$0")/../proof_file_disposal.bash"
 
 fznglasgow=$1
-minizincdir=$2
+infile=$2
 testname=$3
 
 export PATH="$HOME/.cargo/bin:$PATH"
 
-jsondir=$minizincdir/tests/json
-infile=$jsondir/$testname.fzn
+expected=${infile%.fzn}.expected
 
 "$fznglasgow" -a "$infile" | tee "$testname.fzn.out" || exit 1
 
 # Sort the output so the comparison is independent of solution enumeration
 # order; VeriPB below independently certifies the result is complete.
 sort < "$testname.fzn.out" > "$testname.fzn.sols"
-if ! diff -u <(sort < "$jsondir/$testname.expected") "$testname.fzn.sols" ; then
+if ! diff -u <(sort < "$expected") "$testname.fzn.sols" ; then
     echo "found unexpected solver output"
     exit 2
 fi

@@ -312,7 +312,7 @@ constraint's ID.
   runs).
 - **`scp_chain_seq_precede_chain_{sat,nonexact_sat,unsat}`:** see [Cake
   conformity](#cake-conformity).
-- **MiniZinc:** `seqprecedechain.mzn`.
+- **MiniZinc:** `seq_precede_chain/basic.mzn`.
 - **Audit lane:** three `SeqPrecedeChain` rows, wide, full-range and holey,
   since #1302 (one narrow row before).
 

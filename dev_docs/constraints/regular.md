@@ -1214,7 +1214,8 @@ row and the exactly-one.
   split-and-fail, split-and-meet, domain-dependent and length-dependent cases.
 - **`scp_chain_regular_*`**: three deterministic cases; see [Cake
   conformity](#cake-conformity).
-- **MiniZinc:** `regex.mzn` (a hand-built table, `q0 = 1`), `nurses.mzn`.
+- **MiniZinc:** `regular/regex.mzn` (a hand-built table, `q0 = 1`),
+  `models/nurses.mzn`.
   **XCSP3:** `regular.xml`, `regular_nfa.xml`.
 - **Audit lane:** the three rows above.
 

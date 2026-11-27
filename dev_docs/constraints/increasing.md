@@ -25,9 +25,9 @@ family has changed since `c9ceea25`.
 
 **What was measured again.** Only MiniZinc's side. The flattening, at
 `0a5b4ec6` with `build/glasgow.msc` on MiniZinc 2.9.7 and 2.10.1, which agree:
-`decreasingtest.mzn` and `strictlydecreasing.mzn` flatten to one
+`increasing/decreasing_basic.mzn` and `increasing/strictly_decreasing_basic.mzn` flatten to one
 `glasgow_increasing_int` and one `glasgow_strictly_increasing_int` over the
-reversed array, `decreasingreif.mzn` to three `int_lin_le_reif`, one
+reversed array, `increasing/decreasing_reif.mzn` to three `int_lin_le_reif`, one
 `array_bool_and` and one `bool_clause`, and a model posting `decreasing` and
 `strictly_increasing` with no `include` reaches both builtins
 (`tmp/fd871-comments-1008/ordsmall/probes/mzn/`). #1186's worst case, under
@@ -487,8 +487,8 @@ family.
 - **`scp_chain_{increasing,strictly_increasing}_{sat,unsat}`,
   `scp_chain_decreasing_sat`, `scp_chain_strictly_decreasing_unsat`:** see
   [Cake conformity](#cake-conformity).
-- **MiniZinc:** `increasingtest.mzn`, `strictlyincreasing.mzn`,
-  `decreasingtest.mzn` and `strictlydecreasing.mzn` (`increasing.mzn` and
+- **MiniZinc:** `increasing/basic.mzn`, `increasing/strictly_increasing_basic.mzn`,
+  `increasing/decreasing_basic.mzn` and `increasing/strictly_decreasing_basic.mzn` (`increasing.mzn` and
   `decreasing.mzn` before #1178 renamed them; the ctest names are unchanged),
   compared against the reference solver. Since #1178 the two descending lanes
   carry `--fzn-count 1` guards on `glasgow_increasing_int` and

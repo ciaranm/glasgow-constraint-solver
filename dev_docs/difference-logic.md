@@ -2162,7 +2162,7 @@ nothing it cannot ask for anyway. See the entry-point table in
 `int_lin_le([1,-1],[x,y],d)` for `x - y <= d`, for `x + k <= y`, and even for a
 bare `x <= y`, which the FlatZinc reader recovers as a `LessThanEqual`
 (`8c6cb43d`), a comparison donor the presolver lifts.
-`minizinc/tests/differencelogic.mzn` gets four edges over four nodes out
+`minizinc/tests/linear/difference_logic.mzn` gets four edges over four nodes out
 of a four-event time-lag network, with the two deliberately non-difference
 constraints landing in `skipped_not_two_terms` and `skipped_coefficients`.
 

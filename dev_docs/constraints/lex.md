@@ -154,9 +154,9 @@ section](#lexsmarttable).
 
 Positions are all that matter, and MiniZinc compares "from first to last
 element, regardless of indices", as this class does, so no index set can be
-mistranslated. `lexltunequal.mzn`, `lexgtunequal.mzn`, `lexlequnequal.mzn` and
-`lexgequnequal.mzn` pin the unequal-length semantics against the reference
-solver, and `lexreif.mzn` the reified forms.
+mistranslated. `lex/lt_unequal.mzn`, `lex/gt_unequal.mzn`, `lex/leq_unequal.mzn` and
+`lex/geq_unequal.mzn` pin the unequal-length semantics against the reference
+solver, and `lex/reif.mzn` the reified forms.
 
 ### Options
 
@@ -764,7 +764,7 @@ specific to it:
 - **`scp_chain_lex_*`**, sixteen cases since #1183: the propagator class's
   fourteen and `LexSmartTable`'s two `lex_smart_table_*`; see [Cake
   conformity](#cake-conformity).
-- **MiniZinc:** `lexless.mzn`, `lexlesseq.mzn`, `lexbool.mzn`, `lexreif.mzn`,
+- **MiniZinc:** `lex/less.mzn`, `lex/lesseq.mzn`, `lex/bool.mzn`, `lex/reif.mzn`,
   and the four `lex*unequal.mzn`.
 - **XCSP3:** `lex.xml`, `lex_matrix.xml`.
 - **`LexSmartTable`:** since #1183, `lex_test` runs the unequal-length and

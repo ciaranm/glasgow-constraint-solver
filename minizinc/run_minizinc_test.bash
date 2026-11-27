@@ -1,11 +1,16 @@
 #!/bin/bash
 
-# Differential-tests a model against MiniZinc's default solver: runs
-# <minizincdir>/tests/<testname>.mzn through both fzn-glasgow and MiniZinc's
-# default solver, and diffs the solutions (all of them if <enumeration> is
+# Differential-tests a model against MiniZinc's default solver: runs <model>
+# through both fzn-glasgow and MiniZinc's default solver, and diffs the solutions (all of them if <enumeration> is
 # true, otherwise just the final objective value). If <doproofs> is true and
 # veripb is available, also reruns with --prove and verifies the proof.
 # Skips (exit 66, the ctest SKIP_RETURN_CODE) if minizinc is not installed.
+#
+# Every scratch file goes in the working directory, named after <testname>: the
+# flattened .fzn, each run's output and solutions, and the proof. Lanes that
+# share a working directory need different names, or a parallel ctest has them
+# clobber each other's files; gcs_minizinc_test in minizinc/CMakeLists.txt uses
+# the ctest name, which is unique.
 #
 # <solverflags> is a whitespace-separated list of extra flags handed to
 # MiniZinc for the Glasgow run only (they must be declared in the .msc's
@@ -56,7 +61,7 @@
 # Usage: run_minizinc_test.bash [--fzn-pattern <regex>]... [--fzn-count <n> <regex>]...
 #                               [--reference-solver <name>]... [--reference-std]
 #                               [--skip-default-reference] [--unsatisfiable]
-#                               <fzn-glasgow> <minizincdir>
+#                               <fzn-glasgow> <model>
 #                               <testname> <enumeration> <doproofs>
 #                              [<solverflags> [<requiredpattern>...]]
 
@@ -92,7 +97,7 @@ fi
 
 solverexe=$1
 builddir=$(dirname "$1")
-minizincdir=$2
+model=$2
 testname=$3
 enumeration=$4
 doproofs=$5
@@ -117,9 +122,9 @@ if ! grep -qF "\"executable\": \"$solverexe\"" "$solver_msc" ; then
 fi
 
 minizinc --solver "$solver_msc" --fzn "$testname.fzn" -a \
-    ${solverflags[@]+"${solverflags[@]}"} "$minizincdir/tests/$testname.mzn" | tee "$testname.glasgow.out" || exit 1
+    ${solverflags[@]+"${solverflags[@]}"} "$model" | tee "$testname.glasgow.out" || exit 1
 if [[ "$default_reference" == "true" ]] ; then
-    minizinc -a "$minizincdir/tests/$testname.mzn" | tee "$testname.default.out" || exit 2
+    minizinc -a "$model" | tee "$testname.default.out" || exit 2
 fi
 
 for pattern in ${fzn_patterns[@]+"${fzn_patterns[@]}"} ; do
@@ -183,7 +188,7 @@ if [[ "$default_reference" == "true" ]] ; then
 fi
 
 if [[ "$reference_std" == "true" ]] ; then
-    minizinc -G std -a "$minizincdir/tests/$testname.mzn" | tee "$testname.std.out" || exit 14
+    minizinc -G std -a "$model" | tee "$testname.std.out" || exit 14
     solutions_of "$testname.std.out" > "$testname.std.sols"
     if ! diff -u "$testname.glasgow.sols" "$testname.std.sols" ; then
         echo "found different solutions from the default solver on the standard library's decompositions"
@@ -199,7 +204,7 @@ for reference in ${reference_solvers[@]+"${reference_solvers[@]}"} ; do
         echo "reference solver $reference is not installed, skipping that comparison"
         continue
     fi
-    minizinc --solver "$reference" -a "$minizincdir/tests/$testname.mzn" | tee "$testname.$reference.out" || exit 11
+    minizinc --solver "$reference" -a "$model" | tee "$testname.$reference.out" || exit 11
     solutions_of "$testname.$reference.out" > "$testname.$reference.sols"
     if ! diff -u "$testname.glasgow.sols" "$testname.$reference.sols" ; then
         echo "found different solutions from reference solver $reference"
@@ -214,7 +219,7 @@ done
 # deletions that check applies to, so ask for the strict behaviour.
 # See dev_docs/solution-clause-deletion.md.
 if [[ "$doproofs" == "true" ]] && veripb --help >/dev/null ; then
-    minizinc --solver "$solver_msc" -a ${solverflags[@]+"${solverflags[@]}"} "$minizincdir/tests/$testname.mzn" \
+    minizinc --solver "$solver_msc" -a ${solverflags[@]+"${solverflags[@]}"} "$model" \
         --prove --proof-files-basename "$testname" | tee "$testname.glasgow.out" || exit 7
     if ! veripb --force-checked-deletion "$testname.opb" "$testname.pbp" ; then
         echo "Rerunning last 100 lines of proof verification in trace mode..."
