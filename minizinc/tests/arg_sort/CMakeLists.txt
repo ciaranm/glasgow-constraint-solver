@@ -11,3 +11,16 @@ gcs_minizinc_test(minizinc-argsort-shapes shapes.mzn true true OPTIONS --fzn-cou
 # the redefinition included the stdlib's reified decomposition: nothing else
 # reaches that include, since every other lane posts arg_sort at the root.
 gcs_minizinc_test(minizinc-argsort-reif reif.mzn true true)
+
+# More shapes beyond minizinc-argsort-shapes (#1006): a negated call, integer
+# literals in p, a par x with a tie, and an enum-valued x. As there, MiniZinc's
+# default solver already runs the stdlib decomposition, so there is no
+# --reference-std.
+gcs_minizinc_test(minizinc-argsort-moreshapes more_shapes.mzn true true
+    OPTIONS --fzn-count 3 glasgow_arg_sort_int)
+
+# The same variable twice in p, which can be no permutation. The pattern checks
+# that p reached the builtin with the repeat.
+gcs_minizinc_test(minizinc-argsort-aliased aliased.mzn true true
+    OPTIONS --unsatisfiable --fzn-pattern glasgow_arg_sort_int
+        --fzn-pattern "\\[\"q\", \"q\"\\]")

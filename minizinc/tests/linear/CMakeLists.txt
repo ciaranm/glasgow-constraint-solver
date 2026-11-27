@@ -67,3 +67,28 @@ gcs_minizinc_test(minizinc-differencelogic difference_logic.mzn true true
     "^%%%mzn-stat: differenceLogicSkippedCoefficients=1$"
     "^%%%mzn-stat: differenceLogicPropagatorInstalled=1$"
     "^%%%mzn-stat: differenceLogicSimplifyRan=1$")
+
+# The linear builtins on the shapes a front end gets wrong (#1006). Model-level
+# rows first: very unequal coefficients, a repeated variable, and reified,
+# half-reified and negated rows, which all reach the _reif builtins, several of
+# them over two unit-coefficient terms that the reader leaves as linear.
+gcs_minizinc_test(minizinc-linear-model-shapes lin_model_shapes.mzn true true
+    OPTIONS --fzn-count 6 "\"int_lin_(eq|le|ne)_reif\"" --fzn-count 2 "\"int_lin_le\"" --reference-std)
+
+# Direct calls, which keep shapes the flattener would tidy away from a model: a
+# zero coefficient in a two-term row, which the recovery must decline, a
+# single-term row, an integer literal as one of two terms, and one variable
+# twice in a two-term unit-coefficient row, which the recovery rewrites into a
+# comparison of the variable with a view of itself. The counts pin the
+# zero-coefficient arrays, the literal and the aliased rows.
+gcs_minizinc_test(minizinc-linear-direct-shapes lin_direct_shapes.mzn true true
+    OPTIONS --fzn-count 3 "\"int_lin_le\"" --fzn-count 3 "\"int_lin_ne\"" --fzn-count 2 "\"int_lin_le_reif\""
+            --fzn-count 2 "\"a\" *: *\\[(0, 1|1, 0)\\]" --fzn-count 1 "\\[2, \"w\"\\]"
+            --fzn-count 3 "\\[\"x\", \"x\"\\]|\\[\"y\", \"y\"\\]" --reference-std)
+
+gcs_minizinc_test(minizinc-linear-alias-eq lin_alias_eq.mzn true true
+    OPTIONS --fzn-count 2 "\"int_lin_eq\"" --fzn-count 1 "\"int_lin_ne\"" --fzn-count 1 "\"int_lin_ne_reif\""
+            --fzn-count 4 "\\[\"x\", \"x\"\\]|\\[\"y\", \"y\"\\]|\\[\"z\", \"z\"\\]" --reference-std)
+
+gcs_minizinc_test(minizinc-linear-alias-unsat lin_alias_unsat.mzn true true
+    OPTIONS --unsatisfiable --fzn-pattern "\"int_lin_le\", \"args\" *: *\\[.*\\[\"x\", \"x\"\\], -1\\]" --reference-std)

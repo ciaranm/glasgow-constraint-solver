@@ -66,7 +66,24 @@ set_tests_properties(minizinc-installed-msc PROPERTIES SKIP_RETURN_CODE 66)
 # run_minizinc_test.bash, whose header documents the arguments: OPTIONS are its
 # leading options (--fzn-pattern, --fzn-count, --reference-std and the rest),
 # FLAGS its <solverflags>, and REQUIRE its <requiredpattern>s.
+#
+# A regex argument must have as many `[` as `]`, counting escaped ones. The
+# arguments travel through CMake lists, and CMake does not split a list at a `;`
+# inside square brackets, so an unbalanced `\[` silently glues the next argument
+# onto the regex. The check below refuses that at configure time.
 function(gcs_minizinc_test name model enumeration doproofs)
+    if(ARGC GREATER 4)
+        math(EXPR last "${ARGC} - 1")
+        foreach(i RANGE 4 ${last})
+            string(REGEX REPLACE "[^[]" "" opens "${ARGV${i}}")
+            string(REGEX REPLACE "[^]]" "" closes "${ARGV${i}}")
+            string(LENGTH "${opens}" opens)
+            string(LENGTH "${closes}" closes)
+            if(NOT opens EQUAL closes)
+                message(FATAL_ERROR "gcs_minizinc_test(${name}): argument `${ARGV${i}}` has unbalanced square brackets")
+            endif()
+        endforeach()
+    endif()
     cmake_parse_arguments(PARSE_ARGV 4 arg "" "FLAGS" "OPTIONS;REQUIRE")
     if(arg_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "gcs_minizinc_test(${name}): unexpected arguments ${arg_UNPARSED_ARGUMENTS}")

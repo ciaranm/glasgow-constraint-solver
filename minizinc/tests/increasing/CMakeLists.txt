@@ -36,3 +36,22 @@ gcs_minizinc_test(minizinc-strictlydecreasing strictly_decreasing_basic.mzn true
     OPTIONS --fzn-count 1 glasgow_strictly_increasing_int)
 
 gcs_minizinc_test(minizinc-strictlyincreasing strictly_increasing_basic.mzn true true)
+
+# The shapes a front end can misread for increasing and strictly_increasing
+# (#1006): Boolean and enum-valued arrays, index sets not from 1, integer
+# literals, a two-dimensional array, empty int and Boolean arrays, which the
+# wrapper hands to the builtins unguarded, and a single element. The counts
+# insist that every shape reached its builtin; --reference-std adds the standard
+# library's decompositions, since MiniZinc's default solver has its own
+# increasing.
+gcs_minizinc_test(minizinc-increasing-shapes increasing_shapes.mzn true true
+    OPTIONS --fzn-count 2 glasgow_increasing_bool --fzn-count 5 glasgow_increasing_int
+        --fzn-count 3 glasgow_strictly_increasing_int --reference-std)
+
+# Reified, half-reified and negated increasing and strictly_increasing, which
+# have no builtin and reach the stdlib's reified decompositions; the lane checks
+# that they flatten and agree. The empty array that decreasing_trivial.mzn
+# covers for decreasing is left out: redefinitions.mzn does not guard
+# increasing, and the stdlib's reified decomposition makes `r <-> increasing([])`
+# unsatisfiable for every solver.
+gcs_minizinc_test(minizinc-increasing-reif increasing_reif.mzn true true OPTIONS --reference-std)

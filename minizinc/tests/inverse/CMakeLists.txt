@@ -31,4 +31,12 @@ gcs_minizinc_test(minizinc-inverses-unequal unequal.mzn true false
 # variable twice. Each is unsatisfiable and used to be an error (#1047); the
 # pattern checks that the array really did reach the builtin with a repeat.
 gcs_minizinc_test(minizinc-inverses-aliased aliased.mzn true true
-    OPTIONS --unsatisfiable --fzn-pattern glasgow_inverse --fzn-pattern "\\[\"(X_INTRODUCED_[0-9]+_)\", \"\\1\"")
+    OPTIONS --unsatisfiable --fzn-pattern glasgow_inverse --fzn-pattern "\"(X_INTRODUCED_[0-9]+_)\", \"\\1\"")
+
+# The reified and negated contexts, which go through the stdlib's
+# fzn_inverse_reif and reach no builtin, but have to flatten for us at all.
+gcs_minizinc_test(minizinc-inverses-reif reif.mzn true true OPTIONS --reference-std)
+
+# Two arrays indexed from far apart and far from 1 (#1006).
+gcs_minizinc_test(minizinc-inverses-large large.mzn true true
+    OPTIONS --fzn-pattern glasgow_inverse --reference-std)

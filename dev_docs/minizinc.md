@@ -414,6 +414,13 @@ MiniZinc 2.9.7:
 | `symmetric_all_different`, empty array | `UNSATISFIABLE` (wrong) | right |
 | `inverse` or `symmetric_all_different` over an index set with negative values | `Int::channel: Number out of limits` | right |
 | `inverse` on arrays of different lengths | `Int::channel: Sizes of argument arrays mismatch` | right |
+| `circuit`, `diffn`, `bin_packing` or `bin_packing_capa` over no items | `UNSATISFIABLE` or an error (wrong) | right |
+| `global_cardinality_low_up(_closed)` with a negative lower bound | too few solutions, or `UNSATISFIABLE` (wrong) | right |
+| `all_different` over `var bool`, MiniZinc 2.10 and later | `Type error: integer literal expected` | right |
+
+The last three rows came from the #1006 lanes, which skip the default
+solver for them, and hold on 2.9.7, 2.10.1 and 2.11.0 unless the row says
+otherwise.
 
 The empty cases come from Gecode's `fzn_inverse` taking `min` of an
 empty index set. `-G std` hands Gecode the standard library's

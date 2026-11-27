@@ -20,3 +20,15 @@ gcs_minizinc_test(minizinc-regularstartemptynot start_empty_not.mzn true true
 # this is hand-written JSON (taken from 2.10.1's output) rather than a model
 # whose flattening would depend on the version.
 gcs_fzn_json_test(minizinc-regularreifstart-fzn reif_start.fzn)
+
+# More shapes (#1006): variables whose domains reach past the alphabet on both
+# sides, the fail state in the table, an unreachable final state, a sequence
+# indexed from 0, one of length 1, and a one-state automaton over a sequence
+# with a repeated variable and a constant. --fzn-count insists all three
+# reached the builtin.
+gcs_minizinc_test(minizinc-regular-shapes shapes.mzn true true
+    OPTIONS --fzn-count 3 glasgow_regular --reference-std)
+
+# No final states, so nothing is accepted.
+gcs_minizinc_test(minizinc-regular-nofinal no_final.mzn true true
+    OPTIONS --unsatisfiable --fzn-pattern glasgow_regular --reference-std)
