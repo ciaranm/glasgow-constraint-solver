@@ -152,6 +152,10 @@ add_xcsp_test(circuit_size)
 add_xcsp_test(circuit_size_var)
 add_xcsp_test(cop_maximize_sum)
 add_xcsp_test(cop_minimize)
+# --restarts and --branch (#1482, #1493): the same instance as cop_minimize, under
+# a name of its own so the two lanes' outputs and proofs do not collide. Its one
+# conflict is enough for a scale of 1 to restart, which the pattern checks.
+add_xcsp_test(cop_minimize_restarts "--restarts=1 --branch=dom-wdeg:chs" "^d RESTARTS [1-9]")
 add_xcsp_test(count)
 add_xcsp_test(count_among)
 add_xcsp_test(cumulative)
@@ -260,12 +264,16 @@ add_xcsp_test(range_sum_wide)
 # Integers the parser cannot represent. Each used to wrap silently, giving a
 # wrong answer, or to abort; each must now be reported as unsupported, with the
 # reason. An uncaught exception, whose message could otherwise match, and any
-# solution line both fail the test.
-function(add_xcsp_refusal_test name message)
-    add_test(NAME xcsp_${name} COMMAND $<TARGET_FILE:xcsp_glasgow_constraint_solver> --all ${CMAKE_SOURCE_DIR}/xcsp/tests/${name}.xml)
-    set_tests_properties(xcsp_${name} PROPERTIES
+# solution line both fail the test. add_xcsp_refusal_lane runs an instance
+# under a lane name of its own, with extra flags (ARGN).
+function(add_xcsp_refusal_lane lane name message)
+    add_test(NAME xcsp_${lane} COMMAND $<TARGET_FILE:xcsp_glasgow_constraint_solver> --all ${ARGN} ${CMAKE_SOURCE_DIR}/xcsp/tests/${name}.xml)
+    set_tests_properties(xcsp_${lane} PROPERTIES
         PASS_REGULAR_EXPRESSION "s UNSUPPORTED\nc [^\n]*${message}"
         FAIL_REGULAR_EXPRESSION "terminate called;ENUMSOL")
+endfunction()
+function(add_xcsp_refusal_test name message)
+    add_xcsp_refusal_lane(${name} ${name} ${message})
 endfunction()
 # 4294967296..4294967297 was read as 0..1.
 add_xcsp_refusal_test(range_domain_past_int32 "an integer does not fit in an int")
@@ -279,6 +287,13 @@ add_xcsp_refusal_test(range_condition_past_int32 "stoi")
 # An index-free element whose condition is not (eq, value): not membership, so
 # not In, and still refused (#1164).
 add_xcsp_refusal_test(element_member_condition_lt "only an \\(eq, value\\) condition is supported")
+# A constraint that refuses its arguments once the domains are known, in
+# prepare() and so inside solve_with() rather than while parsing: a cumulative
+# whose length may be negative. It used to escape main and abort (#1493). The
+# timeout lane checks the timeout thread is stopped first, since destroying it
+# while joinable terminates.
+add_xcsp_refusal_test(cumulative_negative_length "Cumulative: lengths must be non-negative")
+add_xcsp_refusal_lane(cumulative_negative_length_timeout cumulative_negative_length "Cumulative: lengths must be non-negative" --timeout 60)
 # A <sum> whose <coeffs>, or a <count> whose <values>, mixes integers and
 # variables (#1450). The parser decided from the first entry, so "2 y" was read
 # as "2 2" and y left free; the fourth parser patch refuses a mixed list in

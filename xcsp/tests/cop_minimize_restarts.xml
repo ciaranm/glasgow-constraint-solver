@@ -1,0 +1,12 @@
+<instance format="XCSP3" type="COP">
+    <variables>
+        <var id="x"> 0..5 </var>
+        <var id="y"> 0..5 </var>
+    </variables>
+    <constraints>
+        <intension> ge(mul(x,y),6) </intension>
+    </constraints>
+    <objectives>
+        <minimize> x </minimize>
+    </objectives>
+</instance>
