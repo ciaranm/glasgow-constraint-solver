@@ -1004,8 +1004,8 @@ namespace
      * at *every* branching decision rather than once at the root -- survived the
      * whole of the rest of this lane.
      *
-     * These rows need no separate stopping rule. solve_with_state() calls
-     * branch_generator.begin() before the trace callback, and begin() runs the
+     * These rows need no separate stopping rule. The search calls the
+     * brancher's begin() before the trace callback, and begin() runs the
      * value order up to its first co_yield -- so probe()'s "stop at the root"
      * has already made exactly one branching decision by the time it returns.
      * One call of one heuristic over a 10^9 domain is precisely what is being

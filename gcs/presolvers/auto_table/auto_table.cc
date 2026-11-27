@@ -50,10 +50,11 @@ namespace
         if (this_branch_guess)
             guesses.push_back(*this_branch_guess);
         if (propagators.propagate(guesses, state, logger)) {
-            // As in solve_with_state: the brancher is a coroutine, so it only stores
-            // this reference now and reads it when begin() resumes it. State::current()
-            // returns by value, so the CurrentState has to be a named local that
-            // outlives the generator rather than a temporary that dies on this line.
+            // As in solve.cc's DepthFirstSearch: the brancher is a coroutine, so it
+            // only stores this reference now and reads it when begin() resumes it.
+            // State::current() returns by value, so the CurrentState has to be a
+            // named local that outlives the generator rather than a temporary that
+            // dies on this line.
             auto current_state = state.current();
             auto brancher = branch_callback(current_state, propagators);
             auto branch_iter = brancher.begin();
