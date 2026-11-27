@@ -232,8 +232,8 @@ What each tag installs:
   at most 100, which counts the enumeration tree's leaves; with its interior
   nodes the derivation can write up to about twice as many lines. It is
   overridable once per process by `GCS_TABULATION_THRESHOLD`
-  (`tabulation.cc:236-244`), and the largest-domained variable that the others
-  determine is left out of the product (`tabulation.cc:246-269`). In practice:
+  (`tabulation.cc:235-242`), and the largest-domained variable that the others
+  determine is left out of the product (`tabulation.cc:244-267`). In practice:
   - `Plus` / `Minus`: only when two positions alias, and every aliased shape
     has a determined variable to leave out. The budget is `|D(x)|` for
     `x + y = x`, `min(|D(x)|, |D(r)|)` for `x + x = r`, and 1 for `x + x = x`.
@@ -531,7 +531,7 @@ are always the verbose ones and the two cannot drift apart that way.
 - **Tabulation, at the root**: per accepted tuple two `red` lines introducing
   a selector literal, and per node of the enumeration tree one backtrack RUP,
   at `ProofLevel::Current`. **Skipped entirely at the assertion levels**
-  (`tabulation.cc:104, 163, 172`), so a hints-only proof has no selectors.
+  (`tabulation.cc:103, 164, 173`), so a hints-only proof has no selectors.
 - **Everything else is `Temporary`**, deleted by range when the justification
   ends.
 - **Naming, for an external tool**: every row above is found from the
@@ -851,7 +851,7 @@ under an explicit `Tabulated`.
      `LargeDomainIterationCounter`. The repeat loop under aliasing is not, and
      it too can take one pass per value (#1068).
    - **The tabulation initialiser** walks values (`each_value_mutable`,
-     `tabulation.cc:144`) by design, bounded by 100 leaves under
+     `tabulation.cc:143`) by design, bounded by 100 leaves under
      `Auto` and unbounded under `Tabulated` (#880). The extensional
      propagator's support scan is per value; it is the table family's.
    - **`PowerTable`** walks `D(base) × D(exponent)` with no budget (#845).
