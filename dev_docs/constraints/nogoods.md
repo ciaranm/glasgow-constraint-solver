@@ -13,14 +13,15 @@
 > proof was rejected), by moving the store into `innards`; #1391 (a Luby
 > scale of 0 never terminated), by #1474, which refuses it; #1394 (the engine's refined-watch undo, 59% of the
 > profile samples of `tsp --restarts=100`), by #1441, which searches from the
-> back. Already open and touching this family: #131
+> back; #1085 (deep search overflowed the stack, since search recursed once
+> per decision), by keeping the search path on a stack of its own. Already
+> open and touching this family: #131
 > (a generic watched-clause propagator, the natural home for this one,
 > `NegativeTable`'s and the logical family's), #310 (range literals cannot be
 > written into the model, so a range literal in a posted nogood throws with
 > proofs on), #1210 (the generic `Links`-level solution-line rejection for
-> range-declared variables, which restart proofs meet too), #1085 (deep search
-> overflows the stack in `solve_with_state`, the recursion the restart loop
-> drives), #1309 (`install_returning_id` was quadratic in a propagator's trigger
+> range-declared variables, which restart proofs meet too), #1309
+> (`install_returning_id` was quadratic in a propagator's trigger
 > count, until #1442; the scan path subscribes to every variable) and #868 (cross-solver
 > comparison). Tracked under #871.
 
@@ -31,7 +32,7 @@ records, and propagating them in later passes.** When a
 `SolveCallbacks::restarts` schedule is set, `solve_with` builds a
 `NogoodStore`, installs one `Nogoods` over it with every problem variable as
 its trigger set, and grows the store at each restart unwind
-(`solve.cc:353-366`, `:253-283`). That is the only use in the tree, and the
+(`solve.cc:543-556`, `:423-453`). That is the only use in the tree, and the
 only one this audit treats as supported. **It is not meant to be a
 user-facing constraint**, and it would probably need work before anything other
 than restarts relied on it: see [Known limitations](#known-limitations) and
@@ -75,7 +76,7 @@ Five things to know before touching it.
   any trigger variable and visits every clause; the *refined* path is two
   watched literals over the engine's refined per-literal watches
   ([`refined-triggers.md`](../refined-triggers.md)). The learned store uses
-  refined unless `GCS_LEARNED_NOGOODS_SCAN` is set (`solve.cc:362`); the fixed
+  refined unless `GCS_LEARNED_NOGOODS_SCAN` is set (`solve.cc:552`); the fixed
   constructor defaults to refined; the learned store's mode is chosen by
   `solve_with`, through `innards::nogoods_over_learned_store`. The header's and
   the source's comments that the learned store "stays coarse until ... stage
@@ -138,10 +139,10 @@ and propagate correctly (below). In a posted nogood they throw with proofs on
 The learned store's nogoods are **reduced nld-nogoods** (Lecoutre et al., see
 [Prior art](#prior-art)): at a restart cutoff, for each frame on the abandoned
 path and each sibling `s` that frame had fully refuted, the nogood is the
-frame's positive decisions plus `s` (`solve.cc:245-283`). A second sibling that
+frame's positive decisions plus `s` (`solve.cc:415-453`). A second sibling that
 is the negation of the first (for instance `x = v` then `x ≠ v`, `x ≠ v` then
 `x = v`, `x < v` then `x ≥ v`, `x ∉ I` then `x ∈ I`) is a negative decision and
-is left out of the prefix passed down (`solve.cc:187-210`); every other
+is left out of the prefix passed down (`solve.cc:361-381`); every other
 descended sibling is kept, including a first sibling `x ≠ v` or `x ∉ I`.
 
 ### Concrete constraints and frontend coverage
@@ -169,7 +170,7 @@ descended sibling is kept, including a first sibling `x ≠ v` or `x ∉ I`.
 | Route | Flag | Notes |
 |---|---|---|
 | C++ | `SolveCallbacks::restarts = RestartSchedule::luby(scale)` | `luby(0)` throws `InvalidProblemDefinitionException`; it used to never terminate (#1391) |
-| `fzn-glasgow` | `--restarts=N` | `N = 0` means off (`fzn_glasgow.cc:1438-1442`), as the help text (`:371-374`) and the `.msc` flag text (`minizinc/glasgow.msc.in:10`) say; both used to say "find-one / optimisation only" too, though enumeration with restarts is supported (`solve.cc:154-158`), until #1396 |
+| `fzn-glasgow` | `--restarts=N` | `N = 0` means off (`fzn_glasgow.cc:1438-1442`), as the help text (`:371-374`) and the `.msc` flag text (`minizinc/glasgow.msc.in:10`) say; both used to say "find-one / optimisation only" too, though enumeration with restarts is supported (`solve.cc:345-349`), until #1396 |
 | `xcsp_glasgow_constraint_solver` | `--restarts[=N]` | bare means 100; prints `d RESTARTS` and `d LEARNED NOGOODS`; `N = 0` used to hang through its own `--timeout` and SIGTERM (#1391), then aborted with `luby()`'s exception, and is now refused as a usage error before the instance is read (#1482) |
 | examples | `--restarts` on `langford`, `colour`, `ortho_latin`; MiniCP `tsp`, `qap`, `magic_series`, `magic_square`, `n_queens` | `N = 0` means off, as in `fzn-glasgow`; each used to pass it straight to `luby()` and hang (#1391) |
 | `gcspy`, `glasgow_scp_solver` | none | |
@@ -198,7 +199,7 @@ force instead.
   and `solve_with` passes `true`. (Before #1393 the store-sharing constructor
   was public and defaulted to `false`.)
 - **`GCS_LEARNED_NOGOODS_SCAN`**, an environment variable read once per solve
-  by `solve_with` (`solve.cc:362`): if set, even to the empty string, the
+  by `solve_with` (`solve.cc:552`): if set, even to the empty string, the
   learned store uses the scan path. It exists as the differential oracle.
 
 Neither changes the OPB model, which is the same rows either way; they choose
@@ -239,7 +240,7 @@ nogood would be one more literal in the clause.
   grows the store and derives every learned clause in the proof
   (`ProofLogger::emit_learned_nogood`, `proof_logger.cc:447-461`), and
   `Stats::learned_nogoods` is the store's size at the end of the solve
-  (`solve.cc:519-520`).
+  (`solve.cc:706-707`).
 
 ## The proof model
 
@@ -341,7 +342,7 @@ that "a nogood holds the negation of each decision on a path, so any brancher
 that can decide `x != v` --- `smallest_in`'s right branch does --- can put
 `x == v` in a nogood". A nogood holds the kept decisions themselves, not their
 negations, and `smallest_in`'s right branch `x ≠ v` is exactly the negative
-decision that is dropped (`solve.cc:204-206`). All corrected by #1396.
+decision that is dropped (`solve.cc:375-377`). All corrected by #1396.
 
 **Scope.** The refined propagator declares none: no coarse trigger, no
 `Triggers::refined` and no `scope_only` (`nogoods.cc:375`).
@@ -634,7 +635,7 @@ Facts that hold for rules 1 and 2:
   abandoned at a restart cutoff, its kept positive decisions `P`, and a sibling
   decision `s` it had fully refuted. The same nogood goes into the store.
 - **Fires when** — the restart unwind, at every frame with a refuted sibling,
-  deepest first (`solve.cc:253-283`); never on a normal backtrack.
+  deepest first (`solve.cc:423-453`); never on a normal backtrack.
 - **Strength** — n/a: a derived clause, not a propagation.
 - **Algorithm** — one line per refuted sibling: `O(|P| + 1)` literals each. The
   number per restart is bounded by the abandoned path's total sibling count.
@@ -661,7 +662,7 @@ Facts that hold for rules 1 and 2:
   procedure**; the thesis's backtracking justifications (§3.3.2) are the
   unreduced, non-restart case. Preconditions: emitted before this frame's
   `forget_proof_level`, and the root's level 1 kept across restarts
-  (`solve.cc:287-296`), without which later passes' backtracks are not RUP.
+  (`solve.cc:457-466`), without which later passes' backtracks are not RUP.
   Always `rup`, even at `Inferences` and `Backtracking`, where the backtrack
   clauses it uses are themselves asserted.
 - **Reason** — none; the clause is the conclusion.
@@ -1029,7 +1030,7 @@ Anything else, which would need work first:
 
    Under optimisation and in a decision run no learned line is moved to core,
    and under optimisation the objective bound is imposed at every node
-   (`solve.cc:100-113`): forgetting every nogood, with a `del` of each line,
+   (`solve.cc:278-291`): forgetting every nogood, with a `del` of each line,
    gave the right optimum or verdict in all 3,441 and 212 restarting runs, and
    every proof verifies at `Off`.
 
@@ -1120,7 +1121,7 @@ Anything else, which would need work first:
 - **What the refined path chose, against these.** One propagator for the whole
   store, every restart's nogoods in it, and the restart unwind records every
   refuted sibling on the abandoned path, with no depth limit
-  (`solve.cc:253-283`); each clause is watched on two literals of its own (one
+  (`solve.cc:423-453`); each clause is watched on two literals of its own (one
   once it is unit at first sight), not structured on the path; literals `=`,
   `≠`, `≥`, `<`, `∈` and `∉` over variables, views and constants, where a
   learned `x ≠ v` or `x ∉ I` comes from a kept first sibling. Each watch is the
@@ -1203,7 +1204,7 @@ Anything else, which would need work first:
   reject-interval paragraph (`:241-249`) is stale as a whole: the generator
   exists (`value_order::reject_random_interval`, tested in `solve_test.cc:226`),
   PR #303 merged on 2026-06-16, and a learned `x ∉ I` reaches the proof; the
-  "not-a-plain-condition guard" is now `solve.cc:266-270`, which skips only
+  "not-a-plain-condition guard" is now `solve.cc:444-448`, which skips only
   proof-scaffolding literals. All corrected by #1396.
 - `refined-triggers.md:18`, `:229` and `:481` cite `gcs/constraints/nogoods.cc`,
   now under `nogoods/`. `:233-236` says the scan path is "used by the

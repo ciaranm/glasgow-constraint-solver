@@ -119,6 +119,29 @@ TEST_CASE("Solve unsat by model optimisation")
 // restarts after almost every conflict, so the search only terminates because
 // the growing cutoff eventually exceeds the whole tree --- exercising the
 // restart loop and that the proof stays balanced across many restarts.
+// Search keeps the path to the current node on a stack of its own, not on the
+// call stack (#1085). When it recursed once per decision, a default 8 MB stack
+// overflowed at about 9,000 decisions deep. One wide variable keeps each node's
+// state small: smallest_out tries x != lb first, so every decision on the way
+// down is a left branch, and the only leaf that is reached, x = 100,000, is
+// 100,000 decisions deep.
+TEST_CASE("Search goes deeper than the call stack would allow")
+{
+    Problem p;
+    auto x = p.create_integer_variable(0_i, 100'000_i);
+
+    optional<Integer> found;
+    auto stats = solve_with(p,
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           found = s(x);
+                           return false;
+                       },
+            .branch = branch_with(variable_order::in_order({x}), value_order::smallest_out())});
+
+    CHECK(found == 100'000_i);
+    CHECK(stats.max_depth == 100'000);
+}
+
 TEST_CASE("Solve unsat with restarts")
 {
     const auto proof_name = "solve_test_unsat_restarts";

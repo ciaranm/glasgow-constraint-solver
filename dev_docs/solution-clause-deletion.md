@@ -91,7 +91,7 @@ Only the ones that have to. A frame's clause is promoted exactly when the level
 it is about to forget can hold a core constraint, and only two things put one
 there: a `solx` blocking clause, recorded by a solution leaf, and a child's
 promoted clause. Both amount to "a solution was found somewhere under here",
-which is what `this_subtree_contains_solution` already says, so `solve_with_state`
+which is what the node's `contains_solution` already says, so the search
 passes `ClauseSet::Core` on exactly that condition (and only for an enumeration —
 an optimisation logs `soli` and never lands anything core at a search level).
 
