@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <limits>
 
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
@@ -237,9 +236,8 @@ auto gcs::innards::default_tabulation_threshold() -> long long
 {
     // 100 by default: a guess, see the header. A malformed override is ignored
     // with a warning, and one past long long is clamped (it already means
-    // "always tabulate").
-    static const long long threshold = static_cast<long long>(
-        std::min<unsigned long long>(non_negative_count_from_environment("GCS_TABULATION_THRESHOLD", 100), std::numeric_limits<long long>::max()));
+    // "always tabulate"); see environment.hh.
+    static const long long threshold = count_as_long_long(non_negative_count_from_environment("GCS_TABULATION_THRESHOLD", 100));
     return threshold;
 }
 

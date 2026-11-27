@@ -30,3 +30,36 @@ TEST_CASE("parse_non_negative_count: refuses what strtoull would misread")
     CHECK(parse_non_negative_count("1e3") == nullopt);
     CHECK(parse_non_negative_count("18446744073709551616") == nullopt);
 }
+
+TEST_CASE("count_setting: unset and empty take the default silently")
+{
+    CHECK(count_setting(nullptr, 42).value == 42ULL);
+    CHECK(! count_setting(nullptr, 42).malformed);
+    CHECK(count_setting("", 42).value == 42ULL);
+    CHECK(! count_setting("", 42).malformed);
+}
+
+TEST_CASE("count_setting: a valid count is used")
+{
+    CHECK(count_setting("0", 42).value == 0ULL);
+    CHECK(count_setting("7", 42).value == 7ULL);
+    CHECK(! count_setting("7", 42).malformed);
+}
+
+TEST_CASE("count_setting: a malformed value takes the default and is marked")
+{
+    // These are what the caller warns about.
+    for (const char * value : {"abc", "-5", " 5", "18446744073709551616"}) {
+        CHECK(count_setting(value, 42).value == 42ULL);
+        CHECK(count_setting(value, 42).malformed);
+    }
+}
+
+TEST_CASE("count_as_long_long: clamps a count past long long")
+{
+    CHECK(count_as_long_long(0) == 0LL);
+    CHECK(count_as_long_long(100000) == 100000LL);
+    CHECK(count_as_long_long(static_cast<unsigned long long>(numeric_limits<long long>::max())) == numeric_limits<long long>::max());
+    CHECK(count_as_long_long(static_cast<unsigned long long>(numeric_limits<long long>::max()) + 1) == numeric_limits<long long>::max());
+    CHECK(count_as_long_long(numeric_limits<unsigned long long>::max()) == numeric_limits<long long>::max());
+}

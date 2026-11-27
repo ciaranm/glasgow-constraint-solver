@@ -379,7 +379,7 @@ autotuner) without recompiling. Each is read once, on first use.
   uses the incremental propagator, which folds instantiated terms out of the sum at the cost of
   some backtrackable bookkeeping (default: 8). The test suite runs in both modes by setting
   this. A value that is not a whole non-negative number is ignored with a warning, as for the
-  other thresholds below.
+  other thresholds below, and an empty value counts as unset.
 
 * ``GCS_CLAUSE_WATCH_THRESHOLD``: the number of literals at or above which a clause (an ``Or``, or
   an ``And`` whose reification is fixed false) watches two of its literals rather than scanning

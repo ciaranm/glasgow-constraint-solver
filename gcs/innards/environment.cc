@@ -1,8 +1,10 @@
 #include <gcs/innards/environment.hh>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -31,15 +33,25 @@ auto gcs::innards::parse_non_negative_count(string_view value) -> optional<unsig
     return parsed;
 }
 
+auto gcs::innards::count_setting(const char * value, unsigned long long default_value) -> CountSetting
+{
+    if (! value || ! *value)
+        return CountSetting{default_value, false};
+    if (auto parsed = parse_non_negative_count(value))
+        return CountSetting{*parsed, false};
+    return CountSetting{default_value, true};
+}
+
 auto gcs::innards::non_negative_count_from_environment(const char * name, unsigned long long default_value) -> unsigned long long
 {
     const char * e = std::getenv(name);
-    if (! e || ! *e)
-        return default_value;
+    auto setting = count_setting(e, default_value);
+    if (setting.malformed)
+        print(stderr, "Ignoring unrecognised {} value '{}'\n", name, e);
+    return setting.value;
+}
 
-    if (auto parsed = parse_non_negative_count(e))
-        return *parsed;
-
-    print(stderr, "Ignoring unrecognised {} value '{}'\n", name, e);
-    return default_value;
+auto gcs::innards::count_as_long_long(unsigned long long count) -> long long
+{
+    return static_cast<long long>(std::min<unsigned long long>(count, std::numeric_limits<long long>::max()));
 }

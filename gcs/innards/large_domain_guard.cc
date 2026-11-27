@@ -1,9 +1,6 @@
 #include <gcs/innards/environment.hh>
 #include <gcs/innards/large_domain_guard.hh>
 
-#include <algorithm>
-#include <cstdlib>
-#include <limits>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -29,9 +26,8 @@ auto gcs::innards::large_domain_guard_limit() -> long long
 {
     // 100000 by default: see the header for why this sits where it does. A
     // malformed override is ignored with a warning, and one past long long is
-    // clamped.
-    static const long long limit = static_cast<long long>(std::min<unsigned long long>(
-        non_negative_count_from_environment("GCS_LARGE_DOMAIN_GUARD_LIMIT", 100000), std::numeric_limits<long long>::max()));
+    // clamped; see environment.hh.
+    static const long long limit = count_as_long_long(non_negative_count_from_environment("GCS_LARGE_DOMAIN_GUARD_LIMIT", 100000));
     return limit;
 }
 
